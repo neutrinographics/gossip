@@ -1,0 +1,29 @@
+name: nearby_chat
+description: "Demo app for gossip and gossip_nearby packages"
+publish_to: "none"
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.10.4
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  # Gossip packages (path dependencies)
+  gossip:
+    path: ../../packages/gossip
+  gossip_nearby:
+    path: ../../packages/gossip_nearby
+
+  # Utilities
+  uuid: ^4.0.0
+  device_info_plus: ^11.0.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^6.0.0
+
+flutter:
+  uses-material-design: true
