@@ -9,7 +9,8 @@ import '../../domain/events/connection_event.dart';
 import '../../domain/interfaces/nearby_port.dart';
 import '../../domain/value_objects/endpoint.dart';
 import '../../domain/value_objects/endpoint_id.dart';
-import '../../infrastructure/codec/handshake_codec.dart';
+import '../../infrastructure/codec/handshake_codec.dart'
+    show HandshakeCodec, MessageType, WireFormat;
 import '../observability/log_level.dart';
 import '../observability/nearby_metrics.dart';
 
@@ -35,7 +36,6 @@ class ConnectionService {
   final _errorController = StreamController<ConnectionError>.broadcast();
   StreamSubscription<NearbyEvent>? _nearbySubscription;
 
-  /// Tracks when handshakes started for duration calculation.
   final Map<EndpointId, DateTime> _handshakeStartTimes = {};
 
   /// Callback invoked when a gossip message is received from a connected peer.
@@ -145,14 +145,15 @@ class ConnectionService {
     _metrics.recordBytesReceived(bytes.length);
     _log(LogLevel.trace, 'Received ${bytes.length} bytes from $id');
 
-    final messageType = bytes[0];
+    final messageType = bytes[WireFormat.typeOffset];
 
-    if (messageType == MessageType.handshake) {
-      _handleHandshakeMessage(id, bytes);
-    } else if (messageType == MessageType.gossip) {
-      _handleGossipMessage(id, bytes);
-    } else {
-      _log(LogLevel.warning, 'Unknown message type: $messageType from $id');
+    switch (messageType) {
+      case MessageType.handshake:
+        _handleHandshakeMessage(id, bytes);
+      case MessageType.gossip:
+        _handleGossipMessage(id, bytes);
+      default:
+        _log(LogLevel.warning, 'Unknown message type: $messageType from $id');
     }
   }
 

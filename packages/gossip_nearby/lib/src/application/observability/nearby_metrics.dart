@@ -45,42 +45,48 @@ class NearbyMetrics {
     return Duration(milliseconds: totalMs ~/ _handshakeDurations.length);
   }
 
-  // --- Internal update methods ---
-
+  /// Records that a low-level connection was established (before handshake).
   void recordConnectionEstablished() {
     _totalConnectionsEstablished++;
   }
 
+  /// Records that a connection attempt failed.
   void recordConnectionFailed() {
     _totalConnectionsFailed++;
   }
 
+  /// Records that a handshake has started for a connection.
   void recordHandshakeStarted() {
     _pendingHandshakeCount++;
   }
 
+  /// Records that a handshake completed successfully.
   void recordHandshakeCompleted(Duration duration) {
     _pendingHandshakeCount--;
     _connectedPeerCount++;
     _handshakeDurations.add(duration);
   }
 
+  /// Records that a handshake failed.
   void recordHandshakeFailed() {
     _pendingHandshakeCount--;
     _totalConnectionsFailed++;
   }
 
+  /// Records that a peer disconnected.
   void recordDisconnection() {
     if (_connectedPeerCount > 0) {
       _connectedPeerCount--;
     }
   }
 
+  /// Records bytes sent in a message.
   void recordBytesSent(int bytes) {
     _totalBytesSent += bytes;
     _totalMessagesSent++;
   }
 
+  /// Records bytes received in a message.
   void recordBytesReceived(int bytes) {
     _totalBytesReceived += bytes;
     _totalMessagesReceived++;

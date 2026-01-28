@@ -7,6 +7,13 @@ import '../../domain/interfaces/nearby_port.dart';
 import '../../domain/value_objects/endpoint_id.dart';
 import '../../domain/value_objects/service_id.dart';
 
+/// The user name passed to Nearby Connections API.
+///
+/// This value is not used by our handshake protocol since we exchange
+/// `NodeId`s after connection. The Nearby Connections API requires a
+/// non-null string, so we pass an empty string.
+const _unusedUserName = '';
+
 /// Implements [NearbyPort] using the `nearby_connections` Flutter plugin.
 ///
 /// This adapter translates between the domain's port interface and
@@ -53,7 +60,7 @@ class NearbyAdapter implements NearbyPort {
     if (_isDiscovering) return;
 
     final started = await _nearby.startDiscovery(
-      '', // userName not needed for discovery
+      _unusedUserName,
       Strategy.P2P_CLUSTER,
       onEndpointFound: _onEndpointFound,
       onEndpointLost: _onEndpointLost,
@@ -75,7 +82,7 @@ class NearbyAdapter implements NearbyPort {
   @override
   Future<void> requestConnection(EndpointId endpointId) async {
     await _nearby.requestConnection(
-      '', // userName
+      _unusedUserName,
       endpointId.value,
       onConnectionInitiated: _onConnectionInitiated,
       onConnectionResult: _onConnectionResult,
@@ -112,12 +119,9 @@ class NearbyAdapter implements NearbyPort {
     );
   }
 
-  void _onEndpointLost(String? endpointId) {
-    // Endpoint lost during discovery - no action needed
-  }
+  void _onEndpointLost(String? endpointId) {}
 
   void _onConnectionInitiated(String endpointId, ConnectionInfo info) {
-    // Auto-accept all connections
     unawaited(
       _nearby.acceptConnection(
         endpointId,

@@ -12,6 +12,27 @@ abstract class MessageType {
   static const int gossip = 0x02;
 }
 
+/// Wire format layout constants.
+abstract class WireFormat {
+  /// Byte offset where the message type is stored.
+  static const int typeOffset = 0;
+
+  /// Byte offset where the length field begins (handshake messages only).
+  static const int lengthOffset = 1;
+
+  /// Size of the length field in bytes.
+  static const int lengthFieldSize = 4;
+
+  /// Total header size for handshake messages (type + length).
+  static const int handshakeHeaderSize = 1 + lengthFieldSize;
+
+  /// Byte offset where the payload begins in handshake messages.
+  static const int handshakePayloadOffset = handshakeHeaderSize;
+
+  /// Byte offset where the payload begins in gossip messages.
+  static const int gossipPayloadOffset = 1;
+}
+
 /// Codec for encoding and decoding handshake messages.
 ///
 /// Wire format: [0x01][length:4 bytes][nodeId:UTF-8 bytes]
@@ -21,11 +42,16 @@ class HandshakeCodec {
   /// Encodes a handshake message containing the local NodeId.
   Uint8List encode(NodeId nodeId) {
     final nodeIdBytes = utf8.encode(nodeId.value);
-    final buffer = ByteData(5 + nodeIdBytes.length);
-    buffer.setUint8(0, MessageType.handshake);
-    buffer.setUint32(1, nodeIdBytes.length, Endian.big);
+    final totalLength = WireFormat.handshakeHeaderSize + nodeIdBytes.length;
+    final buffer = ByteData(totalLength);
+    buffer.setUint8(WireFormat.typeOffset, MessageType.handshake);
+    buffer.setUint32(WireFormat.lengthOffset, nodeIdBytes.length, Endian.big);
     final result = buffer.buffer.asUint8List();
-    result.setRange(5, 5 + nodeIdBytes.length, nodeIdBytes);
+    result.setRange(
+      WireFormat.handshakePayloadOffset,
+      WireFormat.handshakePayloadOffset + nodeIdBytes.length,
+      nodeIdBytes,
+    );
     return result;
   }
 
@@ -33,14 +59,18 @@ class HandshakeCodec {
   ///
   /// Returns null if the message is malformed or contains an invalid NodeId.
   NodeId? decode(Uint8List bytes) {
-    if (bytes.length < 5) return null;
-    if (bytes[0] != MessageType.handshake) return null;
+    if (bytes.length < WireFormat.handshakeHeaderSize) return null;
+    if (bytes[WireFormat.typeOffset] != MessageType.handshake) return null;
 
     final buffer = ByteData.sublistView(bytes);
-    final length = buffer.getUint32(1, Endian.big);
-    if (bytes.length < 5 + length) return null;
+    final payloadLength = buffer.getUint32(WireFormat.lengthOffset, Endian.big);
+    final expectedLength = WireFormat.handshakeHeaderSize + payloadLength;
+    if (bytes.length < expectedLength) return null;
 
-    final nodeIdBytes = bytes.sublist(5, 5 + length);
+    final nodeIdBytes = bytes.sublist(
+      WireFormat.handshakePayloadOffset,
+      WireFormat.handshakePayloadOffset + payloadLength,
+    );
     final nodeIdValue = utf8.decode(nodeIdBytes);
 
     try {
@@ -52,9 +82,13 @@ class HandshakeCodec {
 
   /// Wraps a gossip payload with the gossip message type prefix.
   Uint8List wrapGossipMessage(Uint8List payload) {
-    final result = Uint8List(1 + payload.length);
-    result[0] = MessageType.gossip;
-    result.setRange(1, 1 + payload.length, payload);
+    final result = Uint8List(WireFormat.gossipPayloadOffset + payload.length);
+    result[WireFormat.typeOffset] = MessageType.gossip;
+    result.setRange(
+      WireFormat.gossipPayloadOffset,
+      WireFormat.gossipPayloadOffset + payload.length,
+      payload,
+    );
     return result;
   }
 
@@ -62,7 +96,8 @@ class HandshakeCodec {
   ///
   /// Returns null if not a gossip message.
   Uint8List? unwrapGossipMessage(Uint8List bytes) {
-    if (bytes.isEmpty || bytes[0] != MessageType.gossip) return null;
-    return bytes.sublist(1);
+    if (bytes.isEmpty) return null;
+    if (bytes[WireFormat.typeOffset] != MessageType.gossip) return null;
+    return bytes.sublist(WireFormat.gossipPayloadOffset);
   }
 }
