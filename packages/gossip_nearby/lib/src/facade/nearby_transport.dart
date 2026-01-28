@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:gossip/gossip.dart';
 
+import '../application/observability/log_level.dart';
+import '../application/observability/nearby_metrics.dart';
 import '../application/services/connection_service.dart';
 import '../domain/aggregates/connection_registry.dart';
 import '../domain/events/connection_event.dart';
@@ -47,6 +49,9 @@ class PeerDisconnected extends PeerEvent {
 ///   localNodeId: NodeId('device-uuid'),
 ///   serviceId: ServiceId('com.example.app'),
 ///   displayName: 'My Device',
+///   onLog: (level, message, [error, stack]) {
+///     print('[$level] $message');
+///   },
 /// );
 ///
 /// // Get the message port for gossip
@@ -74,6 +79,7 @@ class NearbyTransport {
   final NodeId localNodeId;
   final ServiceId _serviceId;
   final String _displayName;
+  final LogCallback? _onLog;
 
   final ConnectionRegistry _registry;
   final ConnectionService _connectionService;
@@ -83,6 +89,9 @@ class NearbyTransport {
   final _peerEventController = StreamController<PeerEvent>.broadcast();
   StreamSubscription<ConnectionEvent>? _eventSubscription;
 
+  bool _isAdvertising = false;
+  bool _isDiscovering = false;
+
   NearbyTransport._({
     required this.localNodeId,
     required ServiceId serviceId,
@@ -91,12 +100,14 @@ class NearbyTransport {
     required ConnectionService connectionService,
     required NearbyMessagePort messagePort,
     required NearbyPort nearbyPort,
+    LogCallback? onLog,
   }) : _serviceId = serviceId,
        _displayName = displayName,
        _registry = registry,
        _connectionService = connectionService,
        _messagePort = messagePort,
-       _nearbyPort = nearbyPort {
+       _nearbyPort = nearbyPort,
+       _onLog = onLog {
     _eventSubscription = _connectionService.events.listen(_onConnectionEvent);
   }
 
@@ -105,6 +116,7 @@ class NearbyTransport {
     required NodeId localNodeId,
     required ServiceId serviceId,
     required String displayName,
+    LogCallback? onLog,
   }) {
     final nearbyPort = NearbyAdapter();
     return NearbyTransport.withPort(
@@ -112,6 +124,7 @@ class NearbyTransport {
       serviceId: serviceId,
       displayName: displayName,
       nearbyPort: nearbyPort,
+      onLog: onLog,
     );
   }
 
@@ -121,12 +134,16 @@ class NearbyTransport {
     required ServiceId serviceId,
     required String displayName,
     required NearbyPort nearbyPort,
+    LogCallback? onLog,
   }) {
     final registry = ConnectionRegistry();
+    final metrics = NearbyMetrics();
     final connectionService = ConnectionService(
       localNodeId: localNodeId,
       nearbyPort: nearbyPort,
       registry: registry,
+      metrics: metrics,
+      onLog: onLog,
     );
     final messagePort = NearbyMessagePort(connectionService);
 
@@ -138,6 +155,7 @@ class NearbyTransport {
       connectionService: connectionService,
       messagePort: messagePort,
       nearbyPort: nearbyPort,
+      onLog: onLog,
     );
   }
 
@@ -154,28 +172,54 @@ class NearbyTransport {
   /// Number of currently connected peers.
   int get connectedPeerCount => _registry.connectionCount;
 
+  /// Metrics for monitoring transport health and performance.
+  NearbyMetrics get metrics => _connectionService.metrics;
+
+  /// Whether advertising is currently active.
+  bool get isAdvertising => _isAdvertising;
+
+  /// Whether discovery is currently active.
+  bool get isDiscovering => _isDiscovering;
+
   /// Starts advertising this device to nearby peers.
   Future<void> startAdvertising() async {
+    if (_isAdvertising) return;
+
+    _log(LogLevel.info, 'Starting advertising as "$_displayName"');
     await _nearbyPort.startAdvertising(_serviceId, _displayName);
+    _isAdvertising = true;
   }
 
   /// Stops advertising.
   Future<void> stopAdvertising() async {
+    if (!_isAdvertising) return;
+
+    _log(LogLevel.info, 'Stopping advertising');
     await _nearbyPort.stopAdvertising();
+    _isAdvertising = false;
   }
 
   /// Starts discovering nearby peers.
   Future<void> startDiscovery() async {
+    if (_isDiscovering) return;
+
+    _log(LogLevel.info, 'Starting discovery for service ${_serviceId.value}');
     await _nearbyPort.startDiscovery(_serviceId);
+    _isDiscovering = true;
   }
 
   /// Stops discovery.
   Future<void> stopDiscovery() async {
+    if (!_isDiscovering) return;
+
+    _log(LogLevel.info, 'Stopping discovery');
     await _nearbyPort.stopDiscovery();
+    _isDiscovering = false;
   }
 
   /// Disposes all resources.
   Future<void> dispose() async {
+    _log(LogLevel.debug, 'Disposing NearbyTransport');
     await _eventSubscription?.cancel();
     await _peerEventController.close();
     await _messagePort.close();
@@ -183,6 +227,8 @@ class NearbyTransport {
     if (_nearbyPort case final NearbyAdapter adapter) {
       await adapter.dispose();
     }
+    _isAdvertising = false;
+    _isDiscovering = false;
   }
 
   void _onConnectionEvent(ConnectionEvent event) {
@@ -195,5 +241,14 @@ class NearbyTransport {
         // Not exposed as a peer event
         break;
     }
+  }
+
+  void _log(
+    LogLevel level,
+    String message, [
+    Object? error,
+    StackTrace? stack,
+  ]) {
+    _onLog?.call(level, message, error, stack);
   }
 }

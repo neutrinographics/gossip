@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
+import 'package:gossip_nearby/src/application/observability/log_level.dart';
 import 'package:gossip_nearby/src/domain/interfaces/nearby_port.dart';
 import 'package:gossip_nearby/src/domain/value_objects/endpoint_id.dart';
 import 'package:gossip_nearby/src/domain/value_objects/service_id.dart';
@@ -70,9 +71,40 @@ void main() {
       });
 
       test('stopAdvertising delegates to NearbyPort', () async {
+        await transport.startAdvertising();
         await transport.stopAdvertising();
 
         verify(() => mockNearbyPort.stopAdvertising()).called(1);
+      });
+
+      test('isAdvertising is false initially', () {
+        expect(transport.isAdvertising, isFalse);
+      });
+
+      test('isAdvertising is true after startAdvertising', () async {
+        await transport.startAdvertising();
+
+        expect(transport.isAdvertising, isTrue);
+      });
+
+      test('isAdvertising is false after stopAdvertising', () async {
+        await transport.startAdvertising();
+        await transport.stopAdvertising();
+
+        expect(transport.isAdvertising, isFalse);
+      });
+
+      test('startAdvertising is idempotent', () async {
+        await transport.startAdvertising();
+        await transport.startAdvertising();
+
+        verify(() => mockNearbyPort.startAdvertising(any(), any())).called(1);
+      });
+
+      test('stopAdvertising is idempotent', () async {
+        await transport.stopAdvertising();
+
+        verifyNever(() => mockNearbyPort.stopAdvertising());
       });
     });
 
@@ -86,9 +118,76 @@ void main() {
       });
 
       test('stopDiscovery delegates to NearbyPort', () async {
+        await transport.startDiscovery();
         await transport.stopDiscovery();
 
         verify(() => mockNearbyPort.stopDiscovery()).called(1);
+      });
+
+      test('isDiscovering is false initially', () {
+        expect(transport.isDiscovering, isFalse);
+      });
+
+      test('isDiscovering is true after startDiscovery', () async {
+        await transport.startDiscovery();
+
+        expect(transport.isDiscovering, isTrue);
+      });
+
+      test('isDiscovering is false after stopDiscovery', () async {
+        await transport.startDiscovery();
+        await transport.stopDiscovery();
+
+        expect(transport.isDiscovering, isFalse);
+      });
+
+      test('startDiscovery is idempotent', () async {
+        await transport.startDiscovery();
+        await transport.startDiscovery();
+
+        verify(() => mockNearbyPort.startDiscovery(any())).called(1);
+      });
+
+      test('stopDiscovery is idempotent', () async {
+        await transport.stopDiscovery();
+
+        verifyNever(() => mockNearbyPort.stopDiscovery());
+      });
+    });
+
+    group('metrics', () {
+      test('exposes metrics from connection service', () {
+        expect(transport.metrics, isNotNull);
+        expect(transport.metrics.connectedPeerCount, equals(0));
+      });
+    });
+
+    group('logging', () {
+      test('invokes onLog callback when provided', () async {
+        final logs = <(LogLevel, String)>[];
+
+        await transport.dispose();
+        await nearbyEventController.close();
+
+        nearbyEventController = StreamController<NearbyEvent>.broadcast();
+        when(
+          () => mockNearbyPort.events,
+        ).thenAnswer((_) => nearbyEventController.stream);
+
+        transport = NearbyTransport.withPort(
+          localNodeId: NodeId('local-node'),
+          serviceId: ServiceId('com.example.app'),
+          displayName: 'Test Device',
+          nearbyPort: mockNearbyPort,
+          onLog: (level, message, [error, stack]) {
+            logs.add((level, message));
+          },
+        );
+
+        await transport.startAdvertising();
+
+        expect(logs, isNotEmpty);
+        expect(logs.any((log) => log.$1 == LogLevel.info), isTrue);
       });
     });
 

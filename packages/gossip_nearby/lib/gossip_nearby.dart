@@ -70,3 +70,7 @@ export 'src/domain/events/connection_event.dart';
 
 // Domain errors (for error handling)
 export 'src/domain/errors/connection_error.dart';
+
+// Observability (logging and metrics)
+export 'src/application/observability/log_level.dart';
+export 'src/application/observability/nearby_metrics.dart';
