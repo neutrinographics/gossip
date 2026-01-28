@@ -2,6 +2,7 @@ name: gossip_nearby
 description: Nearby Connections transport for gossip - handles peer discovery, connection management, and message delivery over Android/iOS Nearby Connections.
 version: 0.1.0
 repository: https://github.com/neutrinographics/gossip/tree/main/packages/gossip_nearby
+publish_to: none
 resolution: workspace
 
 environment:

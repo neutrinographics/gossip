@@ -7,9 +7,7 @@ import 'package:gossip_nearby/src/application/services/connection_service.dart';
 import 'package:gossip_nearby/src/domain/aggregates/connection_registry.dart';
 import 'package:gossip_nearby/src/domain/events/connection_event.dart';
 import 'package:gossip_nearby/src/domain/interfaces/nearby_port.dart';
-import 'package:gossip_nearby/src/domain/value_objects/endpoint.dart';
 import 'package:gossip_nearby/src/domain/value_objects/endpoint_id.dart';
-import 'package:gossip_nearby/src/domain/value_objects/service_id.dart';
 import 'package:mocktail/mocktail.dart';
 
 class MockNearbyPort extends Mock implements NearbyPort {}

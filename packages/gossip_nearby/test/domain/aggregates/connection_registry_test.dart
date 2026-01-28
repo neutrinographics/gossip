@@ -1,7 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
 import 'package:gossip_nearby/src/domain/aggregates/connection_registry.dart';
-import 'package:gossip_nearby/src/domain/entities/connection.dart';
 import 'package:gossip_nearby/src/domain/events/connection_event.dart';
 import 'package:gossip_nearby/src/domain/value_objects/endpoint.dart';
 import 'package:gossip_nearby/src/domain/value_objects/endpoint_id.dart';
@@ -41,7 +40,7 @@ void main() {
         final event = registry.completeHandshake(endpoint, nodeId);
 
         expect(event, isA<HandshakeCompleted>());
-        expect((event as HandshakeCompleted).endpoint, equals(endpoint));
+        expect(event.endpoint, equals(endpoint));
         expect(event.nodeId, equals(nodeId));
       });
 
