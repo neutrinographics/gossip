@@ -4,6 +4,19 @@
 
 This package provides peer discovery and connection management over Nearby Connections, bridging the gap between the `gossip` sync library and the physical transport layer.
 
+## Development Principles
+
+This package strictly follows:
+
+1. **Domain-Driven Design (DDD)** - The domain model reflects the ubiquitous language. Business logic lives in the domain layer with no external dependencies.
+
+2. **Clean Architecture (CA)** - Dependencies point inward. The domain defines interfaces (ports) that infrastructure implements. No framework or library details leak into the domain.
+
+3. **Test-Driven Development (TDD)** - All code is developed using the Red-Green-Refactor cycle:
+   - **Red**: Write a failing test that defines expected behavior
+   - **Green**: Write the minimal code to make the test pass
+   - **Refactor**: Improve the code while keeping tests green
+
 ## Domain Model
 
 ### Ubiquitous Language
