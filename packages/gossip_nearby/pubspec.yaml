@@ -1,0 +1,22 @@
+name: gossip_nearby
+description: Nearby Connections transport for gossip - handles peer discovery, connection management, and message delivery over Android/iOS Nearby Connections.
+version: 0.1.0
+repository: https://github.com/neutrinographics/gossip/tree/main/packages/gossip_nearby
+
+environment:
+  sdk: ^3.10.4
+  flutter: ">=3.10.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  gossip:
+    path: ../gossip
+  nearby_connections: ^4.0.0
+  meta: ^1.11.0
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+  mocktail: ^1.0.4
