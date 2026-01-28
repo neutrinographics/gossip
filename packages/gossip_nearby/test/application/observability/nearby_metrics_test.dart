@@ -48,13 +48,13 @@ void main() {
 
       test('recordHandshakeCompleted updates counts and duration', () {
         metrics.recordHandshakeStarted();
-        metrics.recordHandshakeCompleted(Duration(milliseconds: 100));
+        metrics.recordHandshakeCompleted(const Duration(milliseconds: 100));
 
         expect(metrics.pendingHandshakeCount, equals(0));
         expect(metrics.connectedPeerCount, equals(1));
         expect(
           metrics.averageHandshakeDuration,
-          equals(Duration(milliseconds: 100)),
+          equals(const Duration(milliseconds: 100)),
         );
       });
 
@@ -108,16 +108,16 @@ void main() {
     group('averageHandshakeDuration', () {
       test('computes average across multiple handshakes', () {
         metrics.recordHandshakeStarted();
-        metrics.recordHandshakeCompleted(Duration(milliseconds: 100));
+        metrics.recordHandshakeCompleted(const Duration(milliseconds: 100));
         metrics.recordHandshakeStarted();
-        metrics.recordHandshakeCompleted(Duration(milliseconds: 200));
+        metrics.recordHandshakeCompleted(const Duration(milliseconds: 200));
         metrics.recordHandshakeStarted();
-        metrics.recordHandshakeCompleted(Duration(milliseconds: 300));
+        metrics.recordHandshakeCompleted(const Duration(milliseconds: 300));
 
         // (100 + 200 + 300) / 3 = 200
         expect(
           metrics.averageHandshakeDuration,
-          equals(Duration(milliseconds: 200)),
+          equals(const Duration(milliseconds: 200)),
         );
       });
 

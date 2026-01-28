@@ -6,6 +6,7 @@ import '../application/observability/log_level.dart';
 import '../application/observability/nearby_metrics.dart';
 import '../application/services/connection_service.dart';
 import '../domain/aggregates/connection_registry.dart';
+import '../domain/errors/connection_error.dart';
 import '../domain/events/connection_event.dart';
 import '../domain/interfaces/nearby_port.dart';
 import '../domain/value_objects/service_id.dart';
@@ -164,6 +165,12 @@ class NearbyTransport {
 
   /// Stream of peer connection events.
   Stream<PeerEvent> get peerEvents => _peerEventController.stream;
+
+  /// Stream of connection errors for observability.
+  ///
+  /// Applications should listen to this stream to log errors, implement
+  /// retry policies, or alert users about connection issues.
+  Stream<ConnectionError> get errors => _connectionService.errors;
 
   /// Currently connected peer NodeIds.
   Set<NodeId> get connectedPeers =>

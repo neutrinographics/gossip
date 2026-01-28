@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
 import 'package:gossip_nearby/src/application/observability/log_level.dart';
+import 'package:gossip_nearby/src/domain/errors/connection_error.dart';
 import 'package:gossip_nearby/src/domain/interfaces/nearby_port.dart';
 import 'package:gossip_nearby/src/domain/value_objects/endpoint_id.dart';
 import 'package:gossip_nearby/src/domain/value_objects/service_id.dart';
@@ -270,6 +271,27 @@ void main() {
 
         expect(transport.connectedPeers, contains(remoteNodeId));
         expect(transport.connectedPeerCount, equals(1));
+      });
+    });
+
+    group('errors', () {
+      test('exposes errors stream', () {
+        expect(transport.errors, isA<Stream<ConnectionError>>());
+      });
+
+      test('forwards errors from ConnectionService', () async {
+        final errors = <ConnectionError>[];
+        transport.errors.listen(errors.add);
+
+        // Try to send to unknown peer via messagePort
+        await transport.messagePort.send(
+          NodeId('unknown-peer'),
+          Uint8List.fromList([1, 2, 3]),
+        );
+        await Future.delayed(Duration.zero);
+
+        expect(errors, hasLength(1));
+        expect(errors.first, isA<ConnectionNotFoundError>());
       });
     });
   });

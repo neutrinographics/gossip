@@ -29,10 +29,15 @@ void main() {
       LogLevel? capturedLevel;
       String? capturedMessage;
 
-      final LogCallback callback = (level, message, [error, stackTrace]) {
+      void callback(
+        LogLevel level,
+        String message, [
+        Object? error,
+        StackTrace? stackTrace,
+      ]) {
         capturedLevel = level;
         capturedMessage = message;
-      };
+      }
 
       callback(LogLevel.info, 'Test message');
 
@@ -44,10 +49,15 @@ void main() {
       Object? capturedError;
       StackTrace? capturedStack;
 
-      final LogCallback callback = (level, message, [error, stackTrace]) {
+      void callback(
+        LogLevel level,
+        String message, [
+        Object? error,
+        StackTrace? stackTrace,
+      ]) {
         capturedError = error;
         capturedStack = stackTrace;
-      };
+      }
 
       final error = Exception('test');
       final stack = StackTrace.current;

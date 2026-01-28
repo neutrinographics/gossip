@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
 import 'package:gossip_nearby/src/application/services/connection_service.dart';
 import 'package:gossip_nearby/src/domain/aggregates/connection_registry.dart';
+import 'package:gossip_nearby/src/domain/errors/connection_error.dart';
 import 'package:gossip_nearby/src/domain/events/connection_event.dart';
 import 'package:gossip_nearby/src/domain/interfaces/nearby_port.dart';
 import 'package:gossip_nearby/src/domain/value_objects/endpoint_id.dart';
@@ -213,6 +214,95 @@ void main() {
         expect(sentBytes[0], equals(0x02));
         expect(sentBytes.sublist(1), equals(payload));
       });
+    });
+
+    group('error stream', () {
+      test('exposes errors stream', () {
+        expect(service.errors, isA<Stream<ConnectionError>>());
+      });
+
+      test(
+        'emits ConnectionNotFoundError when sending to unknown peer',
+        () async {
+          final unknownNodeId = NodeId('unknown-peer');
+          final payload = Uint8List.fromList([1, 2, 3]);
+
+          final errors = <ConnectionError>[];
+          service.errors.listen(errors.add);
+
+          await service.sendGossipMessage(unknownNodeId, payload);
+          await Future.delayed(Duration.zero);
+
+          expect(errors, hasLength(1));
+          expect(errors.first, isA<ConnectionNotFoundError>());
+          final error = errors.first as ConnectionNotFoundError;
+          expect(error.nodeId, equals(unknownNodeId));
+          expect(error.type, equals(ConnectionErrorType.connectionNotFound));
+          expect(error.occurredAt, isNotNull);
+        },
+      );
+
+      test('emits SendFailedError when sendPayload throws', () async {
+        final endpointId = EndpointId('remote-ep');
+        final remoteNodeId = NodeId('remote-node-456');
+        final payload = Uint8List.fromList([1, 2, 3]);
+
+        // Establish and complete handshake
+        nearbyEventController.add(ConnectionEstablished(id: endpointId));
+        await Future.delayed(Duration.zero);
+        nearbyEventController.add(
+          PayloadReceived(
+            id: endpointId,
+            bytes: _encodeHandshake(remoteNodeId),
+          ),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Make sendPayload throw
+        when(
+          () => mockNearbyPort.sendPayload(any(), any()),
+        ).thenThrow(Exception('Network error'));
+
+        final errors = <ConnectionError>[];
+        service.errors.listen(errors.add);
+
+        await service.sendGossipMessage(remoteNodeId, payload);
+        await Future.delayed(Duration.zero);
+
+        expect(errors, hasLength(1));
+        expect(errors.first, isA<SendFailedError>());
+        final error = errors.first as SendFailedError;
+        expect(error.nodeId, equals(remoteNodeId));
+        expect(error.type, equals(ConnectionErrorType.sendFailed));
+        expect(error.cause, isA<Exception>());
+      });
+
+      test(
+        'emits HandshakeInvalidError when handshake decoding fails',
+        () async {
+          final endpointId = EndpointId('remote-ep');
+
+          // Establish connection
+          nearbyEventController.add(ConnectionEstablished(id: endpointId));
+          await Future.delayed(Duration.zero);
+
+          final errors = <ConnectionError>[];
+          service.errors.listen(errors.add);
+
+          // Send invalid handshake (wrong format)
+          final invalidHandshake = Uint8List.fromList([0x01, 0, 0]);
+          nearbyEventController.add(
+            PayloadReceived(id: endpointId, bytes: invalidHandshake),
+          );
+          await Future.delayed(Duration.zero);
+
+          expect(errors, hasLength(1));
+          expect(errors.first, isA<HandshakeInvalidError>());
+          final error = errors.first as HandshakeInvalidError;
+          expect(error.endpointId, equals(endpointId));
+          expect(error.type, equals(ConnectionErrorType.handshakeInvalid));
+        },
+      );
     });
   });
 }

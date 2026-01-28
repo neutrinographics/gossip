@@ -88,13 +88,31 @@ ConnectionClosed(nodeId, reason)      # A peer disconnected
 
 ### Domain Errors
 
+Errors follow the same pattern as gossip's `SyncError` hierarchy for consistency:
+
 ```
-ConnectionError
-├── ConnectionNotFound    # Tried to send to a NodeId with no connection
-├── HandshakeTimeout      # Handshake didn't complete in time
-├── HandshakeInvalid      # Malformed handshake data
-└── SendFailed            # Nearby couldn't send bytes
+ConnectionError (sealed base class)
+├── message: String           # Human-readable description
+├── occurredAt: DateTime      # When the error occurred
+├── type: ConnectionErrorType # Classification for handling
+└── cause: Object?            # Original exception (if available)
+
+ConnectionErrorType (enum)
+├── connectionNotFound    # Tried to send to a NodeId with no connection
+├── connectionLost        # Connection was unexpectedly lost
+├── handshakeTimeout      # Handshake didn't complete in time
+├── handshakeInvalid      # Malformed handshake data
+└── sendFailed            # Nearby couldn't send bytes
+
+Concrete Error Types:
+├── ConnectionNotFoundError(nodeId, message, occurredAt, cause?)
+├── ConnectionLostError(nodeId, message, occurredAt, cause?)
+├── HandshakeTimeoutError(endpointId, message, occurredAt, cause?)
+├── HandshakeInvalidError(endpointId, message, occurredAt, cause?)
+└── SendFailedError(nodeId, message, occurredAt, cause?)
 ```
+
+Errors are streamed via `NearbyTransport.errors` (not thrown), matching gossip's `Coordinator.errors` pattern.
 
 ---
 

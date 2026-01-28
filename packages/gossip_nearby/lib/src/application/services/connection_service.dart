@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:gossip/gossip.dart';
 
 import '../../domain/aggregates/connection_registry.dart';
+import '../../domain/errors/connection_error.dart';
 import '../../domain/events/connection_event.dart';
 import '../../domain/interfaces/nearby_port.dart';
 import '../../domain/value_objects/endpoint.dart';
@@ -31,6 +32,7 @@ class ConnectionService {
   final LogCallback? _onLog;
 
   final _eventController = StreamController<ConnectionEvent>.broadcast();
+  final _errorController = StreamController<ConnectionError>.broadcast();
   StreamSubscription<NearbyEvent>? _nearbySubscription;
 
   /// Tracks when handshakes started for duration calculation.
@@ -58,6 +60,9 @@ class ConnectionService {
   /// Stream of connection events (HandshakeCompleted, ConnectionClosed, etc.)
   Stream<ConnectionEvent> get events => _eventController.stream;
 
+  /// Stream of connection errors for observability.
+  Stream<ConnectionError> get errors => _errorController.stream;
+
   /// Metrics for this service.
   NearbyMetrics get metrics => _metrics;
 
@@ -66,19 +71,39 @@ class ConnectionService {
     final endpointId = _registry.getEndpointIdForNodeId(destination);
     if (endpointId == null) {
       _log(LogLevel.warning, 'Cannot send: no connection for $destination');
+      _errorController.add(
+        ConnectionNotFoundError(
+          destination,
+          'No active connection for peer',
+          occurredAt: DateTime.now(),
+        ),
+      );
       return;
     }
 
-    final wrapped = _codec.wrapGossipMessage(bytes);
-    await _nearbyPort.sendPayload(endpointId, wrapped);
-    _metrics.recordBytesSent(wrapped.length);
-    _log(LogLevel.trace, 'Sent ${wrapped.length} bytes to $destination');
+    try {
+      final wrapped = _codec.wrapGossipMessage(bytes);
+      await _nearbyPort.sendPayload(endpointId, wrapped);
+      _metrics.recordBytesSent(wrapped.length);
+      _log(LogLevel.trace, 'Sent ${wrapped.length} bytes to $destination');
+    } catch (e, stack) {
+      _log(LogLevel.error, 'Send failed to $destination', e, stack);
+      _errorController.add(
+        SendFailedError(
+          destination,
+          'Failed to send payload: $e',
+          occurredAt: DateTime.now(),
+          cause: e,
+        ),
+      );
+    }
   }
 
   /// Disposes resources.
   Future<void> dispose() async {
     await _nearbySubscription?.cancel();
     await _eventController.close();
+    await _errorController.close();
   }
 
   void _handleNearbyEvent(NearbyEvent event) {
@@ -137,6 +162,13 @@ class ConnectionService {
       _log(LogLevel.error, 'Invalid handshake from $id');
       _metrics.recordHandshakeFailed();
       _handshakeStartTimes.remove(id);
+      _errorController.add(
+        HandshakeInvalidError(
+          id,
+          'Failed to decode handshake message',
+          occurredAt: DateTime.now(),
+        ),
+      );
       return;
     }
 
