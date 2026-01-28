@@ -3,3 +3,7 @@ publish_to: none
 
 environment:
   sdk: ^3.10.4
+
+workspace:
+  - packages/gossip
+  - packages/gossip_nearby
