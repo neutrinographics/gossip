@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import '../../controllers/chat_controller.dart';
-import '../../models/models.dart';
+import '../controllers/chat_controller.dart';
+import '../view_models/view_models.dart';
 import 'chat_screen.dart';
 import 'peers_screen.dart';
 

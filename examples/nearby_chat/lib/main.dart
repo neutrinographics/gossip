@@ -5,8 +5,8 @@ import 'package:gossip_nearby/gossip_nearby.dart';
 import 'package:uuid/uuid.dart';
 
 import 'app.dart';
-import 'controllers/chat_controller.dart';
-import 'services/services.dart';
+import 'application/application.dart';
+import 'presentation/presentation.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -33,28 +33,33 @@ void main() async {
     timerPort: RealTimePort(),
   );
 
-  // Create services
+  // Create application services
   final chatService = ChatService(
     coordinator: coordinator,
     localNodeId: nodeId,
     displayName: deviceName,
+    onError: (operation, error) {
+      // ignore: avoid_print
+      print('[ChatService] Error in $operation: $error');
+    },
   );
   final connectionService = ConnectionService(
     transport: transport,
     coordinator: coordinator,
   );
+  final syncService = SyncService(coordinator: coordinator);
 
-  // Create controller
+  // Create presentation controller
   final controller = ChatController(
     chatService: chatService,
     connectionService: connectionService,
-    coordinator: coordinator,
+    syncService: syncService,
   );
 
   // Create and start debug logger for observability
   final debugLogger = DebugLogger(
-    coordinator: coordinator,
-    transport: transport,
+    syncService: syncService,
+    connectionService: connectionService,
   );
   debugLogger.start();
 

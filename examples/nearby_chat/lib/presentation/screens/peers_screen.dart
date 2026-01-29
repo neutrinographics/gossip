@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
-import '../../controllers/chat_controller.dart';
-import '../../models/models.dart';
+import '../controllers/chat_controller.dart';
+import '../view_models/view_models.dart';
 
 class PeersScreen extends StatelessWidget {
   final ChatController controller;

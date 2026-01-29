@@ -2,30 +2,32 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:gossip/gossip.dart' as gossip;
-import 'package:gossip/gossip.dart' hide PeerStatus;
 import 'package:gossip_nearby/gossip_nearby.dart';
 
-import '../models/models.dart';
-import '../services/services.dart';
+import '../../application/services/services.dart';
+import '../view_models/view_models.dart';
 
 /// Connection status for the transport layer.
 enum ConnectionStatus { disconnected, advertising, discovering, connected }
 
 /// Main controller for the chat app state.
+///
+/// This is a presentation layer controller that manages UI state and
+/// delegates all business logic to application services.
 class ChatController extends ChangeNotifier {
   final ChatService _chatService;
   final ConnectionService _connectionService;
-  final Coordinator _coordinator;
+  final SyncService _syncService;
 
   List<ChannelState> _channels = [];
   List<PeerState> _peers = [];
-  ChannelId? _currentChannelId;
+  gossip.ChannelId? _currentChannelId;
   List<MessageState> _currentMessages = [];
-  Set<NodeId> _typingUsers = {};
+  Set<gossip.NodeId> _typingUsers = {};
   ConnectionStatus _connectionStatus = ConnectionStatus.disconnected;
   bool _isTyping = false;
 
-  StreamSubscription<DomainEvent>? _eventSubscription;
+  StreamSubscription<gossip.DomainEvent>? _eventSubscription;
   StreamSubscription<PeerEvent>? _peerSubscription;
   Timer? _typingTimer;
   Timer? _typingExpirationTimer;
@@ -33,10 +35,10 @@ class ChatController extends ChangeNotifier {
   ChatController({
     required ChatService chatService,
     required ConnectionService connectionService,
-    required Coordinator coordinator,
+    required SyncService syncService,
   }) : _chatService = chatService,
        _connectionService = connectionService,
-       _coordinator = coordinator {
+       _syncService = syncService {
     _setupEventHandling();
     _refreshChannels();
   }
@@ -45,7 +47,7 @@ class ChatController extends ChangeNotifier {
 
   List<ChannelState> get channels => _channels;
   List<PeerState> get peers => _peers;
-  ChannelId? get currentChannelId => _currentChannelId;
+  gossip.ChannelId? get currentChannelId => _currentChannelId;
   ChannelState? get currentChannel => _currentChannelId != null
       ? _channels.cast<ChannelState?>().firstWhere(
           (c) => c?.id == _currentChannelId,
@@ -53,29 +55,38 @@ class ChatController extends ChangeNotifier {
         )
       : null;
   List<MessageState> get currentMessages => _currentMessages;
-  Set<NodeId> get typingUsers => _typingUsers;
+  Set<gossip.NodeId> get typingUsers => _typingUsers;
   ConnectionStatus get connectionStatus => _connectionStatus;
   bool get isTyping => _isTyping;
-  NodeId get localNodeId => _chatService.localNodeId;
+  gossip.NodeId get localNodeId => _chatService.localNodeId;
 
   // --- Event Handling ---
 
   void _setupEventHandling() {
-    _eventSubscription = _coordinator.events.listen(_onDomainEvent);
+    // Subscribe to domain events via SyncService (not Coordinator directly)
+    _eventSubscription = _syncService.events.listen(_onDomainEvent);
     _peerSubscription = _connectionService.peerEvents.listen(_onPeerEvent);
   }
 
-  void _onDomainEvent(DomainEvent event) {
+  void _onDomainEvent(gossip.DomainEvent event) {
     switch (event) {
-      case EntryAppended(:final channelId, :final streamId, :final entry):
+      case gossip.EntryAppended(
+        :final channelId,
+        :final streamId,
+        :final entry,
+      ):
         _onEntryAppended(channelId, streamId, entry);
-      case EntriesMerged(:final channelId, :final streamId, :final entries):
+      case gossip.EntriesMerged(
+        :final channelId,
+        :final streamId,
+        :final entries,
+      ):
         _onEntriesMerged(channelId, streamId, entries);
-      case ChannelCreated():
+      case gossip.ChannelCreated():
         _refreshChannels();
-      case ChannelRemoved():
+      case gossip.ChannelRemoved():
         _refreshChannels();
-      case PeerStatusChanged(:final peerId, :final newStatus):
+      case gossip.PeerStatusChanged(:final peerId, :final newStatus):
         _updatePeerStatus(peerId, newStatus);
       default:
         break;
@@ -94,9 +105,9 @@ class ChatController extends ChangeNotifier {
   }
 
   void _onEntryAppended(
-    ChannelId channelId,
-    StreamId streamId,
-    LogEntry entry,
+    gossip.ChannelId channelId,
+    gossip.StreamId streamId,
+    gossip.LogEntry entry,
   ) {
     if (streamId == StreamIds.messages) {
       _refreshChannels();
@@ -111,9 +122,9 @@ class ChatController extends ChangeNotifier {
   }
 
   void _onEntriesMerged(
-    ChannelId channelId,
-    StreamId streamId,
-    List<LogEntry> entries,
+    gossip.ChannelId channelId,
+    gossip.StreamId streamId,
+    List<gossip.LogEntry> entries,
   ) {
     if (streamId == StreamIds.messages) {
       _refreshChannels();
@@ -127,7 +138,7 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  void _updatePeerStatus(NodeId peerId, gossip.PeerStatus newStatus) {
+  void _updatePeerStatus(gossip.NodeId peerId, gossip.PeerStatus newStatus) {
     final index = _peers.indexWhere((p) => p.id == peerId);
     if (index >= 0) {
       _peers[index] = _peers[index].copyWith(status: _mapPeerStatus(newStatus));
@@ -239,8 +250,9 @@ class ChatController extends ChangeNotifier {
   }
 
   void _refreshPeers() {
-    final coordinatorPeers = _connectionService.peers;
-    _peers = coordinatorPeers
+    // Get peers via SyncService (not Coordinator directly)
+    final syncPeers = _syncService.peers;
+    _peers = syncPeers
         .map(
           (p) => PeerState(
             id: p.id,
@@ -260,12 +272,12 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<void> joinChannel(String channelIdValue) async {
-    final channelId = ChannelId(channelIdValue);
+    final channelId = gossip.ChannelId(channelIdValue);
     await _chatService.joinChannel(channelId);
     await _refreshChannels();
   }
 
-  Future<void> leaveChannel(ChannelId channelId) async {
+  Future<void> leaveChannel(gossip.ChannelId channelId) async {
     if (_currentChannelId == channelId) {
       _currentChannelId = null;
       _currentMessages = [];
@@ -275,7 +287,7 @@ class ChatController extends ChangeNotifier {
     await _refreshChannels();
   }
 
-  Future<void> selectChannel(ChannelId channelId) async {
+  Future<void> selectChannel(gossip.ChannelId channelId) async {
     _currentChannelId = channelId;
     await _refreshCurrentMessages();
     await _refreshTypingUsers();

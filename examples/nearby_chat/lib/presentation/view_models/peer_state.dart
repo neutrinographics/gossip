@@ -1,11 +1,11 @@
-import 'package:gossip/gossip.dart';
+import 'package:gossip/gossip.dart' as gossip;
 
 /// Connection status for a peer in the UI.
 enum PeerConnectionStatus { connected, suspected, unreachable }
 
 /// UI state for a connected peer.
 class PeerState {
-  final NodeId id;
+  final gossip.NodeId id;
   final String displayName;
   final PeerConnectionStatus status;
 

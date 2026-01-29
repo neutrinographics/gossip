@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'controllers/chat_controller.dart';
-import 'ui/screens/screens.dart';
+import 'presentation/presentation.dart';
 
 class ChatApp extends StatelessWidget {
   final ChatController controller;

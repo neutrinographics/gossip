@@ -4,12 +4,16 @@ import 'dart:developer' as developer;
 import 'package:gossip/gossip.dart';
 import 'package:gossip_nearby/gossip_nearby.dart';
 
+import '../services/connection_service.dart';
+import '../services/sync_service.dart';
+
 /// Service for logging all metrics, events, and errors from gossip and gossip_nearby.
 ///
 /// This provides comprehensive observability for debugging the chat application.
+/// It's a cross-cutting concern in the application layer.
 class DebugLogger {
-  final Coordinator _coordinator;
-  final NearbyTransport _transport;
+  final SyncService _syncService;
+  final ConnectionService _connectionService;
 
   StreamSubscription<DomainEvent>? _domainEventSubscription;
   StreamSubscription<SyncError>? _syncErrorSubscription;
@@ -18,26 +22,28 @@ class DebugLogger {
   Timer? _metricsTimer;
 
   DebugLogger({
-    required Coordinator coordinator,
-    required NearbyTransport transport,
-  }) : _coordinator = coordinator,
-       _transport = transport;
+    required SyncService syncService,
+    required ConnectionService connectionService,
+  }) : _syncService = syncService,
+       _connectionService = connectionService;
 
   /// Starts logging all events, errors, and metrics.
   void start() {
     _log('DEBUG', 'DebugLogger started');
 
-    // Subscribe to Coordinator domain events
-    _domainEventSubscription = _coordinator.events.listen(_onDomainEvent);
+    // Subscribe to domain events via SyncService
+    _domainEventSubscription = _syncService.events.listen(_onDomainEvent);
 
-    // Subscribe to Coordinator sync errors
-    _syncErrorSubscription = _coordinator.errors.listen(_onSyncError);
+    // Subscribe to sync errors via SyncService
+    _syncErrorSubscription = _syncService.errors.listen(_onSyncError);
 
-    // Subscribe to NearbyTransport connection errors
-    _connectionErrorSubscription = _transport.errors.listen(_onConnectionError);
+    // Subscribe to connection errors via ConnectionService
+    _connectionErrorSubscription = _connectionService.errors.listen(
+      _onConnectionError,
+    );
 
-    // Subscribe to NearbyTransport peer events
-    _peerEventSubscription = _transport.peerEvents.listen(_onPeerEvent);
+    // Subscribe to peer events via ConnectionService
+    _peerEventSubscription = _connectionService.peerEvents.listen(_onPeerEvent);
 
     // Start periodic metrics logging
     _metricsTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -59,7 +65,7 @@ class DebugLogger {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Domain Events (Coordinator)
+  // Domain Events
   // ─────────────────────────────────────────────────────────────
 
   void _onDomainEvent(DomainEvent event) {
@@ -159,7 +165,7 @@ class DebugLogger {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Sync Errors (Coordinator)
+  // Sync Errors
   // ─────────────────────────────────────────────────────────────
 
   void _onSyncError(SyncError error) {
@@ -204,7 +210,7 @@ class DebugLogger {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Connection Errors (NearbyTransport)
+  // Connection Errors
   // ─────────────────────────────────────────────────────────────
 
   void _onConnectionError(ConnectionError error) {
@@ -236,7 +242,7 @@ class DebugLogger {
   }
 
   // ─────────────────────────────────────────────────────────────
-  // Peer Events (NearbyTransport)
+  // Peer Events
   // ─────────────────────────────────────────────────────────────
 
   void _onPeerEvent(PeerEvent event) {
@@ -253,17 +259,17 @@ class DebugLogger {
   // ─────────────────────────────────────────────────────────────
 
   void _logMetrics() {
-    _logCoordinatorMetrics();
-    _logNearbyMetrics();
+    _logSyncMetrics();
+    _logConnectionMetrics();
     _logPeerMetrics();
   }
 
-  Future<void> _logCoordinatorMetrics() async {
+  Future<void> _logSyncMetrics() async {
     try {
-      final health = await _coordinator.getHealth();
-      final usage = await _coordinator.getResourceUsage();
+      final health = await _syncService.getHealth();
+      final usage = await _syncService.getResourceUsage();
 
-      _log('METRICS', '=== Coordinator Health ===');
+      _log('METRICS', '=== Sync Health ===');
       _log('METRICS', '  State: ${health.state}');
       _log('METRICS', '  Local node: ${_shortId(health.localNode.value)}');
       _log('METRICS', '  Incarnation: ${health.incarnation}');
@@ -278,13 +284,13 @@ class DebugLogger {
         '  Total storage: ${_formatBytes(usage.totalStorageBytes)}',
       );
     } catch (e) {
-      _log('METRICS', 'Failed to get coordinator metrics: $e');
+      _log('METRICS', 'Failed to get sync metrics: $e');
     }
   }
 
-  void _logNearbyMetrics() {
-    final metrics = _transport.metrics;
-    _log('METRICS', '=== Nearby Transport Metrics ===');
+  void _logConnectionMetrics() {
+    final metrics = _connectionService.metrics;
+    _log('METRICS', '=== Connection Metrics ===');
     _log('METRICS', '  Connected peers: ${metrics.connectedPeerCount}');
     _log('METRICS', '  Pending handshakes: ${metrics.pendingHandshakeCount}');
     _log(
@@ -303,12 +309,12 @@ class DebugLogger {
       'METRICS',
       '  Avg handshake duration: ${metrics.averageHandshakeDuration.inMilliseconds}ms',
     );
-    _log('METRICS', '  Is advertising: ${_transport.isAdvertising}');
-    _log('METRICS', '  Is discovering: ${_transport.isDiscovering}');
+    _log('METRICS', '  Is advertising: ${_connectionService.isAdvertising}');
+    _log('METRICS', '  Is discovering: ${_connectionService.isDiscovering}');
   }
 
   void _logPeerMetrics() {
-    final peers = _coordinator.peers;
+    final peers = _syncService.peers;
     if (peers.isEmpty) {
       _log('METRICS', '=== Peer Metrics ===');
       _log('METRICS', '  No peers registered');
@@ -317,7 +323,7 @@ class DebugLogger {
 
     _log('METRICS', '=== Peer Metrics (${peers.length} peers) ===');
     for (final peer in peers) {
-      final metrics = _coordinator.getPeerMetrics(peer.id);
+      final metrics = _syncService.getPeerMetrics(peer.id);
       _log('METRICS', '  Peer ${_shortId(peer.id.value)}:');
       _log('METRICS', '    Status: ${peer.status}');
       _log('METRICS', '    Incarnation: ${peer.incarnation ?? 'unknown'}');

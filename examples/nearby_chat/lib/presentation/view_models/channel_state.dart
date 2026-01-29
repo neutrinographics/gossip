@@ -1,8 +1,8 @@
-import 'package:gossip/gossip.dart';
+import 'package:gossip/gossip.dart' as gossip;
 
 /// UI state for a chat channel.
 class ChannelState {
-  final ChannelId id;
+  final gossip.ChannelId id;
   final String name;
   final int unreadCount;
   final String? lastMessage;
