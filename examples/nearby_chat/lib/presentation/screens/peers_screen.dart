@@ -22,7 +22,7 @@ class PeersScreen extends StatelessWidget {
                     ? _buildEmptyState()
                     : _buildPeerList(),
               ),
-              _buildControls(),
+              _buildControls(context),
             ],
           ),
         );
@@ -72,7 +72,7 @@ class PeersScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildControls() {
+  Widget _buildControls(BuildContext context) {
     final status = controller.connectionStatus;
     final isActive =
         status == ConnectionStatus.discovering ||
@@ -91,7 +91,7 @@ class PeersScreen extends StatelessWidget {
           child: ElevatedButton.icon(
             onPressed: isActive
                 ? controller.stopNetworking
-                : controller.startNetworking,
+                : () => _handleStartNetworking(context),
             icon: Icon(isActive ? Icons.stop : Icons.play_arrow),
             label: Text(isActive ? 'Stop Discovery' : 'Start Discovery'),
             style: ElevatedButton.styleFrom(
@@ -103,6 +103,21 @@ class PeersScreen extends StatelessWidget {
         ),
       ),
     );
+  }
+
+  Future<void> _handleStartNetworking(BuildContext context) async {
+    final success = await controller.startNetworking();
+    if (!success && context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Permissions required for Nearby Connections. '
+            'Please grant Bluetooth and Location permissions.',
+          ),
+          duration: Duration(seconds: 4),
+        ),
+      );
+    }
   }
 }
 

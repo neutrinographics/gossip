@@ -5,6 +5,7 @@ import 'package:gossip/gossip.dart' as gossip;
 import 'package:gossip_nearby/gossip_nearby.dart';
 
 import '../../application/services/services.dart';
+import '../../infrastructure/services/permission_service.dart';
 import '../view_models/view_models.dart';
 
 /// Connection status for the transport layer.
@@ -18,6 +19,7 @@ class ChatController extends ChangeNotifier {
   final ChatService _chatService;
   final ConnectionService _connectionService;
   final SyncService _syncService;
+  final PermissionService _permissionService = PermissionService();
 
   List<ChannelState> _channels = [];
   List<PeerState> _peers = [];
@@ -325,10 +327,23 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  Future<void> startNetworking() async {
-    await _connectionService.startAdvertising();
-    await _connectionService.startDiscovery();
-    _updateConnectionStatus();
+  Future<bool> startNetworking() async {
+    // Request permissions first
+    final hasPermissions = await _permissionService.requestNearbyPermissions();
+    if (!hasPermissions) {
+      return false;
+    }
+
+    try {
+      await _connectionService.startAdvertising();
+      await _connectionService.startDiscovery();
+      _updateConnectionStatus();
+      return true;
+    } catch (e) {
+      // Log error but don't crash
+      debugPrint('Failed to start networking: $e');
+      return false;
+    }
   }
 
   Future<void> stopNetworking() async {
