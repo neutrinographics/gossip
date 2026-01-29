@@ -15,11 +15,12 @@ void main() async {
   final nodeId = NodeId(const Uuid().v4());
   final deviceName = await _getDeviceName();
 
-  // Create NearbyTransport
+  // Create NearbyTransport with logging enabled
   final transport = NearbyTransport(
     localNodeId: nodeId,
     serviceId: ServiceId('com.example.nearbychat'),
     displayName: deviceName,
+    onLog: nearbyLogCallback,
   );
 
   // Create Coordinator with in-memory storage
@@ -49,6 +50,13 @@ void main() async {
     connectionService: connectionService,
     coordinator: coordinator,
   );
+
+  // Create and start debug logger for observability
+  final debugLogger = DebugLogger(
+    coordinator: coordinator,
+    transport: transport,
+  );
+  debugLogger.start();
 
   // Start the coordinator
   await coordinator.start();
