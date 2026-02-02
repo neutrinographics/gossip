@@ -1,15 +1,24 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../infrastructure/services/permission_service.dart';
 import '../controllers/chat_controller.dart';
+import '../theme/theme.dart';
 import '../view_models/view_models.dart';
+import '../widgets/widgets.dart';
 import 'chat_screen.dart';
 import 'peers_screen.dart';
+import 'qr_scanner_screen.dart';
 
 class ChannelListScreen extends StatelessWidget {
   final ChatController controller;
+  final ThemeController themeController;
 
-  const ChannelListScreen({super.key, required this.controller});
+  const ChannelListScreen({
+    super.key,
+    required this.controller,
+    required this.themeController,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -20,6 +29,15 @@ class ChannelListScreen extends StatelessWidget {
           appBar: AppBar(
             title: const Text('Nearby Chat'),
             actions: [
+              IconButton(
+                icon: Icon(
+                  themeController.isDarkMode(context)
+                      ? Icons.light_mode
+                      : Icons.dark_mode,
+                ),
+                onPressed: () => themeController.toggleTheme(context),
+                tooltip: 'Toggle theme',
+              ),
               IconButton(
                 icon: const Icon(Icons.people),
                 onPressed: () => _openPeersScreen(context),
@@ -33,25 +51,34 @@ class ChannelListScreen extends StatelessWidget {
                     ? _buildEmptyState()
                     : _buildChannelList(context),
               ),
-              _buildStatusBar(),
+              ConnectionStatusBar(
+                status: controller.connectionStatus,
+                peerCount: controller.peers.length,
+                onStart: controller.startNetworking,
+                onStop: controller.stopNetworking,
+              ),
             ],
           ),
-          floatingActionButton: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              FloatingActionButton.extended(
-                heroTag: 'join',
-                onPressed: () => _showJoinChannelDialog(context),
-                icon: const Icon(Icons.login),
-                label: const Text('Join'),
-              ),
-              const SizedBox(width: 12),
-              FloatingActionButton(
-                heroTag: 'create',
-                onPressed: () => _showCreateChannelDialog(context),
-                child: const Icon(Icons.add),
-              ),
-            ],
+          floatingActionButton: Padding(
+            // Offset to float above the ConnectionStatusBar
+            padding: const EdgeInsets.only(bottom: 56),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton.extended(
+                  heroTag: 'join',
+                  onPressed: () => _showJoinChannelDialog(context),
+                  icon: const Icon(Icons.login),
+                  label: const Text('Join'),
+                ),
+                const SizedBox(width: 12),
+                FloatingActionButton(
+                  heroTag: 'create',
+                  onPressed: () => _showCreateChannelDialog(context),
+                  child: const Icon(Icons.add),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -59,23 +86,10 @@ class ChannelListScreen extends StatelessWidget {
   }
 
   Widget _buildEmptyState() {
-    return const Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.chat_bubble_outline, size: 64, color: Colors.grey),
-          SizedBox(height: 16),
-          Text(
-            'No channels yet',
-            style: TextStyle(fontSize: 18, color: Colors.grey),
-          ),
-          SizedBox(height: 8),
-          Text(
-            'Create a channel or join an existing one',
-            style: TextStyle(color: Colors.grey),
-          ),
-        ],
-      ),
+    return const AnimatedEmptyState(
+      icon: Icons.chat_bubble_outline,
+      title: 'No channels yet',
+      subtitle: 'Create a channel or join an existing one',
     );
   }
 
@@ -94,49 +108,6 @@ class ChannelListScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildStatusBar() {
-    final status = controller.connectionStatus;
-    final peerCount = controller.peers.length;
-
-    IconData icon;
-    Color color;
-    String text;
-
-    switch (status) {
-      case ConnectionStatus.connected:
-        icon = Icons.circle;
-        color = Colors.green;
-        text = '$peerCount peer${peerCount == 1 ? '' : 's'} connected';
-      case ConnectionStatus.discovering:
-        icon = Icons.search;
-        color = Colors.orange;
-        text = 'Discovering...';
-      case ConnectionStatus.advertising:
-        icon = Icons.broadcast_on_personal;
-        color = Colors.blue;
-        text = 'Advertising...';
-      case ConnectionStatus.disconnected:
-        icon = Icons.circle_outlined;
-        color = Colors.grey;
-        text = 'Disconnected';
-    }
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        border: Border(top: BorderSide(color: Colors.grey.shade300)),
-      ),
-      child: Row(
-        children: [
-          Icon(icon, size: 12, color: color),
-          const SizedBox(width: 8),
-          Text(text, style: TextStyle(color: Colors.grey.shade700)),
-        ],
-      ),
-    );
-  }
-
   void _openChannel(BuildContext context, ChannelState channel) {
     controller.selectChannel(channel.id);
     Navigator.of(context).push(
@@ -151,83 +122,67 @@ class ChannelListScreen extends StatelessWidget {
   }
 
   void _showCreateChannelDialog(BuildContext context) {
-    final textController = TextEditingController();
-
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Create Channel'),
-        content: TextField(
-          controller: textController,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Channel name',
-            hintText: 'e.g., General',
-          ),
-          onSubmitted: (_) {
-            if (textController.text.isNotEmpty) {
-              controller.createChannel(textController.text);
-              Navigator.of(context).pop();
-            }
-          },
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (textController.text.isNotEmpty) {
-                controller.createChannel(textController.text);
-                Navigator.of(context).pop();
-              }
-            },
-            child: const Text('Create'),
-          ),
-        ],
+      builder: (_) => TextInputDialog(
+        title: 'Create Channel',
+        labelText: 'Channel name',
+        hintText: 'e.g., General',
+        confirmText: 'Create',
+        onConfirm: controller.createChannel,
       ),
     );
   }
 
   void _showJoinChannelDialog(BuildContext context) {
-    final textController = TextEditingController();
-
     showDialog(
       context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Join Channel'),
-        content: TextField(
-          controller: textController,
-          autofocus: true,
-          decoration: const InputDecoration(
-            labelText: 'Channel ID',
-            hintText: 'Paste the channel ID here',
-          ),
-          onSubmitted: (_) {
-            if (textController.text.isNotEmpty) {
-              controller.joinChannel(textController.text);
-              Navigator.of(context).pop();
-            }
-          },
+      builder: (dialogContext) => TextInputDialog(
+        title: 'Join Channel',
+        labelText: 'Channel ID',
+        hintText: 'Paste the channel ID here',
+        confirmText: 'Join',
+        onConfirm: controller.joinChannel,
+        extraContent: OutlinedButton.icon(
+          onPressed: () => _scanQrCode(context, dialogContext),
+          icon: const Icon(Icons.qr_code_scanner),
+          label: const Text('Scan QR Code'),
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              if (textController.text.isNotEmpty) {
-                controller.joinChannel(textController.text);
-                Navigator.of(context).pop();
-              }
-            },
-            child: const Text('Join'),
-          ),
-        ],
       ),
     );
+  }
+
+  Future<void> _scanQrCode(
+    BuildContext context,
+    BuildContext dialogContext,
+  ) async {
+    // Request camera permission
+    final permissionService = PermissionService();
+    final hasPermission = await permissionService.requestCameraPermission();
+    if (!hasPermission) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Camera permission is required')),
+        );
+      }
+      return;
+    }
+
+    // Close the dialog first
+    if (dialogContext.mounted) {
+      Navigator.of(dialogContext).pop();
+    }
+
+    // Open scanner
+    if (context.mounted) {
+      final channelId = await Navigator.of(context).push<String>(
+        MaterialPageRoute(builder: (_) => const QrScannerScreen()),
+      );
+
+      if (channelId != null) {
+        controller.joinChannel(channelId);
+      }
+    }
   }
 
   void _confirmLeaveChannel(BuildContext context, ChannelState channel) {
@@ -279,16 +234,33 @@ class _ChannelTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
     return ListTile(
-      leading: const CircleAvatar(child: Icon(Icons.tag)),
+      leading: Hero(
+        tag: 'channel_icon_${channel.id.value}',
+        child: NodeAvatar(
+          identifier: channel.id.value,
+          displayText: channel.name,
+          radius: 20,
+        ),
+      ),
       title: Row(
         children: [
-          Expanded(child: Text(channel.name)),
+          Expanded(
+            child: Hero(
+              tag: 'channel_name_${channel.id.value}',
+              child: Material(
+                color: Colors.transparent,
+                child: Text(channel.name, style: theme.textTheme.bodyLarge),
+              ),
+            ),
+          ),
           if (channel.unreadCount > 0)
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.primary,
+                color: theme.colorScheme.primary,
                 borderRadius: BorderRadius.circular(12),
               ),
               child: Text(

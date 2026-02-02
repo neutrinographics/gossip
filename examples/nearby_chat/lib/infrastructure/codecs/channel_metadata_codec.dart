@@ -1,5 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
+
+import 'package:flutter/foundation.dart';
 
 import '../../domain/entities/channel_metadata.dart';
 
@@ -25,14 +26,47 @@ class ChannelMetadataCodec {
   ///
   /// Returns `null` if the bytes are not valid channel metadata.
   ChannelMetadata? decode(Uint8List bytes) {
+    if (bytes.isEmpty) return null;
+
+    // Decode UTF-8
+    final String jsonStr;
     try {
-      final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
-      if (json['type'] != _type) return null;
-      return ChannelMetadata(
-        name: json['name'] as String,
-        createdAt: DateTime.parse(json['createdAt'] as String),
+      jsonStr = utf8.decode(bytes);
+    } on FormatException catch (e) {
+      debugPrint('ChannelMetadataCodec: Invalid UTF-8 encoding: $e');
+      return null;
+    }
+
+    // Parse JSON
+    final Object? parsed;
+    try {
+      parsed = jsonDecode(jsonStr);
+    } on FormatException catch (e) {
+      debugPrint('ChannelMetadataCodec: Invalid JSON: $e');
+      return null;
+    }
+
+    if (parsed is! Map<String, dynamic>) {
+      debugPrint(
+        'ChannelMetadataCodec: Expected JSON object, got ${parsed.runtimeType}',
       );
-    } catch (_) {
+      return null;
+    }
+
+    // Check type discriminator
+    if (parsed['type'] != _type) return null;
+
+    // Extract fields with validation
+    try {
+      return ChannelMetadata(
+        name: parsed['name'] as String,
+        createdAt: DateTime.parse(parsed['createdAt'] as String),
+      );
+    } on TypeError catch (e) {
+      debugPrint('ChannelMetadataCodec: Missing or invalid field type: $e');
+      return null;
+    } on FormatException catch (e) {
+      debugPrint('ChannelMetadataCodec: Invalid date format: $e');
       return null;
     }
   }

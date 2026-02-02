@@ -8,9 +8,18 @@ environment:
 workspace:
   - packages/gossip
   - packages/gossip_nearby
+  - packages/gossip_ble
 
 dev_dependencies:
   melos: ^7.4.0
+
+dependency_overrides:
+  bluetooth_low_energy_platform_interface:
+    path: /Users/joel/git/neutrinographics/bluetooth_low_energy/bluetooth_low_energy_platform_interface
+  bluetooth_low_energy_android:
+    path: /Users/joel/git/neutrinographics/bluetooth_low_energy/bluetooth_low_energy_android
+  bluetooth_low_energy_darwin:
+    path: /Users/joel/git/neutrinographics/bluetooth_low_energy/bluetooth_low_energy_darwin
 
 melos:
   scripts:

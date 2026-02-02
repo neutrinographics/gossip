@@ -41,6 +41,27 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "2.13.0"
+  bluetooth_low_energy_android:
+    dependency: "direct overridden"
+    description:
+      path: "/Users/joel/git/neutrinographics/bluetooth_low_energy/bluetooth_low_energy_android"
+      relative: false
+    source: path
+    version: "7.0.0-dev.4"
+  bluetooth_low_energy_darwin:
+    dependency: "direct overridden"
+    description:
+      path: "/Users/joel/git/neutrinographics/bluetooth_low_energy/bluetooth_low_energy_darwin"
+      relative: false
+    source: path
+    version: "7.0.0-dev.4"
+  bluetooth_low_energy_platform_interface:
+    dependency: "direct overridden"
+    description:
+      path: "/Users/joel/git/neutrinographics/bluetooth_low_energy/bluetooth_low_energy_platform_interface"
+      relative: false
+    source: path
+    version: "7.0.0-dev.4"
   boolean_selector:
     dependency: transitive
     description:
@@ -219,6 +240,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "4.1.2"
+  hybrid_logging:
+    dependency: transitive
+    description:
+      name: hybrid_logging
+      sha256: "54248d52ce68c14702a42fbc4083bac5c6be30f6afad8a41be4bbadd197b8af5"
+      url: "https://pub.dev"
+    source: hosted
+    version: "1.0.0"
   io:
     dependency: transitive
     description:
@@ -387,6 +416,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.6"
+  plugin_platform_interface:
+    dependency: transitive
+    description:
+      name: plugin_platform_interface
+      sha256: "4820fbfdb9478b1ebae27888254d445073732dae3d6ea81f0b7e06d5dedc3f02"
+      url: "https://pub.dev"
+    source: hosted
+    version: "2.1.8"
   pool:
     dependency: transitive
     description:

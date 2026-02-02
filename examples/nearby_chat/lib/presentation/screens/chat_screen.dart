@@ -3,6 +3,13 @@ import 'package:flutter/services.dart';
 
 import '../controllers/chat_controller.dart';
 import '../view_models/view_models.dart';
+import '../widgets/animated_empty_state.dart';
+import '../widgets/message_bubble.dart';
+import '../widgets/message_input_bar.dart';
+import '../widgets/new_messages_pill.dart';
+import '../widgets/node_avatar.dart';
+import '../widgets/typing_indicator.dart';
+import 'qr_code_dialog.dart';
 
 class ChatScreen extends StatefulWidget {
   final ChatController controller;
@@ -14,34 +21,61 @@ class ChatScreen extends StatefulWidget {
 }
 
 class _ChatScreenState extends State<ChatScreen> {
-  final _textController = TextEditingController();
   final _scrollController = ScrollController();
+  int _lastSeenMessageCount = 0;
+  int _newMessagesCount = 0;
+  bool _isNearBottom = true;
 
   @override
   void initState() {
     super.initState();
-    _textController.addListener(_onTextChanged);
+    _scrollController.addListener(_onScroll);
+    widget.controller.addListener(_onMessagesChanged);
   }
 
   @override
   void dispose() {
-    _textController.removeListener(_onTextChanged);
-    _textController.dispose();
+    _scrollController.removeListener(_onScroll);
+    widget.controller.removeListener(_onMessagesChanged);
     _scrollController.dispose();
     super.dispose();
   }
 
-  void _onTextChanged() {
-    final hasText = _textController.text.isNotEmpty;
-    widget.controller.setTyping(hasText);
+  void _onScroll() {
+    if (!_scrollController.hasClients) return;
+
+    final position = _scrollController.position;
+    final isNearBottom = position.pixels >= position.maxScrollExtent - 100;
+
+    if (isNearBottom != _isNearBottom) {
+      setState(() {
+        _isNearBottom = isNearBottom;
+        if (isNearBottom) {
+          _newMessagesCount = 0;
+          _lastSeenMessageCount = widget.controller.currentMessages.length;
+        }
+      });
+    }
   }
 
-  void _sendMessage() {
-    final text = _textController.text;
-    if (text.trim().isEmpty) return;
+  void _onMessagesChanged() {
+    final currentCount = widget.controller.currentMessages.length;
+    if (currentCount > _lastSeenMessageCount && !_isNearBottom) {
+      setState(() {
+        _newMessagesCount = currentCount - _lastSeenMessageCount;
+      });
+    } else if (_isNearBottom) {
+      _lastSeenMessageCount = currentCount;
+      if (_newMessagesCount > 0) {
+        setState(() {
+          _newMessagesCount = 0;
+        });
+      }
+    }
+  }
 
+  void _onSendMessage(String text) {
     widget.controller.sendMessage(text);
-    _textController.clear();
     _scrollToBottom();
   }
 
@@ -67,6 +101,17 @@ class _ChatScreenState extends State<ChatScreen> {
     }
   }
 
+  void _showQrCode() {
+    final channel = widget.controller.currentChannel;
+    if (channel != null) {
+      QrCodeDialog.show(
+        context,
+        channelId: channel.id.value,
+        channelName: channel.name,
+      );
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -79,17 +124,45 @@ class _ChatScreenState extends State<ChatScreen> {
           );
         }
 
+        final theme = Theme.of(context);
+
         return Scaffold(
           appBar: AppBar(
-            leading: IconButton(
-              icon: const Icon(Icons.arrow_back),
-              onPressed: () {
-                widget.controller.clearCurrentChannel();
-                Navigator.of(context).pop();
-              },
+            leadingWidth: 96,
+            leading: Row(
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back),
+                  onPressed: () {
+                    widget.controller.clearCurrentChannel();
+                    Navigator.of(context).pop();
+                  },
+                  tooltip: 'Back',
+                ),
+                Hero(
+                  tag: 'channel_icon_${channel.id.value}',
+                  child: NodeAvatar(
+                    identifier: channel.id.value,
+                    displayText: channel.name,
+                    radius: 16,
+                  ),
+                ),
+              ],
             ),
-            title: Text('# ${channel.name}'),
+            titleSpacing: 8,
+            title: Hero(
+              tag: 'channel_name_${channel.id.value}',
+              child: Material(
+                color: Colors.transparent,
+                child: Text(channel.name, style: theme.textTheme.titleLarge),
+              ),
+            ),
             actions: [
+              IconButton(
+                icon: const Icon(Icons.qr_code),
+                onPressed: _showQrCode,
+                tooltip: 'Share channel',
+              ),
               IconButton(
                 icon: const Icon(Icons.info_outline),
                 onPressed: _copyChannelId,
@@ -99,9 +172,37 @@ class _ChatScreenState extends State<ChatScreen> {
           ),
           body: Column(
             children: [
-              Expanded(child: _buildMessageList()),
-              _buildTypingIndicator(),
-              _buildMessageInput(),
+              Expanded(
+                child: Stack(
+                  children: [
+                    _buildMessageList(),
+                    Positioned(
+                      left: 0,
+                      right: 0,
+                      bottom: 8,
+                      child: Center(
+                        child: NewMessagesPill(
+                          count: _newMessagesCount,
+                          visible: _newMessagesCount > 0,
+                          onTap: _scrollToBottom,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              TypingIndicator(
+                typingUserNames: widget.controller.typingUsers
+                    .map(
+                      (nodeId) => widget.controller.getTypingUserName(nodeId),
+                    )
+                    .whereType<String>()
+                    .toList(),
+              ),
+              MessageInputBar(
+                onSend: _onSendMessage,
+                onTypingChanged: widget.controller.setTyping,
+              ),
             ],
           ),
         );
@@ -113,160 +214,29 @@ class _ChatScreenState extends State<ChatScreen> {
     final messages = widget.controller.currentMessages;
 
     if (messages.isEmpty) {
-      return const Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.chat_bubble_outline, size: 48, color: Colors.grey),
-            SizedBox(height: 16),
-            Text('No messages yet', style: TextStyle(color: Colors.grey)),
-            SizedBox(height: 8),
-            Text(
-              'Be the first to say something!',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-          ],
-        ),
+      return const AnimatedEmptyState(
+        icon: Icons.chat_bubble_outline,
+        iconSize: 48,
+        title: 'No messages yet',
+        subtitle: 'Be the first to say something!',
       );
     }
 
     return ListView.builder(
       controller: _scrollController,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 8),
       itemCount: messages.length,
       itemBuilder: (context, index) {
         final message = messages[index];
-        return _MessageBubble(message: message);
+        final groupPosition = calculateGroupPosition(messages, index);
+        return MessageBubble(
+          message: message,
+          groupPosition: groupPosition,
+          onRetry: message.deliveryStatus == MessageDeliveryStatus.failed
+              ? () => widget.controller.retryMessage(message.id)
+              : null,
+        );
       },
     );
-  }
-
-  Widget _buildTypingIndicator() {
-    final typingText = widget.controller.getTypingIndicatorText();
-    if (typingText.isEmpty) return const SizedBox.shrink();
-
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      alignment: Alignment.centerLeft,
-      child: Text(
-        typingText,
-        style: TextStyle(
-          color: Colors.grey.shade600,
-          fontStyle: FontStyle.italic,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildMessageInput() {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: Colors.grey.shade300)),
-      ),
-      child: SafeArea(
-        child: Row(
-          children: [
-            Expanded(
-              child: TextField(
-                controller: _textController,
-                decoration: const InputDecoration(
-                  hintText: 'Type a message...',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 12,
-                  ),
-                ),
-                textInputAction: TextInputAction.send,
-                onSubmitted: (_) => _sendMessage(),
-              ),
-            ),
-            const SizedBox(width: 8),
-            IconButton.filled(
-              onPressed: _sendMessage,
-              icon: const Icon(Icons.send),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _MessageBubble extends StatelessWidget {
-  final MessageState message;
-
-  const _MessageBubble({required this.message});
-
-  @override
-  Widget build(BuildContext context) {
-    final isLocal = message.isLocal;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
-        mainAxisAlignment: isLocal
-            ? MainAxisAlignment.end
-            : MainAxisAlignment.start,
-        children: [
-          if (!isLocal) const SizedBox(width: 48),
-          Flexible(
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
-              decoration: BoxDecoration(
-                color: isLocal
-                    ? Theme.of(context).colorScheme.primary
-                    : Colors.grey.shade200,
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Column(
-                crossAxisAlignment: isLocal
-                    ? CrossAxisAlignment.end
-                    : CrossAxisAlignment.start,
-                children: [
-                  if (!isLocal)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 4),
-                      child: Text(
-                        message.senderName,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                          color: Colors.grey.shade700,
-                        ),
-                      ),
-                    ),
-                  Text(
-                    message.text,
-                    style: TextStyle(
-                      color: isLocal ? Colors.white : Colors.black,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    _formatTime(message.sentAt),
-                    style: TextStyle(
-                      fontSize: 10,
-                      color: isLocal
-                          ? Colors.white.withValues(alpha: 0.7)
-                          : Colors.grey.shade600,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          if (isLocal) const SizedBox(width: 48),
-        ],
-      ),
-    );
-  }
-
-  String _formatTime(DateTime time) {
-    final hour = time.hour.toString().padLeft(2, '0');
-    final minute = time.minute.toString().padLeft(2, '0');
-    return '$hour:$minute';
   }
 }

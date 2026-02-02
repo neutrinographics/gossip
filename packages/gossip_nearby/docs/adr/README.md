@@ -15,6 +15,7 @@ An ADR captures an important architectural decision along with its context and c
 | [003](003-error-streaming-pattern.md) | Error Streaming Pattern | Accepted |
 | [004](004-type-prefixed-wire-protocol.md) | Type-Prefixed Wire Protocol | Accepted |
 | [005](005-dependency-inversion-nearby-port.md) | Dependency Inversion via NearbyPort Interface | Accepted |
+| [006](006-deterministic-connection-initiation.md) | Deterministic Connection Initiation via NodeId Comparison | Accepted |
 
 ## Additional Design Decisions
 

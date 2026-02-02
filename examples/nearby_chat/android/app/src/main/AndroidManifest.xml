@@ -1,4 +1,5 @@
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!-- Nearby Connections permissions -->
     <uses-permission android:name="android.permission.BLUETOOTH" />
@@ -15,7 +16,9 @@
     <application
         android:label="Nearby Chat"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:allowNativeHeapPointerTagging="false"
+        tools:ignore="EnabledELF16KBPageSize">
         <activity
             android:name=".MainActivity"
             android:exported="true"

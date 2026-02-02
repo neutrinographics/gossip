@@ -37,6 +37,14 @@ android {
             signingConfig = signingConfigs.getByName("debug")
         }
     }
+
+    packagingOptions {
+        jniLibs {
+            // Use compressed native libraries to avoid 16KB page size alignment issues
+            // with third-party dependencies (nearby_connections, mobile_scanner)
+            useLegacyPackaging = true
+        }
+    }
 }
 
 flutter {

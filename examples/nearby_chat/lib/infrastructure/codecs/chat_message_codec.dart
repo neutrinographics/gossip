@@ -1,6 +1,6 @@
 import 'dart:convert';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:gossip/gossip.dart';
 
 import '../../domain/entities/chat_message.dart';
@@ -30,17 +30,50 @@ class ChatMessageCodec {
   ///
   /// Returns `null` if the bytes are not a valid chat message.
   ChatMessage? decode(Uint8List bytes) {
+    if (bytes.isEmpty) return null;
+
+    // Decode UTF-8
+    final String jsonStr;
     try {
-      final json = jsonDecode(utf8.decode(bytes)) as Map<String, dynamic>;
-      if (json['type'] != _type) return null;
-      return ChatMessage(
-        id: json['id'] as String,
-        text: json['text'] as String,
-        senderName: json['senderName'] as String,
-        senderNode: NodeId(json['senderNode'] as String),
-        sentAt: DateTime.parse(json['sentAt'] as String),
+      jsonStr = utf8.decode(bytes);
+    } on FormatException catch (e) {
+      debugPrint('ChatMessageCodec: Invalid UTF-8 encoding: $e');
+      return null;
+    }
+
+    // Parse JSON
+    final Object? parsed;
+    try {
+      parsed = jsonDecode(jsonStr);
+    } on FormatException catch (e) {
+      debugPrint('ChatMessageCodec: Invalid JSON: $e');
+      return null;
+    }
+
+    if (parsed is! Map<String, dynamic>) {
+      debugPrint(
+        'ChatMessageCodec: Expected JSON object, got ${parsed.runtimeType}',
       );
-    } catch (_) {
+      return null;
+    }
+
+    // Check type discriminator
+    if (parsed['type'] != _type) return null;
+
+    // Extract fields with validation
+    try {
+      return ChatMessage(
+        id: parsed['id'] as String,
+        text: parsed['text'] as String,
+        senderName: parsed['senderName'] as String,
+        senderNode: NodeId(parsed['senderNode'] as String),
+        sentAt: DateTime.parse(parsed['sentAt'] as String),
+      );
+    } on TypeError catch (e) {
+      debugPrint('ChatMessageCodec: Missing or invalid field type: $e');
+      return null;
+    } on FormatException catch (e) {
+      debugPrint('ChatMessageCodec: Invalid date format: $e');
       return null;
     }
   }

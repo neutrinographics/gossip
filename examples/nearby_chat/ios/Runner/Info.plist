@@ -32,7 +32,7 @@
 	<string>This app uses Bluetooth to discover and connect with nearby devices for peer-to-peer chat.</string>
 	<key>NSBonjourServices</key>
 	<array>
-		<string>_nearby._tcp</string>
+		<string>_nearbychat._tcp</string>
 	</array>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>This app uses the local network to communicate with nearby devices for peer-to-peer chat.</string>

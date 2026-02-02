@@ -21,6 +21,11 @@ typedef ServiceErrorCallback = void Function(String operation, Object error);
 /// This is an application layer service that orchestrates domain operations
 /// and delegates serialization to infrastructure codecs.
 class ChatService {
+  /// Retention duration for presence/typing events.
+  static const Duration _presenceRetention = Duration(seconds: 30);
+
+  /// How long a typing indicator is considered valid before expiring.
+  static const Duration _typingExpiration = Duration(seconds: 5);
   final Coordinator _coordinator;
   final NodeId _localNodeId;
   final String _displayName;
@@ -49,18 +54,18 @@ class ChatService {
     try {
       final channel = await _coordinator.createChannel(channelId);
 
-      // Create streams
+      // Create streams with appropriate retention policies
       await channel.getOrCreateStream(
         StreamIds.messages,
         retention: const KeepAllRetention(),
       );
       await channel.getOrCreateStream(
         StreamIds.presence,
-        retention: const KeepAllRetention(),
+        retention: TimeBasedRetention(_presenceRetention),
       );
       await channel.getOrCreateStream(
         StreamIds.metadata,
-        retention: const KeepAllRetention(),
+        retention: const CountBasedRetention(1),
       );
 
       // Store channel metadata
@@ -80,18 +85,18 @@ class ChatService {
     try {
       final channel = await _coordinator.createChannel(channelId);
 
-      // Ensure streams exist
+      // Ensure streams exist with appropriate retention policies
       await channel.getOrCreateStream(
         StreamIds.messages,
         retention: const KeepAllRetention(),
       );
       await channel.getOrCreateStream(
         StreamIds.presence,
-        retention: const KeepAllRetention(),
+        retention: TimeBasedRetention(_presenceRetention),
       );
       await channel.getOrCreateStream(
         StreamIds.metadata,
-        retention: const KeepAllRetention(),
+        retention: const CountBasedRetention(1),
       );
     } catch (e) {
       _onError?.call('joinChannel', e);
@@ -139,16 +144,26 @@ class ChatService {
   }
 
   /// Sends a message to a channel.
-  Future<void> sendMessage(ChannelId channelId, String text) async {
+  ///
+  /// If [messageId] is provided, it will be used as the message ID.
+  /// Otherwise, a new UUID will be generated.
+  ///
+  /// Note: This method only handles message sending. Clearing the typing
+  /// indicator is a presentation concern and should be handled by the caller.
+  Future<void> sendMessage(
+    ChannelId channelId,
+    String text, {
+    String? messageId,
+  }) async {
     try {
       final channel = _coordinator.getChannel(channelId);
       if (channel == null) {
         _onError?.call('sendMessage', 'Channel not found: $channelId');
-        return;
+        throw StateError('Channel not found: $channelId');
       }
 
       final message = ChatMessage(
-        id: _uuid.v4(),
+        id: messageId ?? _uuid.v4(),
         text: text,
         senderName: _displayName,
         senderNode: _localNodeId,
@@ -157,9 +172,6 @@ class ChatService {
 
       final messageStream = channel.getStream(StreamIds.messages);
       await messageStream.append(_messageCodec.encode(message));
-
-      // Clear typing indicator when sending
-      await setTyping(channelId, false);
     } catch (e) {
       _onError?.call('sendMessage', e);
       rethrow;
@@ -233,12 +245,11 @@ class ChatService {
 
       // Filter to only those currently typing (excluding self)
       final now = DateTime.now();
-      const expirationDuration = Duration(seconds: 5);
 
       typingState.removeWhere((nodeId, event) {
         if (nodeId == _localNodeId) return true;
         if (!event.isTyping) return true;
-        if (now.difference(event.timestamp) > expirationDuration) return true;
+        if (now.difference(event.timestamp) > _typingExpiration) return true;
         return false;
       });
 

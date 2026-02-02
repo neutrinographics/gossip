@@ -3,7 +3,6 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
-import 'package:gossip_nearby/src/application/observability/log_level.dart';
 import 'package:gossip_nearby/src/domain/errors/connection_error.dart';
 import 'package:gossip_nearby/src/domain/interfaces/nearby_port.dart';
 import 'package:gossip_nearby/src/domain/value_objects/endpoint_id.dart';
@@ -63,10 +62,11 @@ void main() {
       test('startAdvertising delegates to NearbyPort', () async {
         await transport.startAdvertising();
 
+        // Display name includes nodeId for connection tie-breaking
         verify(
           () => mockNearbyPort.startAdvertising(
             ServiceId('com.example.app'),
-            'Test Device',
+            'local-node|Test Device',
           ),
         ).called(1);
       });

@@ -11,7 +11,6 @@ import '../../domain/value_objects/endpoint.dart';
 import '../../domain/value_objects/endpoint_id.dart';
 import '../../infrastructure/codec/handshake_codec.dart'
     show HandshakeCodec, MessageType, WireFormat;
-import '../observability/log_level.dart';
 import '../observability/nearby_metrics.dart';
 
 /// Callback for receiving gossip messages.
@@ -119,10 +118,38 @@ class ConnectionService {
     }
   }
 
-  void _onEndpointDiscovered(EndpointId id, String displayName) {
-    _log(LogLevel.debug, 'Endpoint discovered: $id ($displayName)');
-    // Automatically request connection to discovered endpoints
-    unawaited(_nearbyPort.requestConnection(id));
+  void _onEndpointDiscovered(EndpointId id, String advertisedName) {
+    _log(LogLevel.debug, 'Endpoint discovered: $id ($advertisedName)');
+
+    if (_shouldInitiateConnection(advertisedName)) {
+      _log(LogLevel.debug, 'Initiating connection (we have smaller nodeId)');
+      unawaited(_nearbyPort.requestConnection(id));
+    } else {
+      _log(LogLevel.debug, 'Waiting for connection (they have smaller nodeId)');
+    }
+  }
+
+  /// Determines if this device should initiate the connection.
+  ///
+  /// When two devices discover each other simultaneously, both would try
+  /// to connect, causing race conditions. To avoid this, only the device
+  /// with the lexicographically smaller nodeId initiates the connection.
+  ///
+  /// The remote nodeId is encoded in the advertised name (format: "nodeId|displayName").
+  bool _shouldInitiateConnection(String advertisedName) {
+    final remoteNodeId = _parseNodeId(advertisedName);
+    if (remoteNodeId == null) {
+      _log(LogLevel.warning, 'Cannot parse nodeId from: $advertisedName');
+      return true; // Fall back to initiating connection
+    }
+    return _localNodeId.value.compareTo(remoteNodeId) < 0;
+  }
+
+  /// Parses the nodeId from an advertised name (format: "nodeId|displayName").
+  String? _parseNodeId(String advertisedName) {
+    final separatorIndex = advertisedName.indexOf('|');
+    if (separatorIndex == -1) return null;
+    return advertisedName.substring(0, separatorIndex);
   }
 
   void _onConnectionEstablished(EndpointId id) {
@@ -139,18 +166,46 @@ class ConnectionService {
     _log(LogLevel.debug, 'Sent handshake to $id');
   }
 
+  // Track message counts for diagnostics
+  int _totalMessagesReceived = 0;
+  int _handshakeMessagesReceived = 0;
+  int _gossipMessagesReceived = 0;
+  DateTime? _lastMessageTime;
+
   void _onPayloadReceived(EndpointId id, Uint8List bytes) {
     if (bytes.isEmpty) return;
 
-    _metrics.recordBytesReceived(bytes.length);
-    _log(LogLevel.trace, 'Received ${bytes.length} bytes from $id');
+    final now = DateTime.now();
+    _totalMessagesReceived++;
 
+    // Diagnostic: detect gaps in message flow
+    if (_lastMessageTime != null) {
+      final gap = now.difference(_lastMessageTime!);
+      if (gap.inSeconds > 2) {
+        _log(
+          LogLevel.warning,
+          'DIAGNOSTIC: Message gap of ${gap.inMilliseconds}ms detected '
+          '(total messages: $_totalMessagesReceived, '
+          'handshakes: $_handshakeMessagesReceived, '
+          'gossip: $_gossipMessagesReceived)',
+        );
+      }
+    }
+    _lastMessageTime = now;
+
+    _metrics.recordBytesReceived(bytes.length);
     final messageType = bytes[WireFormat.typeOffset];
+    _log(
+      LogLevel.trace,
+      'Received ${bytes.length} bytes from $id (type: 0x${messageType.toRadixString(16)})',
+    );
 
     switch (messageType) {
       case MessageType.handshake:
+        _handshakeMessagesReceived++;
         _handleHandshakeMessage(id, bytes);
       case MessageType.gossip:
+        _gossipMessagesReceived++;
         _handleGossipMessage(id, bytes);
       default:
         _log(LogLevel.warning, 'Unknown message type: $messageType from $id');

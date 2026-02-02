@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import '../controllers/chat_controller.dart';
 import '../view_models/view_models.dart';
+import '../widgets/animated_empty_state.dart';
+import '../widgets/node_avatar.dart';
+import '../widgets/signal_strength_indicator.dart';
 
 class PeersScreen extends StatelessWidget {
   final ChatController controller;
@@ -36,29 +39,12 @@ class PeersScreen extends StatelessWidget {
         status == ConnectionStatus.discovering ||
         status == ConnectionStatus.advertising;
 
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(
-            isSearching ? Icons.radar : Icons.people_outline,
-            size: 64,
-            color: Colors.grey,
-          ),
-          const SizedBox(height: 16),
-          Text(
-            isSearching ? 'Searching for peers...' : 'No peers found',
-            style: const TextStyle(fontSize: 18, color: Colors.grey),
-          ),
-          if (!isSearching) ...[
-            const SizedBox(height: 8),
-            const Text(
-              'Start discovery to find nearby devices',
-              style: TextStyle(color: Colors.grey),
-            ),
-          ],
-        ],
-      ),
+    return AnimatedEmptyState(
+      icon: isSearching ? Icons.radar : Icons.people_outline,
+      title: isSearching ? 'Searching for peers...' : 'No peers found',
+      subtitle: isSearching
+          ? 'Looking for nearby devices'
+          : 'Start discovery to find nearby devices',
     );
   }
 
@@ -73,6 +59,8 @@ class PeersScreen extends StatelessWidget {
   }
 
   Widget _buildControls(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
     final status = controller.connectionStatus;
     final isActive =
         status == ConnectionStatus.discovering ||
@@ -82,8 +70,8 @@ class PeersScreen extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.grey.shade100,
-        border: Border(top: BorderSide(color: Colors.grey.shade300)),
+        color: colorScheme.surfaceContainerLow,
+        border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
       ),
       child: SafeArea(
         child: SizedBox(
@@ -95,8 +83,8 @@ class PeersScreen extends StatelessWidget {
             icon: Icon(isActive ? Icons.stop : Icons.play_arrow),
             label: Text(isActive ? 'Stop Discovery' : 'Start Discovery'),
             style: ElevatedButton.styleFrom(
-              backgroundColor: isActive ? Colors.red : null,
-              foregroundColor: isActive ? Colors.white : null,
+              backgroundColor: isActive ? colorScheme.error : null,
+              foregroundColor: isActive ? colorScheme.onError : null,
               padding: const EdgeInsets.symmetric(vertical: 16),
             ),
           ),
@@ -128,32 +116,27 @@ class _PeerTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (icon, color, statusText) = switch (peer.status) {
-      PeerConnectionStatus.connected => (
-        Icons.circle,
-        Colors.green,
-        'Connected',
-      ),
-      PeerConnectionStatus.suspected => (
-        Icons.circle,
-        Colors.orange,
-        'Connection unstable',
-      ),
-      PeerConnectionStatus.unreachable => (
-        Icons.circle_outlined,
-        Colors.grey,
-        'Disconnected',
-      ),
+    final statusText = switch (peer.status) {
+      PeerConnectionStatus.connected => 'Connected',
+      PeerConnectionStatus.suspected => 'Connection unstable',
+      PeerConnectionStatus.unreachable => 'Disconnected',
     };
 
     return ListTile(
-      leading: CircleAvatar(
-        backgroundColor: color.withValues(alpha: 0.2),
-        child: Icon(Icons.person, color: color),
+      leading: NodeAvatar(
+        identifier: peer.id.value,
+        displayText: peer.displayName,
+        radius: 20,
       ),
       title: Text(peer.displayName),
       subtitle: Text(statusText),
-      trailing: Icon(icon, size: 12, color: color),
+      trailing: peer.status == PeerConnectionStatus.unreachable
+          ? Icon(
+              Icons.signal_cellular_off,
+              size: 18,
+              color: Theme.of(context).colorScheme.outline,
+            )
+          : SignalStrengthIndicator(strength: peer.signalStrength),
     );
   }
 }

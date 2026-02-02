@@ -21,6 +21,13 @@ dependencies:
   device_info_plus: ^11.0.0
   permission_handler: ^11.0.0
 
+  # QR codes
+  mobile_scanner: ^5.1.1
+  qr_flutter: ^4.1.0
+
+  # Nearby Connections
+  nearby_connections: ^4.0.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter

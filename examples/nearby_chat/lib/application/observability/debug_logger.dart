@@ -6,14 +6,41 @@ import 'package:gossip_nearby/gossip_nearby.dart';
 
 import '../services/connection_service.dart';
 import '../services/sync_service.dart';
+import 'log_format.dart';
 
-/// Service for logging all metrics, events, and errors from gossip and gossip_nearby.
+/// Controls what gets logged to the console.
+enum DebugLogLevel {
+  /// Only errors are logged.
+  error,
+
+  /// Errors and warnings are logged.
+  warning,
+
+  /// Errors, warnings, and important events (connections, sync) are logged.
+  info,
+
+  /// Everything is logged, including metrics.
+  verbose,
+}
+
+/// Service for logging metrics, events, and errors from gossip and gossip_nearby.
 ///
-/// This provides comprehensive observability for debugging the chat application.
-/// It's a cross-cutting concern in the application layer.
+/// Use [logLevel] to control verbosity:
+/// - [DebugLogLevel.error]: Only errors
+/// - [DebugLogLevel.warning]: Errors and warnings
+/// - [DebugLogLevel.info]: Errors, warnings, and important events
+/// - [DebugLogLevel.verbose]: Everything including periodic metrics
 class DebugLogger {
+  /// How often to log metrics.
+  static const Duration _metricsInterval = Duration(seconds: 30);
+
+  /// Prefix length for displaying IDs in logs.
+  static const int _idPrefixLength = 8;
   final SyncService _syncService;
   final ConnectionService _connectionService;
+
+  /// The minimum log level to display. Messages below this level are ignored.
+  DebugLogLevel logLevel;
 
   StreamSubscription<DomainEvent>? _domainEventSubscription;
   StreamSubscription<SyncError>? _syncErrorSubscription;
@@ -24,33 +51,25 @@ class DebugLogger {
   DebugLogger({
     required SyncService syncService,
     required ConnectionService connectionService,
+    this.logLevel = DebugLogLevel.info,
   }) : _syncService = syncService,
        _connectionService = connectionService;
 
-  /// Starts logging all events, errors, and metrics.
+  /// Starts logging events, errors, and metrics.
   void start() {
-    _log('DEBUG', 'DebugLogger started');
+    _logInfo('DEBUG', 'DebugLogger started (level: ${logLevel.name})');
 
-    // Subscribe to domain events via SyncService
     _domainEventSubscription = _syncService.events.listen(_onDomainEvent);
-
-    // Subscribe to sync errors via SyncService
     _syncErrorSubscription = _syncService.errors.listen(_onSyncError);
-
-    // Subscribe to connection errors via ConnectionService
     _connectionErrorSubscription = _connectionService.errors.listen(
       _onConnectionError,
     );
-
-    // Subscribe to peer events via ConnectionService
     _peerEventSubscription = _connectionService.peerEvents.listen(_onPeerEvent);
 
-    // Start periodic metrics logging
-    _metricsTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+    _metricsTimer = Timer.periodic(_metricsInterval, (_) {
       _logMetrics();
     });
 
-    // Log initial state
     _logMetrics();
   }
 
@@ -61,7 +80,7 @@ class DebugLogger {
     _connectionErrorSubscription?.cancel();
     _peerEventSubscription?.cancel();
     _metricsTimer?.cancel();
-    _log('DEBUG', 'DebugLogger stopped');
+    _logInfo('DEBUG', 'DebugLogger stopped');
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -71,77 +90,70 @@ class DebugLogger {
   void _onDomainEvent(DomainEvent event) {
     final timestamp = _formatTime(event.occurredAt);
     switch (event) {
-      // Peer events
       case PeerAdded(:final peerId):
-        _log('PEER', '[$timestamp] Peer added: $peerId');
+        _logInfo('PEER', '[$timestamp] Peer added: $peerId');
       case PeerRemoved(:final peerId):
-        _log('PEER', '[$timestamp] Peer removed: $peerId');
+        _logInfo('PEER', '[$timestamp] Peer removed: $peerId');
       case PeerStatusChanged(:final peerId, :final oldStatus, :final newStatus):
-        _log(
+        _logInfo(
           'PEER',
           '[$timestamp] Peer status changed: $peerId $oldStatus -> $newStatus',
         );
       case PeerOperationSkipped(:final peerId, :final operation):
-        _log(
+        _logVerbose(
           'PEER',
           '[$timestamp] Peer operation skipped: $peerId - $operation',
         );
-
-      // Channel events
       case ChannelCreated(:final channelId):
-        _log(
+        _logInfo(
           'CHANNEL',
           '[$timestamp] Channel created: ${_shortId(channelId.value)}',
         );
       case ChannelRemoved(:final channelId):
-        _log(
+        _logInfo(
           'CHANNEL',
           '[$timestamp] Channel removed: ${_shortId(channelId.value)}',
         );
       case MemberAdded(:final channelId, :final memberId):
-        _log(
+        _logInfo(
           'CHANNEL',
           '[$timestamp] Member added to ${_shortId(channelId.value)}: $memberId',
         );
       case MemberRemoved(:final channelId, :final memberId):
-        _log(
+        _logInfo(
           'CHANNEL',
           '[$timestamp] Member removed from ${_shortId(channelId.value)}: $memberId',
         );
-
-      // Stream events
       case StreamCreated(:final channelId, :final streamId):
-        _log(
+        _logVerbose(
           'STREAM',
           '[$timestamp] Stream created: ${_shortId(channelId.value)}/${streamId.value}',
         );
       case EntryAppended(:final channelId, :final streamId, :final entry):
-        _log(
+        _logVerbose(
           'SYNC',
           '[$timestamp] Entry appended: ${_shortId(channelId.value)}/${streamId.value} '
               'author=${_shortId(entry.author.value)} seq=${entry.sequence}',
         );
       case EntriesMerged(:final channelId, :final streamId, :final entries):
-        _log(
+        _logVerbose(
           'SYNC',
           '[$timestamp] Entries merged: ${_shortId(channelId.value)}/${streamId.value} '
               'count=${entries.length}',
         );
       case StreamCompacted(:final channelId, :final streamId, :final result):
-        _log(
+        _logVerbose(
           'SYNC',
           '[$timestamp] Stream compacted: ${_shortId(channelId.value)}/${streamId.value} '
               'removed=${result.entriesRemoved}',
         );
-
-      // Buffer events
       case BufferOverflowOccurred(
         :final channelId,
         :final streamId,
         :final author,
         :final droppedCount,
       ):
-        _log(
+        _logWarning(
           'WARN',
           '[$timestamp] Buffer overflow: ${_shortId(channelId.value)}/${streamId.value} '
               'author=$author dropped=$droppedCount',
@@ -152,13 +164,11 @@ class DebugLogger {
         :final rejectedCount,
         :final unknownAuthors,
       ):
-        _log(
+        _logWarning(
           'WARN',
           '[$timestamp] Non-member entries rejected: ${_shortId(channelId.value)}/${streamId.value} '
               'count=$rejectedCount authors=$unknownAuthors',
         );
-
-      // Error events
       case SyncErrorOccurred(:final error):
         _logSyncError(error, timestamp);
     }
@@ -175,22 +185,22 @@ class DebugLogger {
   void _logSyncError(SyncError error, String timestamp) {
     switch (error) {
       case PeerSyncError(:final peer, :final type, :final message):
-        _log(
+        _logError(
           'ERROR',
           '[$timestamp] Peer sync error: peer=$peer type=$type msg=$message',
         );
       case ChannelSyncError(:final channel, :final type, :final message):
-        _log(
+        _logError(
           'ERROR',
           '[$timestamp] Channel sync error: channel=${_shortId(channel.value)} type=$type msg=$message',
         );
       case StorageSyncError(:final type, :final message):
-        _log(
+        _logError(
           'ERROR',
           '[$timestamp] Storage sync error: type=$type msg=$message',
         );
       case TransformSyncError(:final channel, :final message):
-        _log(
+        _logError(
           'ERROR',
           '[$timestamp] Transform sync error: channel=${channel != null ? _shortId(channel.value) : 'null'} msg=$message',
         );
@@ -201,7 +211,7 @@ class DebugLogger {
         :final bufferSize,
         :final message,
       ):
-        _log(
+        _logError(
           'ERROR',
           '[$timestamp] Buffer overflow error: ${_shortId(channel.value)}/${stream.value} '
               'author=$author bufferSize=$bufferSize msg=$message',
@@ -217,24 +227,27 @@ class DebugLogger {
     final timestamp = _formatTime(error.occurredAt);
     switch (error) {
       case ConnectionNotFoundError(:final nodeId):
-        _log(
+        _logError(
           'NEARBY',
           '[$timestamp] Connection not found: $nodeId - ${error.message}',
         );
       case HandshakeTimeoutError(:final endpointId):
-        _log(
+        _logError(
           'NEARBY',
           '[$timestamp] Handshake timeout: $endpointId - ${error.message}',
         );
       case HandshakeInvalidError(:final endpointId):
-        _log(
+        _logError(
           'NEARBY',
           '[$timestamp] Handshake invalid: $endpointId - ${error.message}',
         );
       case SendFailedError(:final nodeId):
-        _log('NEARBY', '[$timestamp] Send failed: $nodeId - ${error.message}');
+        _logError(
+          'NEARBY',
+          '[$timestamp] Send failed: $nodeId - ${error.message}',
+        );
       case ConnectionLostError(:final nodeId):
-        _log(
+        _logError(
           'NEARBY',
           '[$timestamp] Connection lost: $nodeId - ${error.message}',
         );
@@ -248,9 +261,9 @@ class DebugLogger {
   void _onPeerEvent(PeerEvent event) {
     switch (event) {
       case PeerConnected(:final nodeId):
-        _log('NEARBY', 'Peer connected: ${_shortId(nodeId.value)}');
+        _logInfo('NEARBY', 'Peer connected: ${_shortId(nodeId.value)}');
       case PeerDisconnected(:final nodeId):
-        _log('NEARBY', 'Peer disconnected: ${_shortId(nodeId.value)}');
+        _logInfo('NEARBY', 'Peer disconnected: ${_shortId(nodeId.value)}');
     }
   }
 
@@ -259,6 +272,8 @@ class DebugLogger {
   // ─────────────────────────────────────────────────────────────
 
   void _logMetrics() {
+    if (logLevel != DebugLogLevel.verbose) return;
+
     _logSyncMetrics();
     _logConnectionMetrics();
     _logPeerMetrics();
@@ -269,70 +284,103 @@ class DebugLogger {
       final health = await _syncService.getHealth();
       final usage = await _syncService.getResourceUsage();
 
-      _log('METRICS', '=== Sync Health ===');
-      _log('METRICS', '  State: ${health.state}');
-      _log('METRICS', '  Local node: ${_shortId(health.localNode.value)}');
-      _log('METRICS', '  Incarnation: ${health.incarnation}');
-      _log('METRICS', '  Is healthy: ${health.isHealthy}');
-      _log('METRICS', '  Reachable peers: ${health.reachablePeerCount}');
-      _log('METRICS', '=== Resource Usage ===');
-      _log('METRICS', '  Peers: ${usage.peerCount}');
-      _log('METRICS', '  Channels: ${usage.channelCount}');
-      _log('METRICS', '  Total entries: ${usage.totalEntries}');
-      _log(
+      _logVerbose('METRICS', '=== Sync Health ===');
+      _logVerbose('METRICS', '  State: ${health.state}');
+      _logVerbose(
+        'METRICS',
+        '  Local node: ${_shortId(health.localNode.value)}',
+      );
+      _logVerbose('METRICS', '  Incarnation: ${health.incarnation}');
+      _logVerbose('METRICS', '  Is healthy: ${health.isHealthy}');
+      _logVerbose('METRICS', '  Reachable peers: ${health.reachablePeerCount}');
+      _logVerbose('METRICS', '=== Resource Usage ===');
+      _logVerbose('METRICS', '  Peers: ${usage.peerCount}');
+      _logVerbose('METRICS', '  Channels: ${usage.channelCount}');
+      _logVerbose('METRICS', '  Total entries: ${usage.totalEntries}');
+      _logVerbose(
         'METRICS',
         '  Total storage: ${_formatBytes(usage.totalStorageBytes)}',
       );
     } catch (e) {
-      _log('METRICS', 'Failed to get sync metrics: $e');
+      _logError('METRICS', 'Failed to get sync metrics: $e');
     }
   }
 
   void _logConnectionMetrics() {
     final metrics = _connectionService.metrics;
-    _log('METRICS', '=== Connection Metrics ===');
-    _log('METRICS', '  Connected peers: ${metrics.connectedPeerCount}');
-    _log('METRICS', '  Pending handshakes: ${metrics.pendingHandshakeCount}');
-    _log(
+    _logVerbose('METRICS', '=== Connection Metrics ===');
+    _logVerbose('METRICS', '  Connected peers: ${metrics.connectedPeerCount}');
+    _logVerbose(
+      'METRICS',
+      '  Pending handshakes: ${metrics.pendingHandshakeCount}',
+    );
+    _logVerbose(
       'METRICS',
       '  Connections established: ${metrics.totalConnectionsEstablished}',
     );
-    _log('METRICS', '  Connections failed: ${metrics.totalConnectionsFailed}');
-    _log('METRICS', '  Messages sent: ${metrics.totalMessagesSent}');
-    _log('METRICS', '  Messages received: ${metrics.totalMessagesReceived}');
-    _log('METRICS', '  Bytes sent: ${_formatBytes(metrics.totalBytesSent)}');
-    _log(
+    _logVerbose(
+      'METRICS',
+      '  Connections failed: ${metrics.totalConnectionsFailed}',
+    );
+    _logVerbose('METRICS', '  Messages sent: ${metrics.totalMessagesSent}');
+    _logVerbose(
+      'METRICS',
+      '  Messages received: ${metrics.totalMessagesReceived}',
+    );
+    _logVerbose(
+      'METRICS',
+      '  Bytes sent: ${_formatBytes(metrics.totalBytesSent)}',
+    );
+    _logVerbose(
       'METRICS',
       '  Bytes received: ${_formatBytes(metrics.totalBytesReceived)}',
     );
-    _log(
+    _logVerbose(
       'METRICS',
       '  Avg handshake duration: ${metrics.averageHandshakeDuration.inMilliseconds}ms',
     );
-    _log('METRICS', '  Is advertising: ${_connectionService.isAdvertising}');
-    _log('METRICS', '  Is discovering: ${_connectionService.isDiscovering}');
+    _logVerbose(
+      'METRICS',
+      '  Is advertising: ${_connectionService.isAdvertising}',
+    );
+    _logVerbose(
+      'METRICS',
+      '  Is discovering: ${_connectionService.isDiscovering}',
+    );
   }
 
   void _logPeerMetrics() {
     final peers = _syncService.peers;
     if (peers.isEmpty) {
-      _log('METRICS', '=== Peer Metrics ===');
-      _log('METRICS', '  No peers registered');
+      _logVerbose('METRICS', '=== Peer Metrics ===');
+      _logVerbose('METRICS', '  No peers registered');
       return;
     }
 
-    _log('METRICS', '=== Peer Metrics (${peers.length} peers) ===');
+    _logVerbose('METRICS', '=== Peer Metrics (${peers.length} peers) ===');
     for (final peer in peers) {
       final metrics = _syncService.getPeerMetrics(peer.id);
-      _log('METRICS', '  Peer ${_shortId(peer.id.value)}:');
-      _log('METRICS', '    Status: ${peer.status}');
-      _log('METRICS', '    Incarnation: ${peer.incarnation ?? 'unknown'}');
-      _log('METRICS', '    Failed probe count: ${peer.failedProbeCount}');
+      _logVerbose('METRICS', '  Peer ${_shortId(peer.id.value)}:');
+      _logVerbose('METRICS', '    Status: ${peer.status}');
+      _logVerbose(
+        'METRICS',
+        '    Incarnation: ${peer.incarnation ?? 'unknown'}',
+      );
+      _logVerbose(
+        'METRICS',
+        '    Failed probe count: ${peer.failedProbeCount}',
+      );
       if (metrics != null) {
-        _log('METRICS', '    Messages sent: ${metrics.messagesSent}');
-        _log('METRICS', '    Messages received: ${metrics.messagesReceived}');
-        _log('METRICS', '    Bytes sent: ${_formatBytes(metrics.bytesSent)}');
-        _log(
+        _logVerbose('METRICS', '    Messages sent: ${metrics.messagesSent}');
+        _logVerbose(
+          'METRICS',
+          '    Messages received: ${metrics.messagesReceived}',
+        );
+        _logVerbose(
+          'METRICS',
+          '    Bytes sent: ${_formatBytes(metrics.bytesSent)}',
+        );
+        _logVerbose(
           'METRICS',
           '    Bytes received: ${_formatBytes(metrics.bytesReceived)}',
         );
@@ -340,68 +388,75 @@ class DebugLogger {
     }
   }
 
-  /// Logs a message to the console with a category prefix.
+  // ─────────────────────────────────────────────────────────────
+  // Leveled Logging
+  // ─────────────────────────────────────────────────────────────
+
+  void _logError(String category, String message) {
+    _log(category, message);
+  }
+
+  void _logWarning(String category, String message) {
+    if (logLevel.index >= DebugLogLevel.warning.index) {
+      _log(category, message);
+    }
+  }
+
+  void _logInfo(String category, String message) {
+    if (logLevel.index >= DebugLogLevel.info.index) {
+      _log(category, message);
+    }
+  }
+
+  void _logVerbose(String category, String message) {
+    if (logLevel.index >= DebugLogLevel.verbose.index) {
+      _log(category, message);
+    }
+  }
+
   void _log(String category, String message) {
-    final now = DateTime.now();
-    final time =
-        '${now.hour.toString().padLeft(2, '0')}:'
-        '${now.minute.toString().padLeft(2, '0')}:'
-        '${now.second.toString().padLeft(2, '0')}.'
-        '${now.millisecond.toString().padLeft(3, '0')}';
+    final logLine = LogFormat.logLine(category, message);
 
-    final logLine = '[$time][$category] $message';
-
-    // Print to console
     // ignore: avoid_print
     print(logLine);
 
-    // Also log to developer tools (visible in DevTools)
     developer.log(message, name: 'gossip.$category');
   }
 
-  String _formatTime(DateTime time) {
-    return '${time.hour.toString().padLeft(2, '0')}:'
-        '${time.minute.toString().padLeft(2, '0')}:'
-        '${time.second.toString().padLeft(2, '0')}';
-  }
+  String _formatTime(DateTime time) => LogFormat.shortTime(time);
 
-  String _shortId(String id) {
-    return id.length > 8 ? id.substring(0, 8) : id;
-  }
+  String _shortId(String id) => LogFormat.shortId(id, length: _idPrefixLength);
 
-  String _formatBytes(int bytes) {
-    if (bytes < 1024) return '$bytes B';
-    if (bytes < 1024 * 1024) return '${(bytes / 1024).toStringAsFixed(1)} KB';
-    return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
-  }
+  String _formatBytes(int bytes) => LogFormat.bytes(bytes);
 }
 
+/// Minimum log level for [nearbyLogCallback].
+///
+/// Set this before starting the transport to control verbosity.
+LogLevel nearbyMinLogLevel = LogLevel.info;
+
 /// LogCallback implementation for NearbyTransport that prints to console.
+///
+/// Only logs messages at or above [nearbyMinLogLevel].
 void nearbyLogCallback(
   LogLevel level,
   String message, [
   Object? error,
   StackTrace? stackTrace,
 ]) {
-  final now = DateTime.now();
-  final time =
-      '${now.hour.toString().padLeft(2, '0')}:'
-      '${now.minute.toString().padLeft(2, '0')}:'
-      '${now.second.toString().padLeft(2, '0')}.'
-      '${now.millisecond.toString().padLeft(3, '0')}';
+  if (level.index < nearbyMinLogLevel.index) return;
 
   final levelStr = level.name.toUpperCase().padRight(7);
-  var logLine = '[$time][NEARBY][$levelStr] $message';
+  final category = 'NEARBY][$levelStr';
+  var logLine = LogFormat.logLine(category, message);
 
   if (error != null) {
     logLine += ' | Error: $error';
   }
 
-  // Print to console
   // ignore: avoid_print
   print(logLine);
 
-  // Log to developer tools
   developer.log(
     message,
     name: 'gossip.nearby.${level.name}',

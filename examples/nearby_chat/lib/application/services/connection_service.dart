@@ -3,7 +3,7 @@ import 'dart:async';
 import 'package:gossip/gossip.dart';
 import 'package:gossip_nearby/gossip_nearby.dart';
 
-/// Service for managing nearby peer connections.
+/// Service for managing Nearby Connections peer connections.
 ///
 /// This is an application layer service that bridges the NearbyTransport
 /// (infrastructure) with the Coordinator (domain).
@@ -67,7 +67,7 @@ class ConnectionService {
   /// Stream of connection errors for observability.
   Stream<ConnectionError> get errors => _transport.errors;
 
-  /// Transport metrics for observability.
+  /// Metrics for monitoring transport health and performance.
   NearbyMetrics get metrics => _transport.metrics;
 
   /// Disposes resources.

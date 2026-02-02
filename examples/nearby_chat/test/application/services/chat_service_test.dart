@@ -338,10 +338,11 @@ void main() {
 
         final nonExistentChannel = ChannelId('does-not-exist');
 
-        // Act
-        await serviceWithCallback.sendMessage(nonExistentChannel, 'Test');
-
-        // Assert
+        // Act & Assert
+        await expectLater(
+          () => serviceWithCallback.sendMessage(nonExistentChannel, 'Test'),
+          throwsStateError,
+        );
         expect(errorOperation, 'sendMessage');
         expect(errorObject.toString(), contains('Channel not found'));
       });

@@ -8,17 +8,23 @@ import 'app.dart';
 import 'application/application.dart';
 import 'presentation/presentation.dart';
 
+/// Set to true for verbose logging (metrics, sync details, etc.)
+const _verboseLogging = true;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Configure log levels
+  nearbyMinLogLevel = _verboseLogging ? LogLevel.trace : LogLevel.warning;
 
   // Generate or load device identity
   final nodeId = NodeId(const Uuid().v4());
   final deviceName = await _getDeviceName();
 
-  // Create NearbyTransport with logging enabled
+  // Create NearbyTransport for Android Nearby Connections
   final transport = NearbyTransport(
     localNodeId: nodeId,
-    serviceId: ServiceId('com.example.nearbychat'),
+    serviceId: ServiceId('nearbychat'),
     displayName: deviceName,
     onLog: nearbyLogCallback,
   );
@@ -31,6 +37,7 @@ void main() async {
     entryRepository: InMemoryEntryRepository(),
     messagePort: transport.messagePort,
     timerPort: RealTimePort(),
+    onLog: _verboseLogging ? _logCallback : null,
   );
 
   // Create application services
@@ -60,11 +67,15 @@ void main() async {
   final debugLogger = DebugLogger(
     syncService: syncService,
     connectionService: connectionService,
+    logLevel: _verboseLogging ? DebugLogLevel.verbose : DebugLogLevel.error,
   );
   debugLogger.start();
 
   // Start the coordinator
   await coordinator.start();
+
+  // Start networking (advertising and discovery)
+  await controller.startNetworking();
 
   // Run the app
   runApp(ChatApp(controller: controller));
@@ -84,4 +95,21 @@ Future<String> _getDeviceName() async {
   } catch (_) {}
 
   return 'Unknown Device';
+}
+
+/// Unified log callback for gossip protocol messages.
+void _logCallback(
+  LogLevel level,
+  String message, [
+  Object? error,
+  StackTrace? stackTrace,
+]) {
+  final levelStr = level.name.toUpperCase().padRight(7);
+  final category = 'GOSSIP][$levelStr';
+  var logLine = LogFormat.logLine(category, message);
+  if (error != null) {
+    logLine += ' | Error: $error';
+  }
+  // ignore: avoid_print
+  print(logLine);
 }

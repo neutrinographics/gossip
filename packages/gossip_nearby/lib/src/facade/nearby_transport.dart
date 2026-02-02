@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:gossip/gossip.dart';
 
-import '../application/observability/log_level.dart';
 import '../application/observability/nearby_metrics.dart';
 import '../application/services/connection_service.dart';
 import '../domain/aggregates/connection_registry.dart';
@@ -41,6 +40,10 @@ class PeerDisconnected extends PeerEvent {
 /// This is the main entry point for using gossip_nearby. It manages
 /// the complete lifecycle of peer discovery, connection management,
 /// and message delivery over Nearby Connections.
+///
+/// **Note:** This package uses Google Nearby Connections which is
+/// Android-only. For iOS or cross-platform BLE support, use the
+/// `gossip_ble` package instead.
 ///
 /// ## Usage
 ///
@@ -112,19 +115,18 @@ class NearbyTransport {
     _eventSubscription = _connectionService.events.listen(_onConnectionEvent);
   }
 
-  /// Creates a new Nearby transport with the real Nearby Connections adapter.
+  /// Creates a new Nearby Connections transport.
   factory NearbyTransport({
     required NodeId localNodeId,
     required ServiceId serviceId,
     required String displayName,
     LogCallback? onLog,
   }) {
-    final nearbyPort = NearbyAdapter();
     return NearbyTransport.withPort(
       localNodeId: localNodeId,
       serviceId: serviceId,
       displayName: displayName,
-      nearbyPort: nearbyPort,
+      nearbyPort: NearbyAdapter(),
       onLog: onLog,
     );
   }
@@ -193,9 +195,16 @@ class NearbyTransport {
     if (_isAdvertising) return;
 
     _log(LogLevel.info, 'Starting advertising as "$_displayName"');
-    await _nearbyPort.startAdvertising(_serviceId, _displayName);
+    await _nearbyPort.startAdvertising(_serviceId, _advertisedName);
     _isAdvertising = true;
   }
+
+  /// The name advertised to nearby devices.
+  ///
+  /// Encodes the nodeId for connection tie-breaking: when two devices
+  /// discover each other simultaneously, only the one with the smaller
+  /// nodeId initiates the connection to avoid race conditions.
+  String get _advertisedName => '${localNodeId.value}|$_displayName';
 
   /// Stops advertising.
   Future<void> stopAdvertising() async {
