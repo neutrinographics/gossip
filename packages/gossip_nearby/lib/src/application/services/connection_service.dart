@@ -10,7 +10,7 @@ import '../../domain/interfaces/nearby_port.dart';
 import '../../domain/value_objects/endpoint.dart';
 import '../../domain/value_objects/endpoint_id.dart';
 import '../../infrastructure/codec/handshake_codec.dart'
-    show HandshakeCodec, MessageType, WireFormat;
+    show HandshakeCodec, HandshakeData, MessageType, WireFormat;
 import '../observability/nearby_metrics.dart';
 
 /// Callback for receiving gossip messages.
@@ -25,6 +25,7 @@ typedef GossipMessageCallback = void Function(NodeId sender, Uint8List bytes);
 /// - Emits domain events for connection state changes
 class ConnectionService {
   final NodeId _localNodeId;
+  final String? _displayName;
   final NearbyPort _nearbyPort;
   final ConnectionRegistry _registry;
   final HandshakeCodec _codec;
@@ -42,12 +43,14 @@ class ConnectionService {
 
   ConnectionService({
     required NodeId localNodeId,
+    String? displayName,
     required NearbyPort nearbyPort,
     required ConnectionRegistry registry,
     HandshakeCodec codec = const HandshakeCodec(),
     NearbyMetrics? metrics,
     LogCallback? onLog,
   }) : _localNodeId = localNodeId,
+       _displayName = displayName,
        _nearbyPort = nearbyPort,
        _registry = registry,
        _codec = codec,
@@ -161,7 +164,10 @@ class ConnectionService {
     _handshakeStartTimes[id] = DateTime.now();
     _metrics.recordHandshakeStarted();
 
-    final handshakeBytes = _codec.encode(_localNodeId);
+    final handshakeBytes = _codec.encode(
+      _localNodeId,
+      displayName: _displayName,
+    );
     unawaited(_nearbyPort.sendPayload(id, handshakeBytes));
     _log(LogLevel.debug, 'Sent handshake to $id');
   }
@@ -213,8 +219,8 @@ class ConnectionService {
   }
 
   void _handleHandshakeMessage(EndpointId id, Uint8List bytes) {
-    final remoteNodeId = _codec.decode(bytes);
-    if (remoteNodeId == null) {
+    final handshakeData = _codec.decode(bytes);
+    if (handshakeData == null) {
       _log(LogLevel.error, 'Invalid handshake from $id');
       _metrics.recordHandshakeFailed();
       _handshakeStartTimes.remove(id);
@@ -233,13 +239,23 @@ class ConnectionService {
         ? DateTime.now().difference(startTime)
         : Duration.zero;
 
-    final endpoint = Endpoint(id: id, displayName: '');
-    final event = _registry.completeHandshake(endpoint, remoteNodeId);
+    final endpoint = Endpoint(
+      id: id,
+      displayName: handshakeData.displayName ?? '',
+    );
+    _registry.completeHandshake(endpoint, handshakeData.nodeId);
+
+    final event = HandshakeCompleted(
+      endpoint: endpoint,
+      nodeId: handshakeData.nodeId,
+      displayName: handshakeData.displayName,
+    );
 
     _metrics.recordHandshakeCompleted(duration);
     _log(
       LogLevel.info,
-      'Handshake completed with $remoteNodeId (${duration.inMilliseconds}ms)',
+      'Handshake completed with ${handshakeData.nodeId} '
+      '(displayName: ${handshakeData.displayName}, ${duration.inMilliseconds}ms)',
     );
 
     _eventController.add(event);

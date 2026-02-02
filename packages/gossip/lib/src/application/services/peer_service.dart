@@ -68,12 +68,19 @@ class PeerService {
   /// Creates a new [Peer] entity in [reachable] status with incarnation 0
   /// and persists it. Fires [PeerAdded] domain event.
   ///
+  /// If [displayName] is not provided, defaults to a truncated form of the
+  /// node ID.
+  ///
   /// Used when: Discovering a new peer via application-provided peer list
   /// or gossip membership updates.
   ///
   /// Transaction: Add to registry → retrieve entity → save to repository.
-  Future<void> addPeer(NodeId peerId) async {
-    registry.addPeer(peerId, occurredAt: DateTime.now());
+  Future<void> addPeer(NodeId peerId, {String? displayName}) async {
+    registry.addPeer(
+      peerId,
+      displayName: displayName,
+      occurredAt: DateTime.now(),
+    );
     await _persistPeer(peerId);
   }
 

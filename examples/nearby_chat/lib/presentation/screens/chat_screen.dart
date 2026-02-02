@@ -126,84 +126,92 @@ class _ChatScreenState extends State<ChatScreen> {
 
         final theme = Theme.of(context);
 
-        return Scaffold(
-          appBar: AppBar(
-            leadingWidth: 96,
-            leading: Row(
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back),
-                  onPressed: () {
-                    widget.controller.clearCurrentChannel();
-                    Navigator.of(context).pop();
-                  },
-                  tooltip: 'Back',
-                ),
-                Hero(
-                  tag: 'channel_icon_${channel.id.value}',
-                  child: NodeAvatar(
-                    identifier: channel.id.value,
-                    displayText: channel.name,
-                    radius: 16,
+        return PopScope(
+          canPop: true,
+          onPopInvokedWithResult: (didPop, _) {
+            if (didPop) {
+              // Clear channel after animation completes to preserve Heroes
+              Future.delayed(const Duration(milliseconds: 300), () {
+                widget.controller.clearCurrentChannel();
+              });
+            }
+          },
+          child: Scaffold(
+            appBar: AppBar(
+              leadingWidth: 96,
+              leading: Row(
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () => Navigator.of(context).pop(),
+                    tooltip: 'Back',
                   ),
+                  Hero(
+                    tag: 'channel_icon_${channel.id.value}',
+                    child: NodeAvatar(
+                      identifier: channel.id.value,
+                      displayText: channel.name,
+                      radius: 16,
+                    ),
+                  ),
+                ],
+              ),
+              titleSpacing: 8,
+              title: Hero(
+                tag: 'channel_name_${channel.id.value}',
+                child: Material(
+                  color: Colors.transparent,
+                  child: Text(channel.name, style: theme.textTheme.titleLarge),
+                ),
+              ),
+              actions: [
+                IconButton(
+                  icon: const Icon(Icons.qr_code),
+                  onPressed: _showQrCode,
+                  tooltip: 'Share channel',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.info_outline),
+                  onPressed: _copyChannelId,
+                  tooltip: 'Copy channel ID',
                 ),
               ],
             ),
-            titleSpacing: 8,
-            title: Hero(
-              tag: 'channel_name_${channel.id.value}',
-              child: Material(
-                color: Colors.transparent,
-                child: Text(channel.name, style: theme.textTheme.titleLarge),
-              ),
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.qr_code),
-                onPressed: _showQrCode,
-                tooltip: 'Share channel',
-              ),
-              IconButton(
-                icon: const Icon(Icons.info_outline),
-                onPressed: _copyChannelId,
-                tooltip: 'Copy channel ID',
-              ),
-            ],
-          ),
-          body: Column(
-            children: [
-              Expanded(
-                child: Stack(
-                  children: [
-                    _buildMessageList(),
-                    Positioned(
-                      left: 0,
-                      right: 0,
-                      bottom: 8,
-                      child: Center(
-                        child: NewMessagesPill(
-                          count: _newMessagesCount,
-                          visible: _newMessagesCount > 0,
-                          onTap: _scrollToBottom,
+            body: Column(
+              children: [
+                Expanded(
+                  child: Stack(
+                    children: [
+                      _buildMessageList(),
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: 8,
+                        child: Center(
+                          child: NewMessagesPill(
+                            count: _newMessagesCount,
+                            visible: _newMessagesCount > 0,
+                            onTap: _scrollToBottom,
+                          ),
                         ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-              TypingIndicator(
-                typingUserNames: widget.controller.typingUsers
-                    .map(
-                      (nodeId) => widget.controller.getTypingUserName(nodeId),
-                    )
-                    .whereType<String>()
-                    .toList(),
-              ),
-              MessageInputBar(
-                onSend: _onSendMessage,
-                onTypingChanged: widget.controller.setTyping,
-              ),
-            ],
+                TypingIndicator(
+                  typingUserNames: widget.controller.typingUsers
+                      .map(
+                        (nodeId) => widget.controller.getTypingUserName(nodeId),
+                      )
+                      .whereType<String>()
+                      .toList(),
+                ),
+                MessageInputBar(
+                  onSend: _onSendMessage,
+                  onTypingChanged: widget.controller.setTyping,
+                ),
+              ],
+            ),
           ),
         );
       },

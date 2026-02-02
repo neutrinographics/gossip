@@ -24,6 +24,12 @@ class Peer {
   /// Unique identifier for this peer.
   final NodeId id;
 
+  /// Human-readable display name for this peer.
+  ///
+  /// Provided during peer discovery/handshake. If not provided, defaults
+  /// to a truncated form of the node ID.
+  final String displayName;
+
   /// Current reachability status from SWIM failure detection.
   ///
   /// Lifecycle: reachable → suspected → unreachable
@@ -54,20 +60,35 @@ class Peer {
   /// Communication metrics for this peer.
   final PeerMetrics metrics;
 
+  /// Prefix length for default display name derived from node ID.
+  static const int _defaultDisplayNameLength = 8;
+
   /// Creates a [Peer] with the given state.
-  const Peer({
+  ///
+  /// If [displayName] is not provided, defaults to the first 8 characters
+  /// of the node ID.
+  Peer({
     required this.id,
+    String? displayName,
     this.status = PeerStatus.reachable,
     this.incarnation,
     this.lastContactMs = 0,
     this.lastAntiEntropyMs,
     this.failedProbeCount = 0,
     this.metrics = const PeerMetrics(),
-  });
+  }) : displayName = displayName ?? _truncateId(id.value);
+
+  /// Truncates an ID to the default display name length.
+  static String _truncateId(String id) {
+    return id.length > _defaultDisplayNameLength
+        ? id.substring(0, _defaultDisplayNameLength)
+        : id;
+  }
 
   /// Creates a copy of this Peer with specified fields replaced.
   Peer copyWith({
     NodeId? id,
+    String? displayName,
     PeerStatus? status,
     int? incarnation,
     int? lastContactMs,
@@ -77,6 +98,7 @@ class Peer {
   }) {
     return Peer(
       id: id ?? this.id,
+      displayName: displayName ?? this.displayName,
       status: status ?? this.status,
       incarnation: incarnation ?? this.incarnation,
       lastContactMs: lastContactMs ?? this.lastContactMs,
@@ -91,6 +113,7 @@ class Peer {
     if (identical(this, other)) return true;
     return other is Peer &&
         other.id == id &&
+        other.displayName == displayName &&
         other.status == status &&
         other.incarnation == incarnation &&
         other.lastContactMs == lastContactMs &&
@@ -102,6 +125,7 @@ class Peer {
   @override
   int get hashCode => Object.hash(
     id,
+    displayName,
     status,
     incarnation,
     lastContactMs,
@@ -112,6 +136,6 @@ class Peer {
 
   @override
   String toString() =>
-      'Peer($id, status: $status, incarnation: $incarnation, '
-      'lastContact: $lastContactMs, failedProbes: $failedProbeCount)';
+      'Peer($id, displayName: $displayName, status: $status, '
+      'incarnation: $incarnation, failedProbes: $failedProbeCount)';
 }

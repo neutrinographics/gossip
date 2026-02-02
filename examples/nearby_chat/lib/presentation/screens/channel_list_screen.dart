@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:gossip/gossip.dart' show ChannelId;
 
 import '../../infrastructure/services/permission_service.dart';
 import '../controllers/chat_controller.dart';
@@ -7,6 +8,7 @@ import '../theme/theme.dart';
 import '../view_models/view_models.dart';
 import '../widgets/widgets.dart';
 import 'chat_screen.dart';
+import 'metrics_screen.dart';
 import 'peers_screen.dart';
 import 'qr_scanner_screen.dart';
 
@@ -41,6 +43,12 @@ class ChannelListScreen extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.people),
                 onPressed: () => _openPeersScreen(context),
+                tooltip: 'Peers',
+              ),
+              IconButton(
+                icon: const Icon(Icons.analytics_outlined),
+                onPressed: () => _openMetricsScreen(context),
+                tooltip: 'Metrics',
               ),
             ],
           ),
@@ -55,7 +63,6 @@ class ChannelListScreen extends StatelessWidget {
                 status: controller.connectionStatus,
                 peerCount: controller.peers.length,
                 onStart: controller.startNetworking,
-                onStop: controller.stopNetworking,
               ),
             ],
           ),
@@ -67,8 +74,8 @@ class ChannelListScreen extends StatelessWidget {
               children: [
                 FloatingActionButton.extended(
                   heroTag: 'join',
-                  onPressed: () => _showJoinChannelDialog(context),
-                  icon: const Icon(Icons.login),
+                  onPressed: () => _joinChannelViaQrCode(context),
+                  icon: const Icon(Icons.qr_code_scanner),
                   label: const Text('Join'),
                 ),
                 const SizedBox(width: 12),
@@ -121,6 +128,12 @@ class ChannelListScreen extends StatelessWidget {
     );
   }
 
+  void _openMetricsScreen(BuildContext context) {
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => MetricsScreen(controller: controller)),
+    );
+  }
+
   void _showCreateChannelDialog(BuildContext context) {
     showDialog(
       context: context,
@@ -134,28 +147,7 @@ class ChannelListScreen extends StatelessWidget {
     );
   }
 
-  void _showJoinChannelDialog(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (dialogContext) => TextInputDialog(
-        title: 'Join Channel',
-        labelText: 'Channel ID',
-        hintText: 'Paste the channel ID here',
-        confirmText: 'Join',
-        onConfirm: controller.joinChannel,
-        extraContent: OutlinedButton.icon(
-          onPressed: () => _scanQrCode(context, dialogContext),
-          icon: const Icon(Icons.qr_code_scanner),
-          label: const Text('Scan QR Code'),
-        ),
-      ),
-    );
-  }
-
-  Future<void> _scanQrCode(
-    BuildContext context,
-    BuildContext dialogContext,
-  ) async {
+  Future<void> _joinChannelViaQrCode(BuildContext context) async {
     // Request camera permission
     final permissionService = PermissionService();
     final hasPermission = await permissionService.requestCameraPermission();
@@ -168,19 +160,22 @@ class ChannelListScreen extends StatelessWidget {
       return;
     }
 
-    // Close the dialog first
-    if (dialogContext.mounted) {
-      Navigator.of(dialogContext).pop();
-    }
-
     // Open scanner
     if (context.mounted) {
       final channelId = await Navigator.of(context).push<String>(
         MaterialPageRoute(builder: (_) => const QrScannerScreen()),
       );
 
-      if (channelId != null) {
-        controller.joinChannel(channelId);
+      if (channelId != null && context.mounted) {
+        await controller.joinChannel(channelId);
+        await controller.selectChannel(ChannelId(channelId));
+        if (context.mounted) {
+          Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => ChatScreen(controller: controller),
+            ),
+          );
+        }
       }
     }
   }

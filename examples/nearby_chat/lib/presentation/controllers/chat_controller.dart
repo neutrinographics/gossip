@@ -29,9 +29,14 @@ class ChatController extends ChangeNotifier {
 
   /// Prefix length for displaying NodeId as a short identifier.
   static const int _nodeIdPrefixLength = 8;
+
+  /// How often to poll metrics.
+  static const Duration _metricsUpdateInterval = Duration(seconds: 2);
+
   final ChatService _chatService;
   final ConnectionService _connectionService;
   final SyncService _syncService;
+  final MetricsService _metricsService;
   final PermissionService _permissionService = PermissionService();
   final ControllerErrorCallback? _onError;
 
@@ -50,20 +55,26 @@ class ChatController extends ChangeNotifier {
   /// Manages signal strength smoothing with decay-based penalties.
   final SignalStrengthManager _signalStrengthManager = SignalStrengthManager();
 
+  /// Current metrics state for display.
+  MetricsState _metrics = MetricsState.empty();
+
   StreamSubscription<gossip.DomainEvent>? _eventSubscription;
   StreamSubscription<PeerEvent>? _peerSubscription;
   Timer? _typingTimer;
   Timer? _typingExpirationTimer;
   Timer? _signalDecayTimer;
+  Timer? _metricsTimer;
 
   ChatController({
     required ChatService chatService,
     required ConnectionService connectionService,
     required SyncService syncService,
+    required MetricsService metricsService,
     ControllerErrorCallback? onError,
   }) : _chatService = chatService,
        _connectionService = connectionService,
        _syncService = syncService,
+       _metricsService = metricsService,
        _onError = onError {
     _setupEventHandling();
     _refreshChannels();
@@ -91,6 +102,7 @@ class ChatController extends ChangeNotifier {
   ConnectionStatus get connectionStatus => _connectionStatus;
   bool get isTyping => _isTyping;
   gossip.NodeId get localNodeId => _chatService.localNodeId;
+  MetricsState get metrics => _metrics;
 
   // --- Event Handling ---
 
@@ -104,6 +116,17 @@ class ChatController extends ChangeNotifier {
     _signalDecayTimer = Timer.periodic(_signalUpdateInterval, (_) {
       _refreshPeerSignalStrength();
     });
+
+    // Start metrics polling timer
+    _metricsTimer = Timer.periodic(_metricsUpdateInterval, (_) {
+      _refreshMetrics();
+    });
+  }
+
+  Future<void> _refreshMetrics() async {
+    _metricsService.sampleRates();
+    _metrics = await _metricsService.getMetrics();
+    notifyListeners();
   }
 
   void _onDomainEvent(gossip.DomainEvent event) {
@@ -316,7 +339,7 @@ class ChatController extends ChangeNotifier {
       _signalStrengthManager.updatePenalty(p.id, p.failedProbeCount);
       return PeerState(
         id: p.id,
-        displayName: p.id.value.substring(0, _nodeIdPrefixLength),
+        displayName: p.displayName,
         status: _mapPeerStatus(p.status),
         failedProbeCount: _signalStrengthManager.getSmoothedFailedProbeCount(
           p.id,
@@ -514,6 +537,7 @@ class ChatController extends ChangeNotifier {
   Future<void> stopNetworking() async {
     await _connectionService.stopDiscovery();
     await _connectionService.stopAdvertising();
+    await _connectionService.disconnectAll();
     _updateConnectionStatus();
   }
 
@@ -538,6 +562,7 @@ class ChatController extends ChangeNotifier {
     _typingTimer?.cancel();
     _typingExpirationTimer?.cancel();
     _signalDecayTimer?.cancel();
+    _metricsTimer?.cancel();
     _signalStrengthManager.dispose();
     super.dispose();
   }

@@ -6,26 +6,23 @@ import 'animated_status_indicator.dart';
 /// A status bar widget displaying the current connection status.
 ///
 /// Shows the connection state (connected, discovering, advertising, disconnected)
-/// with an animated indicator and a button to start/stop networking.
+/// with an animated indicator and a button to start networking.
 class ConnectionStatusBar extends StatelessWidget {
   final ConnectionStatus status;
   final int peerCount;
   final VoidCallback onStart;
-  final VoidCallback onStop;
 
   const ConnectionStatusBar({
     super.key,
     required this.status,
     required this.peerCount,
     required this.onStart,
-    required this.onStop,
   });
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isNetworking = status != ConnectionStatus.disconnected;
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -46,10 +43,8 @@ class ConnectionStatusBar extends StatelessWidget {
               style: TextStyle(color: colorScheme.onSurfaceVariant),
             ),
           ),
-          TextButton(
-            onPressed: isNetworking ? onStop : onStart,
-            child: Text(isNetworking ? 'Stop' : 'Start'),
-          ),
+          if (status == ConnectionStatus.disconnected)
+            TextButton(onPressed: onStart, child: const Text('Start')),
         ],
       ),
     );

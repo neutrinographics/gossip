@@ -15,7 +15,21 @@ void main() {
         final encoded = codec.encode(nodeId);
         final decoded = codec.decode(encoded);
 
-        expect(decoded, equals(nodeId));
+        expect(decoded, isNotNull);
+        expect(decoded!.nodeId, equals(nodeId));
+        expect(decoded.displayName, isNull);
+      });
+
+      test('round-trips a NodeId with display name', () {
+        final nodeId = NodeId('test-node-123');
+        const displayName = 'Test Device';
+
+        final encoded = codec.encode(nodeId, displayName: displayName);
+        final decoded = codec.decode(encoded);
+
+        expect(decoded, isNotNull);
+        expect(decoded!.nodeId, equals(nodeId));
+        expect(decoded.displayName, equals(displayName));
       });
 
       test('encodes with correct message type prefix', () {
@@ -37,7 +51,8 @@ void main() {
 
       test('decode returns null for empty string NodeId', () {
         // NodeId validates non-empty, so decoding an empty value should fail
-        final encoded = Uint8List.fromList([0x01, 0, 0, 0, 0]);
+        // Format: [type][nodeIdLen=0][displayNameLen=0]
+        final encoded = Uint8List.fromList([0x01, 0, 0, 0, 0, 0, 0, 0, 0]);
         final decoded = codec.decode(encoded);
 
         // NodeId constructor throws on empty, so decode should return null
@@ -50,7 +65,20 @@ void main() {
         final encoded = codec.encode(nodeId);
         final decoded = codec.decode(encoded);
 
-        expect(decoded, equals(nodeId));
+        expect(decoded, isNotNull);
+        expect(decoded!.nodeId, equals(nodeId));
+      });
+
+      test('handles unicode display name', () {
+        final nodeId = NodeId('test-node');
+        const displayName = 'Tëst Dévice 🎉';
+
+        final encoded = codec.encode(nodeId, displayName: displayName);
+        final decoded = codec.decode(encoded);
+
+        expect(decoded, isNotNull);
+        expect(decoded!.nodeId, equals(nodeId));
+        expect(decoded.displayName, equals(displayName));
       });
 
       test('decode returns null for empty bytes', () {

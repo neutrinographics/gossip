@@ -154,6 +154,9 @@ class FailureDetector {
        _probeInterval = probeInterval ?? const Duration(milliseconds: 1000),
        _random = random ?? Random();
 
+  /// Window duration for metrics sliding window (10 seconds).
+  static const int _metricsWindowDurationMs = 10000;
+
   /// Emits an error through the callback if one is registered.
   void _emitError(SyncError error) {
     onError?.call(error);
@@ -167,6 +170,7 @@ class FailureDetector {
   ) async {
     try {
       await messagePort.send(recipient, bytes);
+      peerRegistry.recordMessageSent(recipient, bytes.length);
     } catch (e) {
       _emitError(
         PeerSyncError(
@@ -236,6 +240,15 @@ class FailureDetector {
   /// Malformed messages are silently ignored to prevent denial-of-service
   /// via protocol violations.
   Future<void> _handleIncomingMessage(IncomingMessage message) async {
+    // Record metrics before processing (even if decode fails)
+    final nowMs = timePort.nowMs;
+    peerRegistry.recordMessageReceived(
+      message.sender,
+      message.bytes.length,
+      nowMs,
+      _metricsWindowDurationMs,
+    );
+
     try {
       final protocolMessage = _codec.decode(message.bytes);
 

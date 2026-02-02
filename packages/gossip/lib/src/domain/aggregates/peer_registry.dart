@@ -128,16 +128,19 @@ class PeerRegistry {
 
   /// Adds a new peer to the registry with reachable status.
   ///
+  /// If [displayName] is not provided, defaults to a truncated form of the
+  /// node ID.
+  ///
   /// Throws if attempting to add the local node as a peer.
   /// No-op if the peer is already registered.
   ///
   /// Emits: [PeerAdded] event.
-  void addPeer(NodeId id, {required DateTime occurredAt}) {
+  void addPeer(NodeId id, {String? displayName, required DateTime occurredAt}) {
     if (id == localNode) {
       throw Exception('Cannot add local node as peer');
     }
     if (_peers.containsKey(id)) return;
-    _peers[id] = Peer(id: id, status: PeerStatus.reachable);
+    _peers[id] = Peer(id: id, displayName: displayName);
     _addEvent(PeerAdded(id, occurredAt: occurredAt));
   }
 

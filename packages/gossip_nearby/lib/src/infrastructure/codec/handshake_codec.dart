@@ -33,51 +33,102 @@ abstract class WireFormat {
   static const int gossipPayloadOffset = 1;
 }
 
+/// Result of decoding a handshake message.
+class HandshakeData {
+  final NodeId nodeId;
+  final String? displayName;
+
+  const HandshakeData({required this.nodeId, this.displayName});
+}
+
 /// Codec for encoding and decoding handshake messages.
 ///
-/// Wire format: [0x01][length:4 bytes][nodeId:UTF-8 bytes]
+/// Wire format (v2 with display name):
+/// [0x01][nodeIdLen:4][nodeId:UTF-8][displayNameLen:4][displayName:UTF-8]
+///
+/// Backward compatible: old clients read nodeId and ignore the rest.
 class HandshakeCodec {
   const HandshakeCodec();
 
-  /// Encodes a handshake message containing the local NodeId.
-  Uint8List encode(NodeId nodeId) {
+  /// Encodes a handshake message containing the local NodeId and display name.
+  Uint8List encode(NodeId nodeId, {String? displayName}) {
     final nodeIdBytes = utf8.encode(nodeId.value);
-    final totalLength = WireFormat.handshakeHeaderSize + nodeIdBytes.length;
+    final displayNameBytes = displayName != null
+        ? utf8.encode(displayName)
+        : Uint8List(0);
+
+    final totalLength =
+        WireFormat.handshakeHeaderSize +
+        nodeIdBytes.length +
+        WireFormat.lengthFieldSize +
+        displayNameBytes.length;
+
     final buffer = ByteData(totalLength);
-    buffer.setUint8(WireFormat.typeOffset, MessageType.handshake);
-    buffer.setUint32(WireFormat.lengthOffset, nodeIdBytes.length, Endian.big);
+    var offset = 0;
+
+    // Message type
+    buffer.setUint8(offset, MessageType.handshake);
+    offset += 1;
+
+    // NodeId length + bytes
+    buffer.setUint32(offset, nodeIdBytes.length, Endian.big);
+    offset += WireFormat.lengthFieldSize;
+
     final result = buffer.buffer.asUint8List();
-    result.setRange(
-      WireFormat.handshakePayloadOffset,
-      WireFormat.handshakePayloadOffset + nodeIdBytes.length,
-      nodeIdBytes,
-    );
+    result.setRange(offset, offset + nodeIdBytes.length, nodeIdBytes);
+    offset += nodeIdBytes.length;
+
+    // Display name length + bytes
+    buffer.setUint32(offset, displayNameBytes.length, Endian.big);
+    offset += WireFormat.lengthFieldSize;
+    result.setRange(offset, offset + displayNameBytes.length, displayNameBytes);
+
     return result;
   }
 
-  /// Decodes a handshake message to extract the remote NodeId.
+  /// Decodes a handshake message to extract the remote NodeId and display name.
   ///
   /// Returns null if the message is malformed or contains an invalid NodeId.
-  NodeId? decode(Uint8List bytes) {
+  HandshakeData? decode(Uint8List bytes) {
     if (bytes.length < WireFormat.handshakeHeaderSize) return null;
     if (bytes[WireFormat.typeOffset] != MessageType.handshake) return null;
 
     final buffer = ByteData.sublistView(bytes);
-    final payloadLength = buffer.getUint32(WireFormat.lengthOffset, Endian.big);
-    final expectedLength = WireFormat.handshakeHeaderSize + payloadLength;
-    if (bytes.length < expectedLength) return null;
+    var offset = WireFormat.lengthOffset;
 
-    final nodeIdBytes = bytes.sublist(
-      WireFormat.handshakePayloadOffset,
-      WireFormat.handshakePayloadOffset + payloadLength,
-    );
+    // Read nodeId
+    final nodeIdLength = buffer.getUint32(offset, Endian.big);
+    offset += WireFormat.lengthFieldSize;
+
+    if (bytes.length < offset + nodeIdLength) return null;
+
+    final nodeIdBytes = bytes.sublist(offset, offset + nodeIdLength);
+    offset += nodeIdLength;
+
     final nodeIdValue = utf8.decode(nodeIdBytes);
-
+    final NodeId nodeId;
     try {
-      return NodeId(nodeIdValue);
+      nodeId = NodeId(nodeIdValue);
     } on ArgumentError {
       return null;
     }
+
+    // Read display name (optional - may not be present in old handshakes)
+    String? displayName;
+    if (bytes.length >= offset + WireFormat.lengthFieldSize) {
+      final displayNameLength = buffer.getUint32(offset, Endian.big);
+      offset += WireFormat.lengthFieldSize;
+
+      if (bytes.length >= offset + displayNameLength && displayNameLength > 0) {
+        final displayNameBytes = bytes.sublist(
+          offset,
+          offset + displayNameLength,
+        );
+        displayName = utf8.decode(displayNameBytes);
+      }
+    }
+
+    return HandshakeData(nodeId: nodeId, displayName: displayName);
   }
 
   /// Wraps a gossip payload with the gossip message type prefix.

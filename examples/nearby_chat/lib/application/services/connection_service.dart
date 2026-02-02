@@ -24,8 +24,8 @@ class ConnectionService {
   void _setupPeerEventHandling() {
     _peerSubscription = _transport.peerEvents.listen((event) {
       switch (event) {
-        case PeerConnected(:final nodeId):
-          _coordinator.addPeer(nodeId);
+        case PeerConnected(:final nodeId, :final displayName):
+          _coordinator.addPeer(nodeId, displayName: displayName);
         case PeerDisconnected(:final nodeId):
           _coordinator.removePeer(nodeId);
       }
@@ -50,6 +50,11 @@ class ConnectionService {
   /// Stops discovery.
   Future<void> stopDiscovery() async {
     await _transport.stopDiscovery();
+  }
+
+  /// Disconnects all connected peers.
+  Future<void> disconnectAll() async {
+    await _transport.disconnectAll();
   }
 
   /// Whether advertising is currently active.

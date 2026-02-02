@@ -12,15 +12,22 @@ sealed class ConnectionEvent {
 /// At this point, the connection is ready for gossip communication.
 /// The [endpoint] is the Nearby Connections endpoint, and [nodeId] is
 /// the application-level peer identifier exchanged during handshake.
+/// The [displayName] is the human-readable name provided by the peer.
 class HandshakeCompleted extends ConnectionEvent {
   final Endpoint endpoint;
   final NodeId nodeId;
+  final String? displayName;
 
-  const HandshakeCompleted({required this.endpoint, required this.nodeId});
+  const HandshakeCompleted({
+    required this.endpoint,
+    required this.nodeId,
+    this.displayName,
+  });
 
   @override
   String toString() =>
-      'HandshakeCompleted(endpoint: $endpoint, nodeId: $nodeId)';
+      'HandshakeCompleted(endpoint: $endpoint, nodeId: $nodeId, '
+      'displayName: $displayName)';
 }
 
 /// Emitted when a handshake fails.

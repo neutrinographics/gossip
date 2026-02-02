@@ -55,12 +55,17 @@ void main() async {
     coordinator: coordinator,
   );
   final syncService = SyncService(coordinator: coordinator);
+  final metricsService = MetricsService(
+    syncService: syncService,
+    connectionService: connectionService,
+  );
 
   // Create presentation controller
   final controller = ChatController(
     chatService: chatService,
     connectionService: connectionService,
     syncService: syncService,
+    metricsService: metricsService,
   );
 
   // Create and start debug logger for observability

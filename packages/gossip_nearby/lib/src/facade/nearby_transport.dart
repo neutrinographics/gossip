@@ -20,10 +20,11 @@ sealed class PeerEvent {
 /// Emitted when a peer has connected and completed the handshake.
 class PeerConnected extends PeerEvent {
   final NodeId nodeId;
-  const PeerConnected(this.nodeId);
+  final String? displayName;
+  const PeerConnected(this.nodeId, {this.displayName});
 
   @override
-  String toString() => 'PeerConnected($nodeId)';
+  String toString() => 'PeerConnected($nodeId, displayName: $displayName)';
 }
 
 /// Emitted when a peer has disconnected.
@@ -143,6 +144,7 @@ class NearbyTransport {
     final metrics = NearbyMetrics();
     final connectionService = ConnectionService(
       localNodeId: localNodeId,
+      displayName: displayName,
       nearbyPort: nearbyPort,
       registry: registry,
       metrics: metrics,
@@ -233,6 +235,15 @@ class NearbyTransport {
     _isDiscovering = false;
   }
 
+  /// Disconnects all connected peers.
+  Future<void> disconnectAll() async {
+    final endpoints = _registry.connections.map((c) => c.endpointId).toList();
+    _log(LogLevel.info, 'Disconnecting all ${endpoints.length} peers');
+    for (final endpointId in endpoints) {
+      await _nearbyPort.disconnect(endpointId);
+    }
+  }
+
   /// Disposes all resources.
   Future<void> dispose() async {
     _log(LogLevel.debug, 'Disposing NearbyTransport');
@@ -249,8 +260,10 @@ class NearbyTransport {
 
   void _onConnectionEvent(ConnectionEvent event) {
     switch (event) {
-      case HandshakeCompleted(:final nodeId):
-        _peerEventController.add(PeerConnected(nodeId));
+      case HandshakeCompleted(:final nodeId, :final displayName):
+        _peerEventController.add(
+          PeerConnected(nodeId, displayName: displayName),
+        );
       case ConnectionClosed(:final nodeId):
         _peerEventController.add(PeerDisconnected(nodeId));
       case HandshakeFailed():

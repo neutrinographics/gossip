@@ -419,9 +419,12 @@ class Coordinator {
   /// - Gossip peer selection for anti-entropy
   /// - SWIM failure detection probing
   ///
+  /// If [displayName] is not provided, defaults to a truncated form of the
+  /// node ID.
+  ///
   /// Throws [Exception] if attempting to add the local node as a peer.
-  Future<void> addPeer(NodeId id) async {
-    await _peerService.addPeer(id);
+  Future<void> addPeer(NodeId id, {String? displayName}) async {
+    await _peerService.addPeer(id, displayName: displayName);
   }
 
   /// Removes a peer from the system.

@@ -152,6 +152,11 @@ class GossipEngine {
   /// where the response was lost or the peer disconnected.
   static const Duration _pendingRequestTimeout = Duration(seconds: 5);
 
+  /// Window duration for metrics sliding window (10 seconds).
+  ///
+  /// Used to track message rates within a fixed time window for rate limiting.
+  static const int _metricsWindowDurationMs = 10000;
+
   GossipEngine({
     required this.localNode,
     required this.peerRegistry,
@@ -279,6 +284,15 @@ class GossipEngine {
   /// Malformed messages are silently ignored to prevent denial-of-service
   /// via protocol violations.
   Future<void> _handleIncomingMessage(IncomingMessage message) async {
+    // Record metrics before processing (even if decode fails)
+    final nowMs = timePort.nowMs;
+    peerRegistry.recordMessageReceived(
+      message.sender,
+      message.bytes.length,
+      nowMs,
+      _metricsWindowDurationMs,
+    );
+
     try {
       final protocolMessage = _codec.decode(message.bytes);
 
@@ -340,6 +354,7 @@ class GossipEngine {
     _logOutgoingMessage(recipient, message, bytes.length);
     try {
       await messagePort.send(recipient, bytes);
+      peerRegistry.recordMessageSent(recipient, bytes.length);
     } catch (e) {
       _emitError(
         PeerSyncError(
