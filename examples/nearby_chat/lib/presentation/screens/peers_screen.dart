@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../application/services/indirect_peer_service.dart';
 import '../controllers/chat_controller.dart';
 import '../view_models/view_models.dart';
 import '../widgets/animated_empty_state.dart';
@@ -178,6 +179,8 @@ class _IndirectPeerTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final (statusText, statusColor) = _getStatusInfo(theme);
+
     return ListTile(
       leading: NodeAvatar(
         identifier: peer.id.value,
@@ -185,11 +188,54 @@ class _IndirectPeerTile extends StatelessWidget {
         radius: 20,
       ),
       title: Text(peer.displayName),
-      subtitle: const Text('Via gossip'),
-      trailing: Icon(
-        Icons.sync_alt,
-        size: 18,
-        color: theme.colorScheme.outline,
+      subtitle: Text(statusText),
+      trailing: _ActivityIndicator(
+        status: peer.activityStatus,
+        color: statusColor,
+      ),
+    );
+  }
+
+  (String, Color) _getStatusInfo(ThemeData theme) {
+    return switch (peer.activityStatus) {
+      IndirectPeerActivityStatus.active => ('Active', Colors.green),
+      IndirectPeerActivityStatus.recent => ('Recently active', Colors.amber),
+      IndirectPeerActivityStatus.away => ('Away', Colors.orange),
+      IndirectPeerActivityStatus.stale => (
+        'Inactive',
+        theme.colorScheme.outline,
+      ),
+      IndirectPeerActivityStatus.unknown => (
+        'Via gossip',
+        theme.colorScheme.outline,
+      ),
+    };
+  }
+}
+
+class _ActivityIndicator extends StatelessWidget {
+  final IndirectPeerActivityStatus status;
+  final Color color;
+
+  const _ActivityIndicator({required this.status, required this.color});
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: 12,
+      height: 12,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: color,
+        boxShadow: status == IndirectPeerActivityStatus.active
+            ? [
+                BoxShadow(
+                  color: color.withValues(alpha: 0.4),
+                  blurRadius: 4,
+                  spreadRadius: 1,
+                ),
+              ]
+            : null,
       ),
     );
   }

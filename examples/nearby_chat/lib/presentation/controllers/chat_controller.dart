@@ -202,7 +202,7 @@ class ChatController extends ChangeNotifier {
     gossip.VersionVector newVersion,
   ) {
     // Track authors from version vector to discover indirect peers
-    _indirectPeerService.onEntriesMerged(newVersion);
+    _indirectPeerService.onEntriesMerged(newVersion, entries);
     _refreshIndirectPeers();
 
     if (streamId == StreamIds.messages) {
@@ -379,8 +379,15 @@ class ChatController extends ChangeNotifier {
       return IndirectPeerState(
         id: nodeId,
         displayName: nodeId.value.substring(0, _nodeIdPrefixLength),
+        lastSeenAt: _indirectPeerService.getLastSeenAt(nodeId),
+        activityStatus: _indirectPeerService.getActivityStatus(nodeId),
       );
     }).toList();
+
+    // Sort by activity status (most active first)
+    _indirectPeers.sort((a, b) {
+      return a.activityStatus.index.compareTo(b.activityStatus.index);
+    });
   }
 
   /// Refreshes peer signal strength by polling latest probe counts and decaying penalties.

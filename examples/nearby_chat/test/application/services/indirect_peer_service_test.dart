@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
 
@@ -12,6 +14,15 @@ void main() {
       localNodeId = NodeId('local-node');
       service = IndirectPeerService(localNodeId: localNodeId);
     });
+
+    LogEntry _createEntry(NodeId author, int physicalMs) {
+      return LogEntry(
+        author: author,
+        sequence: 1,
+        timestamp: Hlc(physicalMs, 0),
+        payload: Uint8List(0),
+      );
+    }
 
     group('initial state', () {
       test('should have no known authors initially', () {
@@ -31,7 +42,7 @@ void main() {
         final versionVector = VersionVector({author1: 1, author2: 3});
 
         // Act
-        service.onEntriesMerged(versionVector);
+        service.onEntriesMerged(versionVector, []);
 
         // Assert
         expect(service.knownAuthors, containsAll([author1, author2]));
@@ -44,8 +55,8 @@ void main() {
         final author3 = NodeId('author-3');
 
         // Act
-        service.onEntriesMerged(VersionVector({author1: 1}));
-        service.onEntriesMerged(VersionVector({author2: 2, author3: 1}));
+        service.onEntriesMerged(VersionVector({author1: 1}), []);
+        service.onEntriesMerged(VersionVector({author2: 2, author3: 1}), []);
 
         // Assert
         expect(service.knownAuthors, containsAll([author1, author2, author3]));
@@ -56,8 +67,8 @@ void main() {
         final author1 = NodeId('author-1');
 
         // Act
-        service.onEntriesMerged(VersionVector({author1: 1}));
-        service.onEntriesMerged(VersionVector({author1: 5}));
+        service.onEntriesMerged(VersionVector({author1: 1}), []);
+        service.onEntriesMerged(VersionVector({author1: 5}), []);
 
         // Assert
         expect(service.knownAuthors.length, 1);
@@ -70,7 +81,7 @@ void main() {
         final versionVector = VersionVector({localNodeId: 5, remoteAuthor: 3});
 
         // Act
-        service.onEntriesMerged(versionVector);
+        service.onEntriesMerged(versionVector, []);
 
         // Assert
         expect(service.knownAuthors, isNot(contains(localNodeId)));
@@ -85,6 +96,7 @@ void main() {
         final indirectPeer = NodeId('indirect-peer');
         service.onEntriesMerged(
           VersionVector({directPeer: 1, indirectPeer: 2}),
+          [],
         );
 
         // Act
@@ -99,7 +111,7 @@ void main() {
         // Arrange
         final peer1 = NodeId('peer-1');
         final peer2 = NodeId('peer-2');
-        service.onEntriesMerged(VersionVector({peer1: 1, peer2: 2}));
+        service.onEntriesMerged(VersionVector({peer1: 1, peer2: 2}), []);
 
         // Act
         final result = service.getIndirectPeers(directPeerIds: {peer1, peer2});
@@ -112,7 +124,7 @@ void main() {
         // Arrange
         final author1 = NodeId('author-1');
         final author2 = NodeId('author-2');
-        service.onEntriesMerged(VersionVector({author1: 1, author2: 2}));
+        service.onEntriesMerged(VersionVector({author1: 1, author2: 2}), []);
 
         // Act
         final result = service.getIndirectPeers(directPeerIds: {});
@@ -126,6 +138,7 @@ void main() {
         final remoteAuthor = NodeId('remote-author');
         service.onEntriesMerged(
           VersionVector({localNodeId: 5, remoteAuthor: 3}),
+          [],
         );
 
         // Act
@@ -141,7 +154,7 @@ void main() {
       test('should remove all tracked authors', () {
         // Arrange
         final author = NodeId('author-1');
-        service.onEntriesMerged(VersionVector({author: 1}));
+        service.onEntriesMerged(VersionVector({author: 1}), []);
         expect(service.knownAuthors, isNotEmpty);
 
         // Act
@@ -149,6 +162,198 @@ void main() {
 
         // Assert
         expect(service.knownAuthors, isEmpty);
+      });
+
+      test('should clear last seen timestamps', () {
+        // Arrange
+        final author = NodeId('author-1');
+        final now = DateTime.now().millisecondsSinceEpoch;
+        service.onEntriesMerged(VersionVector({author: 1}), [
+          _createEntry(author, now),
+        ]);
+        expect(service.getLastSeenAt(author), isNotNull);
+
+        // Act
+        service.clear();
+
+        // Assert
+        expect(service.getLastSeenAt(author), isNull);
+      });
+    });
+
+    group('last seen tracking', () {
+      test('should track last seen timestamp from entries', () {
+        // Arrange
+        final author = NodeId('author-1');
+        final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+        // Act
+        service.onEntriesMerged(VersionVector({author: 1}), [
+          _createEntry(author, timestamp),
+        ]);
+
+        // Assert
+        final lastSeen = service.getLastSeenAt(author);
+        expect(lastSeen, isNotNull);
+        expect(lastSeen!.millisecondsSinceEpoch, timestamp);
+      });
+
+      test('should update to most recent timestamp', () {
+        // Arrange
+        final author = NodeId('author-1');
+        final olderTime = DateTime.now().millisecondsSinceEpoch - 10000;
+        final newerTime = DateTime.now().millisecondsSinceEpoch;
+
+        // Act
+        service.onEntriesMerged(VersionVector({author: 1}), [
+          _createEntry(author, olderTime),
+        ]);
+        service.onEntriesMerged(VersionVector({author: 2}), [
+          _createEntry(author, newerTime),
+        ]);
+
+        // Assert
+        final lastSeen = service.getLastSeenAt(author);
+        expect(lastSeen!.millisecondsSinceEpoch, newerTime);
+      });
+
+      test('should not update to older timestamp', () {
+        // Arrange
+        final author = NodeId('author-1');
+        final newerTime = DateTime.now().millisecondsSinceEpoch;
+        final olderTime = newerTime - 10000;
+
+        // Act
+        service.onEntriesMerged(VersionVector({author: 1}), [
+          _createEntry(author, newerTime),
+        ]);
+        service.onEntriesMerged(VersionVector({author: 2}), [
+          _createEntry(author, olderTime),
+        ]);
+
+        // Assert
+        final lastSeen = service.getLastSeenAt(author);
+        expect(lastSeen!.millisecondsSinceEpoch, newerTime);
+      });
+
+      test('should track multiple authors independently', () {
+        // Arrange
+        final author1 = NodeId('author-1');
+        final author2 = NodeId('author-2');
+        final time1 = DateTime.now().millisecondsSinceEpoch - 5000;
+        final time2 = DateTime.now().millisecondsSinceEpoch;
+
+        // Act
+        service.onEntriesMerged(VersionVector({author1: 1, author2: 1}), [
+          _createEntry(author1, time1),
+          _createEntry(author2, time2),
+        ]);
+
+        // Assert
+        expect(service.getLastSeenAt(author1)!.millisecondsSinceEpoch, time1);
+        expect(service.getLastSeenAt(author2)!.millisecondsSinceEpoch, time2);
+      });
+
+      test('should not track local node timestamps', () {
+        // Arrange
+        final now = DateTime.now().millisecondsSinceEpoch;
+
+        // Act
+        service.onEntriesMerged(VersionVector({localNodeId: 1}), [
+          _createEntry(localNodeId, now),
+        ]);
+
+        // Assert
+        expect(service.getLastSeenAt(localNodeId), isNull);
+      });
+
+      test('should return null for unknown author', () {
+        // Arrange
+        final unknownAuthor = NodeId('unknown');
+
+        // Assert
+        expect(service.getLastSeenAt(unknownAuthor), isNull);
+      });
+    });
+
+    group('getActivityStatus', () {
+      test('should return active for entries within 15 seconds', () {
+        // Arrange
+        final author = NodeId('author-1');
+        final now = DateTime.now();
+        final recentTime = now.subtract(const Duration(seconds: 10));
+
+        service.onEntriesMerged(VersionVector({author: 1}), [
+          _createEntry(author, recentTime.millisecondsSinceEpoch),
+        ]);
+
+        // Act
+        final status = service.getActivityStatus(author, now: now);
+
+        // Assert
+        expect(status, IndirectPeerActivityStatus.active);
+      });
+
+      test('should return recent for entries within 1 minute', () {
+        // Arrange
+        final author = NodeId('author-1');
+        final now = DateTime.now();
+        final time = now.subtract(const Duration(seconds: 30));
+
+        service.onEntriesMerged(VersionVector({author: 1}), [
+          _createEntry(author, time.millisecondsSinceEpoch),
+        ]);
+
+        // Act
+        final status = service.getActivityStatus(author, now: now);
+
+        // Assert
+        expect(status, IndirectPeerActivityStatus.recent);
+      });
+
+      test('should return away for entries within 5 minutes', () {
+        // Arrange
+        final author = NodeId('author-1');
+        final now = DateTime.now();
+        final time = now.subtract(const Duration(minutes: 3));
+
+        service.onEntriesMerged(VersionVector({author: 1}), [
+          _createEntry(author, time.millisecondsSinceEpoch),
+        ]);
+
+        // Act
+        final status = service.getActivityStatus(author, now: now);
+
+        // Assert
+        expect(status, IndirectPeerActivityStatus.away);
+      });
+
+      test('should return stale for entries older than 5 minutes', () {
+        // Arrange
+        final author = NodeId('author-1');
+        final now = DateTime.now();
+        final time = now.subtract(const Duration(minutes: 10));
+
+        service.onEntriesMerged(VersionVector({author: 1}), [
+          _createEntry(author, time.millisecondsSinceEpoch),
+        ]);
+
+        // Act
+        final status = service.getActivityStatus(author, now: now);
+
+        // Assert
+        expect(status, IndirectPeerActivityStatus.stale);
+      });
+
+      test('should return unknown for untracked author', () {
+        // Arrange
+        final unknownAuthor = NodeId('unknown');
+
+        // Act
+        final status = service.getActivityStatus(unknownAuthor);
+
+        // Assert
+        expect(status, IndirectPeerActivityStatus.unknown);
       });
     });
   });
