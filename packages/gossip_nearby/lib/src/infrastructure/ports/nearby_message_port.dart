@@ -27,8 +27,14 @@ class NearbyMessagePort implements MessagePort {
   }
 
   @override
-  Future<void> send(NodeId destination, Uint8List bytes) async {
+  Future<void> send(
+    NodeId destination,
+    Uint8List bytes, {
+    MessagePriority priority = MessagePriority.normal,
+  }) async {
     if (_closed) return;
+    // TODO: Implement priority queuing in ConnectionService
+    // For now, priority is passed but not yet used for queue ordering
     await _connectionService.sendGossipMessage(destination, bytes);
   }
 

@@ -96,7 +96,12 @@ class InMemoryMessagePort implements MessagePort {
   }
 
   @override
-  Future<void> send(NodeId destination, Uint8List bytes) async {
+  Future<void> send(
+    NodeId destination,
+    Uint8List bytes, {
+    MessagePriority priority = MessagePriority.normal,
+  }) async {
+    // Priority is ignored in test implementation - messages delivered immediately
     bus.deliver(destination, localNode, bytes);
   }
 

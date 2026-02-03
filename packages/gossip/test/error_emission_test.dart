@@ -25,7 +25,11 @@ class ThrowingMessagePort implements MessagePort {
   ThrowingMessagePort(this.exceptionToThrow);
 
   @override
-  Future<void> send(NodeId destination, Uint8List bytes) async {
+  Future<void> send(
+    NodeId destination,
+    Uint8List bytes, {
+    MessagePriority priority = MessagePriority.normal,
+  }) async {
     throw exceptionToThrow;
   }
 

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 import 'package:gossip/src/domain/entities/peer.dart';
 import 'package:gossip/src/domain/events/domain_event.dart' show PeerStatus;
 import 'package:gossip/src/domain/value_objects/node_id.dart';
@@ -12,6 +13,36 @@ import 'package:gossip/src/protocol/protocol_codec.dart';
 import 'package:gossip/src/protocol/messages/ping.dart';
 import 'package:gossip/src/protocol/messages/ack.dart';
 import 'package:test/test.dart';
+
+/// A MessagePort that captures the priority of each sent message.
+class PriorityCapturingMessagePort implements MessagePort {
+  final InMemoryMessagePort _delegate;
+  final List<MessagePriority> capturedPriorities = [];
+
+  PriorityCapturingMessagePort(this._delegate);
+
+  @override
+  Future<void> send(
+    NodeId destination,
+    Uint8List bytes, {
+    MessagePriority priority = MessagePriority.normal,
+  }) async {
+    capturedPriorities.add(priority);
+    await _delegate.send(destination, bytes, priority: priority);
+  }
+
+  @override
+  Stream<IncomingMessage> get incoming => _delegate.incoming;
+
+  @override
+  Future<void> close() => _delegate.close();
+
+  @override
+  int pendingSendCount(NodeId peer) => _delegate.pendingSendCount(peer);
+
+  @override
+  int get totalPendingSendCount => _delegate.totalPendingSendCount;
+}
 
 void main() {
   FailureDetector createDetector(NodeId localNode, PeerRegistry peerRegistry) {
@@ -415,6 +446,70 @@ void main() {
         equals(1),
         reason: 'Probe failure should be recorded when no Ack arrives',
       );
+    });
+
+    test('sends SWIM messages with high priority', () async {
+      final localNode = NodeId('local');
+      final peerNode = NodeId('peer1');
+      final peerRegistry = PeerRegistry(
+        localNode: localNode,
+        initialIncarnation: 0,
+      );
+      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
+
+      final timer = InMemoryTimePort();
+      final bus = InMemoryMessageBus();
+      final delegatePort = InMemoryMessagePort(localNode, bus);
+      final capturingPort = PriorityCapturingMessagePort(delegatePort);
+      final peerPort = InMemoryMessagePort(peerNode, bus);
+      final codec = ProtocolCodec();
+
+      final detector = FailureDetector(
+        localNode: localNode,
+        peerRegistry: peerRegistry,
+        timePort: timer,
+        messagePort: capturingPort,
+        pingTimeout: Duration(milliseconds: 500),
+      );
+
+      // Start listening so detector responds to Pings with Acks
+      detector.startListening();
+
+      // Trigger a probe round which sends a Ping
+      final probeRoundFuture = detector.performProbeRound();
+
+      // Allow Ping to be sent
+      await Future.delayed(Duration.zero);
+
+      // Verify Ping was sent with high priority
+      expect(capturingPort.capturedPriorities, isNotEmpty);
+      expect(
+        capturingPort.capturedPriorities.first,
+        equals(MessagePriority.high),
+        reason: 'Ping should be sent with high priority',
+      );
+
+      // Send a Ping to detector so it responds with Ack
+      final ping = Ping(sender: peerNode, sequence: 99);
+      await peerPort.send(localNode, codec.encode(ping));
+
+      // Allow Ack response to be sent
+      await Future.delayed(Duration.zero);
+
+      // Verify Ack was also sent with high priority
+      // (Ping + Ack = 2 high priority messages)
+      expect(capturingPort.capturedPriorities.length, greaterThanOrEqualTo(2));
+      expect(
+        capturingPort.capturedPriorities,
+        everyElement(equals(MessagePriority.high)),
+        reason: 'All SWIM messages (Ping, Ack) should use high priority',
+      );
+
+      // Clean up
+      await timer.advance(Duration(milliseconds: 501));
+      await timer.advance(Duration(milliseconds: 501));
+      await probeRoundFuture;
+      detector.stopListening();
     });
   });
 }

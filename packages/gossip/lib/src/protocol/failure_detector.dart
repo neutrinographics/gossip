@@ -190,13 +190,16 @@ class FailureDetector {
   }
 
   /// Sends bytes to a peer with error handling.
+  ///
+  /// All SWIM protocol messages (Ping, Ack, PingReq) use high priority
+  /// to ensure failure detection isn't delayed by gossip congestion.
   Future<void> _safeSend(
     NodeId recipient,
     Uint8List bytes,
     String context,
   ) async {
     try {
-      await messagePort.send(recipient, bytes);
+      await messagePort.send(recipient, bytes, priority: MessagePriority.high);
       peerRegistry.recordMessageSent(recipient, bytes.length);
     } catch (e) {
       _emitError(

@@ -1,6 +1,26 @@
 import 'dart:typed_data';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 
+/// Priority level for outgoing messages.
+///
+/// Transports that support priority queuing will process high-priority
+/// messages before normal-priority messages. This ensures time-sensitive
+/// protocol messages (like SWIM pings/acks) aren't delayed behind bulk
+/// data transfers during congestion.
+enum MessagePriority {
+  /// High priority for time-sensitive protocol messages.
+  ///
+  /// Used by SWIM failure detection for pings and acks, which must be
+  /// delivered promptly to avoid false positive peer failures.
+  high,
+
+  /// Normal priority for regular gossip messages.
+  ///
+  /// Used for anti-entropy gossip (digest requests/responses, deltas).
+  /// These can tolerate some delay without affecting correctness.
+  normal,
+}
+
 /// A message received from a peer.
 ///
 /// Contains the raw bytes along with metadata about when and from whom
@@ -92,7 +112,19 @@ abstract class MessagePort {
   /// - Deliver bytes best-effort (no guaranteed delivery)
   /// - Not block the caller (async delivery)
   /// - Handle unreachable destinations gracefully (no exceptions)
-  Future<void> send(NodeId destination, Uint8List bytes);
+  ///
+  /// The optional [priority] parameter indicates message urgency:
+  /// - [MessagePriority.high]: Time-sensitive messages (SWIM pings/acks)
+  /// - [MessagePriority.normal]: Regular gossip messages (default)
+  ///
+  /// Transports that support priority queuing should process high-priority
+  /// messages before normal-priority ones. Transports that don't support
+  /// priority can ignore this parameter.
+  Future<void> send(
+    NodeId destination,
+    Uint8List bytes, {
+    MessagePriority priority = MessagePriority.normal,
+  });
 
   /// Stream of messages received from peers.
   ///
