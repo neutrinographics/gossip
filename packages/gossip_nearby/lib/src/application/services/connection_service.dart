@@ -1,4 +1,6 @@
-import 'dart:async' show StreamController, StreamSubscription, unawaited;
+import 'dart:async'
+    show Completer, StreamController, StreamSubscription, unawaited;
+import 'dart:collection' show Queue;
 import 'dart:typed_data';
 
 import 'package:gossip/gossip.dart';
@@ -15,6 +17,20 @@ import '../observability/nearby_metrics.dart';
 
 /// Callback for receiving gossip messages.
 typedef GossipMessageCallback = void Function(NodeId sender, Uint8List bytes);
+
+/// A queued message waiting to be sent.
+class _QueuedMessage {
+  final EndpointId endpointId;
+  final NodeId destination;
+  final Uint8List bytes;
+  final Completer<void> completer;
+
+  _QueuedMessage({
+    required this.endpointId,
+    required this.destination,
+    required this.bytes,
+  }) : completer = Completer<void>();
+}
 
 /// Application service coordinating connection lifecycle and handshakes.
 ///
@@ -37,6 +53,15 @@ class ConnectionService {
   StreamSubscription<NearbyEvent>? _nearbySubscription;
 
   final Map<EndpointId, DateTime> _handshakeStartTimes = {};
+
+  /// High-priority message queue (SWIM pings/acks).
+  final Queue<_QueuedMessage> _highPriorityQueue = Queue<_QueuedMessage>();
+
+  /// Normal-priority message queue (gossip messages).
+  final Queue<_QueuedMessage> _normalPriorityQueue = Queue<_QueuedMessage>();
+
+  /// Whether the queue processor is currently running.
+  bool _isProcessingQueue = false;
 
   /// Callback invoked when a gossip message is received from a connected peer.
   GossipMessageCallback? onGossipMessage;
@@ -69,7 +94,15 @@ class ConnectionService {
   NearbyMetrics get metrics => _metrics;
 
   /// Sends a gossip message to the specified peer.
-  Future<void> sendGossipMessage(NodeId destination, Uint8List bytes) async {
+  ///
+  /// Messages are queued by priority. High-priority messages (SWIM pings/acks)
+  /// are processed before normal-priority messages (gossip data) to ensure
+  /// failure detection isn't delayed during congestion.
+  Future<void> sendGossipMessage(
+    NodeId destination,
+    Uint8List bytes, {
+    MessagePriority priority = MessagePriority.normal,
+  }) async {
     final endpointId = _registry.getEndpointIdForNodeId(destination);
     if (endpointId == null) {
       _log(LogLevel.warning, 'Cannot send: no connection for $destination');
@@ -83,21 +116,86 @@ class ConnectionService {
       return;
     }
 
+    final wrapped = _codec.wrapGossipMessage(bytes);
+    final message = _QueuedMessage(
+      endpointId: endpointId,
+      destination: destination,
+      bytes: wrapped,
+    );
+
+    // Add to appropriate queue based on priority
+    if (priority == MessagePriority.high) {
+      _highPriorityQueue.add(message);
+    } else {
+      _normalPriorityQueue.add(message);
+    }
+
+    // Start processing if not already running
+    unawaited(_processQueues());
+
+    // Wait for this message to be sent
+    return message.completer.future;
+  }
+
+  /// Returns the number of messages waiting to be sent to a specific peer.
+  int pendingSendCount(NodeId peer) {
+    final endpointId = _registry.getEndpointIdForNodeId(peer);
+    if (endpointId == null) return 0;
+
+    var count = 0;
+    for (final msg in _highPriorityQueue) {
+      if (msg.endpointId == endpointId) count++;
+    }
+    for (final msg in _normalPriorityQueue) {
+      if (msg.endpointId == endpointId) count++;
+    }
+    return count;
+  }
+
+  /// Returns the total number of messages waiting to be sent across all peers.
+  int get totalPendingSendCount =>
+      _highPriorityQueue.length + _normalPriorityQueue.length;
+
+  /// Processes queued messages, prioritizing high-priority messages.
+  Future<void> _processQueues() async {
+    if (_isProcessingQueue) return;
+    _isProcessingQueue = true;
+
     try {
-      final wrapped = _codec.wrapGossipMessage(bytes);
-      await _nearbyPort.sendPayload(endpointId, wrapped);
-      _metrics.recordBytesSent(wrapped.length);
-      _log(LogLevel.trace, 'Sent ${wrapped.length} bytes to $destination');
+      while (_highPriorityQueue.isNotEmpty || _normalPriorityQueue.isNotEmpty) {
+        // Always process high-priority messages first
+        final message = _highPriorityQueue.isNotEmpty
+            ? _highPriorityQueue.removeFirst()
+            : _normalPriorityQueue.removeFirst();
+
+        await _sendQueuedMessage(message);
+      }
+    } finally {
+      _isProcessingQueue = false;
+    }
+  }
+
+  /// Sends a single queued message and completes its future.
+  Future<void> _sendQueuedMessage(_QueuedMessage message) async {
+    try {
+      await _nearbyPort.sendPayload(message.endpointId, message.bytes);
+      _metrics.recordBytesSent(message.bytes.length);
+      _log(
+        LogLevel.trace,
+        'Sent ${message.bytes.length} bytes to ${message.destination}',
+      );
+      message.completer.complete();
     } catch (e, stack) {
-      _log(LogLevel.error, 'Send failed to $destination', e, stack);
+      _log(LogLevel.error, 'Send failed to ${message.destination}', e, stack);
       _errorController.add(
         SendFailedError(
-          destination,
+          message.destination,
           'Failed to send payload: $e',
           occurredAt: DateTime.now(),
           cause: e,
         ),
       );
+      message.completer.completeError(e, stack);
     }
   }
 

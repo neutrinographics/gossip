@@ -266,7 +266,11 @@ void main() {
         final errors = <ConnectionError>[];
         service.errors.listen(errors.add);
 
-        await service.sendGossipMessage(remoteNodeId, payload);
+        // The error is now propagated to the caller
+        await expectLater(
+          service.sendGossipMessage(remoteNodeId, payload),
+          throwsA(isA<Exception>()),
+        );
         await Future.delayed(Duration.zero);
 
         expect(errors, hasLength(1));
@@ -303,6 +307,182 @@ void main() {
           expect(error.type, equals(ConnectionErrorType.handshakeInvalid));
         },
       );
+    });
+
+    group('priority queues', () {
+      test('processes high-priority messages before normal-priority', () async {
+        final endpointId = EndpointId('remote-ep');
+        final remoteNodeId = NodeId('remote-node-456');
+
+        // Establish and complete handshake
+        nearbyEventController.add(ConnectionEstablished(id: endpointId));
+        await Future.delayed(Duration.zero);
+        nearbyEventController.add(
+          PayloadReceived(
+            id: endpointId,
+            bytes: _encodeHandshake(remoteNodeId),
+          ),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Track the order of messages sent
+        final sentPayloads = <Uint8List>[];
+        var sendCount = 0;
+        final firstSendStarted = Completer<void>();
+        final releaseFirstSend = Completer<void>();
+
+        when(() => mockNearbyPort.sendPayload(any(), any())).thenAnswer((
+          invocation,
+        ) async {
+          sendCount++;
+          final payload = invocation.positionalArguments[1] as Uint8List;
+          if (sendCount == 1) {
+            // Signal that first send started, then wait
+            firstSendStarted.complete();
+            await releaseFirstSend.future;
+          }
+          sentPayloads.add(payload);
+        });
+
+        final normalPayload1 = Uint8List.fromList([1, 1, 1]);
+        final normalPayload2 = Uint8List.fromList([3, 3, 3]);
+        final highPayload = Uint8List.fromList([2, 2, 2]);
+
+        // Queue first normal priority (it will start sending but block)
+        final normalFuture1 = service.sendGossipMessage(
+          remoteNodeId,
+          normalPayload1,
+          priority: MessagePriority.normal,
+        );
+
+        // Wait for first send to start (blocking in sendPayload)
+        await firstSendStarted.future;
+
+        // Now queue more messages while first is blocked
+        // High priority should jump ahead of second normal
+        final normalFuture2 = service.sendGossipMessage(
+          remoteNodeId,
+          normalPayload2,
+          priority: MessagePriority.normal,
+        );
+        final highFuture = service.sendGossipMessage(
+          remoteNodeId,
+          highPayload,
+          priority: MessagePriority.high,
+        );
+
+        // Release the first send
+        releaseFirstSend.complete();
+
+        await Future.wait([normalFuture1, normalFuture2, highFuture]);
+
+        // Order should be: normal1 (already sending), high (jumped queue), normal2
+        expect(sentPayloads, hasLength(3));
+        expect(sentPayloads[0].sublist(1), equals(normalPayload1));
+        expect(sentPayloads[1].sublist(1), equals(highPayload));
+        expect(sentPayloads[2].sublist(1), equals(normalPayload2));
+      });
+
+      test('totalPendingSendCount returns correct count', () async {
+        final endpointId = EndpointId('remote-ep');
+        final remoteNodeId = NodeId('remote-node-456');
+
+        // Establish and complete handshake
+        nearbyEventController.add(ConnectionEstablished(id: endpointId));
+        await Future.delayed(Duration.zero);
+        nearbyEventController.add(
+          PayloadReceived(
+            id: endpointId,
+            bytes: _encodeHandshake(remoteNodeId),
+          ),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Initially no pending messages
+        expect(service.totalPendingSendCount, equals(0));
+
+        // Make sendPayload hang to allow queue buildup
+        final sendCompleter = Completer<void>();
+        when(
+          () => mockNearbyPort.sendPayload(any(), any()),
+        ).thenAnswer((_) => sendCompleter.future);
+
+        // Queue messages without awaiting
+        unawaited(
+          service.sendGossipMessage(
+            remoteNodeId,
+            Uint8List.fromList([1]),
+            priority: MessagePriority.high,
+          ),
+        );
+        unawaited(
+          service.sendGossipMessage(
+            remoteNodeId,
+            Uint8List.fromList([2]),
+            priority: MessagePriority.normal,
+          ),
+        );
+
+        // Allow microtasks to run
+        await Future.delayed(Duration.zero);
+
+        // One is being processed, one is still in queue
+        // (first message is being sent, second is pending)
+        expect(service.totalPendingSendCount, equals(1));
+
+        // Complete sending
+        sendCompleter.complete();
+        await Future.delayed(Duration.zero);
+
+        expect(service.totalPendingSendCount, equals(0));
+      });
+
+      test('pendingSendCount returns count for specific peer', () async {
+        final endpointId = EndpointId('remote-ep');
+        final remoteNodeId = NodeId('remote-node-456');
+        final unknownNodeId = NodeId('unknown-node');
+
+        // Establish and complete handshake
+        nearbyEventController.add(ConnectionEstablished(id: endpointId));
+        await Future.delayed(Duration.zero);
+        nearbyEventController.add(
+          PayloadReceived(
+            id: endpointId,
+            bytes: _encodeHandshake(remoteNodeId),
+          ),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Initially no pending messages
+        expect(service.pendingSendCount(remoteNodeId), equals(0));
+        expect(service.pendingSendCount(unknownNodeId), equals(0));
+
+        // Make sendPayload hang
+        final sendCompleter = Completer<void>();
+        when(
+          () => mockNearbyPort.sendPayload(any(), any()),
+        ).thenAnswer((_) => sendCompleter.future);
+
+        // Queue a message
+        unawaited(
+          service.sendGossipMessage(remoteNodeId, Uint8List.fromList([1])),
+        );
+        unawaited(
+          service.sendGossipMessage(remoteNodeId, Uint8List.fromList([2])),
+        );
+
+        await Future.delayed(Duration.zero);
+
+        // One pending for known peer, zero for unknown
+        expect(service.pendingSendCount(remoteNodeId), equals(1));
+        expect(service.pendingSendCount(unknownNodeId), equals(0));
+
+        // Complete
+        sendCompleter.complete();
+        await Future.delayed(Duration.zero);
+
+        expect(service.pendingSendCount(remoteNodeId), equals(0));
+      });
     });
   });
 }

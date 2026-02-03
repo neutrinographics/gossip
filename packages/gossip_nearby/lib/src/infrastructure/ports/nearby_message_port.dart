@@ -33,9 +33,11 @@ class NearbyMessagePort implements MessagePort {
     MessagePriority priority = MessagePriority.normal,
   }) async {
     if (_closed) return;
-    // TODO: Implement priority queuing in ConnectionService
-    // For now, priority is passed but not yet used for queue ordering
-    await _connectionService.sendGossipMessage(destination, bytes);
+    await _connectionService.sendGossipMessage(
+      destination,
+      bytes,
+      priority: priority,
+    );
   }
 
   @override
@@ -50,8 +52,9 @@ class NearbyMessagePort implements MessagePort {
   }
 
   @override
-  int pendingSendCount(NodeId peer) => 0;
+  int pendingSendCount(NodeId peer) =>
+      _connectionService.pendingSendCount(peer);
 
   @override
-  int get totalPendingSendCount => 0;
+  int get totalPendingSendCount => _connectionService.totalPendingSendCount;
 }
