@@ -6,14 +6,14 @@ void main() {
     test('defaults has expected values', () {
       final config = CoordinatorConfig.defaults;
 
-      expect(config.gossipInterval, equals(const Duration(milliseconds: 200)));
-      expect(config.probeInterval, equals(const Duration(milliseconds: 1000)));
-      expect(config.pingTimeout, equals(const Duration(milliseconds: 500)));
+      expect(config.gossipInterval, equals(const Duration(milliseconds: 500)));
+      expect(config.probeInterval, equals(const Duration(milliseconds: 3000)));
+      expect(config.pingTimeout, equals(const Duration(milliseconds: 2000)));
       expect(
         config.indirectPingTimeout,
-        equals(const Duration(milliseconds: 500)),
+        equals(const Duration(milliseconds: 2000)),
       );
-      expect(config.suspicionThreshold, equals(3));
+      expect(config.suspicionThreshold, equals(5));
     });
 
     test('can be created with custom values', () {
@@ -42,13 +42,13 @@ void main() {
 
       expect(config.gossipInterval, equals(const Duration(milliseconds: 50)));
       // All others should be defaults
-      expect(config.probeInterval, equals(const Duration(milliseconds: 1000)));
-      expect(config.pingTimeout, equals(const Duration(milliseconds: 500)));
+      expect(config.probeInterval, equals(const Duration(milliseconds: 3000)));
+      expect(config.pingTimeout, equals(const Duration(milliseconds: 2000)));
       expect(
         config.indirectPingTimeout,
-        equals(const Duration(milliseconds: 500)),
+        equals(const Duration(milliseconds: 2000)),
       );
-      expect(config.suspicionThreshold, equals(3));
+      expect(config.suspicionThreshold, equals(5));
     });
   });
 }

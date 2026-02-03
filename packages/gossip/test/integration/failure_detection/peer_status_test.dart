@@ -35,7 +35,8 @@ void main() {
         expect(network['node1'].reachablePeers.length, equals(1));
 
         network.partition('node2');
-        await network.runRounds(5);
+        // Need enough rounds to exceed suspicionThreshold (default: 5)
+        await network.runRounds(10);
 
         final reachable = network['node1'].reachablePeers;
         expect(reachable.any((p) => p.id == network['node2'].id), isFalse);
@@ -84,8 +85,9 @@ void main() {
         expect(network['node1'].reachablePeers.length, equals(1));
 
         // Partition and wait for suspected status
+        // Need enough rounds to exceed suspicionThreshold (default: 5)
         network.partition('node2');
-        await network.runRounds(5);
+        await network.runRounds(10);
 
         var status = network['node1'].peerStatus(network['node2'].id);
         expect(
