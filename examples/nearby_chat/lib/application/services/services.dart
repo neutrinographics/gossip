@@ -1,4 +1,5 @@
 export 'chat_service.dart';
 export 'connection_service.dart';
+export 'indirect_peer_service.dart';
 export 'metrics_service.dart';
 export 'sync_service.dart';

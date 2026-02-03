@@ -58,6 +58,12 @@ class ChatController extends ChangeNotifier {
   /// Current metrics state for display.
   MetricsState _metrics = MetricsState.empty();
 
+  /// Tracks indirect peers discovered via version vectors.
+  final IndirectPeerService _indirectPeerService;
+
+  /// Cached indirect peers for UI.
+  List<IndirectPeerState> _indirectPeers = [];
+
   StreamSubscription<gossip.DomainEvent>? _eventSubscription;
   StreamSubscription<PeerEvent>? _peerSubscription;
   Timer? _typingTimer;
@@ -75,6 +81,9 @@ class ChatController extends ChangeNotifier {
        _connectionService = connectionService,
        _syncService = syncService,
        _metricsService = metricsService,
+       _indirectPeerService = IndirectPeerService(
+         localNodeId: chatService.localNodeId,
+       ),
        _onError = onError {
     _setupEventHandling();
     _refreshChannels();
@@ -103,6 +112,7 @@ class ChatController extends ChangeNotifier {
   bool get isTyping => _isTyping;
   gossip.NodeId get localNodeId => _chatService.localNodeId;
   MetricsState get metrics => _metrics;
+  List<IndirectPeerState> get indirectPeers => _indirectPeers;
 
   // --- Event Handling ---
 
@@ -141,8 +151,9 @@ class ChatController extends ChangeNotifier {
         :final channelId,
         :final streamId,
         :final entries,
+        :final newVersion,
       ):
-        _onEntriesMerged(channelId, streamId, entries);
+        _onEntriesMerged(channelId, streamId, entries, newVersion);
       case gossip.ChannelCreated():
         _refreshChannels();
       case gossip.ChannelRemoved():
@@ -188,7 +199,12 @@ class ChatController extends ChangeNotifier {
     gossip.ChannelId channelId,
     gossip.StreamId streamId,
     List<gossip.LogEntry> entries,
+    gossip.VersionVector newVersion,
   ) {
+    // Track authors from version vector to discover indirect peers
+    _indirectPeerService.onEntriesMerged(newVersion);
+    _refreshIndirectPeers();
+
     if (streamId == StreamIds.messages) {
       _refreshChannels();
       if (channelId == _currentChannelId) {
@@ -346,7 +362,25 @@ class ChatController extends ChangeNotifier {
         ),
       );
     }).toList();
+
+    // Refresh indirect peers since direct peer set changed
+    _refreshIndirectPeers();
+
     notifyListeners();
+  }
+
+  void _refreshIndirectPeers() {
+    final directPeerIds = _peers.map((p) => p.id).toSet();
+    final indirectNodeIds = _indirectPeerService.getIndirectPeers(
+      directPeerIds: directPeerIds,
+    );
+
+    _indirectPeers = indirectNodeIds.map((nodeId) {
+      return IndirectPeerState(
+        id: nodeId,
+        displayName: nodeId.value.substring(0, _nodeIdPrefixLength),
+      );
+    }).toList();
   }
 
   /// Refreshes peer signal strength by polling latest probe counts and decaying penalties.

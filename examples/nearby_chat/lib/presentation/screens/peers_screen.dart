@@ -49,12 +49,21 @@ class PeersScreen extends StatelessWidget {
   }
 
   Widget _buildPeerList() {
-    return ListView.builder(
-      itemCount: controller.peers.length,
-      itemBuilder: (context, index) {
-        final peer = controller.peers[index];
-        return _PeerTile(peer: peer);
-      },
+    final hasIndirectPeers = controller.indirectPeers.isNotEmpty;
+
+    return ListView(
+      children: [
+        // Direct peers section
+        ...controller.peers.map((peer) => _PeerTile(peer: peer)),
+
+        // Indirect peers section
+        if (hasIndirectPeers) ...[
+          const _SectionHeader(title: 'Indirect Peers'),
+          ...controller.indirectPeers.map(
+            (peer) => _IndirectPeerTile(peer: peer),
+          ),
+        ],
+      ],
     );
   }
 
@@ -109,6 +118,26 @@ class PeersScreen extends StatelessWidget {
   }
 }
 
+class _SectionHeader extends StatelessWidget {
+  final String title;
+
+  const _SectionHeader({required this.title});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+      child: Text(
+        title,
+        style: theme.textTheme.titleSmall?.copyWith(
+          color: theme.colorScheme.primary,
+        ),
+      ),
+    );
+  }
+}
+
 class _PeerTile extends StatelessWidget {
   final PeerState peer;
 
@@ -137,6 +166,31 @@ class _PeerTile extends StatelessWidget {
               color: Theme.of(context).colorScheme.outline,
             )
           : SignalStrengthIndicator(strength: peer.signalStrength),
+    );
+  }
+}
+
+class _IndirectPeerTile extends StatelessWidget {
+  final IndirectPeerState peer;
+
+  const _IndirectPeerTile({required this.peer});
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return ListTile(
+      leading: NodeAvatar(
+        identifier: peer.id.value,
+        displayText: peer.displayName,
+        radius: 20,
+      ),
+      title: Text(peer.displayName),
+      subtitle: const Text('Via gossip'),
+      trailing: Icon(
+        Icons.sync_alt,
+        size: 18,
+        color: theme.colorScheme.outline,
+      ),
     );
   }
 }
