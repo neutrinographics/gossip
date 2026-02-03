@@ -35,8 +35,11 @@ void main() {
         expect(network['node1'].reachablePeers.length, equals(1));
 
         network.partition('node2');
-        // Need enough rounds to exceed suspicionThreshold (default: 5)
-        await network.runRounds(10);
+        // With BLE-friendly timing (3s probe interval, 2s ping timeout),
+        // each probe round takes ~7s (probeInterval + pingTimeout for direct
+        // + pingTimeout for grace period). Need 5 failures for suspicionThreshold.
+        // Run 40 rounds at 1s each = 40s, enough for 5+ complete probe rounds.
+        await network.runRounds(40);
 
         final reachable = network['node1'].reachablePeers;
         expect(reachable.any((p) => p.id == network['node2'].id), isFalse);
@@ -57,7 +60,10 @@ void main() {
         expect(peer.failedProbeCount, equals(0));
 
         network.partition('node2');
-        await network.runRounds(5);
+        // With BLE-friendly timing (3s probe interval, 2s ping timeout),
+        // each probe round takes ~5s. Run 15 rounds to ensure at least
+        // 1-2 complete probe rounds with failures.
+        await network.runRounds(15);
 
         peer = network['node1'].peers.firstWhere(
           (p) => p.id == network['node2'].id,
@@ -85,9 +91,11 @@ void main() {
         expect(network['node1'].reachablePeers.length, equals(1));
 
         // Partition and wait for suspected status
-        // Need enough rounds to exceed suspicionThreshold (default: 5)
+        // With BLE-friendly timing (3s probe interval, 2s ping timeout),
+        // each probe round takes ~7s. Need 5 failures for suspicionThreshold.
+        // Run 40 rounds = 40s for 5+ complete probe rounds.
         network.partition('node2');
-        await network.runRounds(10);
+        await network.runRounds(40);
 
         var status = network['node1'].peerStatus(network['node2'].id);
         expect(
@@ -95,9 +103,10 @@ void main() {
           anyOf(equals(PeerStatus.suspected), equals(PeerStatus.unreachable)),
         );
 
-        // Heal the network
+        // Heal the network and wait for recovery
+        // Run enough rounds for at least one successful probe round.
         network.heal('node2');
-        await network.runRounds(10);
+        await network.runRounds(15);
 
         // Peer should be reachable again
         status = network['node1'].peerStatus(network['node2'].id);

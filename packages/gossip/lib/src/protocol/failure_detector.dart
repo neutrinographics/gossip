@@ -141,6 +141,10 @@ class FailureDetector {
   /// RTT tracker for measuring round-trip time from ping/ack pairs.
   final RttTracker _rttTracker;
 
+  /// Whether static timeouts were explicitly provided at construction.
+  /// When true, uses static timeouts instead of adaptive RTT-based timeouts.
+  final bool _staticTimeoutsProvided;
+
   FailureDetector({
     required this.localNode,
     required this.peerRegistry,
@@ -158,10 +162,27 @@ class FailureDetector {
            indirectPingTimeout ?? const Duration(milliseconds: 500),
        _probeInterval = probeInterval ?? const Duration(milliseconds: 1000),
        _random = random ?? Random(),
-       _rttTracker = rttTracker ?? RttTracker();
+       _rttTracker = rttTracker ?? RttTracker(),
+       _staticTimeoutsProvided = pingTimeout != null || probeInterval != null;
 
   /// Window duration for metrics sliding window (10 seconds).
   static const int _metricsWindowDurationMs = 10000;
+
+  /// Minimum ping timeout (network physics floor).
+  static const Duration _minPingTimeout = Duration(milliseconds: 200);
+
+  /// Maximum ping timeout (reasonable upper limit).
+  static const Duration _maxPingTimeout = Duration(seconds: 10);
+
+  /// Minimum probe interval.
+  static const Duration _minProbeInterval = Duration(milliseconds: 500);
+
+  /// Maximum probe interval.
+  static const Duration _maxProbeInterval = Duration(seconds: 30);
+
+  /// Multiplier for probe interval relative to ping timeout.
+  /// Probe interval = 3 * pingTimeout to allow direct + indirect probes.
+  static const int _probeIntervalMultiplier = 3;
 
   /// Emits an error through the callback if one is registered.
   void _emitError(SyncError error) {
@@ -198,9 +219,50 @@ class FailureDetector {
   /// Exposes the RTT estimate and sample count for observability.
   RttTracker get rttTracker => _rttTracker;
 
+  /// Returns the effective ping timeout based on RTT measurements.
+  ///
+  /// If a static [pingTimeout] was provided at construction, uses that value.
+  /// Otherwise uses the RTT tracker's suggested timeout (smoothedRtt + 4 * variance),
+  /// clamped to [_minPingTimeout, _maxPingTimeout].
+  ///
+  /// Before any RTT samples are collected, uses the initial conservative
+  /// estimate (1 second + 4 * 500ms = 3 seconds).
+  Duration get effectivePingTimeout {
+    // Use static timeout if explicitly provided (for backward compatibility)
+    if (_useStaticTimeouts) {
+      return _pingTimeout;
+    }
+    return _rttTracker.suggestedTimeout(
+      minTimeout: _minPingTimeout,
+      maxTimeout: _maxPingTimeout,
+    );
+  }
+
+  /// Whether static timeouts were explicitly provided.
+  bool get _useStaticTimeouts => _staticTimeoutsProvided;
+
+  /// Returns the effective probe interval based on RTT measurements.
+  ///
+  /// If a static [probeInterval] was provided at construction, uses that value.
+  /// Otherwise computed as 3x the effective ping timeout to allow time for both
+  /// direct and indirect probes within each interval.
+  ///
+  /// Clamped to [_minProbeInterval, _maxProbeInterval].
+  Duration get effectiveProbeInterval {
+    // Use static interval if explicitly provided (for backward compatibility)
+    if (_useStaticTimeouts) {
+      return _probeInterval;
+    }
+    final baseInterval = effectivePingTimeout * _probeIntervalMultiplier;
+    if (baseInterval < _minProbeInterval) return _minProbeInterval;
+    if (baseInterval > _maxProbeInterval) return _maxProbeInterval;
+    return baseInterval;
+  }
+
   /// Starts periodic failure detection probe rounds.
   ///
-  /// Schedules [performProbeRound] to run every 1 second via [timePort].
+  /// Schedules [performProbeRound] to run at adaptive intervals based on
+  /// measured RTT. The interval adjusts as RTT samples are collected.
   /// Safe to call multiple times (subsequent calls are no-ops).
   ///
   /// Note: This does NOT start message listening. Call [startListening]
@@ -208,7 +270,20 @@ class FailureDetector {
   void start() {
     if (_isRunning) return;
     _isRunning = true;
-    _timerHandle = timePort.schedulePeriodic(_probeInterval, _probeRound);
+    _scheduleNextProbeRound();
+  }
+
+  /// Schedules the next probe round using the current effective interval.
+  ///
+  /// Uses [delay] instead of periodic timer to allow the interval to adapt
+  /// based on RTT measurements collected during probe rounds.
+  void _scheduleNextProbeRound() {
+    if (!_isRunning) return;
+    timePort.delay(effectiveProbeInterval).then((_) {
+      if (_isRunning) {
+        _probeRound();
+      }
+    });
   }
 
   /// Stops periodic probe rounds.
@@ -356,25 +431,31 @@ class FailureDetector {
   }
 
   void _probeRound() {
-    performProbeRound().catchError((error, stackTrace) {
-      _emitError(
-        PeerSyncError(
-          localNode,
-          SyncErrorType.protocolError,
-          'Probe round failed: $error',
-          occurredAt: DateTime.now(),
-          cause: error,
-        ),
-      );
-    });
+    performProbeRound()
+        .catchError((error, stackTrace) {
+          _emitError(
+            PeerSyncError(
+              localNode,
+              SyncErrorType.protocolError,
+              'Probe round failed: $error',
+              occurredAt: DateTime.now(),
+              cause: error,
+            ),
+          );
+        })
+        .whenComplete(() {
+          // Schedule next probe round with adaptive interval
+          // (interval may have changed based on new RTT samples)
+          _scheduleNextProbeRound();
+        });
   }
 
-  /// Performs a single probe round (called every 1 second).
+  /// Performs a single probe round.
   ///
   /// Implements the core SWIM probing logic:
   /// 1. Select random reachable peer via [selectRandomPeer]
   /// 2. Send direct Ping with incrementing sequence number
-  /// 3. Wait for Ack (timeout configured via [_pingTimeout], default 500ms)
+  /// 3. Wait for Ack (timeout from [effectivePingTimeout], RTT-adaptive)
   /// 4. If no Ack, fall back to indirect ping via [_performIndirectPing]
   /// 5. Check if late Ack arrived during indirect ping phase
   ///
@@ -391,7 +472,7 @@ class FailureDetector {
     final gotDirectAck = await _awaitAckWithTimeout(
       pending,
       sequence,
-      _pingTimeout,
+      effectivePingTimeout,
     );
 
     if (!gotDirectAck) {
@@ -477,7 +558,7 @@ class FailureDetector {
   /// Does NOT record probe failure - caller decides based on late Ack status.
   ///
   /// When no intermediaries are available (e.g., 2-device scenario), waits
-  /// for [_indirectPingTimeout] as a grace period for late Acks to arrive.
+  /// for [effectivePingTimeout] as a grace period for late Acks to arrive.
   Future<bool> _performIndirectPing(NodeId target, int sequence) async {
     final intermediaries = _selectRandomIntermediaries(target, 3);
 
@@ -485,7 +566,7 @@ class FailureDetector {
       // No intermediaries available - wait grace period for late Acks
       // This handles the 2-device scenario where direct ping times out
       // but the Ack is just slightly delayed
-      await timePort.delay(_indirectPingTimeout);
+      await timePort.delay(effectivePingTimeout);
       return false;
     }
 
@@ -497,7 +578,7 @@ class FailureDetector {
     final gotAck = await _awaitAckWithTimeout(
       pending,
       indirectSeq,
-      _indirectPingTimeout,
+      effectivePingTimeout,
     );
 
     // Clean up indirect ping tracking

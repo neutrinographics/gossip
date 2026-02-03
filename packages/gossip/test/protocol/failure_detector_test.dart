@@ -89,6 +89,8 @@ void main() {
         peerRegistry: peerRegistry,
         timePort: timer,
         messagePort: localPort,
+        pingTimeout: const Duration(milliseconds: 500),
+        indirectPingTimeout: const Duration(milliseconds: 500),
       );
 
       // Capture the ping message when it arrives
@@ -115,8 +117,12 @@ void main() {
       // Advance time to complete the probe round timeout
       // Need to advance in two steps: first past direct timeout, then past grace period
       // (the grace period delay is only scheduled after direct timeout expires)
-      await timer.advance(Duration(milliseconds: 501)); // Past direct timeout
-      await timer.advance(Duration(milliseconds: 501)); // Past grace period
+      await timer.advance(
+        const Duration(milliseconds: 501),
+      ); // Past direct timeout
+      await timer.advance(
+        const Duration(milliseconds: 501),
+      ); // Past grace period
       await probeRoundFuture;
 
       await subscription.cancel();
