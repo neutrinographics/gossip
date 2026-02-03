@@ -236,7 +236,7 @@ class Coordinator {
 
     // Create GossipEngine and FailureDetector if ports are provided, wiring error callbacks
     if (messagePort != null && timerPort != null) {
-      // Create shared RTT tracker for adaptive timing (ADR-012)
+      // Create shared RTT tracker for adaptive timing (ADR-013)
       final rttTracker = RttTracker();
 
       coordinator._gossipEngine = GossipEngine(
@@ -251,7 +251,7 @@ class Coordinator {
         hlcClock: hlcClock,
         random: random,
         rttTracker: rttTracker,
-        // gossipInterval is now RTT-adaptive (see ADR-012)
+        // gossipInterval is now RTT-adaptive (see ADR-013)
       );
 
       coordinator._failureDetector = FailureDetector(
@@ -263,7 +263,7 @@ class Coordinator {
         random: random,
         failureThreshold: cfg.suspicionThreshold,
         rttTracker: rttTracker,
-        // Timeout parameters are now RTT-adaptive (see ADR-012)
+        // Timeout parameters are now RTT-adaptive (see ADR-013)
       );
     }
 

@@ -1,33 +1,51 @@
 /// Configuration options for the [Coordinator].
 ///
-/// Most timing parameters are now automatically derived from RTT measurements,
-/// making the library self-tuning for any transport (WiFi, BLE, etc.).
+/// The library automatically adapts timing based on observed network latency,
+/// making it self-tuning for any transport (WiFi, BLE, etc.). Only policy
+/// parameters like [suspicionThreshold] remain configurable.
+///
+/// ## Adaptive Timing (ADR-013)
+///
+/// The following timing parameters are automatically derived from RTT measurements:
+/// - **Ping timeout**: `RTT + 4 * variance` (clamped to 200ms-10s)
+/// - **Probe interval**: `3 * ping timeout` (clamped to 500ms-30s)
+/// - **Gossip interval**: `2 * RTT` (clamped to 100ms-5s)
+///
+/// This eliminates the need for transport-specific configuration and prevents
+/// false positive peer failures on high-latency transports like BLE.
 ///
 /// ## Example
-/// ```dart
-/// final config = CoordinatorConfig(
-///   suspicionThreshold: 3,  // Stricter failure detection
-/// );
 ///
+/// ```dart
+/// // Use defaults (recommended for most cases)
 /// final coordinator = await Coordinator.create(
 ///   localNode: NodeId('device-1'),
 ///   // ... other params
+/// );
+///
+/// // Or customize suspicion threshold for stricter failure detection
+/// final config = CoordinatorConfig(suspicionThreshold: 3);
+/// final coordinator = await Coordinator.create(
+///   localNode: NodeId('device-1'),
 ///   config: config,
+///   // ... other params
 /// );
 /// ```
 class CoordinatorConfig {
-  /// Number of failed probes before marking a peer as suspected.
+  /// Number of consecutive probe failures before marking a peer as suspected.
   ///
-  /// After this many consecutive probe failures, the peer transitions
-  /// from reachable to suspected status.
-  /// Default: 5
+  /// After this many failed probes without a successful response, the peer
+  /// transitions from [PeerStatus.reachable] to [PeerStatus.suspected].
+  /// Suspected peers can recover by responding to future probes.
+  ///
+  /// **Default: 5** (tolerant of high-latency transports like BLE)
+  ///
+  /// Lower values detect failures faster but may cause false positives on
+  /// flaky networks. Higher values are more tolerant but slower to detect
+  /// actual failures.
   final int suspicionThreshold;
 
   /// Creates a [CoordinatorConfig] with the specified options.
-  ///
-  /// Timing parameters for SWIM failure detection (ping timeout, probe interval)
-  /// and gossip interval are automatically derived from RTT measurements.
-  /// Only policy parameters like [suspicionThreshold] remain configurable.
   const CoordinatorConfig({this.suspicionThreshold = 5});
 
   /// Default configuration with standard values.
