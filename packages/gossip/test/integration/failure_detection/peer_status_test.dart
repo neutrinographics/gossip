@@ -35,11 +35,11 @@ void main() {
         expect(network['node1'].reachablePeers.length, equals(1));
 
         network.partition('node2');
-        // With BLE-friendly timing (3s probe interval, 2s ping timeout),
-        // each probe round takes ~7s (probeInterval + pingTimeout for direct
+        // With RTT-adaptive timing (initial: 3s ping timeout, 9s probe interval),
+        // each probe round takes ~15s (probeInterval + pingTimeout for direct
         // + pingTimeout for grace period). Need 5 failures for suspicionThreshold.
-        // Run 40 rounds at 1s each = 40s, enough for 5+ complete probe rounds.
-        await network.runRounds(40);
+        // Run 80 rounds at 1s each = 80s, enough for 5+ complete probe rounds.
+        await network.runRounds(80);
 
         final reachable = network['node1'].reachablePeers;
         expect(reachable.any((p) => p.id == network['node2'].id), isFalse);
@@ -60,10 +60,10 @@ void main() {
         expect(peer.failedProbeCount, equals(0));
 
         network.partition('node2');
-        // With BLE-friendly timing (3s probe interval, 2s ping timeout),
-        // each probe round takes ~5s. Run 15 rounds to ensure at least
+        // With RTT-adaptive timing (initial: 3s ping timeout, 9s probe interval),
+        // each probe round takes ~15s. Run 30 rounds to ensure at least
         // 1-2 complete probe rounds with failures.
-        await network.runRounds(15);
+        await network.runRounds(30);
 
         peer = network['node1'].peers.firstWhere(
           (p) => p.id == network['node2'].id,
@@ -91,11 +91,11 @@ void main() {
         expect(network['node1'].reachablePeers.length, equals(1));
 
         // Partition and wait for suspected status
-        // With BLE-friendly timing (3s probe interval, 2s ping timeout),
-        // each probe round takes ~7s. Need 5 failures for suspicionThreshold.
-        // Run 40 rounds = 40s for 5+ complete probe rounds.
+        // With RTT-adaptive timing (initial: 3s ping timeout, 9s probe interval),
+        // each probe round takes ~15s. Need 5 failures for suspicionThreshold.
+        // Run 80 rounds = 80s for 5+ complete probe rounds.
         network.partition('node2');
-        await network.runRounds(40);
+        await network.runRounds(80);
 
         var status = network['node1'].peerStatus(network['node2'].id);
         expect(
@@ -106,7 +106,7 @@ void main() {
         // Heal the network and wait for recovery
         // Run enough rounds for at least one successful probe round.
         network.heal('node2');
-        await network.runRounds(15);
+        await network.runRounds(30);
 
         // Peer should be reachable again
         status = network['node1'].peerStatus(network['node2'].id);

@@ -607,10 +607,7 @@ void main() {
     test('create accepts custom config', () async {
       final config = CoordinatorConfig(
         gossipInterval: Duration(milliseconds: 100),
-        probeInterval: Duration(milliseconds: 500),
-        pingTimeout: Duration(milliseconds: 250),
-        indirectPingTimeout: Duration(milliseconds: 300),
-        suspicionThreshold: 5,
+        suspicionThreshold: 3,
       );
 
       final messageBus = InMemoryMessageBus();

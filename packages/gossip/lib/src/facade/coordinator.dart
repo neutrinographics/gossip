@@ -257,9 +257,7 @@ class Coordinator {
         onError: coordinator._handleError,
         random: random,
         failureThreshold: cfg.suspicionThreshold,
-        pingTimeout: cfg.pingTimeout,
-        indirectPingTimeout: cfg.indirectPingTimeout,
-        probeInterval: cfg.probeInterval,
+        // Timeout parameters are now RTT-adaptive (see ADR-012)
       );
     }
 
