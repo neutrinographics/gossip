@@ -10,6 +10,7 @@ import 'package:gossip/src/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/domain/interfaces/retention_policy.dart';
 import 'package:gossip/src/domain/errors/sync_error.dart';
+import 'package:gossip/src/domain/services/rtt_tracker.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
@@ -395,6 +396,172 @@ void main() {
       expect(error.channel, equals(unknownChannelId));
       expect(error.type, equals(SyncErrorType.protocolError));
       expect(error.message, contains('Received digest for unknown channel'));
+    });
+
+    group('effectiveGossipInterval', () {
+      test('uses static interval when explicitly provided', () {
+        final localNode = NodeId('local');
+        final registry = PeerRegistry(
+          localNode: localNode,
+          initialIncarnation: 0,
+        );
+        final entryRepo = InMemoryEntryRepository();
+        final timerPort = InMemoryTimePort();
+        final messagePort = InMemoryMessagePort(
+          localNode,
+          InMemoryMessageBus(),
+        );
+        final rttTracker = RttTracker();
+
+        // Provide explicit gossipInterval
+        final engine = GossipEngine(
+          localNode: localNode,
+          peerRegistry: registry,
+          entryRepository: entryRepo,
+          timePort: timerPort,
+          messagePort: messagePort,
+          gossipInterval: Duration(milliseconds: 100),
+          rttTracker: rttTracker,
+        );
+
+        // Should use static interval even with RTT tracker
+        expect(
+          engine.effectiveGossipInterval,
+          equals(Duration(milliseconds: 100)),
+        );
+      });
+
+      test('uses RTT-derived interval when no static interval provided', () {
+        final localNode = NodeId('local');
+        final registry = PeerRegistry(
+          localNode: localNode,
+          initialIncarnation: 0,
+        );
+        final entryRepo = InMemoryEntryRepository();
+        final timerPort = InMemoryTimePort();
+        final messagePort = InMemoryMessagePort(
+          localNode,
+          InMemoryMessageBus(),
+        );
+        final rttTracker = RttTracker();
+
+        final engine = GossipEngine(
+          localNode: localNode,
+          peerRegistry: registry,
+          entryRepository: entryRepo,
+          timePort: timerPort,
+          messagePort: messagePort,
+          rttTracker: rttTracker,
+        );
+
+        // Initial RTT is 1 second, so interval should be 2 seconds
+        expect(engine.effectiveGossipInterval, equals(Duration(seconds: 2)));
+
+        // Record a sample with 200ms RTT
+        rttTracker.recordSample(Duration(milliseconds: 200));
+
+        // After one sample, EWMA smoothed RTT is ~200ms
+        // Gossip interval = RTT * 2 = ~400ms
+        final interval = engine.effectiveGossipInterval;
+        expect(interval.inMilliseconds, greaterThanOrEqualTo(300));
+        expect(interval.inMilliseconds, lessThanOrEqualTo(500));
+      });
+
+      test('clamps RTT-derived interval to minimum', () {
+        final localNode = NodeId('local');
+        final registry = PeerRegistry(
+          localNode: localNode,
+          initialIncarnation: 0,
+        );
+        final entryRepo = InMemoryEntryRepository();
+        final timerPort = InMemoryTimePort();
+        final messagePort = InMemoryMessagePort(
+          localNode,
+          InMemoryMessageBus(),
+        );
+        final rttTracker = RttTracker();
+
+        final engine = GossipEngine(
+          localNode: localNode,
+          peerRegistry: registry,
+          entryRepository: entryRepo,
+          timePort: timerPort,
+          messagePort: messagePort,
+          rttTracker: rttTracker,
+        );
+
+        // Record very low RTT samples to drive EWMA down
+        for (var i = 0; i < 20; i++) {
+          rttTracker.recordSample(Duration(milliseconds: 10));
+        }
+
+        // Should be clamped to minimum (100ms)
+        expect(
+          engine.effectiveGossipInterval,
+          equals(Duration(milliseconds: 100)),
+        );
+      });
+
+      test('clamps RTT-derived interval to maximum', () {
+        final localNode = NodeId('local');
+        final registry = PeerRegistry(
+          localNode: localNode,
+          initialIncarnation: 0,
+        );
+        final entryRepo = InMemoryEntryRepository();
+        final timerPort = InMemoryTimePort();
+        final messagePort = InMemoryMessagePort(
+          localNode,
+          InMemoryMessageBus(),
+        );
+        final rttTracker = RttTracker();
+
+        final engine = GossipEngine(
+          localNode: localNode,
+          peerRegistry: registry,
+          entryRepository: entryRepo,
+          timePort: timerPort,
+          messagePort: messagePort,
+          rttTracker: rttTracker,
+        );
+
+        // Record very high RTT samples
+        for (var i = 0; i < 20; i++) {
+          rttTracker.recordSample(Duration(seconds: 10));
+        }
+
+        // Should be clamped to maximum (5 seconds)
+        expect(engine.effectiveGossipInterval, equals(Duration(seconds: 5)));
+      });
+
+      test('uses default static interval when no RTT tracker provided', () {
+        final localNode = NodeId('local');
+        final registry = PeerRegistry(
+          localNode: localNode,
+          initialIncarnation: 0,
+        );
+        final entryRepo = InMemoryEntryRepository();
+        final timerPort = InMemoryTimePort();
+        final messagePort = InMemoryMessagePort(
+          localNode,
+          InMemoryMessageBus(),
+        );
+
+        final engine = GossipEngine(
+          localNode: localNode,
+          peerRegistry: registry,
+          entryRepository: entryRepo,
+          timePort: timerPort,
+          messagePort: messagePort,
+          // No rttTracker provided
+        );
+
+        // Should use default static interval (500ms)
+        expect(
+          engine.effectiveGossipInterval,
+          equals(Duration(milliseconds: 500)),
+        );
+      });
     });
   });
 }

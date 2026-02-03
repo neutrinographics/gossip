@@ -605,10 +605,7 @@ void main() {
     });
 
     test('create accepts custom config', () async {
-      final config = CoordinatorConfig(
-        gossipInterval: Duration(milliseconds: 100),
-        suspicionThreshold: 3,
-      );
+      final config = CoordinatorConfig(suspicionThreshold: 3);
 
       final messageBus = InMemoryMessageBus();
       final coordinator = await Coordinator.create(

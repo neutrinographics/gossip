@@ -3,6 +3,7 @@ import 'dart:math';
 import '../application/observability/log_level.dart';
 import '../domain/errors/sync_error.dart';
 import '../domain/services/hlc_clock.dart';
+import '../domain/services/rtt_tracker.dart';
 import '../domain/value_objects/node_id.dart';
 import '../domain/value_objects/channel_id.dart';
 import '../domain/value_objects/stream_id.dart';
@@ -130,8 +131,27 @@ class GossipEngine {
   /// channels the local node is a member of.
   Map<ChannelId, ChannelAggregate> _channels = {};
 
-  /// Interval between gossip rounds.
-  final Duration _gossipInterval;
+  /// RTT tracker for adaptive gossip interval calculation.
+  ///
+  /// Shared with FailureDetector to use RTT measurements from SWIM pings.
+  /// When null, uses static gossip interval for backward compatibility.
+  final RttTracker? _rttTracker;
+
+  /// Static gossip interval (used when RTT tracker not provided).
+  final Duration _staticGossipInterval;
+
+  /// Whether a static gossip interval was explicitly provided.
+  final bool _staticIntervalProvided;
+
+  /// Minimum gossip interval (prevent CPU spin).
+  static const Duration _minGossipInterval = Duration(milliseconds: 100);
+
+  /// Maximum gossip interval (ensure progress).
+  static const Duration _maxGossipInterval = Duration(seconds: 5);
+
+  /// Multiplier for gossip interval relative to RTT.
+  /// Gossip interval = 2x RTT (time for request + response round trip).
+  static const int _gossipIntervalMultiplier = 2;
 
   /// Tracks pending DeltaRequests to prevent duplicate requests.
   ///
@@ -169,9 +189,13 @@ class GossipEngine {
     HlcClock? hlcClock,
     Random? random,
     Duration? gossipInterval,
+    RttTracker? rttTracker,
   }) : _hlcClock = hlcClock,
        _random = random ?? Random(),
-       _gossipInterval = gossipInterval ?? const Duration(milliseconds: 200);
+       _staticGossipInterval =
+           gossipInterval ?? const Duration(milliseconds: 500),
+       _rttTracker = rttTracker,
+       _staticIntervalProvided = gossipInterval != null;
 
   /// Emits an error through the callback if one is registered.
   void _emitError(SyncError error) {
@@ -191,9 +215,30 @@ class GossipEngine {
   /// Whether gossip rounds are currently active.
   bool get isRunning => _isRunning;
 
+  /// Returns the effective gossip interval based on RTT measurements.
+  ///
+  /// If a static [gossipInterval] was provided at construction, uses that value.
+  /// Otherwise uses the RTT tracker's smoothed RTT * 2 (time for request + response),
+  /// clamped to [_minGossipInterval, _maxGossipInterval].
+  ///
+  /// Before any RTT samples are collected, uses the initial conservative
+  /// estimate (1 second RTT * 2 = 2 seconds).
+  Duration get effectiveGossipInterval {
+    // Use static interval if explicitly provided (for backward compatibility)
+    if (_staticIntervalProvided || _rttTracker == null) {
+      return _staticGossipInterval;
+    }
+    final rtt = _rttTracker.estimate.smoothedRtt;
+    final computed = rtt * _gossipIntervalMultiplier;
+    if (computed < _minGossipInterval) return _minGossipInterval;
+    if (computed > _maxGossipInterval) return _maxGossipInterval;
+    return computed;
+  }
+
   /// Starts periodic gossip rounds.
   ///
-  /// Schedules [performGossipRound] to run at the configured interval via [timePort].
+  /// Schedules [performGossipRound] to run at adaptive intervals based on
+  /// measured RTT. The interval adjusts as RTT samples are collected.
   /// Safe to call multiple times (subsequent calls are no-ops).
   ///
   /// Note: This does NOT start message listening. Call [startListening]
@@ -201,7 +246,20 @@ class GossipEngine {
   void start() {
     if (_isRunning) return;
     _isRunning = true;
-    _timerHandle = timePort.schedulePeriodic(_gossipInterval, _gossipRound);
+    _scheduleNextGossipRound();
+  }
+
+  /// Schedules the next gossip round using the current effective interval.
+  ///
+  /// Uses [delay] instead of periodic timer to allow the interval to adapt
+  /// based on RTT measurements collected during operation.
+  void _scheduleNextGossipRound() {
+    if (!_isRunning) return;
+    timePort.delay(effectiveGossipInterval).then((_) {
+      if (_isRunning) {
+        _gossipRound();
+      }
+    });
   }
 
   /// Stops periodic gossip rounds.
@@ -435,17 +493,23 @@ class GossipEngine {
   }
 
   void _gossipRound() {
-    performGossipRound().catchError((error, stackTrace) {
-      _emitError(
-        PeerSyncError(
-          localNode,
-          SyncErrorType.protocolError,
-          'Gossip round failed: $error',
-          occurredAt: DateTime.now(),
-          cause: error,
-        ),
-      );
-    });
+    performGossipRound()
+        .catchError((error, stackTrace) {
+          _emitError(
+            PeerSyncError(
+              localNode,
+              SyncErrorType.protocolError,
+              'Gossip round failed: $error',
+              occurredAt: DateTime.now(),
+              cause: error,
+            ),
+          );
+        })
+        .whenComplete(() {
+          // Schedule next gossip round with adaptive interval
+          // (interval may have changed based on new RTT samples)
+          _scheduleNextGossipRound();
+        });
   }
 
   /// Selects a random reachable peer for gossip.

@@ -17,6 +17,7 @@ import '../domain/value_objects/stream_id.dart';
 import '../domain/events/domain_event.dart';
 import '../domain/errors/sync_error.dart';
 import '../domain/services/hlc_clock.dart';
+import '../domain/services/rtt_tracker.dart';
 import '../domain/services/time_source.dart';
 import '../infrastructure/ports/message_port.dart';
 import '../infrastructure/ports/time_port.dart';
@@ -235,6 +236,9 @@ class Coordinator {
 
     // Create GossipEngine and FailureDetector if ports are provided, wiring error callbacks
     if (messagePort != null && timerPort != null) {
+      // Create shared RTT tracker for adaptive timing (ADR-012)
+      final rttTracker = RttTracker();
+
       coordinator._gossipEngine = GossipEngine(
         localNode: localNode,
         peerRegistry: peerRegistry,
@@ -246,7 +250,8 @@ class Coordinator {
         onLog: onLog,
         hlcClock: hlcClock,
         random: random,
-        gossipInterval: cfg.gossipInterval,
+        rttTracker: rttTracker,
+        // gossipInterval is now RTT-adaptive (see ADR-012)
       );
 
       coordinator._failureDetector = FailureDetector(
@@ -257,6 +262,7 @@ class Coordinator {
         onError: coordinator._handleError,
         random: random,
         failureThreshold: cfg.suspicionThreshold,
+        rttTracker: rttTracker,
         // Timeout parameters are now RTT-adaptive (see ADR-012)
       );
     }
