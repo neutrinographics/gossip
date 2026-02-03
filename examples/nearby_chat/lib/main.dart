@@ -11,6 +11,9 @@ import 'presentation/presentation.dart';
 /// Set to true for verbose logging (metrics, sync details, etc.)
 const _verboseLogging = true;
 
+/// Global debug logger instance for access from callbacks and UI.
+late final DebugLogger debugLogger;
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
@@ -37,7 +40,7 @@ void main() async {
     entryRepository: InMemoryEntryRepository(),
     messagePort: transport.messagePort,
     timerPort: RealTimePort(),
-    onLog: _verboseLogging ? _logCallback : null,
+    onLog: _verboseLogging ? gossipLogCallback : null,
   );
 
   // Create application services
@@ -69,11 +72,17 @@ void main() async {
   );
 
   // Create and start debug logger for observability
-  final debugLogger = DebugLogger(
+  debugLogger = DebugLogger(
     syncService: syncService,
     connectionService: connectionService,
+    localNodeId: nodeId,
+    deviceName: deviceName,
     logLevel: _verboseLogging ? DebugLogLevel.verbose : DebugLogLevel.error,
   );
+
+  // Wire up global storage for callbacks to use
+  globalLogStorage = debugLogger.storage;
+
   debugLogger.start();
 
   // Start the coordinator
@@ -100,21 +109,4 @@ Future<String> _getDeviceName() async {
   } catch (_) {}
 
   return 'Unknown Device';
-}
-
-/// Unified log callback for gossip protocol messages.
-void _logCallback(
-  LogLevel level,
-  String message, [
-  Object? error,
-  StackTrace? stackTrace,
-]) {
-  final levelStr = level.name.toUpperCase().padRight(7);
-  final category = 'GOSSIP][$levelStr';
-  var logLine = LogFormat.logLine(category, message);
-  if (error != null) {
-    logLine += ' | Error: $error';
-  }
-  // ignore: avoid_print
-  print(logLine);
 }

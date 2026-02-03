@@ -1,12 +1,17 @@
 import 'dart:async';
 import 'dart:developer' as developer;
+import 'dart:io';
 
+import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/foundation.dart';
 import 'package:gossip/gossip.dart';
 import 'package:gossip_nearby/gossip_nearby.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/connection_service.dart';
 import '../services/sync_service.dart';
 import 'log_format.dart';
+import 'log_storage.dart';
 
 /// Controls what gets logged to the console.
 enum DebugLogLevel {
@@ -30,17 +35,31 @@ enum DebugLogLevel {
 /// - [DebugLogLevel.warning]: Errors and warnings
 /// - [DebugLogLevel.info]: Errors, warnings, and important events
 /// - [DebugLogLevel.verbose]: Everything including periodic metrics
+///
+/// Logs are stored in memory and can be exported for debugging via [export].
 class DebugLogger {
   /// How often to log metrics.
   static const Duration _metricsInterval = Duration(seconds: 30);
 
+  /// Maximum number of log entries to store.
+  static const int _maxLogEntries = 50000;
+
   /// Prefix length for displaying IDs in logs.
   static const int _idPrefixLength = 8;
+
   final SyncService _syncService;
   final ConnectionService _connectionService;
+  final NodeId _localNodeId;
+  final String _deviceName;
+
+  /// In-memory log storage for export.
+  final LogStorage storage = LogStorage(maxEntries: _maxLogEntries);
 
   /// The minimum log level to display. Messages below this level are ignored.
   DebugLogLevel logLevel;
+
+  /// Timestamp when logging started.
+  DateTime? _startedAt;
 
   StreamSubscription<DomainEvent>? _domainEventSubscription;
   StreamSubscription<SyncError>? _syncErrorSubscription;
@@ -51,12 +70,17 @@ class DebugLogger {
   DebugLogger({
     required SyncService syncService,
     required ConnectionService connectionService,
+    required NodeId localNodeId,
+    required String deviceName,
     this.logLevel = DebugLogLevel.info,
   }) : _syncService = syncService,
-       _connectionService = connectionService;
+       _connectionService = connectionService,
+       _localNodeId = localNodeId,
+       _deviceName = deviceName;
 
   /// Starts logging events, errors, and metrics.
   void start() {
+    _startedAt = DateTime.now();
     _logInfo('DEBUG', 'DebugLogger started (level: ${logLevel.name})');
 
     _domainEventSubscription = _syncService.events.listen(_onDomainEvent);
@@ -81,6 +105,141 @@ class DebugLogger {
     _peerEventSubscription?.cancel();
     _metricsTimer?.cancel();
     _logInfo('DEBUG', 'DebugLogger stopped');
+  }
+
+  /// Returns the number of stored log entries.
+  int get entryCount => storage.entryCount;
+
+  /// Returns the local node ID as a string.
+  String get localNodeId => _localNodeId.value;
+
+  /// Clears all stored log entries.
+  void clearLogs() {
+    storage.clear();
+    _logInfo('DEBUG', 'Logs cleared');
+  }
+
+  /// Exports all stored logs as plain text with device info header.
+  ///
+  /// The export includes:
+  /// - Device and app information header
+  /// - Session duration
+  /// - All log entries in chronological order
+  Future<String> export() async {
+    final header = await _buildHeader();
+    final logs = storage.export();
+
+    if (logs.isEmpty) {
+      return '$header\n\n[No log entries]';
+    }
+
+    return '$header\n\n$logs';
+  }
+
+  Future<String> _buildHeader() async {
+    final buffer = StringBuffer();
+    final now = DateTime.now();
+    final duration = _startedAt != null
+        ? now.difference(_startedAt!)
+        : Duration.zero;
+
+    buffer.writeln('=' * 60);
+    buffer.writeln('GOSSIP DEBUG LOG EXPORT');
+    buffer.writeln('=' * 60);
+    buffer.writeln();
+
+    // Timestamps
+    buffer.writeln('Export Time: ${now.toIso8601String()}');
+    if (_startedAt != null) {
+      buffer.writeln('Session Start: ${_startedAt!.toIso8601String()}');
+      buffer.writeln('Session Duration: ${_formatDuration(duration)}');
+    }
+    buffer.writeln('Log Entries: ${storage.entryCount}');
+    buffer.writeln();
+
+    // Device info
+    buffer.writeln('--- Device Info ---');
+    buffer.writeln('Device Name: $_deviceName');
+    buffer.writeln('Local Node ID: ${_localNodeId.value}');
+    buffer.writeln('Platform: ${Platform.operatingSystem}');
+    buffer.writeln('OS Version: ${Platform.operatingSystemVersion}');
+
+    try {
+      final deviceInfo = DeviceInfoPlugin();
+      if (Platform.isAndroid) {
+        final android = await deviceInfo.androidInfo;
+        buffer.writeln('Manufacturer: ${android.manufacturer}');
+        buffer.writeln('Model: ${android.model}');
+        buffer.writeln('Android Version: ${android.version.release}');
+        buffer.writeln('SDK: ${android.version.sdkInt}');
+      } else if (Platform.isIOS) {
+        final ios = await deviceInfo.iosInfo;
+        buffer.writeln('Model: ${ios.model}');
+        buffer.writeln('iOS Version: ${ios.systemVersion}');
+      }
+    } catch (_) {
+      // Device info unavailable
+    }
+    buffer.writeln();
+
+    // App info
+    buffer.writeln('--- App Info ---');
+    try {
+      final packageInfo = await PackageInfo.fromPlatform();
+      buffer.writeln('App: ${packageInfo.appName}');
+      buffer.writeln('Version: ${packageInfo.version}');
+      buffer.writeln('Build: ${packageInfo.buildNumber}');
+    } catch (_) {
+      buffer.writeln('App info unavailable');
+    }
+    buffer.writeln('Debug Mode: $kDebugMode');
+    buffer.writeln();
+
+    // Current state snapshot
+    buffer.writeln('--- Current State ---');
+    try {
+      final health = await _syncService.getHealth();
+      buffer.writeln('Sync State: ${health.state}');
+      buffer.writeln('Is Healthy: ${health.isHealthy}');
+      buffer.writeln('Reachable Peers: ${health.reachablePeerCount}');
+      buffer.writeln('Incarnation: ${health.incarnation}');
+    } catch (e) {
+      buffer.writeln('Sync state unavailable: $e');
+    }
+
+    try {
+      final metrics = _connectionService.metrics;
+      buffer.writeln('Connected Peers: ${metrics.connectedPeerCount}');
+      buffer.writeln('Is Advertising: ${_connectionService.isAdvertising}');
+      buffer.writeln('Is Discovering: ${_connectionService.isDiscovering}');
+      buffer.writeln('Total Messages Sent: ${metrics.totalMessagesSent}');
+      buffer.writeln(
+        'Total Messages Received: ${metrics.totalMessagesReceived}',
+      );
+    } catch (e) {
+      buffer.writeln('Connection metrics unavailable: $e');
+    }
+    buffer.writeln();
+
+    buffer.writeln('=' * 60);
+    buffer.writeln('LOG ENTRIES');
+    buffer.writeln('=' * 60);
+
+    return buffer.toString();
+  }
+
+  String _formatDuration(Duration d) {
+    final hours = d.inHours;
+    final minutes = d.inMinutes.remainder(60);
+    final seconds = d.inSeconds.remainder(60);
+
+    if (hours > 0) {
+      return '${hours}h ${minutes}m ${seconds}s';
+    } else if (minutes > 0) {
+      return '${minutes}m ${seconds}s';
+    } else {
+      return '${seconds}s';
+    }
   }
 
   // ─────────────────────────────────────────────────────────────
@@ -415,8 +574,11 @@ class DebugLogger {
   }
 
   void _log(String category, String message) {
-    final logLine = LogFormat.logLine(category, message);
+    // Store in buffer for export (always, regardless of log level)
+    storage.append(category, message);
 
+    // Print to console
+    final logLine = LogFormat.logLine(category, message);
     // ignore: avoid_print
     print(logLine);
 
@@ -435,6 +597,11 @@ class DebugLogger {
 /// Set this before starting the transport to control verbosity.
 LogLevel nearbyMinLogLevel = LogLevel.info;
 
+/// Global log storage for capturing logs from callbacks.
+///
+/// Set this before starting the transport to enable log capture.
+LogStorage? globalLogStorage;
+
 /// LogCallback implementation for NearbyTransport that prints to console.
 ///
 /// Only logs messages at or above [nearbyMinLogLevel].
@@ -448,18 +615,54 @@ void nearbyLogCallback(
 
   final levelStr = level.name.toUpperCase().padRight(7);
   final category = 'NEARBY][$levelStr';
-  var logLine = LogFormat.logLine(category, message);
+  var fullMessage = message;
 
   if (error != null) {
-    logLine += ' | Error: $error';
+    fullMessage += ' | Error: $error';
   }
 
+  // Store in global buffer for export
+  globalLogStorage?.append(category, fullMessage);
+
+  // Print to console
+  final logLine = LogFormat.logLine(category, fullMessage);
   // ignore: avoid_print
   print(logLine);
 
   developer.log(
     message,
     name: 'gossip.nearby.${level.name}',
+    error: error,
+    stackTrace: stackTrace,
+  );
+}
+
+/// LogCallback for Coordinator that stores and prints logs.
+void gossipLogCallback(
+  LogLevel level,
+  String message, [
+  Object? error,
+  StackTrace? stackTrace,
+]) {
+  final levelStr = level.name.toUpperCase().padRight(7);
+  final category = 'GOSSIP][$levelStr';
+  var fullMessage = message;
+
+  if (error != null) {
+    fullMessage += ' | Error: $error';
+  }
+
+  // Store in global buffer for export
+  globalLogStorage?.append(category, fullMessage);
+
+  // Print to console
+  final logLine = LogFormat.logLine(category, fullMessage);
+  // ignore: avoid_print
+  print(logLine);
+
+  developer.log(
+    message,
+    name: 'gossip.${level.name}',
     error: error,
     stackTrace: stackTrace,
   );

@@ -8,6 +8,7 @@ import '../theme/theme.dart';
 import '../view_models/view_models.dart';
 import '../widgets/widgets.dart';
 import 'chat_screen.dart';
+import 'logs_screen.dart';
 import 'metrics_screen.dart';
 import 'peers_screen.dart';
 import 'qr_scanner_screen.dart';
@@ -49,6 +50,11 @@ class ChannelListScreen extends StatelessWidget {
                 icon: const Icon(Icons.analytics_outlined),
                 onPressed: () => _openMetricsScreen(context),
                 tooltip: 'Metrics',
+              ),
+              IconButton(
+                icon: const Icon(Icons.bug_report_outlined),
+                onPressed: () => _openLogsScreen(context),
+                tooltip: 'Debug Logs',
               ),
             ],
           ),
@@ -132,6 +138,12 @@ class ChannelListScreen extends StatelessWidget {
     Navigator.of(context).push(
       MaterialPageRoute(builder: (_) => MetricsScreen(controller: controller)),
     );
+  }
+
+  void _openLogsScreen(BuildContext context) {
+    Navigator.of(
+      context,
+    ).push(MaterialPageRoute(builder: (_) => const LogsScreen()));
   }
 
   void _showCreateChannelDialog(BuildContext context) {
