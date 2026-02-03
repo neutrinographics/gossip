@@ -104,4 +104,25 @@ abstract class MessagePort {
   ///
   /// After closing, no more messages can be sent or received.
   Future<void> close();
+
+  /// Returns the number of messages waiting to be sent to a specific peer.
+  ///
+  /// This enables the library to detect transport congestion and throttle
+  /// message generation accordingly. When the pending count is high, the
+  /// library may skip gossip rounds to prevent unbounded queue growth.
+  ///
+  /// Returns 0 if the transport doesn't track pending sends or if
+  /// the peer is unknown. Implementations that don't support backpressure
+  /// can use the default implementation which always returns 0.
+  int pendingSendCount(NodeId peer) => 0;
+
+  /// Returns the total number of messages waiting to be sent across all peers.
+  ///
+  /// This provides a quick congestion check without iterating over peers.
+  /// The library uses this to decide whether to skip gossip rounds.
+  ///
+  /// Returns 0 if the transport doesn't track pending sends.
+  /// Implementations that don't support backpressure can use the default
+  /// implementation which always returns 0.
+  int get totalPendingSendCount => 0;
 }

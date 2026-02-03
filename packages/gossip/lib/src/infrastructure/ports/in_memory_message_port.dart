@@ -68,6 +68,15 @@ class InMemoryMessageBus {
 ///
 /// This simulates a perfect network (no delays, packet loss, or reordering)
 /// unless additional test harness logic is added to the bus.
+///
+/// ## Backpressure Testing
+///
+/// Use [setSimulatedPendingCount] to simulate transport congestion:
+/// ```dart
+/// final port = InMemoryMessagePort(nodeId, bus);
+/// port.setSimulatedPendingCount(15); // Simulate 15 pending messages
+/// // GossipEngine will skip rounds due to congestion
+/// ```
 class InMemoryMessagePort implements MessagePort {
   /// The node ID this port represents.
   final NodeId localNode;
@@ -76,6 +85,9 @@ class InMemoryMessagePort implements MessagePort {
   final InMemoryMessageBus bus;
 
   final StreamController<IncomingMessage> _controller;
+
+  /// Simulated pending send count for backpressure testing.
+  int _simulatedPendingCount = 0;
 
   /// Creates a port and registers it with the bus.
   InMemoryMessagePort(this.localNode, this.bus)
@@ -106,4 +118,20 @@ class InMemoryMessagePort implements MessagePort {
       bus.register(localNode, _controller);
     }
   }
+
+  /// Sets the simulated pending send count for backpressure testing.
+  ///
+  /// When set to a value above the congestion threshold (default 10),
+  /// the GossipEngine will skip gossip rounds to simulate backpressure.
+  ///
+  /// Set to 0 to clear simulated congestion.
+  void setSimulatedPendingCount(int count) {
+    _simulatedPendingCount = count;
+  }
+
+  @override
+  int pendingSendCount(NodeId peer) => _simulatedPendingCount;
+
+  @override
+  int get totalPendingSendCount => _simulatedPendingCount;
 }

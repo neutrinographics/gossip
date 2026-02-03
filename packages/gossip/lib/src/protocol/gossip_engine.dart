@@ -177,6 +177,13 @@ class GossipEngine {
   /// Used to track message rates within a fixed time window for rate limiting.
   static const int _metricsWindowDurationMs = 10000;
 
+  /// Congestion threshold for backpressure.
+  ///
+  /// When the transport has more than this many pending messages, gossip
+  /// rounds are skipped to prevent unbounded queue growth. This allows the
+  /// transport to drain before generating more messages.
+  static const int _congestionThreshold = 10;
+
   GossipEngine({
     required this.localNode,
     required this.peerRegistry,
@@ -311,15 +318,26 @@ class GossipEngine {
   /// Performs a single gossip round (called every 200ms).
   ///
   /// Implements Step 1 of the anti-entropy protocol:
-  /// 1. Select random reachable peer via [selectRandomPeer]
-  /// 2. Generate digests for all channels via [generateDigest]
-  /// 3. Send [DigestRequest] to peer
+  /// 1. Check for transport congestion (skip if congested)
+  /// 2. Select random reachable peer via [selectRandomPeer]
+  /// 3. Generate digests for all channels via [generateDigest]
+  /// 4. Send [DigestRequest] to peer
   ///
   /// The peer will respond with their digests ([DigestResponse]), triggering
   /// Step 3 delta request generation.
   ///
-  /// Returns immediately if no reachable peers exist.
+  /// Returns immediately if transport is congested or no reachable peers exist.
   Future<void> performGossipRound() async {
+    // Skip round if transport is congested (backpressure)
+    if (messagePort.totalPendingSendCount > _congestionThreshold) {
+      _log(
+        LogLevel.debug,
+        'Skipping gossip round: transport congested '
+        '(${messagePort.totalPendingSendCount} pending > $_congestionThreshold threshold)',
+      );
+      return;
+    }
+
     final peer = selectRandomPeer();
     if (peer == null) return;
 

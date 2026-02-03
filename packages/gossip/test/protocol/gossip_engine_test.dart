@@ -563,5 +563,141 @@ void main() {
         );
       });
     });
+
+    group('backpressure', () {
+      test('skips gossip round when transport is congested', () async {
+        final localNode = NodeId('local');
+        final peerId = NodeId('peer');
+        final registry = PeerRegistry(
+          localNode: localNode,
+          initialIncarnation: 0,
+        );
+        registry.addPeer(peerId, occurredAt: DateTime.now());
+
+        final entryRepo = InMemoryEntryRepository();
+        final timerPort = InMemoryTimePort();
+        final messagePort = InMemoryMessagePort(
+          localNode,
+          InMemoryMessageBus(),
+        );
+
+        final engine = GossipEngine(
+          localNode: localNode,
+          peerRegistry: registry,
+          entryRepository: entryRepo,
+          timePort: timerPort,
+          messagePort: messagePort,
+        );
+
+        // Simulate congestion (above threshold of 10)
+        messagePort.setSimulatedPendingCount(15);
+
+        // Set up a channel so the engine has something to sync
+        final channelId = ChannelId('test-channel');
+        final channel = ChannelAggregate(id: channelId, localNode: localNode);
+        engine.startListening({channelId: channel});
+
+        // Perform gossip round - should be skipped due to congestion
+        await engine.performGossipRound();
+
+        // Verify no messages were sent (we can check metrics)
+        final metrics = registry.getMetrics(peerId);
+        expect(metrics?.messagesSent ?? 0, equals(0));
+      });
+
+      test('performs gossip round when transport is not congested', () async {
+        final localNode = NodeId('local');
+        final peerId = NodeId('peer');
+        final registry = PeerRegistry(
+          localNode: localNode,
+          initialIncarnation: 0,
+        );
+        registry.addPeer(peerId, occurredAt: DateTime.now());
+
+        final entryRepo = InMemoryEntryRepository();
+        final timerPort = InMemoryTimePort();
+        final bus = InMemoryMessageBus();
+        final messagePort = InMemoryMessagePort(localNode, bus);
+
+        // Register peer port to receive messages
+        final peerPort = InMemoryMessagePort(peerId, bus);
+
+        final engine = GossipEngine(
+          localNode: localNode,
+          peerRegistry: registry,
+          entryRepository: entryRepo,
+          timePort: timerPort,
+          messagePort: messagePort,
+        );
+
+        // No congestion (below threshold)
+        messagePort.setSimulatedPendingCount(5);
+
+        // Set up a channel so the engine has something to sync
+        final channelId = ChannelId('test-channel');
+        final channel = ChannelAggregate(id: channelId, localNode: localNode);
+        engine.startListening({channelId: channel});
+
+        // Perform gossip round - should proceed
+        await engine.performGossipRound();
+
+        // Verify a message was sent
+        final metrics = registry.getMetrics(peerId);
+        expect(metrics?.messagesSent ?? 0, greaterThan(0));
+
+        // Clean up
+        await peerPort.close();
+      });
+
+      test('resumes gossip when congestion clears', () async {
+        final localNode = NodeId('local');
+        final peerId = NodeId('peer');
+        final registry = PeerRegistry(
+          localNode: localNode,
+          initialIncarnation: 0,
+        );
+        registry.addPeer(peerId, occurredAt: DateTime.now());
+
+        final entryRepo = InMemoryEntryRepository();
+        final timerPort = InMemoryTimePort();
+        final bus = InMemoryMessageBus();
+        final messagePort = InMemoryMessagePort(localNode, bus);
+
+        // Register peer port to receive messages
+        final peerPort = InMemoryMessagePort(peerId, bus);
+
+        final engine = GossipEngine(
+          localNode: localNode,
+          peerRegistry: registry,
+          entryRepository: entryRepo,
+          timePort: timerPort,
+          messagePort: messagePort,
+        );
+
+        // Set up a channel
+        final channelId = ChannelId('test-channel');
+        final channel = ChannelAggregate(id: channelId, localNode: localNode);
+        engine.startListening({channelId: channel});
+
+        // Start congested
+        messagePort.setSimulatedPendingCount(15);
+        await engine.performGossipRound();
+
+        // No messages sent while congested
+        var metrics = registry.getMetrics(peerId);
+        expect(metrics?.messagesSent ?? 0, equals(0));
+
+        // Clear congestion
+        messagePort.setSimulatedPendingCount(0);
+        await engine.performGossipRound();
+
+        // Message sent after congestion cleared
+        metrics = registry.getMetrics(peerId);
+        expect(metrics?.messagesSent ?? 0, greaterThan(0));
+
+        // Clean up
+        await peerPort.close();
+      });
+    });
   });
 }

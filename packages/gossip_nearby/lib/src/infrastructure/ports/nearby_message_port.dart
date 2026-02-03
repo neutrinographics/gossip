@@ -42,4 +42,10 @@ class NearbyMessagePort implements MessagePort {
     _connectionService.onGossipMessage = null;
     await _incomingController.close();
   }
+
+  @override
+  int pendingSendCount(NodeId peer) => 0;
+
+  @override
+  int get totalPendingSendCount => 0;
 }

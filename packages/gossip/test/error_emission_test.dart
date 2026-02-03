@@ -37,6 +37,12 @@ class ThrowingMessagePort implements MessagePort {
     await _controller.close();
   }
 
+  @override
+  int pendingSendCount(NodeId peer) => 0;
+
+  @override
+  int get totalPendingSendCount => 0;
+
   void injectMessage(IncomingMessage message) {
     _controller.add(message);
   }
