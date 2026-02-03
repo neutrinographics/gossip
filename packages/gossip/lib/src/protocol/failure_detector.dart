@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:gossip/src/domain/errors/sync_error.dart';
+import 'package:gossip/src/domain/services/rtt_tracker.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/domain/entities/peer.dart';
@@ -29,8 +30,8 @@ class _PendingPing {
   /// Sequence number matching the Ping message.
   final int sequence;
 
-  /// Timestamp when Ping was sent (for timeout tracking).
-  final DateTime sentAt;
+  /// Timestamp when Ping was sent (milliseconds since epoch for RTT calculation).
+  final int sentAtMs;
 
   /// Completes with true when matching Ack arrives, false on explicit failure.
   final Completer<bool> completer;
@@ -38,7 +39,7 @@ class _PendingPing {
   _PendingPing({
     required this.target,
     required this.sequence,
-    required this.sentAt,
+    required this.sentAtMs,
   }) : completer = Completer<bool>();
 }
 
@@ -137,6 +138,9 @@ class FailureDetector {
   /// Interval between probe rounds.
   final Duration _probeInterval;
 
+  /// RTT tracker for measuring round-trip time from ping/ack pairs.
+  final RttTracker _rttTracker;
+
   FailureDetector({
     required this.localNode,
     required this.peerRegistry,
@@ -148,11 +152,13 @@ class FailureDetector {
     Duration? indirectPingTimeout,
     Duration? probeInterval,
     Random? random,
+    RttTracker? rttTracker,
   }) : _pingTimeout = pingTimeout ?? const Duration(milliseconds: 500),
        _indirectPingTimeout =
            indirectPingTimeout ?? const Duration(milliseconds: 500),
        _probeInterval = probeInterval ?? const Duration(milliseconds: 1000),
-       _random = random ?? Random();
+       _random = random ?? Random(),
+       _rttTracker = rttTracker ?? RttTracker();
 
   /// Window duration for metrics sliding window (10 seconds).
   static const int _metricsWindowDurationMs = 10000;
@@ -186,6 +192,11 @@ class FailureDetector {
 
   /// Whether probe rounds are currently active.
   bool get isRunning => _isRunning;
+
+  /// RTT tracker for monitoring network latency.
+  ///
+  /// Exposes the RTT estimate and sample count for observability.
+  RttTracker get rttTracker => _rttTracker;
 
   /// Starts periodic failure detection probe rounds.
   ///
@@ -324,7 +335,7 @@ class FailureDetector {
     final pending = _PendingPing(
       target: pingReq.target,
       sequence: pingReq.sequence,
-      sentAt: DateTime.now(),
+      sentAtMs: timePort.nowMs,
     );
     _pendingPings[pingReq.sequence] = pending;
 
@@ -409,7 +420,7 @@ class FailureDetector {
     final pending = _PendingPing(
       target: target,
       sequence: sequence,
-      sentAt: DateTime.now(),
+      sentAtMs: timePort.nowMs,
     );
     _pendingPings[sequence] = pending;
     return pending;
@@ -571,7 +582,7 @@ class FailureDetector {
   ///
   /// Updates peer's last contact timestamp in registry (resetting failed probe
   /// count via side effect in PeerRegistry). If this Ack matches a pending ping,
-  /// completes the completer to prevent timeout.
+  /// completes the completer to prevent timeout and records RTT sample.
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
   void handleAck(Ack ack, {required int timestampMs}) {
@@ -582,10 +593,20 @@ class FailureDetector {
 
     final pending = _pendingPings[ack.sequence];
     if (pending != null && !pending.completer.isCompleted) {
-      _log(
-        'SWIM: Ack matched pending ping seq=${ack.sequence} from ${ack.sender} '
-        '(failed count reset: $failedCountBefore -> 0)',
-      );
+      // Calculate and record RTT
+      final rttMs = timestampMs - pending.sentAtMs;
+      if (rttMs > 0) {
+        _rttTracker.recordSample(Duration(milliseconds: rttMs));
+        _log(
+          'SWIM: Ack matched pending ping seq=${ack.sequence} from ${ack.sender} '
+          '(RTT: ${rttMs}ms, failed count reset: $failedCountBefore -> 0)',
+        );
+      } else {
+        _log(
+          'SWIM: Ack matched pending ping seq=${ack.sequence} from ${ack.sender} '
+          '(failed count reset: $failedCountBefore -> 0)',
+        );
+      }
       pending.completer.complete(true);
     } else {
       _log(
