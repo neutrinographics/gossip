@@ -2,7 +2,6 @@ import 'dart:typed_data';
 
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/domain/errors/sync_error.dart';
-import 'package:gossip/src/domain/events/domain_event.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
@@ -21,7 +20,7 @@ void main() {
   // Intermediary role (_handlePingReq)
   // ---------------------------------------------------------------------------
 
-  group('Intermediary role (_handlePingReq)', () {
+  group('Intermediary role', () {
     late FailureDetectorTestHarness h;
     late TestPeer prober;
     late TestPeer target;
@@ -100,6 +99,60 @@ void main() {
       await targetSub.cancel();
       h.stopListening();
     });
+
+    test(
+      'PingReq with colliding sequence does not overwrite local pending ping',
+      () async {
+        final h = FailureDetectorTestHarness(
+          localName: 'intermediary-B',
+          pingTimeout: const Duration(milliseconds: 500),
+        );
+        final prober = h.addPeer('prober-A');
+        final target = h.addPeer('target-C');
+
+        h.startListening();
+
+        final localPingFuture = h.expectPing(target);
+        final probeFuture = h.detector.probeNewPeer(target.id);
+        final localPing = await localPingFuture;
+
+        final collidingSeq = localPing.sequence;
+
+        await h.sendPingReq(prober, target, sequence: collidingSeq);
+        await h.flush();
+
+        // C responds to B's original Ping
+        await h.timePort.advance(const Duration(milliseconds: 100));
+        final ack = Ack(sender: target.id, sequence: collidingSeq);
+        await target.port.send(h.localNode, codec.encode(ack));
+        await h.flush();
+
+        // Advance past probeNewPeer's timeout
+        await h.timePort.advance(const Duration(milliseconds: 500));
+
+        final gotAck = await probeFuture;
+
+        expect(
+          gotAck,
+          isTrue,
+          reason:
+              'probeNewPeer Ack should match the local pending ping, '
+              'not be stolen by the PingReq handler',
+        );
+
+        expect(
+          h.rttTracker.hasReceivedSamples,
+          isTrue,
+          reason:
+              'RTT should be recorded for the local probe, '
+              'not lost due to PingReq collision',
+        );
+
+        // Clean up — advance past intermediary timeout for PingReq handler
+        await h.timePort.advance(const Duration(milliseconds: 201));
+        h.stopListening();
+      },
+    );
   });
 
   // ---------------------------------------------------------------------------
@@ -333,136 +386,10 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
-  // Health checking edge cases
+  // Message metrics
   // ---------------------------------------------------------------------------
 
-  group('checkPeerHealth edge cases', () {
-    late FailureDetectorTestHarness h;
-
-    setUp(() {
-      h = FailureDetectorTestHarness(failureThreshold: 3);
-    });
-
-    test('does not transition peer below failure threshold', () {
-      final peer = h.addPeer('peer1');
-
-      h.detector.recordProbeFailure(peer.id);
-      h.detector.recordProbeFailure(peer.id);
-      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
-
-      final info = h.peerRegistry.getPeer(peer.id)!;
-      expect(info.status, equals(PeerStatus.reachable));
-      expect(info.failedProbeCount, equals(2));
-    });
-
-    test('no-ops for unknown peer', () {
-      h.detector.checkPeerHealth(NodeId('unknown'), occurredAt: DateTime.now());
-    });
-
-    test('does not double-transition already suspected peer', () {
-      final peer = h.addPeer('peer1');
-
-      for (var i = 0; i < 3; i++) {
-        h.detector.recordProbeFailure(peer.id);
-      }
-      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
-      expect(
-        h.peerRegistry.getPeer(peer.id)!.status,
-        equals(PeerStatus.suspected),
-      );
-
-      h.detector.recordProbeFailure(peer.id);
-      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
-      expect(
-        h.peerRegistry.getPeer(peer.id)!.status,
-        equals(PeerStatus.suspected),
-      );
-    });
-
-    test('transitions at exact threshold boundary', () {
-      final peer = h.addPeer('peer1');
-
-      for (var i = 0; i < 3; i++) {
-        h.detector.recordProbeFailure(peer.id);
-      }
-      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
-
-      expect(
-        h.peerRegistry.getPeer(peer.id)!.status,
-        equals(PeerStatus.suspected),
-      );
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Lifecycle idempotency
-  // ---------------------------------------------------------------------------
-
-  group('Lifecycle idempotency', () {
-    test('start() twice does not create duplicate timers', () {
-      final h = FailureDetectorTestHarness();
-
-      h.detector.start();
-      expect(h.detector.isRunning, isTrue);
-
-      h.detector.start();
-      expect(h.detector.isRunning, isTrue);
-      expect(h.timePort.pendingDelayCount, equals(1));
-
-      h.detector.stop();
-    });
-
-    test('stop() twice does not throw', () {
-      final h = FailureDetectorTestHarness();
-
-      h.detector.start();
-      h.detector.stop();
-      expect(h.detector.isRunning, isFalse);
-
-      h.detector.stop();
-      expect(h.detector.isRunning, isFalse);
-    });
-
-    test('stop() before start() does not throw', () {
-      final h = FailureDetectorTestHarness();
-
-      h.detector.stop();
-      expect(h.detector.isRunning, isFalse);
-    });
-
-    test('stopListening() before startListening() does not throw', () {
-      final h = FailureDetectorTestHarness();
-      h.stopListening();
-    });
-
-    test('startListening() twice does not duplicate subscriptions', () async {
-      final h = FailureDetectorTestHarness();
-      final peer = h.addPeer('peer1');
-
-      final acks = <Ack>[];
-      final peerSub = peer.port.incoming.listen((msg) {
-        final decoded = codec.decode(msg.bytes);
-        if (decoded is Ack) acks.add(decoded);
-      });
-
-      h.startListening();
-      h.startListening();
-
-      await h.sendPing(peer, sequence: 1);
-      await h.flush();
-
-      expect(acks.length, greaterThanOrEqualTo(1));
-
-      await peerSub.cancel();
-      h.stopListening();
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Incoming message metrics recording
-  // ---------------------------------------------------------------------------
-
-  group('Incoming message metrics recording', () {
+  group('Message metrics', () {
     late FailureDetectorTestHarness h;
     late TestPeer peer;
 
@@ -535,133 +462,6 @@ void main() {
 
       expect(h.errors, hasLength(1));
 
-      h.stopListening();
-    });
-  });
-
-  // ---------------------------------------------------------------------------
-  // Sequence number collision in intermediary role
-  // ---------------------------------------------------------------------------
-
-  group('Intermediary sequence number collision', () {
-    test(
-      'PingReq with colliding sequence does not overwrite local pending ping',
-      () async {
-        final h = FailureDetectorTestHarness(
-          localName: 'intermediary-B',
-          pingTimeout: const Duration(milliseconds: 500),
-        );
-        final prober = h.addPeer('prober-A');
-        final target = h.addPeer('target-C');
-
-        h.startListening();
-
-        // Capture the Ping that B sends to C via probeNewPeer
-        final localPingFuture = h.expectPing(target);
-        final probeFuture = h.detector.probeNewPeer(target.id);
-        final localPing = await localPingFuture;
-
-        final collidingSeq = localPing.sequence;
-
-        // A sends PingReq to B with the SAME sequence number.
-        await h.sendPingReq(prober, target, sequence: collidingSeq);
-        await h.flush();
-
-        // C responds to B's original Ping
-        await h.timePort.advance(const Duration(milliseconds: 100));
-        final ack = Ack(sender: target.id, sequence: collidingSeq);
-        await target.port.send(h.localNode, codec.encode(ack));
-        await h.flush();
-
-        // Advance past probeNewPeer's timeout
-        await h.timePort.advance(const Duration(milliseconds: 500));
-
-        final gotAck = await probeFuture;
-
-        expect(
-          gotAck,
-          isTrue,
-          reason:
-              'probeNewPeer Ack should match the local pending ping, '
-              'not be stolen by the PingReq handler',
-        );
-
-        expect(
-          h.rttTracker.hasReceivedSamples,
-          isTrue,
-          reason:
-              'RTT should be recorded for the local probe, '
-              'not lost due to PingReq collision',
-        );
-
-        // Clean up — advance past intermediary timeout for PingReq handler
-        await h.timePort.advance(const Duration(milliseconds: 201));
-        h.stopListening();
-      },
-    );
-  });
-
-  // ---------------------------------------------------------------------------
-  // Additional corner cases
-  // ---------------------------------------------------------------------------
-
-  group('Corner cases', () {
-    test('peer removed during active probe does not crash', () async {
-      final h = FailureDetectorTestHarness(
-        pingTimeout: const Duration(milliseconds: 500),
-      );
-      final peer = h.addPeer('peer1');
-
-      final probeRoundFuture = h.detector.performProbeRound();
-      await h.flush();
-
-      h.peerRegistry.removePeer(peer.id, occurredAt: DateTime.now());
-
-      await h.advancePastTimeout();
-      await probeRoundFuture;
-
-      expect(h.peerRegistry.getPeer(peer.id), isNull);
-    });
-
-    test('restart after stop resumes probing', () async {
-      final h = FailureDetectorTestHarness(
-        pingTimeout: const Duration(milliseconds: 200),
-        probeInterval: const Duration(milliseconds: 500),
-      );
-      final peer = h.addPeer('peer1');
-
-      h.startListening();
-
-      h.detector.start();
-      expect(h.detector.isRunning, isTrue);
-
-      h.detector.stop();
-      expect(h.detector.isRunning, isFalse);
-
-      h.detector.start();
-      expect(h.detector.isRunning, isTrue);
-
-      final pingsReceived = <Ping>[];
-      final peerSub = peer.port.incoming.listen((msg) {
-        final decoded = codec.decode(msg.bytes);
-        if (decoded is Ping) pingsReceived.add(decoded);
-      });
-
-      await h.timePort.advance(const Duration(milliseconds: 501));
-      await h.flush();
-
-      expect(
-        pingsReceived,
-        isNotEmpty,
-        reason: 'Probing should resume after stop/start cycle',
-      );
-
-      // Clean up — advance past timeouts
-      await h.timePort.advance(const Duration(milliseconds: 201));
-      await h.timePort.advance(const Duration(milliseconds: 201));
-
-      await peerSub.cancel();
-      h.detector.stop();
       h.stopListening();
     });
   });

@@ -12,7 +12,11 @@ import 'package:test/test.dart';
 import 'failure_detector_test_harness.dart';
 
 void main() {
-  group('FailureDetector', () {
+  // ---------------------------------------------------------------------------
+  // Construction & peer selection
+  // ---------------------------------------------------------------------------
+
+  group('Construction & peer selection', () {
     test('can be constructed with required dependencies', () {
       final h = FailureDetectorTestHarness();
       expect(h.detector, isNotNull);
@@ -31,22 +35,22 @@ void main() {
       expect(selected, isNotNull);
       expect(selected!.id, equals(peer.id));
     });
+  });
 
-    test('probe round sends Ping to random peer', () async {
-      final h = FailureDetectorTestHarness(
-        pingTimeout: const Duration(milliseconds: 500),
-      );
+  // ---------------------------------------------------------------------------
+  // Message handling
+  // ---------------------------------------------------------------------------
+
+  group('Message handling', () {
+    test('handlePing returns an Ack with matching sequence', () {
+      final h = FailureDetectorTestHarness();
       final peer = h.addPeer('peer1');
 
-      final pingFuture = h.expectPing(peer);
-      final probeRoundFuture = h.detector.performProbeRound();
-      final ping = await pingFuture;
+      final ping = Ping(sender: peer.id, sequence: 42);
+      final ack = h.detector.handlePing(ping);
 
-      expect(ping.sender, equals(h.localNode));
-      expect(ping.sequence, greaterThan(0));
-
-      await h.advancePastTimeout();
-      await probeRoundFuture;
+      expect(ack.sender, equals(h.localNode));
+      expect(ack.sequence, equals(42));
     });
 
     test('listens to incoming Ping and responds with Ack', () async {
@@ -68,8 +72,88 @@ void main() {
       h.stopListening();
     });
 
+    test('sends SWIM messages with high priority', () async {
+      final bus = InMemoryMessageBus();
+      final localPort = InMemoryMessagePort(NodeId('local'), bus);
+      final capPort = PriorityCapturingMessagePort(localPort);
+      final peerPort = InMemoryMessagePort(NodeId('peer1'), bus);
+
+      final hCap = FailureDetectorTestHarness(
+        pingTimeout: const Duration(milliseconds: 500),
+        messagePort: capPort,
+      );
+      hCap.addPeer('peer1');
+      hCap.startListening();
+
+      final probeRoundFuture = hCap.detector.performProbeRound();
+      await hCap.flush();
+
+      expect(capPort.capturedPriorities, isNotEmpty);
+      expect(
+        capPort.capturedPriorities.first,
+        equals(MessagePriority.high),
+        reason: 'Ping should be sent with high priority',
+      );
+
+      // Send a Ping to detector so it responds with Ack
+      final codec = ProtocolCodec();
+      final pingMsg = Ping(sender: NodeId('peer1'), sequence: 99);
+      await peerPort.send(NodeId('local'), codec.encode(pingMsg));
+      await hCap.flush();
+
+      expect(capPort.capturedPriorities.length, greaterThanOrEqualTo(2));
+      expect(
+        capPort.capturedPriorities,
+        everyElement(equals(MessagePriority.high)),
+        reason: 'All SWIM messages should use high priority',
+      );
+
+      await hCap.advancePastTimeout();
+      await probeRoundFuture;
+      hCap.stopListening();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Probe round
+  // ---------------------------------------------------------------------------
+
+  group('Probe round', () {
+    test('sends Ping to random peer', () async {
+      final h = FailureDetectorTestHarness(
+        pingTimeout: const Duration(milliseconds: 500),
+      );
+      final peer = h.addPeer('peer1');
+
+      final pingFuture = h.expectPing(peer);
+      final probeRoundFuture = h.detector.performProbeRound();
+      final ping = await pingFuture;
+
+      expect(ping.sender, equals(h.localNode));
+      expect(ping.sequence, greaterThan(0));
+
+      await h.advancePastTimeout();
+      await probeRoundFuture;
+    });
+
+    test('records failure when no Ack arrives', () async {
+      final h = FailureDetectorTestHarness(
+        pingTimeout: const Duration(milliseconds: 500),
+      );
+      h.addPeer('peer1');
+
+      await h.probeWithTimeout();
+
+      final peer = h.peerRegistry.getPeer(NodeId('peer1'))!;
+      expect(
+        peer.failedProbeCount,
+        equals(1),
+        reason: 'Probe failure should be recorded when no Ack arrives',
+      );
+    });
+
     test(
-      'late Ack arriving during indirect ping phase prevents probe failure',
+      'late Ack arriving during indirect ping phase prevents failure',
       () async {
         final h = FailureDetectorTestHarness(
           pingTimeout: const Duration(milliseconds: 500),
@@ -80,7 +164,6 @@ void main() {
 
         h.startListening();
 
-        // Listen for Ping on both peers
         Ping? receivedPing;
         NodeId? pingTarget;
         final peerSub = peer.port.incoming.listen((msg) {
@@ -133,7 +216,7 @@ void main() {
     );
 
     test(
-      'late Ack in 2-device scenario (no intermediaries) prevents probe failure',
+      'late Ack in 2-device scenario (no intermediaries) prevents failure',
       () async {
         final h = FailureDetectorTestHarness(
           pingTimeout: const Duration(milliseconds: 500),
@@ -168,62 +251,231 @@ void main() {
       },
     );
 
-    test('probe failure is recorded when no Ack arrives at all', () async {
+    test('peer removed during active probe does not crash', () async {
       final h = FailureDetectorTestHarness(
         pingTimeout: const Duration(milliseconds: 500),
       );
-      h.addPeer('peer1');
+      final peer = h.addPeer('peer1');
 
-      await h.probeWithTimeout();
+      final probeRoundFuture = h.detector.performProbeRound();
+      await h.flush();
 
-      final peer = h.peerRegistry.getPeer(NodeId('peer1'))!;
+      h.peerRegistry.removePeer(peer.id, occurredAt: DateTime.now());
+
+      await h.advancePastTimeout();
+      await probeRoundFuture;
+
+      expect(h.peerRegistry.getPeer(peer.id), isNull);
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Health checking
+  // ---------------------------------------------------------------------------
+
+  group('Health checking', () {
+    test('handleAck updates peer last contact time', () {
+      final h = FailureDetectorTestHarness();
+      final peer = h.addPeer('peer1');
+
+      final peerBefore = h.peerRegistry.getPeer(peer.id)!;
+      final initialContact = peerBefore.lastContactMs;
+
+      final laterMs = DateTime.now().millisecondsSinceEpoch + 100;
+      final ack = Ack(sender: peer.id, sequence: 1);
+      h.detector.handleAck(ack, timestampMs: laterMs);
+
+      final peerAfter = h.peerRegistry.getPeer(peer.id)!;
+      expect(peerAfter.lastContactMs, equals(laterMs));
+      expect(peerAfter.lastContactMs, greaterThan(initialContact));
+    });
+
+    test('recordProbeFailure increments failed probe count', () {
+      final h = FailureDetectorTestHarness();
+      final peer = h.addPeer('peer1');
+
+      expect(h.peerRegistry.getPeer(peer.id)!.failedProbeCount, equals(0));
+
+      h.detector.recordProbeFailure(peer.id);
+
+      expect(h.peerRegistry.getPeer(peer.id)!.failedProbeCount, equals(1));
+    });
+
+    test('transitions to suspected at exact failure threshold', () {
+      final h = FailureDetectorTestHarness(failureThreshold: 3);
+      final peer = h.addPeer('peer1');
+
+      for (var i = 0; i < 3; i++) {
+        h.detector.recordProbeFailure(peer.id);
+      }
+      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
+
       expect(
-        peer.failedProbeCount,
-        equals(1),
-        reason: 'Probe failure should be recorded when no Ack arrives',
+        h.peerRegistry.getPeer(peer.id)!.status,
+        equals(PeerStatus.suspected),
       );
     });
 
-    test('sends SWIM messages with high priority', () async {
-      // This test needs a custom MessagePort to capture priorities.
-      final bus = InMemoryMessageBus();
-      final localPort = InMemoryMessagePort(NodeId('local'), bus);
-      final capPort = PriorityCapturingMessagePort(localPort);
-      final peerPort = InMemoryMessagePort(NodeId('peer1'), bus);
+    test('does not transition peer below failure threshold', () {
+      final h = FailureDetectorTestHarness(failureThreshold: 3);
+      final peer = h.addPeer('peer1');
 
-      final hCap = FailureDetectorTestHarness(
-        pingTimeout: const Duration(milliseconds: 500),
-        messagePort: capPort,
-      );
-      hCap.addPeer('peer1');
-      hCap.startListening();
+      h.detector.recordProbeFailure(peer.id);
+      h.detector.recordProbeFailure(peer.id);
+      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
 
-      final probeRoundFuture = hCap.detector.performProbeRound();
-      await hCap.flush();
+      final info = h.peerRegistry.getPeer(peer.id)!;
+      expect(info.status, equals(PeerStatus.reachable));
+      expect(info.failedProbeCount, equals(2));
+    });
 
-      expect(capPort.capturedPriorities, isNotEmpty);
+    test('does not double-transition already suspected peer', () {
+      final h = FailureDetectorTestHarness(failureThreshold: 3);
+      final peer = h.addPeer('peer1');
+
+      for (var i = 0; i < 3; i++) {
+        h.detector.recordProbeFailure(peer.id);
+      }
+      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
       expect(
-        capPort.capturedPriorities.first,
-        equals(MessagePriority.high),
-        reason: 'Ping should be sent with high priority',
+        h.peerRegistry.getPeer(peer.id)!.status,
+        equals(PeerStatus.suspected),
       );
 
-      // Send a Ping to detector so it responds with Ack
-      final codec = ProtocolCodec();
-      final pingMsg = Ping(sender: NodeId('peer1'), sequence: 99);
-      await peerPort.send(NodeId('local'), codec.encode(pingMsg));
-      await hCap.flush();
-
-      expect(capPort.capturedPriorities.length, greaterThanOrEqualTo(2));
+      h.detector.recordProbeFailure(peer.id);
+      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
       expect(
-        capPort.capturedPriorities,
-        everyElement(equals(MessagePriority.high)),
-        reason: 'All SWIM messages should use high priority',
+        h.peerRegistry.getPeer(peer.id)!.status,
+        equals(PeerStatus.suspected),
+      );
+    });
+
+    test('no-ops for unknown peer', () {
+      final h = FailureDetectorTestHarness();
+      h.detector.checkPeerHealth(NodeId('unknown'), occurredAt: DateTime.now());
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Lifecycle
+  // ---------------------------------------------------------------------------
+
+  group('Lifecycle', () {
+    final codec = ProtocolCodec();
+
+    test('start begins periodic probes', () {
+      final h = FailureDetectorTestHarness();
+      h.detector.start();
+      expect(h.detector.isRunning, isTrue);
+    });
+
+    test('stop cancels probes', () {
+      final h = FailureDetectorTestHarness();
+      h.detector.start();
+      expect(h.detector.isRunning, isTrue);
+
+      h.detector.stop();
+      expect(h.detector.isRunning, isFalse);
+    });
+
+    test('start() twice does not create duplicate timers', () {
+      final h = FailureDetectorTestHarness();
+
+      h.detector.start();
+      expect(h.detector.isRunning, isTrue);
+
+      h.detector.start();
+      expect(h.detector.isRunning, isTrue);
+      expect(h.timePort.pendingDelayCount, equals(1));
+
+      h.detector.stop();
+    });
+
+    test('stop() twice does not throw', () {
+      final h = FailureDetectorTestHarness();
+
+      h.detector.start();
+      h.detector.stop();
+      expect(h.detector.isRunning, isFalse);
+
+      h.detector.stop();
+      expect(h.detector.isRunning, isFalse);
+    });
+
+    test('stop() before start() does not throw', () {
+      final h = FailureDetectorTestHarness();
+
+      h.detector.stop();
+      expect(h.detector.isRunning, isFalse);
+    });
+
+    test('stopListening() before startListening() does not throw', () {
+      final h = FailureDetectorTestHarness();
+      h.stopListening();
+    });
+
+    test('startListening() twice does not duplicate subscriptions', () async {
+      final h = FailureDetectorTestHarness();
+      final peer = h.addPeer('peer1');
+
+      final acks = <Ack>[];
+      final peerSub = peer.port.incoming.listen((msg) {
+        final decoded = codec.decode(msg.bytes);
+        if (decoded is Ack) acks.add(decoded);
+      });
+
+      h.startListening();
+      h.startListening();
+
+      await h.sendPing(peer, sequence: 1);
+      await h.flush();
+
+      expect(acks.length, greaterThanOrEqualTo(1));
+
+      await peerSub.cancel();
+      h.stopListening();
+    });
+
+    test('restart after stop resumes probing', () async {
+      final h = FailureDetectorTestHarness(
+        pingTimeout: const Duration(milliseconds: 200),
+        probeInterval: const Duration(milliseconds: 500),
+      );
+      final peer = h.addPeer('peer1');
+
+      h.startListening();
+
+      h.detector.start();
+      expect(h.detector.isRunning, isTrue);
+
+      h.detector.stop();
+      expect(h.detector.isRunning, isFalse);
+
+      h.detector.start();
+      expect(h.detector.isRunning, isTrue);
+
+      final pingsReceived = <Ping>[];
+      final peerSub = peer.port.incoming.listen((msg) {
+        final decoded = codec.decode(msg.bytes);
+        if (decoded is Ping) pingsReceived.add(decoded);
+      });
+
+      await h.timePort.advance(const Duration(milliseconds: 501));
+      await h.flush();
+
+      expect(
+        pingsReceived,
+        isNotEmpty,
+        reason: 'Probing should resume after stop/start cycle',
       );
 
-      await hCap.advancePastTimeout();
-      await probeRoundFuture;
-      hCap.stopListening();
+      // Clean up — advance past timeouts
+      await h.timePort.advance(const Duration(milliseconds: 201));
+      await h.timePort.advance(const Duration(milliseconds: 201));
+
+      await peerSub.cancel();
+      h.detector.stop();
+      h.stopListening();
     });
   });
 }
