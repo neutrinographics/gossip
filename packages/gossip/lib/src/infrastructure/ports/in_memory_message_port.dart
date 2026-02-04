@@ -86,8 +86,11 @@ class InMemoryMessagePort implements MessagePort {
 
   final StreamController<IncomingMessage> _controller;
 
-  /// Simulated pending send count for backpressure testing.
+  /// Global simulated pending send count for backpressure testing.
   int _simulatedPendingCount = 0;
+
+  /// Per-peer simulated pending send counts for backpressure testing.
+  final Map<NodeId, int> _perPeerPendingCounts = {};
 
   /// Creates a port and registers it with the bus.
   InMemoryMessagePort(this.localNode, this.bus)
@@ -124,19 +127,37 @@ class InMemoryMessagePort implements MessagePort {
     }
   }
 
-  /// Sets the simulated pending send count for backpressure testing.
+  /// Sets the global simulated pending send count for backpressure testing.
   ///
-  /// When set to a value above the congestion threshold (default 10),
-  /// the GossipEngine will skip gossip rounds to simulate backpressure.
-  ///
+  /// Used as a fallback when no per-peer count is set for a given peer.
   /// Set to 0 to clear simulated congestion.
   void setSimulatedPendingCount(int count) {
     _simulatedPendingCount = count;
   }
 
-  @override
-  int pendingSendCount(NodeId peer) => _simulatedPendingCount;
+  /// Sets the simulated pending send count for a specific peer.
+  ///
+  /// Overrides the global count for this peer. Set to 0 and remove with
+  /// [clearSimulatedPendingCounts] to revert to the global fallback.
+  void setSimulatedPendingCountForPeer(NodeId peer, int count) {
+    _perPeerPendingCounts[peer] = count;
+  }
+
+  /// Clears all per-peer simulated pending counts.
+  void clearSimulatedPendingCounts() {
+    _perPeerPendingCounts.clear();
+    _simulatedPendingCount = 0;
+  }
 
   @override
-  int get totalPendingSendCount => _simulatedPendingCount;
+  int pendingSendCount(NodeId peer) =>
+      _perPeerPendingCounts[peer] ?? _simulatedPendingCount;
+
+  @override
+  int get totalPendingSendCount {
+    if (_perPeerPendingCounts.isNotEmpty) {
+      return _perPeerPendingCounts.values.fold(0, (sum, v) => sum + v);
+    }
+    return _simulatedPendingCount;
+  }
 }

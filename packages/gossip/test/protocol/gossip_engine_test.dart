@@ -589,8 +589,8 @@ void main() {
           messagePort: messagePort,
         );
 
-        // Simulate congestion (above threshold of 10)
-        messagePort.setSimulatedPendingCount(15);
+        // Simulate per-peer congestion (above threshold of 3)
+        messagePort.setSimulatedPendingCountForPeer(peerId, 10);
 
         // Set up a channel so the engine has something to sync
         final channelId = ChannelId('test-channel');
@@ -600,7 +600,7 @@ void main() {
         // Perform gossip round - should be skipped due to congestion
         await engine.performGossipRound();
 
-        // Verify no messages were sent (we can check metrics)
+        // Verify no messages were sent
         final metrics = registry.getMetrics(peerId);
         expect(metrics?.messagesSent ?? 0, equals(0));
       });
@@ -630,8 +630,8 @@ void main() {
           messagePort: messagePort,
         );
 
-        // No congestion (below threshold)
-        messagePort.setSimulatedPendingCount(5);
+        // No congestion (below per-peer threshold of 3)
+        messagePort.setSimulatedPendingCountForPeer(peerId, 2);
 
         // Set up a channel so the engine has something to sync
         final channelId = ChannelId('test-channel');
@@ -679,8 +679,8 @@ void main() {
         final channel = ChannelAggregate(id: channelId, localNode: localNode);
         engine.startListening({channelId: channel});
 
-        // Start congested
-        messagePort.setSimulatedPendingCount(15);
+        // Start congested (per-peer)
+        messagePort.setSimulatedPendingCountForPeer(peerId, 15);
         await engine.performGossipRound();
 
         // No messages sent while congested
@@ -688,7 +688,7 @@ void main() {
         expect(metrics?.messagesSent ?? 0, equals(0));
 
         // Clear congestion
-        messagePort.setSimulatedPendingCount(0);
+        messagePort.clearSimulatedPendingCounts();
         await engine.performGossipRound();
 
         // Message sent after congestion cleared
@@ -697,6 +697,113 @@ void main() {
 
         // Clean up
         await peerPort.close();
+      });
+
+      test(
+        'gossips with uncongested peer when other peer is congested',
+        () async {
+          final localNode = NodeId('local');
+          final congestedPeerId = NodeId('congested-peer');
+          final healthyPeerId = NodeId('healthy-peer');
+          final registry = PeerRegistry(
+            localNode: localNode,
+            initialIncarnation: 0,
+          );
+          registry.addPeer(congestedPeerId, occurredAt: DateTime.now());
+          registry.addPeer(healthyPeerId, occurredAt: DateTime.now());
+
+          final entryRepo = InMemoryEntryRepository();
+          final timerPort = InMemoryTimePort();
+          final bus = InMemoryMessageBus();
+          final messagePort = InMemoryMessagePort(localNode, bus);
+
+          // Register peer ports to receive messages
+          final congestedPort = InMemoryMessagePort(congestedPeerId, bus);
+          final healthyPort = InMemoryMessagePort(healthyPeerId, bus);
+
+          final engine = GossipEngine(
+            localNode: localNode,
+            peerRegistry: registry,
+            entryRepository: entryRepo,
+            timePort: timerPort,
+            messagePort: messagePort,
+          );
+
+          // Set up a channel
+          final channelId = ChannelId('test-channel');
+          final channel = ChannelAggregate(id: channelId, localNode: localNode);
+          engine.startListening({channelId: channel});
+
+          // Congest one peer, leave the other clear
+          messagePort.setSimulatedPendingCountForPeer(congestedPeerId, 10);
+          messagePort.setSimulatedPendingCountForPeer(healthyPeerId, 0);
+
+          // Run multiple gossip rounds to ensure the healthy peer gets selected
+          for (var i = 0; i < 10; i++) {
+            await engine.performGossipRound();
+          }
+
+          // Congested peer should have received no messages
+          final congestedMetrics = registry.getMetrics(congestedPeerId);
+          expect(congestedMetrics?.messagesSent ?? 0, equals(0));
+
+          // Healthy peer should have received messages
+          final healthyMetrics = registry.getMetrics(healthyPeerId);
+          expect(healthyMetrics?.messagesSent ?? 0, greaterThan(0));
+
+          // Clean up
+          await congestedPort.close();
+          await healthyPort.close();
+        },
+      );
+
+      test('skips round only when all peers are congested', () async {
+        final localNode = NodeId('local');
+        final peer1 = NodeId('peer1');
+        final peer2 = NodeId('peer2');
+        final registry = PeerRegistry(
+          localNode: localNode,
+          initialIncarnation: 0,
+        );
+        registry.addPeer(peer1, occurredAt: DateTime.now());
+        registry.addPeer(peer2, occurredAt: DateTime.now());
+
+        final entryRepo = InMemoryEntryRepository();
+        final timerPort = InMemoryTimePort();
+        final bus = InMemoryMessageBus();
+        final messagePort = InMemoryMessagePort(localNode, bus);
+
+        final peerPort1 = InMemoryMessagePort(peer1, bus);
+        final peerPort2 = InMemoryMessagePort(peer2, bus);
+
+        final engine = GossipEngine(
+          localNode: localNode,
+          peerRegistry: registry,
+          entryRepository: entryRepo,
+          timePort: timerPort,
+          messagePort: messagePort,
+        );
+
+        // Set up a channel
+        final channelId = ChannelId('test-channel');
+        final channel = ChannelAggregate(id: channelId, localNode: localNode);
+        engine.startListening({channelId: channel});
+
+        // Congest ALL peers
+        messagePort.setSimulatedPendingCountForPeer(peer1, 10);
+        messagePort.setSimulatedPendingCountForPeer(peer2, 10);
+
+        await engine.performGossipRound();
+
+        // No messages sent to any peer
+        final metrics1 = registry.getMetrics(peer1);
+        final metrics2 = registry.getMetrics(peer2);
+        expect(metrics1?.messagesSent ?? 0, equals(0));
+        expect(metrics2?.messagesSent ?? 0, equals(0));
+
+        // Clean up
+        await peerPort1.close();
+        await peerPort2.close();
       });
     });
   });

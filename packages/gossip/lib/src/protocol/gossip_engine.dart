@@ -177,12 +177,12 @@ class GossipEngine {
   /// Used to track message rates within a fixed time window for rate limiting.
   static const int _metricsWindowDurationMs = 10000;
 
-  /// Congestion threshold for backpressure.
+  /// Per-peer congestion threshold for backpressure.
   ///
-  /// When the transport has more than this many pending messages, gossip
-  /// rounds are skipped to prevent unbounded queue growth. This allows the
-  /// transport to drain before generating more messages.
-  static const int _congestionThreshold = 10;
+  /// Peers with more than this many pending messages are excluded from
+  /// gossip peer selection. The round is only skipped entirely when ALL
+  /// reachable peers exceed this threshold.
+  static const int _perPeerCongestionThreshold = 3;
 
   GossipEngine({
     required this.localNode,
@@ -318,28 +318,37 @@ class GossipEngine {
   /// Performs a single gossip round (called every 200ms).
   ///
   /// Implements Step 1 of the anti-entropy protocol:
-  /// 1. Check for transport congestion (skip if congested)
-  /// 2. Select random reachable peer via [selectRandomPeer]
+  /// 1. Get reachable peers and filter out congested ones (per-peer backpressure)
+  /// 2. Select random peer from uncongested candidates
   /// 3. Generate digests for all channels via [generateDigest]
   /// 4. Send [DigestRequest] to peer
   ///
   /// The peer will respond with their digests ([DigestResponse]), triggering
   /// Step 3 delta request generation.
   ///
-  /// Returns immediately if transport is congested or no reachable peers exist.
+  /// Returns immediately if all peers are congested or no reachable peers exist.
   Future<void> performGossipRound() async {
-    // Skip round if transport is congested (backpressure)
-    if (messagePort.totalPendingSendCount > _congestionThreshold) {
+    final reachable = peerRegistry.reachablePeers;
+    if (reachable.isEmpty) return;
+
+    // Filter out congested peers (per-peer backpressure)
+    final candidates = reachable
+        .where(
+          (p) =>
+              messagePort.pendingSendCount(p.id) <= _perPeerCongestionThreshold,
+        )
+        .toList();
+
+    if (candidates.isEmpty) {
       _log(
         LogLevel.debug,
-        'Skipping gossip round: transport congested '
-        '(${messagePort.totalPendingSendCount} pending > $_congestionThreshold threshold)',
+        'Skipping gossip round: all ${reachable.length} peers congested '
+        '(threshold: $_perPeerCongestionThreshold per peer)',
       );
       return;
     }
 
-    final peer = selectRandomPeer();
-    if (peer == null) return;
+    final peer = candidates[_random.nextInt(candidates.length)];
 
     final digests = _channels.values.map((channel) {
       return generateDigest(channel);
