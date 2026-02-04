@@ -691,20 +691,27 @@ class FailureDetector {
 
     final pending = _pendingPings[ack.sequence];
     if (pending != null && !pending.completer.isCompleted) {
-      // Calculate and record RTT
       final rttMs = timestampMs - pending.sentAtMs;
-      if (rttMs > 0) {
+      final timeout = effectivePingTimeoutForPeer(pending.target);
+
+      if (rttMs > 0 && rttMs <= timeout.inMilliseconds) {
+        // RTT within timeout window — record against the probe target
+        // (not ack.sender, which may be an intermediary for indirect pings).
         final rttSample = Duration(milliseconds: rttMs);
         _rttTracker.recordSample(rttSample);
-        peerRegistry.recordPeerRtt(ack.sender, rttSample);
+        peerRegistry.recordPeerRtt(pending.target, rttSample);
         _log(
           'SWIM: Ack matched pending ping seq=${ack.sequence} from ${ack.sender} '
+          'target=${pending.target} '
           '(RTT: ${rttMs}ms, failed count reset: $failedCountBefore -> 0)',
         );
-      } else {
+      } else if (rttMs > timeout.inMilliseconds) {
+        // Late Ack — arrived after the timeout window. Still complete
+        // the completer to prevent false probe failure, but discard the
+        // inflated RTT sample.
         _log(
-          'SWIM: Ack matched pending ping seq=${ack.sequence} from ${ack.sender} '
-          '(failed count reset: $failedCountBefore -> 0)',
+          'SWIM: Late Ack seq=${ack.sequence} from ${ack.sender} '
+          'RTT ${rttMs}ms exceeds timeout ${timeout.inMilliseconds}ms — sample discarded',
         );
       }
       pending.completer.complete(true);

@@ -322,6 +322,205 @@ void main() {
       });
     });
 
+    test('records per-peer RTT against probe target, not Ack sender', () {
+      // Simulate a forwarded indirect Ack: the Ack sender is the
+      // intermediary (peerB), but the pending ping target is peerA.
+      // RTT should be attributed to peerA, not peerB.
+      final peerA = NodeId('peerA');
+      final peerB = NodeId('peerB');
+      final registry = PeerRegistry(
+        localNode: localNode,
+        initialIncarnation: 0,
+      );
+      registry.addPeer(peerA, occurredAt: DateTime.now());
+      registry.addPeer(peerB, occurredAt: DateTime.now());
+
+      final tracker = RttTracker();
+      final fd = FailureDetector(
+        localNode: localNode,
+        peerRegistry: registry,
+        timePort: timePort,
+        messagePort: localPort,
+        rttTracker: tracker,
+        pingTimeout: const Duration(milliseconds: 500),
+      );
+
+      // Manually track a pending ping targeting peerA
+      // Use handleAck's public API by simulating the sequence of events:
+      // 1. Start a probe round that targets peerA
+      // 2. Before it times out, send an Ack with sender=peerB (simulating forwarded Ack)
+      //
+      // Since we can't easily control peer selection, we'll use handleAck
+      // directly by first inserting a pending ping via probeNewPeer's internal
+      // mechanism. But probeNewPeer is async and blocks. Instead, test via
+      // the codec: send a direct ping to set up the pending entry, then
+      // respond with a mismatched sender.
+
+      fd.startListening();
+
+      // We need to create a pending ping for peerA. The simplest way is
+      // to use performProbeRound. With only peerA and peerB in the registry,
+      // the selected peer will be one of them. We'll capture the sequence
+      // and respond with the wrong sender.
+
+      // Actually, the cleanest approach: call handleAck directly with a
+      // sequence that matches a pending ping. We need to access _pendingPings
+      // which is private. Instead, let's start probeNewPeer (which creates
+      // a pending ping for the specific peer) and intercept.
+
+      Ping? capturedPing;
+      final peerAPort = InMemoryMessagePort(peerA, bus);
+      final sub = peerAPort.incoming.listen((msg) {
+        final decoded = codec.decode(msg.bytes);
+        if (decoded is Ping) {
+          capturedPing = decoded;
+        }
+      });
+
+      // probeNewPeer targets peerA specifically
+      final probeFuture = fd.probeNewPeer(peerA);
+
+      // Let the ping be sent
+      Future.delayed(Duration.zero).then((_) async {
+        await Future.delayed(Duration.zero);
+        expect(capturedPing, isNotNull);
+
+        // Advance time to simulate 100ms RTT
+        await timePort.advance(const Duration(milliseconds: 100));
+
+        // Respond with Ack from peerB (simulating forwarded indirect Ack)
+        final ack = Ack(sender: peerB, sequence: capturedPing!.sequence);
+        final peerBPort = InMemoryMessagePort(peerB, bus);
+        await peerBPort.send(localNode, codec.encode(ack));
+        await peerBPort.close();
+      });
+
+      return probeFuture.then((_) async {
+        // Per-peer RTT should be attributed to peerA (the target), not peerB
+        final peerAMetrics = registry.getPeer(peerA)!.metrics;
+        expect(
+          peerAMetrics.rttEstimate,
+          isNotNull,
+          reason: 'RTT should be attributed to probe target (peerA)',
+        );
+        expect(peerAMetrics.rttEstimate!.smoothedRtt.inMilliseconds, 100);
+
+        final peerBMetrics = registry.getPeer(peerB)!.metrics;
+        expect(
+          peerBMetrics.rttEstimate,
+          isNull,
+          reason: 'RTT should NOT be attributed to Ack sender (peerB)',
+        );
+
+        await sub.cancel();
+        await peerAPort.close();
+        fd.stopListening();
+      });
+    });
+
+    test(
+      'does not record RTT for late Ack that exceeds timeout window',
+      () async {
+        // This tests the scenario during performProbeRound where a direct
+        // ping times out, the indirect/grace phase runs, and then the
+        // original direct Ack arrives late. The pending ping (S1) stays
+        // in the map throughout — the late Ack matches it but its RTT
+        // sample should be discarded (exceeds timeout window).
+        detector.startListening();
+
+        // Capture the direct ping sequence
+        Ping? capturedPing;
+        final pingCompleter = Completer<void>();
+        final sub = peerPort.incoming.listen((msg) {
+          final decoded = codec.decode(msg.bytes);
+          if (decoded is Ping && !pingCompleter.isCompleted) {
+            capturedPing = decoded;
+            pingCompleter.complete();
+          }
+        });
+
+        // Start probe round (don't await — it blocks)
+        final probeRoundFuture = detector.performProbeRound();
+        await Future.delayed(Duration.zero);
+        await pingCompleter.future;
+
+        final directSeq = capturedPing!.sequence;
+
+        // Advance past the direct ping timeout (500ms)
+        await timePort.advance(const Duration(milliseconds: 501));
+
+        // Now we're in the indirect/grace phase. Send the late direct
+        // Ack — it matches _pendingPings[S1] which is still alive.
+        final lateAck = Ack(sender: peerNode, sequence: directSeq);
+        await peerPort.send(localNode, codec.encode(lateAck));
+        await Future.delayed(Duration.zero);
+
+        // Finish the grace phase timeout
+        await timePort.advance(const Duration(milliseconds: 501));
+        await probeRoundFuture;
+
+        // The late Ack's RTT (~501ms) exceeds the 500ms timeout window.
+        // It should NOT be recorded.
+        expect(
+          rttTracker.hasReceivedSamples,
+          isFalse,
+          reason: 'Late Ack RTT should be discarded',
+        );
+
+        final peer = peerRegistry.getPeer(peerNode)!;
+        expect(
+          peer.metrics.rttEstimate,
+          isNull,
+          reason: 'Late Ack should not record per-peer RTT',
+        );
+
+        await sub.cancel();
+        detector.stopListening();
+      },
+    );
+
+    test('records RTT for Ack that arrives within timeout window', () async {
+      detector.startListening();
+
+      Ping? capturedPing;
+      final pingCompleter = Completer<void>();
+      final sub = peerPort.incoming.listen((msg) {
+        final decoded = codec.decode(msg.bytes);
+        if (decoded is Ping && !pingCompleter.isCompleted) {
+          capturedPing = decoded;
+          pingCompleter.complete();
+        }
+      });
+
+      final probeFuture = detector.probeNewPeer(peerNode);
+      await Future.delayed(Duration.zero);
+      await pingCompleter.future;
+
+      // Advance time within the timeout window (400ms < 500ms timeout)
+      await timePort.advance(const Duration(milliseconds: 400));
+
+      final ack = Ack(sender: peerNode, sequence: capturedPing!.sequence);
+      await peerPort.send(localNode, codec.encode(ack));
+      await Future.delayed(Duration.zero);
+
+      await probeFuture;
+
+      // RTT SHOULD be recorded (within timeout window)
+      expect(
+        rttTracker.hasReceivedSamples,
+        isTrue,
+        reason: 'Ack within timeout should record RTT',
+      );
+      expect(rttTracker.smoothedRtt.inMilliseconds, equals(400));
+
+      final peer = peerRegistry.getPeer(peerNode)!;
+      expect(peer.metrics.rttEstimate, isNotNull);
+      expect(peer.metrics.rttEstimate!.smoothedRtt.inMilliseconds, equals(400));
+
+      await sub.cancel();
+      detector.stopListening();
+    });
+
     test('does not record RTT when Ack times out', () async {
       detector.startListening();
 
