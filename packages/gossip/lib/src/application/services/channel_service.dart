@@ -336,7 +336,6 @@ class ChannelService {
       occurredAt: DateTime.now(),
     );
     _emitEvents([appendEvent]);
-
   }
 
   /// Retrieves all entries for a stream, ordered by HLC timestamp.
