@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
 import 'package:gossip/src/protocol/messages/ack.dart';
@@ -22,16 +20,7 @@ void main() {
     test('records RTT sample when Ack is received', () async {
       h.startListening();
 
-      final pingFuture = h.expectPing(peer);
-      final probeRoundFuture = h.detector.performProbeRound();
-      final ping = await pingFuture;
-
-      await h.sendAck(
-        peer,
-        ping.sequence,
-        afterDelay: const Duration(milliseconds: 150),
-      );
-      await probeRoundFuture;
+      await h.probeWithAck(peer, afterDelay: const Duration(milliseconds: 150));
 
       expect(h.rttTracker.hasReceivedSamples, isTrue);
       expect(h.rttTracker.sampleCount, equals(1));
@@ -53,17 +42,8 @@ void main() {
     test('multiple probe rounds update RTT estimate', () async {
       h.startListening();
 
-      final rtts = [100, 120, 110, 130, 115];
-      for (final rttMs in rtts) {
-        final pingFuture = h.expectPing(peer);
-        final probeRoundFuture = h.detector.performProbeRound();
-        final ping = await pingFuture;
-        await h.sendAck(
-          peer,
-          ping.sequence,
-          afterDelay: Duration(milliseconds: rttMs),
-        );
-        await probeRoundFuture;
+      for (final rttMs in [100, 120, 110, 130, 115]) {
+        await h.probeWithAck(peer, afterDelay: Duration(milliseconds: rttMs));
       }
 
       expect(h.rttTracker.sampleCount, equals(5));
@@ -75,15 +55,7 @@ void main() {
     test('records per-peer RTT sample when Ack is received', () async {
       h.startListening();
 
-      final pingFuture = h.expectPing(peer);
-      final probeRoundFuture = h.detector.performProbeRound();
-      final ping = await pingFuture;
-      await h.sendAck(
-        peer,
-        ping.sequence,
-        afterDelay: const Duration(milliseconds: 150),
-      );
-      await probeRoundFuture;
+      await h.probeWithAck(peer, afterDelay: const Duration(milliseconds: 150));
 
       final peerEntity = h.peerRegistry.getPeer(peer.id)!;
       expect(peerEntity.metrics.rttEstimate, isNotNull);
@@ -99,18 +71,12 @@ void main() {
       test('sends Ping to specified peer', () async {
         h.startListening();
 
-        final pingFuture = h.expectPing(peer);
-        final probeFuture = h.detector.probeNewPeer(peer.id);
-        final ping = await pingFuture;
-
-        expect(ping.sender, equals(h.localNode));
-
-        await h.sendAck(
+        final ping = await h.probeWithAck(
           peer,
-          ping.sequence,
           afterDelay: const Duration(milliseconds: 100),
+          useProbeNewPeer: true,
         );
-        await probeFuture;
+        expect(ping.sender, equals(h.localNode));
 
         h.stopListening();
       });
@@ -118,15 +84,11 @@ void main() {
       test('records per-peer RTT on successful Ack', () async {
         h.startListening();
 
-        final pingFuture = h.expectPing(peer);
-        final probeFuture = h.detector.probeNewPeer(peer.id);
-        final ping = await pingFuture;
-        await h.sendAck(
+        await h.probeWithAck(
           peer,
-          ping.sequence,
           afterDelay: const Duration(milliseconds: 200),
+          useProbeNewPeer: true,
         );
-        await probeFuture;
 
         final peerEntity = h.peerRegistry.getPeer(peer.id)!;
         expect(peerEntity.metrics.rttEstimate, isNotNull);
@@ -142,7 +104,7 @@ void main() {
         h.startListening();
 
         final probeFuture = h.detector.probeNewPeer(peer.id);
-        await Future.delayed(Duration.zero);
+        await h.flush();
 
         await h.timePort.advance(const Duration(seconds: 4));
         await probeFuture;
@@ -162,13 +124,10 @@ void main() {
         final peer2 = h.addPeer('peer2');
         h.startListening();
 
-        final peer2Messages = <dynamic>[];
-        final peer2Sub = peer2.port.incoming.listen((msg) {
-          peer2Messages.add(h.codec.decode(msg.bytes));
-        });
+        final (peer2Messages, peer2Sub) = h.captureMessages(peer2);
 
         final probeFuture = h.detector.probeNewPeer(peer.id);
-        await Future.delayed(Duration.zero);
+        await h.flush();
 
         await h.timePort.advance(const Duration(seconds: 4));
         await probeFuture;
@@ -176,7 +135,6 @@ void main() {
         expect(peer2Messages, isEmpty);
 
         await peer2Sub.cancel();
-        await peer2.port.close();
         h.stopListening();
       });
     });
@@ -190,7 +148,6 @@ void main() {
 
       hCustom.startListening();
 
-      // probeNewPeer targets peerA — set up capture before starting probe
       final pingFuture = hCustom.expectPing(peerA);
       final probeFuture = hCustom.detector.probeNewPeer(peerA.id);
       final ping = await pingFuture;
@@ -201,7 +158,7 @@ void main() {
       final ack = Ack(sender: peerB.id, sequence: ping.sequence);
       final peerBPort = InMemoryMessagePort(peerB.id, hCustom.bus);
       await peerBPort.send(hCustom.localNode, hCustom.codec.encode(ack));
-      await Future.delayed(Duration.zero);
+      await hCustom.flush();
 
       await probeFuture;
 
@@ -240,7 +197,7 @@ void main() {
         // Send the late direct Ack during the grace phase
         final lateAck = Ack(sender: peer.id, sequence: ping.sequence);
         await peer.port.send(h.localNode, h.codec.encode(lateAck));
-        await Future.delayed(Duration.zero);
+        await h.flush();
 
         // Finish the grace phase
         await h.timePort.advance(const Duration(milliseconds: 501));
@@ -264,15 +221,11 @@ void main() {
     test('records RTT for Ack that arrives within timeout window', () async {
       h.startListening();
 
-      final pingFuture = h.expectPing(peer);
-      final probeFuture = h.detector.probeNewPeer(peer.id);
-      final ping = await pingFuture;
-      await h.sendAck(
+      await h.probeWithAck(
         peer,
-        ping.sequence,
         afterDelay: const Duration(milliseconds: 400),
+        useProbeNewPeer: true,
       );
-      await probeFuture;
 
       expect(
         h.rttTracker.hasReceivedSamples,
@@ -294,11 +247,7 @@ void main() {
     test('does not record RTT when Ack times out', () async {
       h.startListening();
 
-      final probeRoundFuture = h.detector.performProbeRound();
-      await Future.delayed(Duration.zero);
-
-      await h.advancePastTimeout();
-      await probeRoundFuture;
+      await h.probeWithTimeout();
 
       expect(h.rttTracker.hasReceivedSamples, isFalse);
       expect(h.rttTracker.sampleCount, equals(0));

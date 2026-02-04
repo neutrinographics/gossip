@@ -1,5 +1,4 @@
 import 'dart:math';
-import 'dart:typed_data';
 
 import 'package:gossip/src/domain/events/domain_event.dart' show PeerStatus;
 import 'package:gossip/src/domain/value_objects/node_id.dart';
@@ -11,36 +10,6 @@ import 'package:gossip/src/protocol/protocol_codec.dart';
 import 'package:test/test.dart';
 
 import 'failure_detector_test_harness.dart';
-
-/// A MessagePort that captures the priority of each sent message.
-class PriorityCapturingMessagePort implements MessagePort {
-  final InMemoryMessagePort _delegate;
-  final List<MessagePriority> capturedPriorities = [];
-
-  PriorityCapturingMessagePort(this._delegate);
-
-  @override
-  Future<void> send(
-    NodeId destination,
-    Uint8List bytes, {
-    MessagePriority priority = MessagePriority.normal,
-  }) async {
-    capturedPriorities.add(priority);
-    await _delegate.send(destination, bytes, priority: priority);
-  }
-
-  @override
-  Stream<IncomingMessage> get incoming => _delegate.incoming;
-
-  @override
-  Future<void> close() => _delegate.close();
-
-  @override
-  int pendingSendCount(NodeId peer) => _delegate.pendingSendCount(peer);
-
-  @override
-  int get totalPendingSendCount => _delegate.totalPendingSendCount;
-}
 
 void main() {
   group('FailureDetector', () {
@@ -86,10 +55,8 @@ void main() {
 
       h.startListening();
 
-      final ping = Ping(sender: peer.id, sequence: 42);
       final ackFuture = peer.port.incoming.first;
-
-      await peer.port.send(h.localNode, h.codec.encode(ping));
+      await h.sendPing(peer, sequence: 42);
 
       final message = await ackFuture.timeout(const Duration(seconds: 1));
       final ack = h.codec.decode(message.bytes);
@@ -132,13 +99,13 @@ void main() {
         });
 
         final probeRoundFuture = h.detector.performProbeRound();
-        await Future.delayed(Duration.zero);
+        await h.flush();
 
         expect(receivedPing, isNotNull, reason: 'Ping should have been sent');
 
         // Advance past direct timeout → indirect ping phase
         await h.timePort.advance(const Duration(milliseconds: 501));
-        await Future.delayed(Duration.zero);
+        await h.flush();
 
         // Send "late" Ack during indirect phase
         final ack = Ack(sender: pingTarget!, sequence: receivedPing!.sequence);
@@ -146,7 +113,7 @@ void main() {
             ? peer.port
             : intermediary.port;
         await senderPort.send(h.localNode, h.codec.encode(ack));
-        await Future.delayed(Duration.zero);
+        await h.flush();
 
         await h.timePort.advance(const Duration(milliseconds: 500));
         await probeRoundFuture;
@@ -181,7 +148,7 @@ void main() {
 
         // Advance past direct timeout → grace period
         await h.timePort.advance(const Duration(milliseconds: 501));
-        await Future.delayed(Duration.zero);
+        await h.flush();
 
         // Send "late" Ack during grace period
         await h.sendAck(peer, ping.sequence);
@@ -207,11 +174,7 @@ void main() {
       );
       h.addPeer('peer1');
 
-      final probeRoundFuture = h.detector.performProbeRound();
-      await Future.delayed(Duration.zero);
-
-      await h.advancePastTimeout();
-      await probeRoundFuture;
+      await h.probeWithTimeout();
 
       final peer = h.peerRegistry.getPeer(NodeId('peer1'))!;
       expect(
@@ -236,7 +199,7 @@ void main() {
       hCap.startListening();
 
       final probeRoundFuture = hCap.detector.performProbeRound();
-      await Future.delayed(Duration.zero);
+      await hCap.flush();
 
       expect(capPort.capturedPriorities, isNotEmpty);
       expect(
@@ -249,7 +212,7 @@ void main() {
       final codec = ProtocolCodec();
       final pingMsg = Ping(sender: NodeId('peer1'), sequence: 99);
       await peerPort.send(NodeId('local'), codec.encode(pingMsg));
-      await Future.delayed(Duration.zero);
+      await hCap.flush();
 
       expect(capPort.capturedPriorities.length, greaterThanOrEqualTo(2));
       expect(
@@ -258,8 +221,7 @@ void main() {
         reason: 'All SWIM messages should use high priority',
       );
 
-      await hCap.timePort.advance(const Duration(milliseconds: 501));
-      await hCap.timePort.advance(const Duration(milliseconds: 501));
+      await hCap.advancePastTimeout();
       await probeRoundFuture;
       hCap.stopListening();
     });

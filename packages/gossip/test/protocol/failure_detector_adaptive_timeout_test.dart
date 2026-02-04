@@ -144,9 +144,11 @@ void main() {
       'effectivePingTimeoutForPeer falls back to global when no per-peer estimate',
       () {
         final h = FailureDetectorTestHarness();
-        final peer = h.addPeer('peer1');
+        h.addPeer('peer1');
 
-        final peerTimeout = h.detector.effectivePingTimeoutForPeer(peer.id);
+        final peerTimeout = h.detector.effectivePingTimeoutForPeer(
+          NodeId('peer1'),
+        );
         expect(peerTimeout, equals(h.detector.effectivePingTimeout));
       },
     );
@@ -172,17 +174,7 @@ void main() {
 
       h.startListening();
 
-      final pingFuture = h.expectPing(peer);
-      final probeRoundFuture = h.detector.performProbeRound();
-      final ping = await pingFuture;
-
-      // Respond within per-peer timeout
-      await h.sendAck(
-        peer,
-        ping.sequence,
-        afterDelay: const Duration(milliseconds: 50),
-      );
-      await probeRoundFuture;
+      await h.probeWithAck(peer, afterDelay: const Duration(milliseconds: 50));
 
       expect(h.peerRegistry.getPeer(peer.id)!.failedProbeCount, equals(0));
 
@@ -201,16 +193,10 @@ void main() {
 
       // Simulate several fast RTT samples
       for (var i = 0; i < 10; i++) {
-        final pingFuture = h.expectPing(peer);
-        final probeRoundFuture = h.detector.performProbeRound();
-        final ping = await pingFuture;
-
-        await h.sendAck(
+        await h.probeWithAck(
           peer,
-          ping.sequence,
           afterDelay: const Duration(milliseconds: 100),
         );
-        await probeRoundFuture;
       }
 
       // After samples, timeout should be much lower

@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
@@ -7,47 +6,13 @@ import 'package:gossip/src/domain/events/domain_event.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
-import 'package:gossip/src/infrastructure/ports/message_port.dart';
 import 'package:gossip/src/protocol/failure_detector.dart';
 import 'package:gossip/src/protocol/messages/ack.dart';
 import 'package:gossip/src/protocol/messages/ping.dart';
-import 'package:gossip/src/protocol/messages/ping_req.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
 import 'package:test/test.dart';
 
 import 'failure_detector_test_harness.dart';
-
-/// A MessagePort that throws on send, simulating transport failure.
-class FailingSendMessagePort implements MessagePort {
-  final InMemoryMessagePort _delegate;
-  bool shouldFail = true;
-
-  FailingSendMessagePort(this._delegate);
-
-  @override
-  Future<void> send(
-    NodeId destination,
-    Uint8List bytes, {
-    MessagePriority priority = MessagePriority.normal,
-  }) async {
-    if (shouldFail) {
-      throw Exception('Transport send failed');
-    }
-    await _delegate.send(destination, bytes, priority: priority);
-  }
-
-  @override
-  Stream<IncomingMessage> get incoming => _delegate.incoming;
-
-  @override
-  Future<void> close() => _delegate.close();
-
-  @override
-  int pendingSendCount(NodeId peer) => _delegate.pendingSendCount(peer);
-
-  @override
-  int get totalPendingSendCount => _delegate.totalPendingSendCount;
-}
 
 void main() {
   final codec = ProtocolCodec();
@@ -82,23 +47,10 @@ void main() {
         }
       });
 
-      // Capture messages arriving at prober
-      final proberMessages = <dynamic>[];
-      final proberSub = prober.port.incoming.listen((msg) {
-        proberMessages.add(codec.decode(msg.bytes));
-      });
+      final (proberMessages, proberSub) = h.captureMessages(prober);
 
-      // Prober sends PingReq to intermediary
-      final pingReq = PingReq(
-        sender: prober.id,
-        sequence: 42,
-        target: target.id,
-      );
-      await prober.port.send(h.localNode, codec.encode(pingReq));
-
-      await Future.delayed(Duration.zero);
-      await Future.delayed(Duration.zero);
-      await Future.delayed(Duration.zero);
+      await h.sendPingReq(prober, target, sequence: 42);
+      await h.flush(2);
 
       expect(proberMessages, hasLength(1));
       expect(proberMessages.first, isA<Ack>());
@@ -114,24 +66,13 @@ void main() {
     test('does not forward Ack when target does not respond', () async {
       h.startListening();
 
-      final proberMessages = <dynamic>[];
-      final proberSub = prober.port.incoming.listen((msg) {
-        proberMessages.add(codec.decode(msg.bytes));
-      });
+      final (proberMessages, proberSub) = h.captureMessages(prober);
 
-      final pingReq = PingReq(
-        sender: prober.id,
-        sequence: 42,
-        target: target.id,
-      );
-      await prober.port.send(h.localNode, codec.encode(pingReq));
-
-      await Future.delayed(Duration.zero);
-      await Future.delayed(Duration.zero);
+      await h.sendPingReq(prober, target, sequence: 42);
 
       // Advance past intermediary timeout (200ms)
       await h.timePort.advance(const Duration(milliseconds: 201));
-      await Future.delayed(Duration.zero);
+      await h.flush();
 
       expect(proberMessages, isEmpty);
 
@@ -142,20 +83,10 @@ void main() {
     test('sends Ping to the correct target', () async {
       h.startListening();
 
-      final targetMessages = <dynamic>[];
-      final targetSub = target.port.incoming.listen((msg) {
-        targetMessages.add(codec.decode(msg.bytes));
-      });
+      final (targetMessages, targetSub) = h.captureMessages(target);
 
-      final pingReq = PingReq(
-        sender: prober.id,
-        sequence: 99,
-        target: target.id,
-      );
-      await prober.port.send(h.localNode, codec.encode(pingReq));
-
-      await Future.delayed(Duration.zero);
-      await Future.delayed(Duration.zero);
+      await h.sendPingReq(prober, target, sequence: 99);
+      await h.flush();
 
       expect(targetMessages, hasLength(1));
       expect(targetMessages.first, isA<Ping>());
@@ -189,7 +120,7 @@ void main() {
 
       final garbageBytes = Uint8List.fromList([255, 0, 1, 2, 3]);
       await peer.port.send(h.localNode, garbageBytes);
-      await Future.delayed(Duration.zero);
+      await h.flush();
 
       expect(h.errors, hasLength(1));
       expect(h.errors.first, isA<PeerSyncError>());
@@ -204,7 +135,7 @@ void main() {
       h.startListening();
 
       await peer.port.send(h.localNode, Uint8List(0));
-      await Future.delayed(Duration.zero);
+      await h.flush();
 
       expect(h.errors, hasLength(1));
       expect(h.errors.first, isA<PeerSyncError>());
@@ -352,16 +283,11 @@ void main() {
       () async {
         h.startListening();
 
-        final pingFuture = h.expectPing(peer);
-        final probeFuture = h.detector.probeNewPeer(peer.id);
-        final ping = await pingFuture;
-
-        await h.sendAck(
+        final ping = await h.probeWithAck(
           peer,
-          ping.sequence,
           afterDelay: const Duration(milliseconds: 100),
+          useProbeNewPeer: true,
         );
-        await probeFuture;
 
         expect(h.rttTracker.sampleCount, equals(1));
 
@@ -522,10 +448,8 @@ void main() {
       h.startListening();
       h.startListening();
 
-      final ping = Ping(sender: peer.id, sequence: 1);
-      await peer.port.send(h.localNode, codec.encode(ping));
-      await Future.delayed(Duration.zero);
-      await Future.delayed(Duration.zero);
+      await h.sendPing(peer, sequence: 1);
+      await h.flush();
 
       expect(acks.length, greaterThanOrEqualTo(1));
 
@@ -556,7 +480,7 @@ void main() {
       final ping = Ping(sender: peer.id, sequence: 1);
       final pingBytes = codec.encode(ping);
       await peer.port.send(h.localNode, pingBytes);
-      await Future.delayed(Duration.zero);
+      await h.flush();
 
       final after = h.peerRegistry.getPeer(peer.id)!.metrics;
       expect(after.messagesReceived, equals(1));
@@ -571,7 +495,7 @@ void main() {
       final ack = Ack(sender: peer.id, sequence: 1);
       final ackBytes = codec.encode(ack);
       await peer.port.send(h.localNode, ackBytes);
-      await Future.delayed(Duration.zero);
+      await h.flush();
 
       final after = h.peerRegistry.getPeer(peer.id)!.metrics;
       expect(after.messagesReceived, equals(1));
@@ -587,7 +511,7 @@ void main() {
       expect(before.messagesSent, equals(0));
 
       final probeFuture = h.detector.probeNewPeer(peer.id);
-      await Future.delayed(Duration.zero);
+      await h.flush();
 
       await h.timePort.advance(const Duration(seconds: 4));
       await probeFuture;
@@ -603,7 +527,7 @@ void main() {
 
       final garbageBytes = Uint8List.fromList([255, 0, 1, 2, 3]);
       await peer.port.send(h.localNode, garbageBytes);
-      await Future.delayed(Duration.zero);
+      await h.flush();
 
       final after = h.peerRegistry.getPeer(peer.id)!.metrics;
       expect(after.messagesReceived, equals(1));
@@ -640,23 +564,14 @@ void main() {
         final collidingSeq = localPing.sequence;
 
         // A sends PingReq to B with the SAME sequence number.
-        // Buggy code would overwrite _pendingPings[seq], orphaning
-        // probeNewPeer's completer.
-        final pingReq = PingReq(
-          sender: prober.id,
-          sequence: collidingSeq,
-          target: target.id,
-        );
-        await prober.port.send(h.localNode, codec.encode(pingReq));
-
-        await Future.delayed(Duration.zero);
-        await Future.delayed(Duration.zero);
+        await h.sendPingReq(prober, target, sequence: collidingSeq);
+        await h.flush();
 
         // C responds to B's original Ping
         await h.timePort.advance(const Duration(milliseconds: 100));
         final ack = Ack(sender: target.id, sequence: collidingSeq);
         await target.port.send(h.localNode, codec.encode(ack));
-        await Future.delayed(Duration.zero);
+        await h.flush();
 
         // Advance past probeNewPeer's timeout
         await h.timePort.advance(const Duration(milliseconds: 500));
@@ -698,7 +613,7 @@ void main() {
       final peer = h.addPeer('peer1');
 
       final probeRoundFuture = h.detector.performProbeRound();
-      await Future.delayed(Duration.zero);
+      await h.flush();
 
       h.peerRegistry.removePeer(peer.id, occurredAt: DateTime.now());
 
@@ -733,7 +648,7 @@ void main() {
       });
 
       await h.timePort.advance(const Duration(milliseconds: 501));
-      await Future.delayed(Duration.zero);
+      await h.flush();
 
       expect(
         pingsReceived,

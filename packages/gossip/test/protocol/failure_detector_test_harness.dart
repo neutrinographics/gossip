@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/domain/errors/sync_error.dart';
@@ -11,7 +12,78 @@ import 'package:gossip/src/infrastructure/ports/message_port.dart';
 import 'package:gossip/src/protocol/failure_detector.dart';
 import 'package:gossip/src/protocol/messages/ack.dart';
 import 'package:gossip/src/protocol/messages/ping.dart';
+import 'package:gossip/src/protocol/messages/ping_req.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
+
+// ---------------------------------------------------------------------------
+// Reusable test doubles
+// ---------------------------------------------------------------------------
+
+/// A MessagePort that throws on send, simulating transport failure.
+class FailingSendMessagePort implements MessagePort {
+  final InMemoryMessagePort _delegate;
+  bool shouldFail = true;
+
+  FailingSendMessagePort(this._delegate);
+
+  @override
+  Future<void> send(
+    NodeId destination,
+    Uint8List bytes, {
+    MessagePriority priority = MessagePriority.normal,
+  }) async {
+    if (shouldFail) {
+      throw Exception('Transport send failed');
+    }
+    await _delegate.send(destination, bytes, priority: priority);
+  }
+
+  @override
+  Stream<IncomingMessage> get incoming => _delegate.incoming;
+
+  @override
+  Future<void> close() => _delegate.close();
+
+  @override
+  int pendingSendCount(NodeId peer) => _delegate.pendingSendCount(peer);
+
+  @override
+  int get totalPendingSendCount => _delegate.totalPendingSendCount;
+}
+
+/// A MessagePort that captures the priority of each sent message.
+class PriorityCapturingMessagePort implements MessagePort {
+  final InMemoryMessagePort _delegate;
+  final List<MessagePriority> capturedPriorities = [];
+
+  PriorityCapturingMessagePort(this._delegate);
+
+  @override
+  Future<void> send(
+    NodeId destination,
+    Uint8List bytes, {
+    MessagePriority priority = MessagePriority.normal,
+  }) async {
+    capturedPriorities.add(priority);
+    await _delegate.send(destination, bytes, priority: priority);
+  }
+
+  @override
+  Stream<IncomingMessage> get incoming => _delegate.incoming;
+
+  @override
+  Future<void> close() => _delegate.close();
+
+  @override
+  int pendingSendCount(NodeId peer) => _delegate.pendingSendCount(peer);
+
+  @override
+  int get totalPendingSendCount => _delegate.totalPendingSendCount;
+}
+
+// ---------------------------------------------------------------------------
+// Test peer
+// ---------------------------------------------------------------------------
 
 /// A peer node managed by the test harness.
 class TestPeer {
@@ -22,9 +94,7 @@ class TestPeer {
 
   /// Captures the next [Ping] arriving at this peer.
   ///
-  /// Listens on the peer's incoming stream and returns the first Ping
-  /// received. Caller should `await Future.delayed(Duration.zero)` before
-  /// calling this if the Ping hasn't been sent yet.
+  /// Sets up a subscription eagerly, so call this **before** the Ping is sent.
   Future<Ping> capturePing(ProtocolCodec codec) {
     final completer = Completer<Ping>();
     late StreamSubscription<IncomingMessage> sub;
@@ -38,6 +108,10 @@ class TestPeer {
     return completer.future;
   }
 }
+
+// ---------------------------------------------------------------------------
+// Harness
+// ---------------------------------------------------------------------------
 
 /// Test harness encapsulating FailureDetector infrastructure.
 ///
@@ -57,11 +131,8 @@ class TestPeer {
 ///
 /// test('records RTT', () async {
 ///   h.startListening();
-///   final future = h.detector.performProbeRound();
-///   final ping = await h.capturePing(peer);
-///   await h.sendAck(peer, ping.sequence,
+///   await h.probeWithAck(peer,
 ///       afterDelay: const Duration(milliseconds: 150));
-///   await future;
 ///   expect(h.rttTracker.hasReceivedSamples, isTrue);
 ///   h.stopListening();
 /// });
@@ -76,6 +147,8 @@ class FailureDetectorTestHarness {
   final ProtocolCodec codec = ProtocolCodec();
   final RttTracker rttTracker;
   final List<SyncError> errors;
+
+  final List<TestPeer> _peers = [];
 
   FailureDetectorTestHarness._({
     required this.localNode,
@@ -137,35 +210,69 @@ class FailureDetectorTestHarness {
     );
   }
 
+  // -------------------------------------------------------------------------
+  // Peer management
+  // -------------------------------------------------------------------------
+
   /// Adds a peer to the registry and creates its message port.
   TestPeer addPeer(String name) {
     final id = NodeId(name);
     peerRegistry.addPeer(id, occurredAt: DateTime.now());
     final port = InMemoryMessagePort(id, bus);
-    return TestPeer(id, port);
+    final peer = TestPeer(id, port);
+    _peers.add(peer);
+    return peer;
   }
+
+  // -------------------------------------------------------------------------
+  // Probe helpers
+  // -------------------------------------------------------------------------
 
   /// Returns a future that resolves to the next [Ping] arriving at [peer].
   ///
   /// **Must be called BEFORE starting the probe** that will send the Ping.
   /// The subscription is set up eagerly so it catches the Ping when it
   /// arrives via the InMemoryMessageBus (which delivers synchronously).
-  ///
-  /// Usage:
-  /// ```dart
-  /// final pingFuture = h.expectPing(peer);
-  /// final probeFuture = h.detector.performProbeRound();
-  /// final ping = await pingFuture;
-  /// ```
   Future<Ping> expectPing(TestPeer peer) {
     return peer.capturePing(codec);
   }
 
+  /// Runs a probe round and sends an Ack back, returning the [Ping].
+  ///
+  /// If [afterDelay] is provided, advances time by that duration before
+  /// sending the Ack (simulating RTT). Uses [performProbeRound] by default;
+  /// pass [useProbeNewPeer] to use [probeNewPeer] instead.
+  Future<Ping> probeWithAck(
+    TestPeer peer, {
+    Duration? afterDelay,
+    bool useProbeNewPeer = false,
+  }) async {
+    final pingFuture = expectPing(peer);
+    final probeFuture = useProbeNewPeer
+        ? detector.probeNewPeer(peer.id)
+        : detector.performProbeRound();
+    final ping = await pingFuture;
+    await sendAck(peer, ping.sequence, afterDelay: afterDelay);
+    await probeFuture;
+    return ping;
+  }
+
+  /// Runs a probe round that times out (no Ack is sent).
+  Future<void> probeWithTimeout() async {
+    final probeFuture = detector.performProbeRound();
+    await flush();
+    await advancePastTimeout();
+    await probeFuture;
+  }
+
+  // -------------------------------------------------------------------------
+  // Message helpers
+  // -------------------------------------------------------------------------
+
   /// Sends an [Ack] from [peer] back to the local detector.
   ///
   /// If [afterDelay] is provided, advances time by that duration first
-  /// to simulate RTT. Always runs a microtask yield after sending to
-  /// allow the Ack to be processed.
+  /// to simulate RTT. Always yields a microtask after sending.
   Future<void> sendAck(
     TestPeer peer,
     int sequence, {
@@ -176,7 +283,56 @@ class FailureDetectorTestHarness {
     }
     final ack = Ack(sender: peer.id, sequence: sequence);
     await peer.port.send(localNode, codec.encode(ack));
-    await Future.delayed(Duration.zero);
+    await flush();
+  }
+
+  /// Sends a [Ping] from [peer] to the local detector.
+  Future<void> sendPing(TestPeer peer, {int sequence = 1}) async {
+    final ping = Ping(sender: peer.id, sequence: sequence);
+    await peer.port.send(localNode, codec.encode(ping));
+    await flush();
+  }
+
+  /// Sends a [PingReq] from [sender] to the local detector, requesting
+  /// it probe [target].
+  Future<void> sendPingReq(
+    TestPeer sender,
+    TestPeer target, {
+    int sequence = 42,
+  }) async {
+    final pingReq = PingReq(
+      sender: sender.id,
+      sequence: sequence,
+      target: target.id,
+    );
+    await sender.port.send(localNode, codec.encode(pingReq));
+    await flush();
+  }
+
+  /// Starts capturing all decoded messages arriving at [peer].
+  ///
+  /// Returns a record of `(messages, subscription)`. Cancel the subscription
+  /// when done.
+  (List<dynamic>, StreamSubscription<IncomingMessage>) captureMessages(
+    TestPeer peer,
+  ) {
+    final messages = <dynamic>[];
+    final sub = peer.port.incoming.listen((msg) {
+      messages.add(codec.decode(msg.bytes));
+    });
+    return (messages, sub);
+  }
+
+  // -------------------------------------------------------------------------
+  // Time helpers
+  // -------------------------------------------------------------------------
+
+  /// Yields the microtask queue [count] times to allow async message
+  /// processing.
+  Future<void> flush([int count = 1]) async {
+    for (var i = 0; i < count; i++) {
+      await Future.delayed(Duration.zero);
+    }
   }
 
   /// Advances time past a timeout, in two steps (direct + grace period).
@@ -188,7 +344,19 @@ class FailureDetectorTestHarness {
     await timePort.advance(step);
   }
 
+  // -------------------------------------------------------------------------
+  // Lifecycle
+  // -------------------------------------------------------------------------
+
   void startListening() => detector.startListening();
 
   void stopListening() => detector.stopListening();
+
+  /// Disposes all resources: stops listening and closes all peer ports.
+  Future<void> dispose() async {
+    detector.stopListening();
+    for (final peer in _peers) {
+      await peer.port.close();
+    }
+  }
 }
