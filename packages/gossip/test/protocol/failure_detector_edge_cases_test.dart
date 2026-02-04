@@ -4,7 +4,6 @@ import 'dart:typed_data';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/domain/errors/sync_error.dart';
 import 'package:gossip/src/domain/events/domain_event.dart';
-import 'package:gossip/src/domain/services/rtt_tracker.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
@@ -15,6 +14,8 @@ import 'package:gossip/src/protocol/messages/ping.dart';
 import 'package:gossip/src/protocol/messages/ping_req.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
 import 'package:test/test.dart';
+
+import 'failure_detector_test_harness.dart';
 
 /// A MessagePort that throws on send, simulating transport failure.
 class FailingSendMessagePort implements MessagePort {
@@ -56,146 +57,117 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('Intermediary role (_handlePingReq)', () {
-    late NodeId prober;
-    late NodeId intermediary;
-    late NodeId target;
-    late PeerRegistry intermediaryRegistry;
-    late InMemoryTimePort timePort;
-    late InMemoryMessageBus bus;
-    late InMemoryMessagePort proberPort;
-    late InMemoryMessagePort intermediaryPort;
-    late InMemoryMessagePort targetPort;
-    late FailureDetector intermediaryDetector;
+    late FailureDetectorTestHarness h;
+    late TestPeer prober;
+    late TestPeer target;
 
     setUp(() {
-      prober = NodeId('prober');
-      intermediary = NodeId('intermediary');
-      target = NodeId('target');
-
-      intermediaryRegistry = PeerRegistry(
-        localNode: intermediary,
-        initialIncarnation: 0,
-      );
-      intermediaryRegistry.addPeer(prober, occurredAt: DateTime.now());
-      intermediaryRegistry.addPeer(target, occurredAt: DateTime.now());
-
-      timePort = InMemoryTimePort();
-      bus = InMemoryMessageBus();
-      proberPort = InMemoryMessagePort(prober, bus);
-      intermediaryPort = InMemoryMessagePort(intermediary, bus);
-      targetPort = InMemoryMessagePort(target, bus);
-
-      intermediaryDetector = FailureDetector(
-        localNode: intermediary,
-        peerRegistry: intermediaryRegistry,
-        timePort: timePort,
-        messagePort: intermediaryPort,
+      h = FailureDetectorTestHarness(
+        localName: 'intermediary',
         pingTimeout: const Duration(milliseconds: 500),
       );
+      prober = h.addPeer('prober');
+      target = h.addPeer('target');
     });
 
     test('forwards Ack back to prober when target responds', () async {
-      intermediaryDetector.startListening();
+      h.startListening();
 
-      // Set up target to auto-respond with Ack
-      final targetSub = targetPort.incoming.listen((msg) {
+      // Target auto-responds with Ack
+      final targetSub = target.port.incoming.listen((msg) {
         final decoded = codec.decode(msg.bytes);
         if (decoded is Ping) {
-          final ack = Ack(sender: target, sequence: decoded.sequence);
-          targetPort.send(intermediary, codec.encode(ack));
+          final ack = Ack(sender: target.id, sequence: decoded.sequence);
+          target.port.send(h.localNode, codec.encode(ack));
         }
       });
 
       // Capture messages arriving at prober
       final proberMessages = <dynamic>[];
-      final proberSub = proberPort.incoming.listen((msg) {
+      final proberSub = prober.port.incoming.listen((msg) {
         proberMessages.add(codec.decode(msg.bytes));
       });
 
       // Prober sends PingReq to intermediary
-      final pingReq = PingReq(sender: prober, sequence: 42, target: target);
-      await proberPort.send(intermediary, codec.encode(pingReq));
+      final pingReq = PingReq(
+        sender: prober.id,
+        sequence: 42,
+        target: target.id,
+      );
+      await prober.port.send(h.localNode, codec.encode(pingReq));
 
-      // Allow message processing
       await Future.delayed(Duration.zero);
       await Future.delayed(Duration.zero);
       await Future.delayed(Duration.zero);
 
-      // Prober should have received a forwarded Ack
       expect(proberMessages, hasLength(1));
       expect(proberMessages.first, isA<Ack>());
       final forwardedAck = proberMessages.first as Ack;
-      expect(forwardedAck.sender, equals(intermediary));
+      expect(forwardedAck.sender, equals(h.localNode));
       expect(forwardedAck.sequence, equals(42));
 
       await targetSub.cancel();
       await proberSub.cancel();
-      intermediaryDetector.stopListening();
+      h.stopListening();
     });
 
     test('does not forward Ack when target does not respond', () async {
-      intermediaryDetector.startListening();
+      h.startListening();
 
-      // Target does NOT respond — no listener set up on targetPort
-
-      // Capture messages arriving at prober
       final proberMessages = <dynamic>[];
-      final proberSub = proberPort.incoming.listen((msg) {
+      final proberSub = prober.port.incoming.listen((msg) {
         proberMessages.add(codec.decode(msg.bytes));
       });
 
-      // Prober sends PingReq to intermediary
-      final pingReq = PingReq(sender: prober, sequence: 42, target: target);
-      await proberPort.send(intermediary, codec.encode(pingReq));
+      final pingReq = PingReq(
+        sender: prober.id,
+        sequence: 42,
+        target: target.id,
+      );
+      await prober.port.send(h.localNode, codec.encode(pingReq));
 
-      // Allow PingReq to be processed and Ping to be sent to target
       await Future.delayed(Duration.zero);
       await Future.delayed(Duration.zero);
 
-      // Advance past the intermediary timeout (200ms)
-      await timePort.advance(const Duration(milliseconds: 201));
-
-      // Allow timeout to be processed
+      // Advance past intermediary timeout (200ms)
+      await h.timePort.advance(const Duration(milliseconds: 201));
       await Future.delayed(Duration.zero);
 
-      // Prober should NOT have received any Ack
       expect(proberMessages, isEmpty);
 
       await proberSub.cancel();
-      intermediaryDetector.stopListening();
+      h.stopListening();
     });
 
     test('sends Ping to the correct target', () async {
-      intermediaryDetector.startListening();
+      h.startListening();
 
-      // Capture messages arriving at target
       final targetMessages = <dynamic>[];
-      final targetSub = targetPort.incoming.listen((msg) {
+      final targetSub = target.port.incoming.listen((msg) {
         targetMessages.add(codec.decode(msg.bytes));
       });
 
-      // Prober sends PingReq to intermediary
-      final pingReq = PingReq(sender: prober, sequence: 99, target: target);
-      await proberPort.send(intermediary, codec.encode(pingReq));
+      final pingReq = PingReq(
+        sender: prober.id,
+        sequence: 99,
+        target: target.id,
+      );
+      await prober.port.send(h.localNode, codec.encode(pingReq));
 
-      // Allow message processing
       await Future.delayed(Duration.zero);
       await Future.delayed(Duration.zero);
 
-      // Target should have received a Ping from intermediary.
-      // The intermediary uses its own local sequence number (not the
-      // prober's sequence) to avoid collisions in _pendingPings.
       expect(targetMessages, hasLength(1));
       expect(targetMessages.first, isA<Ping>());
       final ping = targetMessages.first as Ping;
-      expect(ping.sender, equals(intermediary));
+      expect(ping.sender, equals(h.localNode));
       expect(ping.sequence, greaterThan(0));
 
       // Clean up — advance past timeout so _handlePingReq completes
-      await timePort.advance(const Duration(milliseconds: 201));
+      await h.timePort.advance(const Duration(milliseconds: 201));
 
       await targetSub.cancel();
-      intermediaryDetector.stopListening();
+      h.stopListening();
     });
   });
 
@@ -204,80 +176,58 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('Error handling', () {
-    late NodeId localNode;
-    late NodeId peerNode;
-    late PeerRegistry peerRegistry;
-    late InMemoryTimePort timePort;
-    late InMemoryMessageBus bus;
-    late InMemoryMessagePort localPort;
-    late InMemoryMessagePort peerPort;
+    late FailureDetectorTestHarness h;
+    late TestPeer peer;
 
     setUp(() {
-      localNode = NodeId('local');
-      peerNode = NodeId('peer1');
-      peerRegistry = PeerRegistry(localNode: localNode, initialIncarnation: 0);
-      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
-
-      timePort = InMemoryTimePort();
-      bus = InMemoryMessageBus();
-      localPort = InMemoryMessagePort(localNode, bus);
-      peerPort = InMemoryMessagePort(peerNode, bus);
+      h = FailureDetectorTestHarness();
+      peer = h.addPeer('peer1');
     });
 
     test('emits messageCorrupted error for malformed message bytes', () async {
-      final errors = <SyncError>[];
-      final detector = FailureDetector(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: localPort,
-        onError: errors.add,
-      );
-      detector.startListening();
+      h.startListening();
 
-      // Send garbage bytes that will fail codec.decode()
       final garbageBytes = Uint8List.fromList([255, 0, 1, 2, 3]);
-      await peerPort.send(localNode, garbageBytes);
-
-      // Allow message processing
+      await peer.port.send(h.localNode, garbageBytes);
       await Future.delayed(Duration.zero);
 
-      expect(errors, hasLength(1));
-      expect(errors.first, isA<PeerSyncError>());
-      final error = errors.first as PeerSyncError;
+      expect(h.errors, hasLength(1));
+      expect(h.errors.first, isA<PeerSyncError>());
+      final error = h.errors.first as PeerSyncError;
       expect(error.type, equals(SyncErrorType.messageCorrupted));
-      expect(error.peer, equals(peerNode));
+      expect(error.peer, equals(peer.id));
 
-      detector.stopListening();
+      h.stopListening();
     });
 
     test('emits messageCorrupted error for empty message bytes', () async {
-      final errors = <SyncError>[];
-      final detector = FailureDetector(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: localPort,
-        onError: errors.add,
-      );
-      detector.startListening();
+      h.startListening();
 
-      // Send empty bytes
-      await peerPort.send(localNode, Uint8List(0));
+      await peer.port.send(h.localNode, Uint8List(0));
       await Future.delayed(Duration.zero);
 
-      expect(errors, hasLength(1));
-      expect(errors.first, isA<PeerSyncError>());
-      final error = errors.first as PeerSyncError;
+      expect(h.errors, hasLength(1));
+      expect(h.errors.first, isA<PeerSyncError>());
+      final error = h.errors.first as PeerSyncError;
       expect(error.type, equals(SyncErrorType.messageCorrupted));
 
-      detector.stopListening();
+      h.stopListening();
     });
 
     test('emits peerUnreachable error when transport send fails', () async {
+      final localNode = NodeId('local');
+      final peerNode = NodeId('peer1');
+      final peerRegistry = PeerRegistry(
+        localNode: localNode,
+        initialIncarnation: 0,
+      );
+      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
+
+      final timePort = InMemoryTimePort();
+      final bus = InMemoryMessageBus();
+      final localPort = InMemoryMessagePort(localNode, bus);
+      final failingPort = FailingSendMessagePort(localPort);
       final errors = <SyncError>[];
-      final delegatePort = InMemoryMessagePort(localNode, bus);
-      final failingPort = FailingSendMessagePort(delegatePort);
 
       final detector = FailureDetector(
         localNode: localNode,
@@ -288,35 +238,33 @@ void main() {
         pingTimeout: const Duration(milliseconds: 500),
       );
 
-      // probeNewPeer will try to send a Ping, which will fail.
-      // Don't await — it blocks waiting for Ack timeout.
       final probeFuture = detector.probeNewPeer(peerNode);
       await Future.delayed(Duration.zero);
 
-      // _safeSend catches the exception and emits error
       expect(errors, hasLength(1));
-      expect(errors.first, isA<PeerSyncError>());
       final error = errors.first as PeerSyncError;
       expect(error.type, equals(SyncErrorType.peerUnreachable));
       expect(error.peer, equals(peerNode));
 
-      // Advance time to let the Ack timeout expire
       await timePort.advance(const Duration(milliseconds: 501));
-
       final result = await probeFuture;
       expect(result, isFalse);
     });
 
     test('emits protocolError when probe round throws', () async {
-      // Use a FailingSendMessagePort to trigger an error path inside
-      // the _probeRound catchError handler. Since _safeSend catches
-      // send errors, we need the probe round to fail in a different way.
-      // The simplest way: start the detector with scheduled probes,
-      // remove all peers so selectRandomPeer returns null (no error),
-      // then add a peer back and let the failing port cause issues.
+      final localNode = NodeId('local');
+      final peerNode = NodeId('peer1');
+      final peerRegistry = PeerRegistry(
+        localNode: localNode,
+        initialIncarnation: 0,
+      );
+      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
+
+      final timePort = InMemoryTimePort();
+      final bus = InMemoryMessageBus();
+      final localPort = InMemoryMessagePort(localNode, bus);
+      final failingPort = FailingSendMessagePort(localPort);
       final errors = <SyncError>[];
-      final delegatePort = InMemoryMessagePort(localNode, bus);
-      final failingPort = FailingSendMessagePort(delegatePort);
 
       final detector = FailureDetector(
         localNode: localNode,
@@ -328,22 +276,12 @@ void main() {
         probeInterval: const Duration(milliseconds: 200),
       );
 
-      // _safeSend catches transport errors, so performProbeRound won't
-      // throw. Let's verify _safeSend's error is emitted during a
-      // scheduled probe round.
       detector.start();
 
-      // Advance past probeInterval to trigger a probe round
       await timePort.advance(const Duration(milliseconds: 201));
-
-      // The probe round will try to send a Ping via _safeSend, which
-      // emits a peerUnreachable error (not protocolError).
-      // Then it will timeout.
       await timePort.advance(const Duration(milliseconds: 101));
-      // Grace period (no intermediaries in 2-device scenario)
       await timePort.advance(const Duration(milliseconds: 101));
 
-      // Verify at least one error was emitted from the probe round
       expect(errors, isNotEmpty);
       expect(errors.first, isA<PeerSyncError>());
 
@@ -351,10 +289,20 @@ void main() {
     });
 
     test('Ack response send failure emits error but does not crash', () async {
-      // Intermediary receives a Ping, but sending the Ack fails
+      final localNode = NodeId('local');
+      final peerNode = NodeId('peer1');
+      final peerRegistry = PeerRegistry(
+        localNode: localNode,
+        initialIncarnation: 0,
+      );
+      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
+
+      final timePort = InMemoryTimePort();
+      final bus = InMemoryMessageBus();
+      final localPort = InMemoryMessagePort(localNode, bus);
+      final peerPort = InMemoryMessagePort(peerNode, bus);
+      final failingPort = FailingSendMessagePort(localPort);
       final errors = <SyncError>[];
-      final delegatePort = InMemoryMessagePort(localNode, bus);
-      final failingPort = FailingSendMessagePort(delegatePort);
 
       final detector = FailureDetector(
         localNode: localNode,
@@ -365,15 +313,10 @@ void main() {
       );
       detector.startListening();
 
-      // Deliver a Ping via the bus directly to localNode's stream
-      // (bypassing the failing send port — incoming is from the delegate)
       final ping = Ping(sender: peerNode, sequence: 10);
       await peerPort.send(localNode, codec.encode(ping));
-
-      // Allow message processing
       await Future.delayed(Duration.zero);
 
-      // _safeSend for Ack should have failed and emitted an error
       expect(errors, hasLength(1));
       final error = errors.first as PeerSyncError;
       expect(error.type, equals(SyncErrorType.peerUnreachable));
@@ -387,143 +330,79 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('handleAck edge cases', () {
-    late NodeId localNode;
-    late NodeId peerNode;
-    late PeerRegistry peerRegistry;
-    late InMemoryTimePort timePort;
-    late InMemoryMessageBus bus;
-    late InMemoryMessagePort localPort;
-    late RttTracker rttTracker;
-    late FailureDetector detector;
+    late FailureDetectorTestHarness h;
+    late TestPeer peer;
 
     setUp(() {
-      localNode = NodeId('local');
-      peerNode = NodeId('peer1');
-      peerRegistry = PeerRegistry(localNode: localNode, initialIncarnation: 0);
-      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
-
-      timePort = InMemoryTimePort();
-      bus = InMemoryMessageBus();
-      localPort = InMemoryMessagePort(localNode, bus);
-      rttTracker = RttTracker();
-
-      detector = FailureDetector(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: localPort,
-        rttTracker: rttTracker,
+      h = FailureDetectorTestHarness(
         pingTimeout: const Duration(milliseconds: 500),
       );
+      peer = h.addPeer('peer1');
     });
 
     test('unrecognized sequence number is ignored without error', () {
-      // Ack with a sequence that has no matching pending ping
-      final ack = Ack(sender: peerNode, sequence: 9999);
-      detector.handleAck(ack, timestampMs: timePort.nowMs);
+      final ack = Ack(sender: peer.id, sequence: 9999);
+      h.detector.handleAck(ack, timestampMs: h.timePort.nowMs);
 
-      // Should not throw or record RTT
-      expect(rttTracker.hasReceivedSamples, isFalse);
+      expect(h.rttTracker.hasReceivedSamples, isFalse);
     });
 
     test(
       'duplicate Ack for already-completed pending ping is ignored',
       () async {
-        detector.startListening();
+        h.startListening();
 
-        final peerPort = InMemoryMessagePort(peerNode, bus);
+        final pingFuture = h.expectPing(peer);
+        final probeFuture = h.detector.probeNewPeer(peer.id);
+        final ping = await pingFuture;
 
-        // Start probeNewPeer to create a pending ping
-        Ping? capturedPing;
-        final pingCompleter = Completer<void>();
-        final sub = peerPort.incoming.listen((msg) {
-          final decoded = codec.decode(msg.bytes);
-          if (decoded is Ping && !pingCompleter.isCompleted) {
-            capturedPing = decoded;
-            pingCompleter.complete();
-          }
-        });
-
-        final probeFuture = detector.probeNewPeer(peerNode);
-        await Future.delayed(Duration.zero);
-        await pingCompleter.future;
-
-        // Advance time for a valid RTT
-        await timePort.advance(const Duration(milliseconds: 100));
-
-        // Send first Ack — should be recorded
-        final ack1 = Ack(sender: peerNode, sequence: capturedPing!.sequence);
-        await peerPort.send(localNode, codec.encode(ack1));
-        await Future.delayed(Duration.zero);
-
+        await h.sendAck(
+          peer,
+          ping.sequence,
+          afterDelay: const Duration(milliseconds: 100),
+        );
         await probeFuture;
 
-        expect(rttTracker.sampleCount, equals(1));
+        expect(h.rttTracker.sampleCount, equals(1));
 
-        // Send duplicate Ack with same sequence — should be ignored
-        // (pending ping already cleaned up by probeNewPeer)
-        detector.handleAck(
-          Ack(sender: peerNode, sequence: capturedPing!.sequence),
-          timestampMs: timePort.nowMs,
+        // Duplicate Ack — pending ping already cleaned up
+        h.detector.handleAck(
+          Ack(sender: peer.id, sequence: ping.sequence),
+          timestampMs: h.timePort.nowMs,
         );
 
-        // RTT sample count should not increase
-        expect(rttTracker.sampleCount, equals(1));
-
-        await sub.cancel();
-        await peerPort.close();
-        detector.stopListening();
+        expect(h.rttTracker.sampleCount, equals(1));
+        h.stopListening();
       },
     );
 
     test(
       'Ack still updates peer contact time even without matching pending ping',
       () {
-        final before = peerRegistry.getPeer(peerNode)!.lastContactMs;
+        final before = h.peerRegistry.getPeer(peer.id)!.lastContactMs;
         final laterMs = before + 5000;
 
-        // Ack with no matching pending ping
-        final ack = Ack(sender: peerNode, sequence: 9999);
-        detector.handleAck(ack, timestampMs: laterMs);
+        final ack = Ack(sender: peer.id, sequence: 9999);
+        h.detector.handleAck(ack, timestampMs: laterMs);
 
-        final after = peerRegistry.getPeer(peerNode)!.lastContactMs;
+        final after = h.peerRegistry.getPeer(peer.id)!.lastContactMs;
         expect(after, equals(laterMs));
       },
     );
 
     test('zero RTT sample is not recorded', () async {
-      detector.startListening();
+      h.startListening();
 
-      final peerPort = InMemoryMessagePort(peerNode, bus);
+      final pingFuture = h.expectPing(peer);
+      final probeFuture = h.detector.probeNewPeer(peer.id);
+      final ping = await pingFuture;
 
-      Ping? capturedPing;
-      final pingCompleter = Completer<void>();
-      final sub = peerPort.incoming.listen((msg) {
-        final decoded = codec.decode(msg.bytes);
-        if (decoded is Ping && !pingCompleter.isCompleted) {
-          capturedPing = decoded;
-          pingCompleter.complete();
-        }
-      });
-
-      final probeFuture = detector.probeNewPeer(peerNode);
-      await Future.delayed(Duration.zero);
-      await pingCompleter.future;
-
-      // Do NOT advance time — RTT will be 0ms
-      // Send Ack immediately
-      final ack = Ack(sender: peerNode, sequence: capturedPing!.sequence);
-      await peerPort.send(localNode, codec.encode(ack));
-      await Future.delayed(Duration.zero);
-
+      // Send Ack immediately — no time advance, so RTT = 0ms
+      await h.sendAck(peer, ping.sequence);
       await probeFuture;
 
-      // Zero RTT is discarded by _tryRecordRtt (rttMs <= 0)
-      expect(rttTracker.hasReceivedSamples, isFalse);
-
-      await sub.cancel();
-      await peerPort.close();
-      detector.stopListening();
+      expect(h.rttTracker.hasReceivedSamples, isFalse);
+      h.stopListening();
     });
   });
 
@@ -532,87 +411,58 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('checkPeerHealth edge cases', () {
-    late NodeId localNode;
-    late PeerRegistry peerRegistry;
-    late FailureDetector detector;
+    late FailureDetectorTestHarness h;
 
     setUp(() {
-      localNode = NodeId('local');
-      peerRegistry = PeerRegistry(localNode: localNode, initialIncarnation: 0);
-      final timePort = InMemoryTimePort();
-      final bus = InMemoryMessageBus();
-      final messagePort = InMemoryMessagePort(localNode, bus);
-
-      detector = FailureDetector(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: messagePort,
-        failureThreshold: 3,
-      );
+      h = FailureDetectorTestHarness(failureThreshold: 3);
     });
 
     test('does not transition peer below failure threshold', () {
-      final peerId = NodeId('peer1');
-      peerRegistry.addPeer(peerId, occurredAt: DateTime.now());
+      final peer = h.addPeer('peer1');
 
-      // Record only 2 failures (below threshold of 3)
-      detector.recordProbeFailure(peerId);
-      detector.recordProbeFailure(peerId);
+      h.detector.recordProbeFailure(peer.id);
+      h.detector.recordProbeFailure(peer.id);
+      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
 
-      detector.checkPeerHealth(peerId, occurredAt: DateTime.now());
-
-      final peer = peerRegistry.getPeer(peerId)!;
-      expect(peer.status, equals(PeerStatus.reachable));
-      expect(peer.failedProbeCount, equals(2));
+      final info = h.peerRegistry.getPeer(peer.id)!;
+      expect(info.status, equals(PeerStatus.reachable));
+      expect(info.failedProbeCount, equals(2));
     });
 
     test('no-ops for unknown peer', () {
-      final unknownId = NodeId('unknown');
-
-      // Should not throw
-      detector.checkPeerHealth(unknownId, occurredAt: DateTime.now());
+      h.detector.checkPeerHealth(NodeId('unknown'), occurredAt: DateTime.now());
     });
 
     test('does not double-transition already suspected peer', () {
-      final peerId = NodeId('peer1');
-      peerRegistry.addPeer(peerId, occurredAt: DateTime.now());
+      final peer = h.addPeer('peer1');
 
-      // Push past threshold
-      detector.recordProbeFailure(peerId);
-      detector.recordProbeFailure(peerId);
-      detector.recordProbeFailure(peerId);
-      detector.checkPeerHealth(peerId, occurredAt: DateTime.now());
-
+      for (var i = 0; i < 3; i++) {
+        h.detector.recordProbeFailure(peer.id);
+      }
+      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
       expect(
-        peerRegistry.getPeer(peerId)!.status,
+        h.peerRegistry.getPeer(peer.id)!.status,
         equals(PeerStatus.suspected),
       );
 
-      // Record more failures and check again — should not crash or
-      // emit a second status change
-      detector.recordProbeFailure(peerId);
-      detector.checkPeerHealth(peerId, occurredAt: DateTime.now());
-
-      // Still suspected (guard: peer.status == PeerStatus.reachable)
+      h.detector.recordProbeFailure(peer.id);
+      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
       expect(
-        peerRegistry.getPeer(peerId)!.status,
+        h.peerRegistry.getPeer(peer.id)!.status,
         equals(PeerStatus.suspected),
       );
     });
 
     test('transitions at exact threshold boundary', () {
-      final peerId = NodeId('peer1');
-      peerRegistry.addPeer(peerId, occurredAt: DateTime.now());
+      final peer = h.addPeer('peer1');
 
-      // Record exactly 3 failures (== threshold)
       for (var i = 0; i < 3; i++) {
-        detector.recordProbeFailure(peerId);
+        h.detector.recordProbeFailure(peer.id);
       }
-      detector.checkPeerHealth(peerId, occurredAt: DateTime.now());
+      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
 
       expect(
-        peerRegistry.getPeer(peerId)!.status,
+        h.peerRegistry.getPeer(peer.id)!.status,
         equals(PeerStatus.suspected),
       );
     });
@@ -623,121 +473,64 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('Lifecycle idempotency', () {
-    late NodeId localNode;
-    late PeerRegistry peerRegistry;
-    late InMemoryTimePort timePort;
-    late InMemoryMessageBus bus;
-    late InMemoryMessagePort messagePort;
-
-    setUp(() {
-      localNode = NodeId('local');
-      peerRegistry = PeerRegistry(localNode: localNode, initialIncarnation: 0);
-      timePort = InMemoryTimePort();
-      bus = InMemoryMessageBus();
-      messagePort = InMemoryMessagePort(localNode, bus);
-    });
-
     test('start() twice does not create duplicate timers', () {
-      final detector = FailureDetector(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: messagePort,
-      );
+      final h = FailureDetectorTestHarness();
 
-      detector.start();
-      expect(detector.isRunning, isTrue);
+      h.detector.start();
+      expect(h.detector.isRunning, isTrue);
 
-      // Second start should be idempotent
-      detector.start();
-      expect(detector.isRunning, isTrue);
+      h.detector.start();
+      expect(h.detector.isRunning, isTrue);
+      expect(h.timePort.pendingDelayCount, equals(1));
 
-      // Only one pending delay should exist (one scheduled probe round)
-      expect(timePort.pendingDelayCount, equals(1));
-
-      detector.stop();
+      h.detector.stop();
     });
 
     test('stop() twice does not throw', () {
-      final detector = FailureDetector(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: messagePort,
-      );
+      final h = FailureDetectorTestHarness();
 
-      detector.start();
-      detector.stop();
-      expect(detector.isRunning, isFalse);
+      h.detector.start();
+      h.detector.stop();
+      expect(h.detector.isRunning, isFalse);
 
-      // Second stop should be idempotent
-      detector.stop();
-      expect(detector.isRunning, isFalse);
+      h.detector.stop();
+      expect(h.detector.isRunning, isFalse);
     });
 
     test('stop() before start() does not throw', () {
-      final detector = FailureDetector(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: messagePort,
-      );
+      final h = FailureDetectorTestHarness();
 
-      // Should not throw
-      detector.stop();
-      expect(detector.isRunning, isFalse);
+      h.detector.stop();
+      expect(h.detector.isRunning, isFalse);
     });
 
     test('stopListening() before startListening() does not throw', () {
-      final detector = FailureDetector(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: messagePort,
-      );
-
-      // Should not throw
-      detector.stopListening();
+      final h = FailureDetectorTestHarness();
+      h.stopListening();
     });
 
     test('startListening() twice does not duplicate subscriptions', () async {
-      final peerNode = NodeId('peer1');
-      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
-      final peerPort = InMemoryMessagePort(peerNode, bus);
+      final h = FailureDetectorTestHarness();
+      final peer = h.addPeer('peer1');
 
-      final detector = FailureDetector(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: messagePort,
-      );
-
-      // Capture Acks sent back to peer
       final acks = <Ack>[];
-      final peerSub = peerPort.incoming.listen((msg) {
+      final peerSub = peer.port.incoming.listen((msg) {
         final decoded = codec.decode(msg.bytes);
         if (decoded is Ack) acks.add(decoded);
       });
 
-      detector.startListening();
-      detector.startListening(); // second call
+      h.startListening();
+      h.startListening();
 
-      // Send a Ping
-      final ping = Ping(sender: peerNode, sequence: 1);
-      await peerPort.send(localNode, codec.encode(ping));
+      final ping = Ping(sender: peer.id, sequence: 1);
+      await peer.port.send(h.localNode, codec.encode(ping));
       await Future.delayed(Duration.zero);
       await Future.delayed(Duration.zero);
 
-      // Should get exactly 2 Acks because startListening() creates a
-      // new subscription each time (the old one is not cancelled).
-      // This documents the current behavior. If we wanted idempotency,
-      // startListening() should check for existing subscription first.
-      // For now, we just verify it doesn't throw.
       expect(acks.length, greaterThanOrEqualTo(1));
 
       await peerSub.cancel();
-      detector.stopListening();
-      await peerPort.close();
+      h.stopListening();
     });
   });
 
@@ -746,111 +539,79 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('Incoming message metrics recording', () {
-    late NodeId localNode;
-    late NodeId peerNode;
-    late PeerRegistry peerRegistry;
-    late InMemoryTimePort timePort;
-    late InMemoryMessageBus bus;
-    late InMemoryMessagePort localPort;
-    late InMemoryMessagePort peerPort;
-    late FailureDetector detector;
+    late FailureDetectorTestHarness h;
+    late TestPeer peer;
 
     setUp(() {
-      localNode = NodeId('local');
-      peerNode = NodeId('peer1');
-      peerRegistry = PeerRegistry(localNode: localNode, initialIncarnation: 0);
-      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
-
-      timePort = InMemoryTimePort();
-      bus = InMemoryMessageBus();
-      localPort = InMemoryMessagePort(localNode, bus);
-      peerPort = InMemoryMessagePort(peerNode, bus);
-
-      detector = FailureDetector(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: localPort,
-      );
+      h = FailureDetectorTestHarness();
+      peer = h.addPeer('peer1');
     });
 
     test('records received message metrics for incoming Ping', () async {
-      detector.startListening();
+      h.startListening();
 
-      final before = peerRegistry.getPeer(peerNode)!.metrics;
+      final before = h.peerRegistry.getPeer(peer.id)!.metrics;
       expect(before.messagesReceived, equals(0));
 
-      final ping = Ping(sender: peerNode, sequence: 1);
+      final ping = Ping(sender: peer.id, sequence: 1);
       final pingBytes = codec.encode(ping);
-      await peerPort.send(localNode, pingBytes);
+      await peer.port.send(h.localNode, pingBytes);
       await Future.delayed(Duration.zero);
 
-      final after = peerRegistry.getPeer(peerNode)!.metrics;
+      final after = h.peerRegistry.getPeer(peer.id)!.metrics;
       expect(after.messagesReceived, equals(1));
       expect(after.bytesReceived, equals(pingBytes.length));
 
-      detector.stopListening();
+      h.stopListening();
     });
 
     test('records received message metrics for incoming Ack', () async {
-      detector.startListening();
+      h.startListening();
 
-      final ack = Ack(sender: peerNode, sequence: 1);
+      final ack = Ack(sender: peer.id, sequence: 1);
       final ackBytes = codec.encode(ack);
-      await peerPort.send(localNode, ackBytes);
+      await peer.port.send(h.localNode, ackBytes);
       await Future.delayed(Duration.zero);
 
-      final after = peerRegistry.getPeer(peerNode)!.metrics;
+      final after = h.peerRegistry.getPeer(peer.id)!.metrics;
       expect(after.messagesReceived, equals(1));
       expect(after.bytesReceived, equals(ackBytes.length));
 
-      detector.stopListening();
+      h.stopListening();
     });
 
     test('records sent message metrics when sending Ping', () async {
-      detector.startListening();
+      h.startListening();
 
-      final before = peerRegistry.getPeer(peerNode)!.metrics;
+      final before = h.peerRegistry.getPeer(peer.id)!.metrics;
       expect(before.messagesSent, equals(0));
 
-      // probeNewPeer will send a Ping to peerNode
-      final probeFuture = detector.probeNewPeer(peerNode);
+      final probeFuture = h.detector.probeNewPeer(peer.id);
       await Future.delayed(Duration.zero);
 
-      // Let it timeout
-      await timePort.advance(const Duration(seconds: 4));
+      await h.timePort.advance(const Duration(seconds: 4));
       await probeFuture;
 
-      final after = peerRegistry.getPeer(peerNode)!.metrics;
+      final after = h.peerRegistry.getPeer(peer.id)!.metrics;
       expect(after.messagesSent, greaterThanOrEqualTo(1));
 
-      detector.stopListening();
+      h.stopListening();
     });
 
     test('records metrics even for malformed messages', () async {
-      final errors = <SyncError>[];
-      final detector2 = FailureDetector(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: localPort,
-        onError: errors.add,
-      );
-      detector2.startListening();
+      h.startListening();
 
       final garbageBytes = Uint8List.fromList([255, 0, 1, 2, 3]);
-      await peerPort.send(localNode, garbageBytes);
+      await peer.port.send(h.localNode, garbageBytes);
       await Future.delayed(Duration.zero);
 
-      // Metrics should still be recorded (happens before decode)
-      final after = peerRegistry.getPeer(peerNode)!.metrics;
+      final after = h.peerRegistry.getPeer(peer.id)!.metrics;
       expect(after.messagesReceived, equals(1));
       expect(after.bytesReceived, equals(garbageBytes.length));
 
-      // Error should also have been emitted
-      expect(errors, hasLength(1));
+      expect(h.errors, hasLength(1));
 
-      detector2.stopListening();
+      h.stopListening();
     });
   });
 
@@ -862,80 +623,43 @@ void main() {
     test(
       'PingReq with colliding sequence does not overwrite local pending ping',
       () async {
-        // Setup: Intermediary B has peers A (prober) and C (target).
-        // B starts its own probeNewPeer to C, creating _pendingPings[seq].
-        // Then A sends PingReq(sequence=seq, target=C) to B.
-        // The PingReq must NOT overwrite B's own pending entry.
-        final nodeA = NodeId('prober-A');
-        final nodeB = NodeId('intermediary-B');
-        final nodeC = NodeId('target-C');
-
-        final registryB = PeerRegistry(localNode: nodeB, initialIncarnation: 0);
-        registryB.addPeer(nodeA, occurredAt: DateTime.now());
-        registryB.addPeer(nodeC, occurredAt: DateTime.now());
-
-        final timePort = InMemoryTimePort();
-        final bus = InMemoryMessageBus();
-        final portA = InMemoryMessagePort(nodeA, bus);
-        final portB = InMemoryMessagePort(nodeB, bus);
-        final portC = InMemoryMessagePort(nodeC, bus);
-        final rttTracker = RttTracker();
-
-        final detectorB = FailureDetector(
-          localNode: nodeB,
-          peerRegistry: registryB,
-          timePort: timePort,
-          messagePort: portB,
-          rttTracker: rttTracker,
+        final h = FailureDetectorTestHarness(
+          localName: 'intermediary-B',
           pingTimeout: const Duration(milliseconds: 500),
         );
+        final prober = h.addPeer('prober-A');
+        final target = h.addPeer('target-C');
 
-        detectorB.startListening();
+        h.startListening();
 
         // Capture the Ping that B sends to C via probeNewPeer
-        Ping? localPing;
-        final localPingCompleter = Completer<void>();
-        final subC = portC.incoming.listen((msg) {
-          final decoded = codec.decode(msg.bytes);
-          if (decoded is Ping && !localPingCompleter.isCompleted) {
-            localPing = decoded;
-            localPingCompleter.complete();
-          }
-        });
+        final localPingFuture = h.expectPing(target);
+        final probeFuture = h.detector.probeNewPeer(target.id);
+        final localPing = await localPingFuture;
 
-        // B starts probing C (allocates seq from B's counter)
-        final probeFuture = detectorB.probeNewPeer(nodeC);
-        await Future.delayed(Duration.zero);
-        await localPingCompleter.future;
+        final collidingSeq = localPing.sequence;
 
-        final collidingSeq = localPing!.sequence;
-
-        // Now A sends a PingReq to B with the SAME sequence number.
-        // In the buggy code, _handlePingReq overwrites _pendingPings[seq],
-        // orphaning probeNewPeer's completer so it never resolves.
+        // A sends PingReq to B with the SAME sequence number.
+        // Buggy code would overwrite _pendingPings[seq], orphaning
+        // probeNewPeer's completer.
         final pingReq = PingReq(
-          sender: nodeA,
+          sender: prober.id,
           sequence: collidingSeq,
-          target: nodeC,
+          target: target.id,
         );
-        await portA.send(nodeB, codec.encode(pingReq));
+        await prober.port.send(h.localNode, codec.encode(pingReq));
 
-        // Allow PingReq to be processed
         await Future.delayed(Duration.zero);
         await Future.delayed(Duration.zero);
 
-        // Now C responds to B's original Ping with an Ack.
-        // With the bug, this Ack completes the PingReq handler's entry
-        // instead of B's own probeNewPeer entry.
-        await timePort.advance(const Duration(milliseconds: 100));
-        final ack = Ack(sender: nodeC, sequence: collidingSeq);
-        await portC.send(nodeB, codec.encode(ack));
+        // C responds to B's original Ping
+        await h.timePort.advance(const Duration(milliseconds: 100));
+        final ack = Ack(sender: target.id, sequence: collidingSeq);
+        await target.port.send(h.localNode, codec.encode(ack));
         await Future.delayed(Duration.zero);
 
-        // Advance past probeNewPeer's timeout so it doesn't hang.
-        // With the bug, probeNewPeer's completer was orphaned, so it
-        // can only finish via timeout (returning false).
-        await timePort.advance(const Duration(milliseconds: 500));
+        // Advance past probeNewPeer's timeout
+        await h.timePort.advance(const Duration(milliseconds: 500));
 
         final gotAck = await probeFuture;
 
@@ -947,9 +671,8 @@ void main() {
               'not be stolen by the PingReq handler',
         );
 
-        // B should have recorded RTT for the local probe
         expect(
-          rttTracker.hasReceivedSamples,
+          h.rttTracker.hasReceivedSamples,
           isTrue,
           reason:
               'RTT should be recorded for the local probe, '
@@ -957,12 +680,8 @@ void main() {
         );
 
         // Clean up — advance past intermediary timeout for PingReq handler
-        await timePort.advance(const Duration(milliseconds: 201));
-
-        await subC.cancel();
-        await portA.close();
-        await portC.close();
-        detectorB.stopListening();
+        await h.timePort.advance(const Duration(milliseconds: 201));
+        h.stopListening();
       },
     );
   });
@@ -973,91 +692,47 @@ void main() {
 
   group('Corner cases', () {
     test('peer removed during active probe does not crash', () async {
-      final localNode = NodeId('local');
-      final peerNode = NodeId('peer1');
-      final peerRegistry = PeerRegistry(
-        localNode: localNode,
-        initialIncarnation: 0,
-      );
-      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
-
-      final timePort = InMemoryTimePort();
-      final bus = InMemoryMessageBus();
-      final localPort = InMemoryMessagePort(localNode, bus);
-
-      final detector = FailureDetector(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: localPort,
+      final h = FailureDetectorTestHarness(
         pingTimeout: const Duration(milliseconds: 500),
       );
+      final peer = h.addPeer('peer1');
 
-      // Start a probe round (don't await — blocks on timeout)
-      final probeRoundFuture = detector.performProbeRound();
+      final probeRoundFuture = h.detector.performProbeRound();
       await Future.delayed(Duration.zero);
 
-      // Remove the peer while the probe is in-flight
-      peerRegistry.removePeer(peerNode, occurredAt: DateTime.now());
+      h.peerRegistry.removePeer(peer.id, occurredAt: DateTime.now());
 
-      // Advance past direct timeout
-      await timePort.advance(const Duration(milliseconds: 501));
-      // Advance past grace period
-      await timePort.advance(const Duration(milliseconds: 501));
-
-      // Should complete without throwing
+      await h.advancePastTimeout();
       await probeRoundFuture;
 
-      // Peer is gone — no failure recorded
-      expect(peerRegistry.getPeer(peerNode), isNull);
+      expect(h.peerRegistry.getPeer(peer.id), isNull);
     });
 
     test('restart after stop resumes probing', () async {
-      final localNode = NodeId('local');
-      final peerNode = NodeId('peer1');
-      final peerRegistry = PeerRegistry(
-        localNode: localNode,
-        initialIncarnation: 0,
-      );
-      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
-
-      final timePort = InMemoryTimePort();
-      final bus = InMemoryMessageBus();
-      final localPort = InMemoryMessagePort(localNode, bus);
-      final peerPort = InMemoryMessagePort(peerNode, bus);
-
-      final detector = FailureDetector(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: localPort,
+      final h = FailureDetectorTestHarness(
         pingTimeout: const Duration(milliseconds: 200),
         probeInterval: const Duration(milliseconds: 500),
       );
+      final peer = h.addPeer('peer1');
 
-      detector.startListening();
+      h.startListening();
 
-      // Start, stop, then start again
-      detector.start();
-      expect(detector.isRunning, isTrue);
+      h.detector.start();
+      expect(h.detector.isRunning, isTrue);
 
-      detector.stop();
-      expect(detector.isRunning, isFalse);
+      h.detector.stop();
+      expect(h.detector.isRunning, isFalse);
 
-      detector.start();
-      expect(detector.isRunning, isTrue);
+      h.detector.start();
+      expect(h.detector.isRunning, isTrue);
 
-      // Track messages received by peer to verify probing resumed
       final pingsReceived = <Ping>[];
-      final peerSub = peerPort.incoming.listen((msg) {
+      final peerSub = peer.port.incoming.listen((msg) {
         final decoded = codec.decode(msg.bytes);
         if (decoded is Ping) pingsReceived.add(decoded);
       });
 
-      // Advance past probe interval to trigger a probe round
-      await timePort.advance(const Duration(milliseconds: 501));
-
-      // Allow probe to send
+      await h.timePort.advance(const Duration(milliseconds: 501));
       await Future.delayed(Duration.zero);
 
       expect(
@@ -1067,13 +742,12 @@ void main() {
       );
 
       // Clean up — advance past timeouts
-      await timePort.advance(const Duration(milliseconds: 201));
-      await timePort.advance(const Duration(milliseconds: 201));
+      await h.timePort.advance(const Duration(milliseconds: 201));
+      await h.timePort.advance(const Duration(milliseconds: 201));
 
       await peerSub.cancel();
-      detector.stop();
-      detector.stopListening();
-      await peerPort.close();
+      h.detector.stop();
+      h.stopListening();
     });
   });
 }
