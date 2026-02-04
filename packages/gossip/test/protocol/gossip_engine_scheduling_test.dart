@@ -1,62 +1,94 @@
+import 'package:gossip/src/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/protocol/messages/digest_request.dart';
+import 'package:gossip/src/protocol/messages/digest_response.dart';
+import 'package:gossip/src/protocol/values/channel_digest.dart';
 import 'package:test/test.dart';
-import 'package:gossip/src/domain/value_objects/node_id.dart';
-import 'package:gossip/src/domain/aggregates/peer_registry.dart';
-import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
-import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
-import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
-import 'package:gossip/src/protocol/gossip_engine.dart';
+
+import 'gossip_engine_test_harness.dart';
 
 void main() {
   group('GossipEngine scheduling', () {
     test('start begins periodic gossip rounds', () {
-      final localNode = NodeId('local');
-      final peerRegistry = PeerRegistry(
-        localNode: localNode,
-        initialIncarnation: 0,
-      );
-      final entryRepo = InMemoryEntryRepository();
-      final timer = InMemoryTimePort();
-      final bus = InMemoryMessageBus();
-      final messagePort = InMemoryMessagePort(localNode, bus);
+      final h = GossipEngineTestHarness();
 
-      final engine = GossipEngine(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        entryRepository: entryRepo,
-        timePort: timer,
-        messagePort: messagePort,
-      );
+      h.engine.start();
+      expect(h.engine.isRunning, isTrue);
 
-      engine.start();
-
-      // Timer should be scheduled
-      expect(engine.isRunning, isTrue);
+      h.engine.stop();
     });
 
     test('stop cancels gossip rounds', () {
-      final localNode = NodeId('local');
-      final peerRegistry = PeerRegistry(
-        localNode: localNode,
-        initialIncarnation: 0,
+      final h = GossipEngineTestHarness();
+
+      h.engine.start();
+      expect(h.engine.isRunning, isTrue);
+
+      h.engine.stop();
+      expect(h.engine.isRunning, isFalse);
+    });
+
+    test('start() twice is idempotent', () {
+      final h = GossipEngineTestHarness();
+
+      h.engine.start();
+      expect(h.engine.isRunning, isTrue);
+      expect(h.timePort.pendingDelayCount, equals(1));
+
+      h.engine.start();
+      expect(h.engine.isRunning, isTrue);
+      expect(h.timePort.pendingDelayCount, equals(1));
+
+      h.engine.stop();
+    });
+
+    test('stop() twice does not throw', () {
+      final h = GossipEngineTestHarness();
+
+      h.engine.start();
+      h.engine.stop();
+      expect(h.engine.isRunning, isFalse);
+
+      h.engine.stop();
+      expect(h.engine.isRunning, isFalse);
+    });
+
+    test('stop() before start() does not throw', () {
+      final h = GossipEngineTestHarness();
+
+      h.engine.stop();
+      expect(h.engine.isRunning, isFalse);
+    });
+
+    test('startListening() twice does not leak subscriptions', () async {
+      final h = GossipEngineTestHarness();
+      final peer = h.addPeer('peer1');
+      h.createChannel('ch1', streamIds: ['s1']);
+
+      h.startListening();
+      h.startListening();
+
+      // Send a DigestRequest — should only be processed once
+      final request = DigestRequest(
+        sender: peer.id,
+        digests: [ChannelDigest(channelId: ChannelId('ch1'), streams: [])],
       );
-      final entryRepo = InMemoryEntryRepository();
-      final timer = InMemoryTimePort();
-      final bus = InMemoryMessageBus();
-      final messagePort = InMemoryMessagePort(localNode, bus);
+      await peer.port.send(h.localNode, h.codec.encode(request));
+      await h.flush();
 
-      final engine = GossipEngine(
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        entryRepository: entryRepo,
-        timePort: timer,
-        messagePort: messagePort,
+      // Peer should receive exactly 1 DigestResponse (not 2)
+      final (messages, sub) = h.captureMessages(peer);
+
+      final request2 = DigestRequest(
+        sender: peer.id,
+        digests: [ChannelDigest(channelId: ChannelId('ch1'), streams: [])],
       );
+      await peer.port.send(h.localNode, h.codec.encode(request2));
+      await h.flush();
 
-      engine.start();
-      expect(engine.isRunning, isTrue);
+      expect(messages.whereType<DigestResponse>().length, equals(1));
 
-      engine.stop();
-      expect(engine.isRunning, isFalse);
+      await sub.cancel();
+      h.stopListening();
     });
   });
 }

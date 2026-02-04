@@ -119,9 +119,6 @@ class GossipEngine {
   /// Whether gossip rounds are currently running.
   bool _isRunning = false;
 
-  /// Handle for cancelling the periodic timer.
-  TimerHandle? _timerHandle;
-
   /// Subscription to incoming messages (for cleanup on stop).
   StreamSubscription<IncomingMessage>? _messageSubscription;
 
@@ -301,8 +298,6 @@ class GossipEngine {
   void stop() {
     if (!_isRunning) return;
     _isRunning = false;
-    _timerHandle?.cancel();
-    _timerHandle = null;
   }
 
   /// Starts listening to incoming gossip protocol messages.
@@ -318,6 +313,7 @@ class GossipEngine {
   /// begin periodic digest exchange.
   void startListening(Map<ChannelId, ChannelAggregate> channels) {
     _channels = channels;
+    _messageSubscription?.cancel();
     _messageSubscription = messagePort.incoming.listen(_handleIncomingMessage);
   }
 

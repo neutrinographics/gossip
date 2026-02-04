@@ -712,5 +712,161 @@ void main() {
         expect(thirdRequests, hasLength(1));
       },
     );
+
+    test(
+      'handleDigestResponse generates delta requests across multiple channels',
+      () {
+        final localNode = NodeId('local');
+        final peerNode = NodeId('peer-1');
+        final author1 = NodeId('author-1');
+        final registry = PeerRegistry(
+          localNode: localNode,
+          initialIncarnation: 0,
+        );
+        final entryRepo = InMemoryEntryRepository();
+        final channelId1 = ChannelId('channel-1');
+        final channelId2 = ChannelId('channel-2');
+        final streamId = StreamId('stream-1');
+
+        // Channel 1: we're in sync (author1:5)
+        entryRepo.append(
+          channelId1,
+          streamId,
+          LogEntry(
+            author: author1,
+            sequence: 5,
+            timestamp: Hlc(5000, 0),
+            payload: Uint8List.fromList([5]),
+          ),
+        );
+
+        // Channel 2: we're behind (author1:2, peer has 5)
+        entryRepo.append(
+          channelId2,
+          streamId,
+          LogEntry(
+            author: author1,
+            sequence: 2,
+            timestamp: Hlc(2000, 0),
+            payload: Uint8List.fromList([2]),
+          ),
+        );
+
+        final engine = createEngine(localNode, registry, entryRepo);
+
+        final channel1 = ChannelAggregate(id: channelId1, localNode: localNode);
+        channel1.createStream(
+          streamId,
+          KeepAllRetention(),
+          occurredAt: DateTime.now(),
+        );
+        final channel2 = ChannelAggregate(id: channelId2, localNode: localNode);
+        channel2.createStream(
+          streamId,
+          KeepAllRetention(),
+          occurredAt: DateTime.now(),
+        );
+        engine.setChannels({channelId1: channel1, channelId2: channel2});
+
+        // Peer claims author1:5 for both channels
+        final response = DigestResponse(
+          sender: peerNode,
+          digests: [
+            ChannelDigest(
+              channelId: channelId1,
+              streams: [
+                StreamDigest(
+                  streamId: streamId,
+                  version: VersionVector({author1: 5}),
+                ),
+              ],
+            ),
+            ChannelDigest(
+              channelId: channelId2,
+              streams: [
+                StreamDigest(
+                  streamId: streamId,
+                  version: VersionVector({author1: 5}),
+                ),
+              ],
+            ),
+          ],
+        );
+
+        final deltaRequests = engine.handleDigestResponse(response);
+
+        // Only channel 2 should generate a delta request (we're behind)
+        expect(deltaRequests, hasLength(1));
+        expect(deltaRequests[0].channelId, equals(channelId2));
+        expect(deltaRequests[0].since[author1], equals(2));
+      },
+    );
+
+    test(
+      'handleDigestResponse generates delta request for unknown stream from peer',
+      () {
+        final localNode = NodeId('local');
+        final peerNode = NodeId('peer-1');
+        final author1 = NodeId('author-1');
+        final registry = PeerRegistry(
+          localNode: localNode,
+          initialIncarnation: 0,
+        );
+        final entryRepo = InMemoryEntryRepository();
+        final channelId = ChannelId('channel-1');
+        final knownStream = StreamId('known-stream');
+        final unknownStream = StreamId('unknown-stream');
+
+        // We have entries for known stream only
+        entryRepo.append(
+          channelId,
+          knownStream,
+          LogEntry(
+            author: author1,
+            sequence: 5,
+            timestamp: Hlc(5000, 0),
+            payload: Uint8List.fromList([5]),
+          ),
+        );
+
+        final engine = createEngine(localNode, registry, entryRepo);
+
+        final channel = ChannelAggregate(id: channelId, localNode: localNode);
+        channel.createStream(
+          knownStream,
+          KeepAllRetention(),
+          occurredAt: DateTime.now(),
+        );
+        engine.setChannels({channelId: channel});
+
+        // Peer has entries in both streams
+        final response = DigestResponse(
+          sender: peerNode,
+          digests: [
+            ChannelDigest(
+              channelId: channelId,
+              streams: [
+                StreamDigest(
+                  streamId: knownStream,
+                  version: VersionVector({author1: 5}),
+                ),
+                StreamDigest(
+                  streamId: unknownStream,
+                  version: VersionVector({author1: 3}),
+                ),
+              ],
+            ),
+          ],
+        );
+
+        final deltaRequests = engine.handleDigestResponse(response);
+
+        // Should generate a delta request for the unknown stream
+        // (our version is empty, which doesn't dominate peer's {author1:3})
+        expect(deltaRequests, hasLength(1));
+        expect(deltaRequests[0].streamId, equals(unknownStream));
+        expect(deltaRequests[0].since[author1], equals(0));
+      },
+    );
   });
 }

@@ -18,8 +18,11 @@ import 'package:gossip/src/protocol/gossip_engine.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
 import 'package:gossip/src/protocol/messages/digest_request.dart';
 import 'package:gossip/src/protocol/messages/digest_response.dart';
+import 'package:gossip/src/protocol/messages/delta_response.dart';
 import 'package:gossip/src/protocol/values/channel_digest.dart';
 import 'package:gossip/src/protocol/values/stream_digest.dart';
+
+import 'gossip_engine_test_harness.dart';
 
 void main() {
   GossipEngine createEngine(
@@ -923,6 +926,187 @@ void main() {
         await peerPort1.close();
         await peerPort2.close();
       });
+    });
+
+    // -------------------------------------------------------------------------
+    // Full protocol integration
+    // -------------------------------------------------------------------------
+
+    group('Full protocol integration', () {
+      test('4-step sync delivers entries from peer to initiator', () async {
+        // Set up two nodes sharing a channel
+        final nodeA = NodeId('nodeA');
+        final nodeB = NodeId('nodeB');
+        final channelId = ChannelId('shared-channel');
+        final streamId = StreamId('stream-1');
+        final author = NodeId('author-1');
+
+        final registryA = PeerRegistry(localNode: nodeA, initialIncarnation: 0);
+        registryA.addPeer(nodeB, occurredAt: DateTime.now());
+
+        final registryB = PeerRegistry(localNode: nodeB, initialIncarnation: 0);
+        registryB.addPeer(nodeA, occurredAt: DateTime.now());
+
+        final entryRepoA = InMemoryEntryRepository();
+        final entryRepoB = InMemoryEntryRepository();
+
+        // Node B has entries that Node A doesn't
+        final entry1 = LogEntry(
+          author: author,
+          sequence: 1,
+          timestamp: Hlc(1000, 0),
+          payload: Uint8List.fromList([1]),
+        );
+        final entry2 = LogEntry(
+          author: author,
+          sequence: 2,
+          timestamp: Hlc(2000, 0),
+          payload: Uint8List.fromList([2]),
+        );
+        entryRepoB.append(channelId, streamId, entry1);
+        entryRepoB.append(channelId, streamId, entry2);
+
+        final timePortA = InMemoryTimePort();
+        final timePortB = InMemoryTimePort();
+        final bus = InMemoryMessageBus();
+        final portA = InMemoryMessagePort(nodeA, bus);
+        final portB = InMemoryMessagePort(nodeB, bus);
+
+        final channelA = ChannelAggregate(id: channelId, localNode: nodeA);
+        channelA.createStream(
+          streamId,
+          KeepAllRetention(),
+          occurredAt: DateTime.now(),
+        );
+
+        final channelB = ChannelAggregate(id: channelId, localNode: nodeB);
+        channelB.createStream(
+          streamId,
+          KeepAllRetention(),
+          occurredAt: DateTime.now(),
+        );
+
+        final engineA = GossipEngine(
+          localNode: nodeA,
+          peerRegistry: registryA,
+          entryRepository: entryRepoA,
+          timePort: timePortA,
+          messagePort: portA,
+        );
+
+        final engineB = GossipEngine(
+          localNode: nodeB,
+          peerRegistry: registryB,
+          entryRepository: entryRepoB,
+          timePort: timePortB,
+          messagePort: portB,
+        );
+
+        // Both nodes start listening
+        engineA.startListening({channelId: channelA});
+        engineB.startListening({channelId: channelB});
+
+        // Node A initiates gossip round → sends DigestRequest to B
+        await engineA.performGossipRound();
+        // Allow message processing (DigestRequest → DigestResponse → DeltaRequest → DeltaResponse)
+        await Future.delayed(Duration.zero);
+        await Future.delayed(Duration.zero);
+        await Future.delayed(Duration.zero);
+        await Future.delayed(Duration.zero);
+
+        // Node A should now have the entries
+        expect(entryRepoA.entryCount(channelId, streamId), equals(2));
+        final stored = entryRepoA.getAll(channelId, streamId);
+        expect(stored[0].sequence, equals(1));
+        expect(stored[1].sequence, equals(2));
+
+        engineA.stopListening();
+        engineB.stopListening();
+      });
+    });
+
+    // -------------------------------------------------------------------------
+    // Edge cases
+    // -------------------------------------------------------------------------
+
+    group('Edge cases', () {
+      test('performGossipRound with no peers returns immediately', () async {
+        final h = GossipEngineTestHarness();
+        h.createChannel('ch1', streamIds: ['s1']);
+
+        // Should complete without error
+        await h.engine.performGossipRound();
+        expect(h.errors, isEmpty);
+      });
+
+      test('performGossipRound with no channels sends empty digests', () async {
+        final h = GossipEngineTestHarness();
+        final peer = h.addPeer('peer1');
+
+        final (messages, sub) = h.captureMessages(peer);
+
+        // No channels set — round should still complete
+        await h.engine.performGossipRound();
+        await h.flush();
+
+        expect(messages, hasLength(1));
+        expect(messages.first, isA<DigestRequest>());
+        expect((messages.first as DigestRequest).digests, isEmpty);
+
+        await sub.cancel();
+      });
+
+      test('onEntriesMerged callback fires after delta response', () {
+        final h = GossipEngineTestHarness();
+        h.createChannel('ch1', streamIds: ['s1']);
+
+        final entry = LogEntry(
+          author: NodeId('remote'),
+          sequence: 1,
+          timestamp: Hlc(1000, 0),
+          payload: Uint8List.fromList([1]),
+        );
+
+        final response = DeltaResponse(
+          sender: NodeId('remote'),
+          channelId: ChannelId('ch1'),
+          streamId: StreamId('s1'),
+          entries: [entry],
+        );
+
+        h.engine.handleDeltaResponse(response);
+
+        expect(h.mergedEntries, hasLength(1));
+        expect(h.mergedEntries.first.channelId, equals(ChannelId('ch1')));
+        expect(h.mergedEntries.first.streamId, equals(StreamId('s1')));
+        expect(h.mergedEntries.first.entries, hasLength(1));
+        expect(h.mergedEntries.first.entries.first.sequence, equals(1));
+      });
+
+      test(
+        'handleDeltaResponse with empty entries clears pending but skips merge',
+        () {
+          final h = GossipEngineTestHarness();
+          h.createChannel('ch1', streamIds: ['s1']);
+
+          final response = DeltaResponse(
+            sender: NodeId('remote'),
+            channelId: ChannelId('ch1'),
+            streamId: StreamId('s1'),
+            entries: [],
+          );
+
+          h.engine.handleDeltaResponse(response);
+
+          // No entries merged
+          expect(
+            h.entryRepository.entryCount(ChannelId('ch1'), StreamId('s1')),
+            equals(0),
+          );
+          // Callback not fired for empty entries
+          expect(h.mergedEntries, isEmpty);
+        },
+      );
     });
   });
 }
