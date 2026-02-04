@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:gossip/src/application/observability/log_level.dart';
 import 'package:gossip/src/domain/errors/sync_error.dart';
 import 'package:gossip/src/domain/services/rtt_tracker.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
@@ -108,6 +109,12 @@ class FailureDetector {
   /// through this callback for observability.
   final ErrorCallback? onError;
 
+  /// Optional callback for logging SWIM protocol diagnostics.
+  ///
+  /// When provided, logs probe rounds, acks, timeouts, and other protocol
+  /// details through this callback for observability.
+  final LogCallback? onLog;
+
   /// Codec for serializing/deserializing protocol messages.
   final ProtocolCodec _codec = ProtocolCodec();
 
@@ -149,6 +156,7 @@ class FailureDetector {
     required this.timePort,
     required this.messagePort,
     this.onError,
+    this.onLog,
     Duration? pingTimeout,
     Duration? probeInterval,
     Random? random,
@@ -395,10 +403,7 @@ class FailureDetector {
   int _pingsSent = 0;
 
   void _log(String message) {
-    // Log via error callback for now (could add dedicated log callback later)
-    // Using debugPrint to ensure visibility in Flutter logs
-    // ignore: avoid_print
-    print('[SWIM_DIAG] $message');
+    onLog?.call(LogLevel.debug, '[SWIM] $message');
   }
 
   /// Handles PingReq (indirect ping request) from a peer.
@@ -737,9 +742,9 @@ class FailureDetector {
   /// Called fire-and-forget from Coordinator.addPeer() to get the first
   /// RTT sample within ~200ms of connection instead of waiting for random
   /// selection in probe rounds.
-  Future<void> probeNewPeer(NodeId peerId) async {
+  Future<bool> probeNewPeer(NodeId peerId) async {
     final peer = peerRegistry.getPeer(peerId);
-    if (peer == null) return;
+    if (peer == null) return false;
 
     final sequence = _nextSequence++;
     final pending = _trackPendingPing(peerId, sequence);
@@ -756,6 +761,8 @@ class FailureDetector {
     } else {
       _log('SWIM: probeNewPeer timed out for $peerId (no failure recorded)');
     }
+
+    return gotAck;
   }
 
   /// Checks peer health and transitions to suspected if threshold exceeded.

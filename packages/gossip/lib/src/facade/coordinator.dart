@@ -263,6 +263,7 @@ class Coordinator {
         timePort: timerPort,
         messagePort: messagePort,
         onError: coordinator._handleError,
+        onLog: onLog,
         random: random,
         failureThreshold: cfg.suspicionThreshold,
         rttTracker: failureDetectorRttTracker,
@@ -435,8 +436,45 @@ class Coordinator {
     // Fire-and-forget immediate probe to bootstrap per-peer RTT estimate.
     // Gets first RTT sample within ~200ms instead of waiting for random
     // probe selection (which could take ~45s with 5 peers and 9s interval).
+    //
+    // Retries up to 3 times on timeout because the transport layer may
+    // not be fully bidirectional yet when addPeer is called — the remote
+    // peer's receive path may still be initializing.
     if (_failureDetector != null && _state == SyncState.running) {
-      _failureDetector!.probeNewPeer(id);
+      final detector = _failureDetector!;
+      unawaited(_probeNewPeerWithRetry(detector, id));
+    }
+  }
+
+  /// Probes a newly added peer with retry to bootstrap per-peer RTT.
+  ///
+  /// The transport layer may not be fully bidirectional when addPeer is
+  /// called — the remote peer's receive path may still be initializing.
+  /// Retrying handles this: the first probe may timeout, but subsequent
+  /// attempts succeed once the remote transport is ready.
+  Future<void> _probeNewPeerWithRetry(
+    FailureDetector detector,
+    NodeId peerId,
+  ) async {
+    const maxAttempts = 3;
+    try {
+      for (var attempt = 1; attempt <= maxAttempts; attempt++) {
+        if (_state != SyncState.running) return;
+        if (_peerRegistry.getPeer(peerId) == null) return;
+
+        final gotAck = await detector.probeNewPeer(peerId);
+        if (gotAck) return;
+      }
+    } catch (e) {
+      _handleError(
+        PeerSyncError(
+          peerId,
+          SyncErrorType.peerUnreachable,
+          'probeNewPeer failed for $peerId: $e',
+          occurredAt: DateTime.now(),
+          cause: e,
+        ),
+      );
     }
   }
 
