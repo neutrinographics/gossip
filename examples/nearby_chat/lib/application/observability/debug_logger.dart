@@ -502,6 +502,22 @@ class DebugLogger {
       'METRICS',
       '  Pending send count: ${timing.totalPendingSendCount}',
     );
+    if (timing.perPeerRtt.isNotEmpty) {
+      _logVerbose(
+        'METRICS',
+        '  Per-peer RTT (${timing.perPeerRtt.length} peers):',
+      );
+      for (final entry in timing.perPeerRtt.entries) {
+        final rtt = entry.value;
+        _logVerbose(
+          'METRICS',
+          '    ${_shortId(entry.key.value)}: '
+              'SRTT=${rtt.smoothedRtt.inMilliseconds}ms '
+              'var=${rtt.rttVariance.inMilliseconds}ms '
+              'timeout=${rtt.suggestedTimeout().inMilliseconds}ms',
+        );
+      }
+    }
   }
 
   void _logConnectionMetrics() {
@@ -582,6 +598,15 @@ class DebugLogger {
           'METRICS',
           '    Bytes received: ${_formatBytes(metrics.bytesReceived)}',
         );
+        final rtt = metrics.rttEstimate;
+        if (rtt != null) {
+          _logVerbose(
+            'METRICS',
+            '    RTT: SRTT=${rtt.smoothedRtt.inMilliseconds}ms '
+                'var=${rtt.rttVariance.inMilliseconds}ms '
+                'timeout=${rtt.suggestedTimeout().inMilliseconds}ms',
+          );
+        }
       }
     }
   }

@@ -133,5 +133,8 @@ export 'src/infrastructure/ports/in_memory_time_port.dart';
 // Production implementations
 export 'src/infrastructure/ports/real_time_port.dart';
 
+// Domain services
+export 'src/domain/value_objects/rtt_estimate.dart';
+
 // Observability
 export 'src/application/observability/log_level.dart';

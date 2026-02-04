@@ -208,6 +208,113 @@ void main() {
       );
     });
 
+    test('effectivePingTimeoutForPeer uses per-peer RTT when available', () {
+      final rttTracker = RttTracker(); // Conservative global default
+
+      final detector = FailureDetector(
+        localNode: localNode,
+        peerRegistry: peerRegistry,
+        timePort: timePort,
+        messagePort: localPort,
+        rttTracker: rttTracker,
+      );
+
+      // Seed per-peer RTT: 100ms SRTT → timeout = 100 + 4*50 = 300ms
+      peerRegistry.recordPeerRtt(peerNode, const Duration(milliseconds: 100));
+
+      final peerTimeout = detector.effectivePingTimeoutForPeer(peerNode);
+      // Per-peer timeout should be much lower than the global conservative default
+      expect(peerTimeout.inMilliseconds, lessThan(1000));
+      // Should be at least the minimum bound
+      expect(peerTimeout.inMilliseconds, greaterThanOrEqualTo(200));
+    });
+
+    test(
+      'effectivePingTimeoutForPeer falls back to global when no per-peer estimate',
+      () {
+        final rttTracker = RttTracker(); // Conservative global default
+
+        final detector = FailureDetector(
+          localNode: localNode,
+          peerRegistry: peerRegistry,
+          timePort: timePort,
+          messagePort: localPort,
+          rttTracker: rttTracker,
+        );
+
+        // No per-peer RTT recorded
+        final peerTimeout = detector.effectivePingTimeoutForPeer(peerNode);
+        // Should equal the global effectivePingTimeout
+        expect(peerTimeout, equals(detector.effectivePingTimeout));
+      },
+    );
+
+    test(
+      'effectivePingTimeoutForPeer falls back to global for unknown peer',
+      () {
+        final rttTracker = RttTracker();
+
+        final detector = FailureDetector(
+          localNode: localNode,
+          peerRegistry: peerRegistry,
+          timePort: timePort,
+          messagePort: localPort,
+          rttTracker: rttTracker,
+        );
+
+        final unknownNode = NodeId('unknown');
+        final timeout = detector.effectivePingTimeoutForPeer(unknownNode);
+        expect(timeout, equals(detector.effectivePingTimeout));
+      },
+    );
+
+    test('probe round uses per-peer timeout for known peer with RTT', () async {
+      final rttTracker = RttTracker();
+
+      final detector = FailureDetector(
+        localNode: localNode,
+        peerRegistry: peerRegistry,
+        timePort: timePort,
+        messagePort: localPort,
+        rttTracker: rttTracker,
+      );
+
+      // Seed per-peer RTT: 100ms → timeout ~300ms (clamped to min 200ms)
+      peerRegistry.recordPeerRtt(peerNode, const Duration(milliseconds: 100));
+
+      detector.startListening();
+
+      // Set up peer to respond to pings
+      Ping? receivedPing;
+      final pingCompleter = Completer<void>();
+      final subscription = peerPort.incoming.listen((msg) {
+        final decoded = codec.decode(msg.bytes);
+        if (decoded is Ping && !pingCompleter.isCompleted) {
+          receivedPing = decoded;
+          pingCompleter.complete();
+        }
+      });
+
+      final probeRoundFuture = detector.performProbeRound();
+      await Future.delayed(Duration.zero);
+      await pingCompleter.future;
+
+      // Respond with Ack before per-peer timeout (within 200ms)
+      await timePort.advance(const Duration(milliseconds: 50));
+      final ack = Ack(sender: peerNode, sequence: receivedPing!.sequence);
+      await peerPort.send(localNode, codec.encode(ack));
+      await Future.delayed(Duration.zero);
+
+      await probeRoundFuture;
+
+      // Probe should succeed (no failure recorded)
+      final peer = peerRegistry.getPeer(peerNode)!;
+      expect(peer.failedProbeCount, equals(0));
+
+      await subscription.cancel();
+      detector.stopListening();
+    });
+
     test('timeout adapts as RTT samples are collected', () async {
       final rttTracker = RttTracker();
 

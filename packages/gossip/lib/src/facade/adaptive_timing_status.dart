@@ -1,3 +1,6 @@
+import '../domain/value_objects/node_id.dart';
+import '../domain/value_objects/rtt_estimate.dart';
+
 /// Observability snapshot of adaptive timing state (ADR-013).
 ///
 /// Exposes RTT estimates, computed protocol intervals, and transport
@@ -23,9 +26,15 @@
 /// - [ResourceUsage] for storage and capacity statistics
 class AdaptiveTimingStatus {
   /// Smoothed round-trip time estimate (EWMA per RFC 6298).
+  ///
+  /// When per-peer RTT data is available, this is the minimum peer SRTT
+  /// (the fastest link). Falls back to the global tracker estimate otherwise.
   final Duration smoothedRtt;
 
   /// RTT variance (mean deviation) used in timeout computation.
+  ///
+  /// When per-peer RTT data is available, this is the variance of the
+  /// peer with the minimum SRTT. Falls back to the global tracker otherwise.
   final Duration rttVariance;
 
   /// Number of RTT samples collected since startup.
@@ -50,6 +59,12 @@ class AdaptiveTimingStatus {
   /// When this exceeds the congestion threshold, gossip rounds are skipped.
   final int totalPendingSendCount;
 
+  /// Per-peer RTT estimates keyed by node ID.
+  ///
+  /// Only contains entries for peers that have at least one RTT sample.
+  /// Empty when no peers have been probed yet.
+  final Map<NodeId, RttEstimate> perPeerRtt;
+
   const AdaptiveTimingStatus({
     required this.smoothedRtt,
     required this.rttVariance,
@@ -59,5 +74,6 @@ class AdaptiveTimingStatus {
     required this.effectivePingTimeout,
     required this.effectiveProbeInterval,
     required this.totalPendingSendCount,
+    this.perPeerRtt = const {},
   });
 }

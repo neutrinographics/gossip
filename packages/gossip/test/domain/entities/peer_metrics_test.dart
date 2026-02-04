@@ -1,5 +1,6 @@
 import 'package:test/test.dart';
 import 'package:gossip/src/domain/entities/peer_metrics.dart';
+import 'package:gossip/src/domain/value_objects/rtt_estimate.dart';
 
 void main() {
   group('PeerMetrics', () {
@@ -121,6 +122,93 @@ void main() {
       );
 
       expect(metrics1.hashCode, equals(metrics2.hashCode));
+    });
+
+    group('RTT estimate', () {
+      test('default PeerMetrics has null rttEstimate', () {
+        final metrics = PeerMetrics();
+        expect(metrics.rttEstimate, isNull);
+      });
+
+      test('can be constructed with rttEstimate', () {
+        final estimate = RttEstimate(
+          smoothedRtt: const Duration(milliseconds: 100),
+          rttVariance: const Duration(milliseconds: 25),
+        );
+        final metrics = PeerMetrics(rttEstimate: estimate);
+        expect(metrics.rttEstimate, equals(estimate));
+      });
+
+      test('recordRttSample sets rttEstimate on first sample', () {
+        final metrics = PeerMetrics();
+        final updated = metrics.recordRttSample(
+          const Duration(milliseconds: 150),
+        );
+
+        expect(updated.rttEstimate, isNotNull);
+        expect(
+          updated.rttEstimate!.smoothedRtt,
+          equals(const Duration(milliseconds: 150)),
+        );
+      });
+
+      test('recordRttSample updates existing rttEstimate using EWMA', () {
+        var metrics = PeerMetrics();
+        metrics = metrics.recordRttSample(const Duration(milliseconds: 100));
+        metrics = metrics.recordRttSample(const Duration(milliseconds: 200));
+
+        expect(metrics.rttEstimate, isNotNull);
+        // After first=100ms, second=200ms: EWMA with alpha=0.125
+        // SRTT = (1-0.125)*100 + 0.125*200 = 87.5 + 25 = 112.5
+        expect(
+          metrics.rttEstimate!.smoothedRtt.inMilliseconds,
+          closeTo(112, 2),
+        );
+      });
+
+      test('recordRttSample does not affect other metrics fields', () {
+        final metrics = PeerMetrics(messagesReceived: 5, messagesSent: 3);
+        final updated = metrics.recordRttSample(
+          const Duration(milliseconds: 100),
+        );
+
+        expect(updated.messagesReceived, equals(5));
+        expect(updated.messagesSent, equals(3));
+      });
+
+      test('recordReceived preserves rttEstimate', () {
+        var metrics = PeerMetrics();
+        metrics = metrics.recordRttSample(const Duration(milliseconds: 150));
+        final afterReceive = metrics.recordReceived(100, 1000, 5000);
+
+        expect(afterReceive.rttEstimate, equals(metrics.rttEstimate));
+      });
+
+      test('recordSent preserves rttEstimate', () {
+        var metrics = PeerMetrics();
+        metrics = metrics.recordRttSample(const Duration(milliseconds: 150));
+        final afterSent = metrics.recordSent(100);
+
+        expect(afterSent.rttEstimate, equals(metrics.rttEstimate));
+      });
+
+      test('equality includes rttEstimate', () {
+        var m1 = PeerMetrics();
+        var m2 = PeerMetrics();
+        m1 = m1.recordRttSample(const Duration(milliseconds: 100));
+        m2 = m2.recordRttSample(const Duration(milliseconds: 100));
+
+        expect(m1, equals(m2));
+      });
+
+      test('different rttEstimate means not equal', () {
+        var m1 = PeerMetrics();
+        var m2 = PeerMetrics();
+        m1 = m1.recordRttSample(const Duration(milliseconds: 100));
+        m2 = m2.recordRttSample(const Duration(milliseconds: 200));
+
+        expect(m1, isNot(equals(m2)));
+      });
     });
   });
 }

@@ -1,7 +1,10 @@
+import '../value_objects/rtt_estimate.dart';
+
 /// Tracks communication metrics for a peer over time.
 ///
 /// [PeerMetrics] records message and byte counts for communication with a peer.
 /// It maintains both lifetime totals and a sliding window for rate limiting.
+/// Optionally tracks per-peer RTT estimates for adaptive timeout computation.
 ///
 /// The library tracks these metrics but does not enforce policies. Applications
 /// can use these metrics to implement their own rate limiting, throttling, or
@@ -10,6 +13,7 @@
 /// Metrics tracked:
 /// - **Lifetime totals**: Total messages and bytes sent/received
 /// - **Sliding window**: Recent message count within a time window
+/// - **RTT estimate**: Per-peer round-trip time for adaptive timeouts
 ///
 /// Entities are compared by value equality (immutable value semantics).
 class PeerMetrics {
@@ -31,6 +35,12 @@ class PeerMetrics {
   /// Number of messages received within the current sliding window.
   final int messagesInWindow;
 
+  /// Per-peer RTT estimate, or null if no RTT samples have been recorded.
+  ///
+  /// Updated by [recordRttSample] using EWMA smoothing (RFC 6298).
+  /// Used by the failure detector for per-peer probe timeouts.
+  final RttEstimate? rttEstimate;
+
   /// Creates [PeerMetrics] with the given values, defaulting to zero.
   const PeerMetrics({
     this.messagesReceived = 0,
@@ -39,7 +49,30 @@ class PeerMetrics {
     this.bytesSent = 0,
     this.windowStartMs = 0,
     this.messagesInWindow = 0,
+    this.rttEstimate,
   });
+
+  /// Records an RTT sample and returns updated metrics.
+  ///
+  /// If no prior samples exist, initializes the estimate with the sample
+  /// as the first data point (per RFC 6298). Otherwise applies EWMA smoothing.
+  PeerMetrics recordRttSample(Duration sample) {
+    final isFirst = rttEstimate == null;
+    final currentEstimate = rttEstimate ?? RttEstimate.initial();
+    final updatedEstimate = currentEstimate.update(
+      sample,
+      isFirstSample: isFirst,
+    );
+    return PeerMetrics(
+      messagesReceived: messagesReceived,
+      messagesSent: messagesSent,
+      bytesReceived: bytesReceived,
+      bytesSent: bytesSent,
+      windowStartMs: windowStartMs,
+      messagesInWindow: messagesInWindow,
+      rttEstimate: updatedEstimate,
+    );
+  }
 
   /// Records a received message and returns updated metrics.
   ///
@@ -60,6 +93,7 @@ class PeerMetrics {
       bytesSent: bytesSent,
       windowStartMs: inNewWindow ? nowMs : windowStartMs,
       messagesInWindow: inNewWindow ? 1 : messagesInWindow + 1,
+      rttEstimate: rttEstimate,
     );
   }
 
@@ -77,6 +111,7 @@ class PeerMetrics {
     bytesSent: bytesSent + bytes,
     windowStartMs: windowStartMs,
     messagesInWindow: messagesInWindow,
+    rttEstimate: rttEstimate,
   );
 
   @override
@@ -87,7 +122,8 @@ class PeerMetrics {
       other.bytesReceived == bytesReceived &&
       other.bytesSent == bytesSent &&
       other.windowStartMs == windowStartMs &&
-      other.messagesInWindow == messagesInWindow;
+      other.messagesInWindow == messagesInWindow &&
+      other.rttEstimate == rttEstimate;
 
   @override
   int get hashCode => Object.hash(
@@ -97,5 +133,6 @@ class PeerMetrics {
     bytesSent,
     windowStartMs,
     messagesInWindow,
+    rttEstimate,
   );
 }

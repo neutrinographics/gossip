@@ -18,6 +18,7 @@ import '../domain/events/domain_event.dart';
 import '../domain/errors/sync_error.dart';
 import '../domain/services/hlc_clock.dart';
 import '../domain/services/rtt_tracker.dart';
+import '../domain/value_objects/rtt_estimate.dart';
 import '../domain/services/time_source.dart';
 import '../infrastructure/ports/message_port.dart';
 import '../infrastructure/ports/time_port.dart';
@@ -237,8 +238,11 @@ class Coordinator {
 
     // Create GossipEngine and FailureDetector if ports are provided, wiring error callbacks
     if (messagePort != null && timerPort != null) {
-      // Create shared RTT tracker for adaptive timing (ADR-013)
-      final rttTracker = RttTracker();
+      // GossipEngine computes its interval from per-peer RTT data in PeerRegistry.
+      // It still needs rttTracker != null to enable adaptive mode (vs static interval).
+      // FailureDetector gets its own RttTracker as a conservative fallback
+      // for peers that don't yet have per-peer RTT estimates.
+      final failureDetectorRttTracker = RttTracker();
 
       coordinator._gossipEngine = GossipEngine(
         localNode: localNode,
@@ -251,8 +255,8 @@ class Coordinator {
         onLog: onLog,
         hlcClock: hlcClock,
         random: random,
-        rttTracker: rttTracker,
-        // gossipInterval is now RTT-adaptive (see ADR-013)
+        rttTracker: failureDetectorRttTracker,
+        // gossipInterval computed from min per-peer SRTT
       );
 
       coordinator._failureDetector = FailureDetector(
@@ -263,8 +267,8 @@ class Coordinator {
         onError: coordinator._handleError,
         random: random,
         failureThreshold: cfg.suspicionThreshold,
-        rttTracker: rttTracker,
-        // Timeout parameters are now RTT-adaptive (see ADR-013)
+        rttTracker: failureDetectorRttTracker,
+        // Per-peer timeouts from PeerRegistry, global fallback from this tracker
       );
     }
 
@@ -430,6 +434,13 @@ class Coordinator {
   /// Throws [Exception] if attempting to add the local node as a peer.
   Future<void> addPeer(NodeId id, {String? displayName}) async {
     await _peerService.addPeer(id, displayName: displayName);
+
+    // Fire-and-forget immediate probe to bootstrap per-peer RTT estimate.
+    // Gets first RTT sample within ~200ms instead of waiting for random
+    // probe selection (which could take ~45s with 5 peers and 9s interval).
+    if (_failureDetector != null && _state == SyncState.running) {
+      _failureDetector!.probeNewPeer(id);
+    }
   }
 
   /// Removes a peer from the system.
@@ -524,17 +535,43 @@ class Coordinator {
       return null;
     }
 
+    // Build per-peer RTT map and derive global fields from per-peer data.
+    final perPeerRtt = <NodeId, RttEstimate>{};
+    Duration? minSrtt;
+    Duration? minSrttVariance;
+    int totalSamples = 0;
+
+    for (final peer in _peerRegistry.allPeers) {
+      final rttEstimate = peer.metrics.rttEstimate;
+      if (rttEstimate != null) {
+        perPeerRtt[peer.id] = rttEstimate;
+        totalSamples++;
+        if (minSrtt == null || rttEstimate.smoothedRtt < minSrtt) {
+          minSrtt = rttEstimate.smoothedRtt;
+          minSrttVariance = rttEstimate.rttVariance;
+        }
+      }
+    }
+
+    // Fall back to global tracker when no per-peer data exists.
     final rttTracker = _failureDetector!.rttTracker;
+    final smoothedRtt = minSrtt ?? rttTracker.smoothedRtt;
+    final rttVariance = minSrttVariance ?? rttTracker.rttVariance;
+    final sampleCount = totalSamples > 0
+        ? totalSamples
+        : rttTracker.sampleCount;
+    final hasSamples = totalSamples > 0 ? true : rttTracker.hasReceivedSamples;
 
     return AdaptiveTimingStatus(
-      smoothedRtt: rttTracker.smoothedRtt,
-      rttVariance: rttTracker.rttVariance,
-      rttSampleCount: rttTracker.sampleCount,
-      hasRttSamples: rttTracker.hasReceivedSamples,
+      smoothedRtt: smoothedRtt,
+      rttVariance: rttVariance,
+      rttSampleCount: sampleCount,
+      hasRttSamples: hasSamples,
       effectiveGossipInterval: _gossipEngine!.effectiveGossipInterval,
       effectivePingTimeout: _failureDetector!.effectivePingTimeout,
       effectiveProbeInterval: _failureDetector!.effectiveProbeInterval,
       totalPendingSendCount: _gossipEngine!.messagePort.totalPendingSendCount,
+      perPeerRtt: perPeerRtt,
     );
   }
 

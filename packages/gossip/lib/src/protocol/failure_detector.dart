@@ -241,6 +241,27 @@ class FailureDetector {
     );
   }
 
+  /// Returns the effective ping timeout for a specific peer.
+  ///
+  /// Uses the peer's per-peer RTT estimate if available, falling back to
+  /// the global [effectivePingTimeout] when no per-peer estimate exists.
+  /// This allows fast peers to use shorter timeouts while slow peers get
+  /// longer ones, preventing false SWIM suspicion.
+  Duration effectivePingTimeoutForPeer(NodeId peerId) {
+    if (_useStaticTimeouts) {
+      return _pingTimeout;
+    }
+    final peer = peerRegistry.getPeer(peerId);
+    final peerRtt = peer?.metrics.rttEstimate;
+    if (peerRtt != null) {
+      return peerRtt.suggestedTimeout(
+        minTimeout: _minPingTimeout,
+        maxTimeout: _maxPingTimeout,
+      );
+    }
+    return effectivePingTimeout;
+  }
+
   /// Whether static timeouts were explicitly provided.
   bool get _useStaticTimeouts => _staticTimeoutsProvided;
 
@@ -472,10 +493,12 @@ class FailureDetector {
 
     await _sendPing(peer.id, sequence);
 
+    final peerTimeout = effectivePingTimeoutForPeer(peer.id);
+
     final gotDirectAck = await _awaitAckWithTimeout(
       pending,
       sequence,
-      effectivePingTimeout,
+      peerTimeout,
     );
 
     if (!gotDirectAck) {
@@ -564,12 +587,13 @@ class FailureDetector {
   /// for [effectivePingTimeout] as a grace period for late Acks to arrive.
   Future<bool> _performIndirectPing(NodeId target, int sequence) async {
     final intermediaries = _selectRandomIntermediaries(target, 3);
+    final peerTimeout = effectivePingTimeoutForPeer(target);
 
     if (intermediaries.isEmpty) {
       // No intermediaries available - wait grace period for late Acks
       // This handles the 2-device scenario where direct ping times out
       // but the Ack is just slightly delayed
-      await timePort.delay(effectivePingTimeout);
+      await timePort.delay(peerTimeout);
       return false;
     }
 
@@ -581,7 +605,7 @@ class FailureDetector {
     final gotAck = await _awaitAckWithTimeout(
       pending,
       indirectSeq,
-      effectivePingTimeout,
+      peerTimeout,
     );
 
     // Clean up indirect ping tracking
@@ -680,7 +704,9 @@ class FailureDetector {
       // Calculate and record RTT
       final rttMs = timestampMs - pending.sentAtMs;
       if (rttMs > 0) {
-        _rttTracker.recordSample(Duration(milliseconds: rttMs));
+        final rttSample = Duration(milliseconds: rttMs);
+        _rttTracker.recordSample(rttSample);
+        peerRegistry.recordPeerRtt(ack.sender, rttSample);
         _log(
           'SWIM: Ack matched pending ping seq=${ack.sequence} from ${ack.sender} '
           '(RTT: ${rttMs}ms, failed count reset: $failedCountBefore -> 0)',
@@ -709,6 +735,42 @@ class FailureDetector {
   /// Exposed as public for testing. Called by [_performIndirectPing].
   void recordProbeFailure(NodeId peerId) {
     peerRegistry.incrementFailedProbeCount(peerId);
+  }
+
+  /// Probes a specific newly-connected peer to bootstrap its RTT estimate.
+  ///
+  /// Sends a targeted Ping to [peerId] and waits for an Ack. If the Ack
+  /// arrives, the RTT sample is recorded as per-peer RTT data. On timeout,
+  /// no failure is recorded (this is best-effort RTT bootstrapping, not
+  /// failure detection).
+  ///
+  /// Unlike regular probe rounds:
+  /// - No random peer selection — targets the specified peer
+  /// - No indirect ping on timeout — purpose is RTT, not failure detection
+  /// - No failure recording on timeout — regular probe rounds handle that
+  ///
+  /// Called fire-and-forget from Coordinator.addPeer() to get the first
+  /// RTT sample within ~200ms of connection instead of waiting for random
+  /// selection in probe rounds.
+  Future<void> probeNewPeer(NodeId peerId) async {
+    final peer = peerRegistry.getPeer(peerId);
+    if (peer == null) return;
+
+    final sequence = _nextSequence++;
+    final pending = _trackPendingPing(peerId, sequence);
+
+    await _sendPing(peerId, sequence);
+
+    final timeout = effectivePingTimeoutForPeer(peerId);
+    final gotAck = await _awaitAckWithTimeout(pending, sequence, timeout);
+
+    _cleanupPendingPing(sequence);
+
+    if (gotAck) {
+      _log('SWIM: probeNewPeer got Ack from $peerId');
+    } else {
+      _log('SWIM: probeNewPeer timed out for $peerId (no failure recorded)');
+    }
   }
 
   /// Checks peer health and transitions to suspected if threshold exceeded.

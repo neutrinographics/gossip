@@ -222,21 +222,46 @@ class GossipEngine {
   /// Whether gossip rounds are currently active.
   bool get isRunning => _isRunning;
 
-  /// Returns the effective gossip interval based on RTT measurements.
+  /// Default conservative gossip interval when no per-peer RTT data exists.
+  static const Duration _defaultConservativeInterval = Duration(
+    milliseconds: 1000,
+  );
+
+  /// Returns the effective gossip interval based on per-peer RTT measurements.
   ///
   /// If a static [gossipInterval] was provided at construction, uses that value.
-  /// Otherwise uses the RTT tracker's smoothed RTT * 2 (time for request + response),
-  /// clamped to [_minGossipInterval, _maxGossipInterval].
+  /// Otherwise computes from the minimum per-peer smoothed RTT across all
+  /// reachable peers, multiplied by [_gossipIntervalMultiplier] (2x).
   ///
-  /// Before any RTT samples are collected, uses the initial conservative
-  /// estimate (1 second RTT * 2 = 2 seconds).
+  /// This ensures gossip runs at the rate of the fastest link. A slow peer
+  /// doesn't hold back the whole mesh — per-peer probe timeouts in
+  /// FailureDetector prevent false SWIM suspicion for slow peers.
+  ///
+  /// Falls back to a conservative default (1000ms) when no peers have
+  /// RTT estimates yet.
   Duration get effectiveGossipInterval {
     // Use static interval if explicitly provided (for backward compatibility)
     if (_staticIntervalProvided || _rttTracker == null) {
       return _staticGossipInterval;
     }
-    final rtt = _rttTracker.estimate.smoothedRtt;
-    final computed = rtt * _gossipIntervalMultiplier;
+
+    // Find minimum per-peer SRTT across reachable peers
+    Duration? minSrtt;
+    for (final peer in peerRegistry.reachablePeers) {
+      final rttEstimate = peer.metrics.rttEstimate;
+      if (rttEstimate != null) {
+        if (minSrtt == null || rttEstimate.smoothedRtt < minSrtt) {
+          minSrtt = rttEstimate.smoothedRtt;
+        }
+      }
+    }
+
+    // Fall back to conservative default when no peers have RTT estimates
+    if (minSrtt == null) {
+      return _defaultConservativeInterval;
+    }
+
+    final computed = minSrtt * _gossipIntervalMultiplier;
     if (computed < _minGossipInterval) return _minGossipInterval;
     if (computed > _maxGossipInterval) return _maxGossipInterval;
     return computed;

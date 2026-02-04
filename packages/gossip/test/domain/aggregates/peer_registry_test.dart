@@ -454,5 +454,78 @@ void main() {
         },
       );
     });
+
+    group('recordPeerRtt', () {
+      test('records RTT sample on known peer', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+        final peerId = NodeId('peer1');
+        registry.addPeer(peerId, occurredAt: DateTime.now());
+
+        registry.recordPeerRtt(peerId, const Duration(milliseconds: 150));
+
+        final peer = registry.getPeer(peerId)!;
+        expect(peer.metrics.rttEstimate, isNotNull);
+        expect(
+          peer.metrics.rttEstimate!.smoothedRtt,
+          equals(const Duration(milliseconds: 150)),
+        );
+      });
+
+      test('accumulates multiple RTT samples', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+        final peerId = NodeId('peer1');
+        registry.addPeer(peerId, occurredAt: DateTime.now());
+
+        registry.recordPeerRtt(peerId, const Duration(milliseconds: 100));
+        registry.recordPeerRtt(peerId, const Duration(milliseconds: 200));
+
+        final peer = registry.getPeer(peerId)!;
+        expect(peer.metrics.rttEstimate, isNotNull);
+        // EWMA: after first=100ms, second=200ms
+        expect(
+          peer.metrics.rttEstimate!.smoothedRtt.inMilliseconds,
+          closeTo(112, 2),
+        );
+      });
+
+      test('emits PeerOperationSkipped for unknown peer', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+
+        registry.recordPeerRtt(
+          NodeId('unknown'),
+          const Duration(milliseconds: 100),
+        );
+
+        expect(
+          registry.uncommittedEvents,
+          contains(isA<PeerOperationSkipped>()),
+        );
+      });
+
+      test('does not affect other peers', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+        final peer1 = NodeId('peer1');
+        final peer2 = NodeId('peer2');
+        registry.addPeer(peer1, occurredAt: DateTime.now());
+        registry.addPeer(peer2, occurredAt: DateTime.now());
+
+        registry.recordPeerRtt(peer1, const Duration(milliseconds: 150));
+
+        expect(registry.getPeer(peer1)!.metrics.rttEstimate, isNotNull);
+        expect(registry.getPeer(peer2)!.metrics.rttEstimate, isNull);
+      });
+    });
   });
 }

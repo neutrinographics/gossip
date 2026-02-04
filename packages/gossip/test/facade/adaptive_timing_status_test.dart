@@ -1,3 +1,5 @@
+import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/domain/value_objects/rtt_estimate.dart';
 import 'package:gossip/src/facade/adaptive_timing_status.dart';
 import 'package:test/test.dart';
 
@@ -48,6 +50,50 @@ void main() {
 
       expect(status.rttSampleCount, equals(0));
       expect(status.hasRttSamples, isFalse);
+    });
+
+    test('perPeerRtt defaults to empty map', () {
+      final status = AdaptiveTimingStatus(
+        smoothedRtt: const Duration(seconds: 1),
+        rttVariance: const Duration(milliseconds: 500),
+        rttSampleCount: 0,
+        hasRttSamples: false,
+        effectiveGossipInterval: const Duration(seconds: 2),
+        effectivePingTimeout: const Duration(seconds: 3),
+        effectiveProbeInterval: const Duration(seconds: 9),
+        totalPendingSendCount: 0,
+      );
+
+      expect(status.perPeerRtt, isEmpty);
+    });
+
+    test('perPeerRtt stores per-peer RTT estimates', () {
+      final fastPeer = NodeId('fast');
+      final slowPeer = NodeId('slow');
+      final fastRtt = RttEstimate(
+        smoothedRtt: const Duration(milliseconds: 100),
+        rttVariance: const Duration(milliseconds: 25),
+      );
+      final slowRtt = RttEstimate(
+        smoothedRtt: const Duration(milliseconds: 3000),
+        rttVariance: const Duration(milliseconds: 500),
+      );
+
+      final status = AdaptiveTimingStatus(
+        smoothedRtt: const Duration(milliseconds: 100),
+        rttVariance: const Duration(milliseconds: 25),
+        rttSampleCount: 10,
+        hasRttSamples: true,
+        effectiveGossipInterval: const Duration(milliseconds: 200),
+        effectivePingTimeout: const Duration(milliseconds: 200),
+        effectiveProbeInterval: const Duration(milliseconds: 600),
+        totalPendingSendCount: 0,
+        perPeerRtt: {fastPeer: fastRtt, slowPeer: slowRtt},
+      );
+
+      expect(status.perPeerRtt, hasLength(2));
+      expect(status.perPeerRtt[fastPeer], equals(fastRtt));
+      expect(status.perPeerRtt[slowPeer], equals(slowRtt));
     });
   });
 }

@@ -433,10 +433,12 @@ void main() {
 
       test('uses RTT-derived interval when no static interval provided', () {
         final localNode = NodeId('local');
+        final peer = NodeId('peer');
         final registry = PeerRegistry(
           localNode: localNode,
           initialIncarnation: 0,
         );
+        registry.addPeer(peer, occurredAt: DateTime.now());
         final entryRepo = InMemoryEntryRepository();
         final timerPort = InMemoryTimePort();
         final messagePort = InMemoryMessagePort(
@@ -454,14 +456,17 @@ void main() {
           rttTracker: rttTracker,
         );
 
-        // Initial RTT is 1 second, so interval should be 2 seconds
-        expect(engine.effectiveGossipInterval, equals(Duration(seconds: 2)));
+        // No per-peer RTT yet, should use conservative default (1000ms)
+        expect(
+          engine.effectiveGossipInterval,
+          equals(Duration(milliseconds: 1000)),
+        );
 
-        // Record a sample with 200ms RTT
-        rttTracker.recordSample(Duration(milliseconds: 200));
+        // Record a per-peer RTT sample of 200ms
+        registry.recordPeerRtt(peer, Duration(milliseconds: 200));
 
-        // After one sample, EWMA smoothed RTT is ~200ms
-        // Gossip interval = RTT * 2 = ~400ms
+        // After one sample, per-peer SRTT is 200ms
+        // Gossip interval = minSRTT * 2 = 400ms
         final interval = engine.effectiveGossipInterval;
         expect(interval.inMilliseconds, greaterThanOrEqualTo(300));
         expect(interval.inMilliseconds, lessThanOrEqualTo(500));
@@ -469,10 +474,12 @@ void main() {
 
       test('clamps RTT-derived interval to minimum', () {
         final localNode = NodeId('local');
+        final peer = NodeId('peer');
         final registry = PeerRegistry(
           localNode: localNode,
           initialIncarnation: 0,
         );
+        registry.addPeer(peer, occurredAt: DateTime.now());
         final entryRepo = InMemoryEntryRepository();
         final timerPort = InMemoryTimePort();
         final messagePort = InMemoryMessagePort(
@@ -490,9 +497,9 @@ void main() {
           rttTracker: rttTracker,
         );
 
-        // Record very low RTT samples to drive EWMA down
+        // Record very low per-peer RTT samples to drive EWMA down
         for (var i = 0; i < 20; i++) {
-          rttTracker.recordSample(Duration(milliseconds: 10));
+          registry.recordPeerRtt(peer, Duration(milliseconds: 10));
         }
 
         // Should be clamped to minimum (100ms)
@@ -504,10 +511,12 @@ void main() {
 
       test('clamps RTT-derived interval to maximum', () {
         final localNode = NodeId('local');
+        final peer = NodeId('peer');
         final registry = PeerRegistry(
           localNode: localNode,
           initialIncarnation: 0,
         );
+        registry.addPeer(peer, occurredAt: DateTime.now());
         final entryRepo = InMemoryEntryRepository();
         final timerPort = InMemoryTimePort();
         final messagePort = InMemoryMessagePort(
@@ -525,9 +534,9 @@ void main() {
           rttTracker: rttTracker,
         );
 
-        // Record very high RTT samples
+        // Record very high per-peer RTT samples
         for (var i = 0; i < 20; i++) {
-          rttTracker.recordSample(Duration(seconds: 10));
+          registry.recordPeerRtt(peer, Duration(seconds: 10));
         }
 
         // Should be clamped to maximum (5 seconds)
@@ -561,6 +570,123 @@ void main() {
           engine.effectiveGossipInterval,
           equals(Duration(milliseconds: 500)),
         );
+      });
+
+      test(
+        'computes interval from minimum per-peer SRTT when peers have RTT estimates',
+        () {
+          final localNode = NodeId('local');
+          final fastPeer = NodeId('fast');
+          final slowPeer = NodeId('slow');
+          final registry = PeerRegistry(
+            localNode: localNode,
+            initialIncarnation: 0,
+          );
+          registry.addPeer(fastPeer, occurredAt: DateTime.now());
+          registry.addPeer(slowPeer, occurredAt: DateTime.now());
+
+          // Seed per-peer RTT: fast=100ms, slow=3000ms
+          registry.recordPeerRtt(fastPeer, const Duration(milliseconds: 100));
+          registry.recordPeerRtt(slowPeer, const Duration(milliseconds: 3000));
+
+          final entryRepo = InMemoryEntryRepository();
+          final timerPort = InMemoryTimePort();
+          final messagePort = InMemoryMessagePort(
+            localNode,
+            InMemoryMessageBus(),
+          );
+
+          final engine = GossipEngine(
+            localNode: localNode,
+            peerRegistry: registry,
+            entryRepository: entryRepo,
+            timePort: timerPort,
+            messagePort: messagePort,
+            rttTracker: RttTracker(), // Enable adaptive mode
+          );
+
+          // Interval should be based on the FAST peer (100ms * 2 = 200ms)
+          // but clamped to minimum 100ms
+          final interval = engine.effectiveGossipInterval;
+          // Should be much less than what the slow peer would produce (6000ms)
+          expect(interval.inMilliseconds, lessThan(1000));
+        },
+      );
+
+      test(
+        'falls back to conservative default when no peers have RTT estimates',
+        () {
+          final localNode = NodeId('local');
+          final peer = NodeId('peer');
+          final registry = PeerRegistry(
+            localNode: localNode,
+            initialIncarnation: 0,
+          );
+          registry.addPeer(peer, occurredAt: DateTime.now());
+          // No RTT recorded for peer
+
+          final entryRepo = InMemoryEntryRepository();
+          final timerPort = InMemoryTimePort();
+          final messagePort = InMemoryMessagePort(
+            localNode,
+            InMemoryMessageBus(),
+          );
+
+          final engine = GossipEngine(
+            localNode: localNode,
+            peerRegistry: registry,
+            entryRepository: entryRepo,
+            timePort: timerPort,
+            messagePort: messagePort,
+            rttTracker: RttTracker(), // Enable adaptive mode
+          );
+
+          // Should use conservative default (1000ms)
+          expect(
+            engine.effectiveGossipInterval.inMilliseconds,
+            greaterThanOrEqualTo(1000),
+          );
+        },
+      );
+
+      test('one slow peer does not drag gossip interval up', () {
+        final localNode = NodeId('local');
+        final fastPeer1 = NodeId('fast1');
+        final fastPeer2 = NodeId('fast2');
+        final slowPeer = NodeId('slow');
+        final registry = PeerRegistry(
+          localNode: localNode,
+          initialIncarnation: 0,
+        );
+        registry.addPeer(fastPeer1, occurredAt: DateTime.now());
+        registry.addPeer(fastPeer2, occurredAt: DateTime.now());
+        registry.addPeer(slowPeer, occurredAt: DateTime.now());
+
+        // Two fast peers + one very slow peer
+        registry.recordPeerRtt(fastPeer1, const Duration(milliseconds: 150));
+        registry.recordPeerRtt(fastPeer2, const Duration(milliseconds: 200));
+        registry.recordPeerRtt(slowPeer, const Duration(milliseconds: 5000));
+
+        final entryRepo = InMemoryEntryRepository();
+        final timerPort = InMemoryTimePort();
+        final messagePort = InMemoryMessagePort(
+          localNode,
+          InMemoryMessageBus(),
+        );
+
+        final engine = GossipEngine(
+          localNode: localNode,
+          peerRegistry: registry,
+          entryRepository: entryRepo,
+          timePort: timerPort,
+          messagePort: messagePort,
+          rttTracker: RttTracker(), // Enable adaptive mode
+        );
+
+        // Interval should track the fastest peer (~150ms * 2 = 300ms)
+        // NOT the slow peer (5000ms * 2 = 10000ms)
+        final interval = engine.effectiveGossipInterval;
+        expect(interval.inMilliseconds, lessThan(1000));
       });
     });
 

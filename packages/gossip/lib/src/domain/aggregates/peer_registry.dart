@@ -303,6 +303,23 @@ class PeerRegistry {
     _peers[id] = peer.copyWith(metrics: peer.metrics.recordSent(bytes));
   }
 
+  /// Records an RTT sample for a peer.
+  ///
+  /// Updates the peer's per-peer RTT estimate using EWMA smoothing.
+  /// Used for per-peer probe timeouts in failure detection.
+  ///
+  /// Emits [PeerOperationSkipped] if peer doesn't exist.
+  void recordPeerRtt(NodeId id, Duration sample) {
+    final peer = _peers[id];
+    if (peer == null) {
+      _addEvent(
+        PeerOperationSkipped(id, 'recordPeerRtt', occurredAt: DateTime.now()),
+      );
+      return;
+    }
+    _peers[id] = peer.copyWith(metrics: peer.metrics.recordRttSample(sample));
+  }
+
   /// Updates a peer's incarnation number from a received message.
   ///
   /// If the new incarnation is higher than the current one:
