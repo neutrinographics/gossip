@@ -44,7 +44,6 @@ void main() {
         messagePort: localPort,
         rttTracker: rttTracker,
         pingTimeout: const Duration(milliseconds: 500),
-        indirectPingTimeout: const Duration(milliseconds: 500),
       );
     });
 

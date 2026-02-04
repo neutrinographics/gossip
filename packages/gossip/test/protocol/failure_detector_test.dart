@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
-import 'package:gossip/src/domain/entities/peer.dart';
 import 'package:gossip/src/domain/events/domain_event.dart' show PeerStatus;
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
@@ -121,7 +120,6 @@ void main() {
         timePort: timer,
         messagePort: localPort,
         pingTimeout: const Duration(milliseconds: 500),
-        indirectPingTimeout: const Duration(milliseconds: 500),
       );
 
       // Capture the ping message when it arrives
@@ -235,7 +233,6 @@ void main() {
           timePort: timer,
           messagePort: localPort,
           pingTimeout: Duration(milliseconds: 500),
-          indirectPingTimeout: Duration(milliseconds: 500),
           random: seededRandom,
         );
 
@@ -340,7 +337,6 @@ void main() {
           timePort: timer,
           messagePort: localPort,
           pingTimeout: Duration(milliseconds: 500),
-          indirectPingTimeout: Duration(milliseconds: 500),
         );
 
         // Start listening so detector can receive Acks
@@ -420,7 +416,6 @@ void main() {
         timePort: timer,
         messagePort: localPort,
         pingTimeout: Duration(milliseconds: 500),
-        indirectPingTimeout: Duration(milliseconds: 500),
       );
 
       // Start probe round (don't await)

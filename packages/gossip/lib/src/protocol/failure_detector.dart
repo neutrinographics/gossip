@@ -132,9 +132,6 @@ class FailureDetector {
   /// Timeout for direct ping response.
   final Duration _pingTimeout;
 
-  /// Timeout for indirect ping response (via intermediaries).
-  final Duration _indirectPingTimeout;
-
   /// Interval between probe rounds.
   final Duration _probeInterval;
 
@@ -153,13 +150,10 @@ class FailureDetector {
     required this.messagePort,
     this.onError,
     Duration? pingTimeout,
-    Duration? indirectPingTimeout,
     Duration? probeInterval,
     Random? random,
     RttTracker? rttTracker,
   }) : _pingTimeout = pingTimeout ?? const Duration(milliseconds: 500),
-       _indirectPingTimeout =
-           indirectPingTimeout ?? const Duration(milliseconds: 500),
        _probeInterval = probeInterval ?? const Duration(milliseconds: 1000),
        _random = random ?? Random(),
        _rttTracker = rttTracker ?? RttTracker(),
@@ -363,8 +357,6 @@ class FailureDetector {
       final protocolMessage = _codec.decode(message.bytes);
 
       if (protocolMessage is Ping) {
-        _swimMessagesReceived++;
-        _pingsReceived++;
         _log(
           'SWIM: Received Ping from ${message.sender} seq=${protocolMessage.sequence}',
         );
@@ -373,15 +365,12 @@ class FailureDetector {
         await _safeSend(message.sender, ackBytes, 'Ack');
         _log('SWIM: Sent Ack to ${message.sender} seq=${ack.sequence}');
       } else if (protocolMessage is Ack) {
-        _swimMessagesReceived++;
         _acksReceived++;
         _log(
           'SWIM: Received Ack from ${protocolMessage.sender} seq=${protocolMessage.sequence}',
         );
         handleAck(protocolMessage, timestampMs: timePort.nowMs);
       } else if (protocolMessage is PingReq) {
-        _swimMessagesReceived++;
-        _pingReqsReceived++;
         _log(
           'SWIM: Received PingReq from ${message.sender} target=${protocolMessage.target} seq=${protocolMessage.sequence}',
         );
@@ -402,12 +391,8 @@ class FailureDetector {
   }
 
   // SWIM message tracking for diagnostics
-  int _swimMessagesReceived = 0;
-  int _pingsReceived = 0;
   int _acksReceived = 0;
-  int _pingReqsReceived = 0;
   int _pingsSent = 0;
-  int _acksSent = 0;
 
   void _log(String message) {
     // Log via error callback for now (could add dedicated log callback later)
