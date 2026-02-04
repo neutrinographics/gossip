@@ -6,6 +6,7 @@ import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
 import 'package:gossip/src/infrastructure/ports/message_port.dart';
 import 'package:gossip/src/protocol/messages/ack.dart';
 import 'package:gossip/src/protocol/messages/ping.dart';
+import 'package:gossip/src/protocol/messages/ping_req.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
 import 'package:test/test.dart';
 
@@ -251,6 +252,82 @@ void main() {
       },
     );
 
+    test('indirect ping success prevents probe failure', () async {
+      final h = FailureDetectorTestHarness(
+        pingTimeout: const Duration(milliseconds: 500),
+      );
+      final target = h.addPeer('target');
+      final intermediary = h.addPeer('intermediary');
+
+      h.startListening();
+
+      // Listen on both peers to detect which gets the direct Ping
+      Ping? targetPing;
+      final targetSub = target.port.incoming.listen((msg) {
+        final decoded = h.codec.decode(msg.bytes);
+        if (decoded is Ping) targetPing = decoded;
+      });
+      final intermediarySub = intermediary.port.incoming.listen((msg) {
+        final decoded = h.codec.decode(msg.bytes);
+        if (decoded is PingReq) {
+          // Intermediary responds to PingReq with Ack (simulating successful
+          // indirect probe: intermediary pinged target, got Ack, forwards it)
+          final ack = Ack(sender: intermediary.id, sequence: decoded.sequence);
+          intermediary.port.send(h.localNode, h.codec.encode(ack));
+        }
+      });
+
+      final probeRoundFuture = h.detector.performProbeRound();
+      await h.flush();
+
+      // Determine which peer was the probe target
+      final TestPeer probeTarget;
+      if (targetPing != null) {
+        probeTarget = target;
+      } else {
+        probeTarget = intermediary;
+        // Wire up target (acting as intermediary) to respond to PingReqs
+        await targetSub.cancel();
+        target.port.incoming.listen((msg) {
+          final decoded = h.codec.decode(msg.bytes);
+          if (decoded is PingReq) {
+            final ack = Ack(sender: target.id, sequence: decoded.sequence);
+            target.port.send(h.localNode, h.codec.encode(ack));
+          }
+        });
+      }
+
+      // Let direct ping timeout expire → triggers indirect ping phase
+      await h.timePort.advance(const Duration(milliseconds: 501));
+      await h.flush(3);
+
+      // Advance past indirect timeout so probe completes
+      await h.timePort.advance(const Duration(milliseconds: 501));
+      await probeRoundFuture;
+
+      final probed = h.peerRegistry.getPeer(probeTarget.id)!;
+      expect(
+        probed.failedProbeCount,
+        equals(0),
+        reason: 'Indirect Ack from intermediary should prevent probe failure',
+      );
+      expect(probed.status, equals(PeerStatus.reachable));
+
+      await intermediarySub.cancel();
+      await targetSub.cancel();
+      h.stopListening();
+    });
+
+    test('performProbeRound with no peers returns immediately', () async {
+      final h = FailureDetectorTestHarness(
+        pingTimeout: const Duration(milliseconds: 500),
+      );
+      // No peers added
+
+      // Should complete without error or delay
+      await h.detector.performProbeRound();
+    });
+
     test('peer removed during active probe does not crash', () async {
       final h = FailureDetectorTestHarness(
         pingTimeout: const Duration(milliseconds: 500),
@@ -354,6 +431,47 @@ void main() {
       final h = FailureDetectorTestHarness();
       h.detector.checkPeerHealth(NodeId('unknown'), occurredAt: DateTime.now());
     });
+
+    test('suspected peer recovers when it responds to probe', () async {
+      final h = FailureDetectorTestHarness(
+        pingTimeout: const Duration(milliseconds: 500),
+        failureThreshold: 3,
+      );
+      final peer = h.addPeer('peer1');
+
+      h.startListening();
+
+      // Drive peer to suspected state via 3 failed probes
+      for (var i = 0; i < 3; i++) {
+        await h.probeWithTimeout();
+      }
+
+      final suspectedPeer = h.peerRegistry.getPeer(peer.id)!;
+      expect(suspectedPeer.status, equals(PeerStatus.suspected));
+      expect(suspectedPeer.failedProbeCount, equals(3));
+
+      // Suspected peer is still selected for probing (via probablePeers)
+      final selected = h.detector.selectRandomPeer();
+      expect(selected, isNotNull);
+      expect(selected!.id, equals(peer.id));
+
+      // Peer responds to probe → recovers
+      await h.probeWithAck(peer, afterDelay: const Duration(milliseconds: 100));
+
+      final recoveredPeer = h.peerRegistry.getPeer(peer.id)!;
+      expect(
+        recoveredPeer.status,
+        equals(PeerStatus.reachable),
+        reason: 'Suspected peer should recover to reachable after Ack',
+      );
+      expect(
+        recoveredPeer.failedProbeCount,
+        equals(0),
+        reason: 'Failed probe count should reset on recovery',
+      );
+
+      h.stopListening();
+    });
   });
 
   // ---------------------------------------------------------------------------
@@ -434,6 +552,78 @@ void main() {
 
       await peerSub.cancel();
       h.stopListening();
+    });
+
+    test('stop() during active probe does not crash', () async {
+      final h = FailureDetectorTestHarness(
+        pingTimeout: const Duration(milliseconds: 500),
+      );
+      h.addPeer('peer1');
+
+      // Start a probe but stop the detector mid-flight
+      final probeRoundFuture = h.detector.performProbeRound();
+      await h.flush();
+
+      h.detector.stop();
+      expect(h.detector.isRunning, isFalse);
+
+      // Let the probe's timeouts resolve
+      await h.advancePastTimeout();
+      await probeRoundFuture;
+
+      // Detector should remain stopped, no crash
+      expect(h.detector.isRunning, isFalse);
+    });
+
+    test('concurrent performProbeRound calls do not crash', () async {
+      final h = FailureDetectorTestHarness(
+        pingTimeout: const Duration(milliseconds: 500),
+      );
+      h.addPeer('peer1');
+
+      // Launch two probe rounds concurrently
+      final probe1 = h.detector.performProbeRound();
+      final probe2 = h.detector.performProbeRound();
+      await h.flush();
+
+      // Let both probes timeout
+      await h.advancePastTimeout();
+      await probe1;
+      await probe2;
+
+      // Both complete without crash; failures may be recorded
+      final peer = h.peerRegistry.getPeer(NodeId('peer1'))!;
+      expect(peer.failedProbeCount, greaterThanOrEqualTo(1));
+    });
+
+    test('probe scheduling continues after error', () async {
+      final h = FailureDetectorTestHarness(
+        pingTimeout: const Duration(milliseconds: 100),
+        probeInterval: const Duration(milliseconds: 200),
+      );
+      h.addPeer('peer1');
+
+      h.detector.start();
+
+      // First probe interval fires → probe round runs (and fails/times out)
+      await h.timePort.advance(const Duration(milliseconds: 201));
+      await h.flush();
+      await h.timePort.advance(const Duration(milliseconds: 101));
+      await h.timePort.advance(const Duration(milliseconds: 101));
+      await h.flush();
+
+      // Second probe interval — scheduling should have continued
+      await h.timePort.advance(const Duration(milliseconds: 201));
+      await h.flush();
+
+      // Verify the detector is still running and scheduling probes
+      expect(h.detector.isRunning, isTrue);
+      expect(h.timePort.pendingDelayCount, greaterThan(0));
+
+      // Clean up
+      await h.timePort.advance(const Duration(milliseconds: 101));
+      await h.timePort.advance(const Duration(milliseconds: 101));
+      h.detector.stop();
     });
 
     test('restart after stop resumes probing', () async {

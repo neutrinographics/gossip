@@ -8,6 +8,7 @@ import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
 import 'package:gossip/src/protocol/failure_detector.dart';
 import 'package:gossip/src/protocol/messages/ack.dart';
 import 'package:gossip/src/protocol/messages/ping.dart';
+import 'package:gossip/src/protocol/messages/ping_req.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
 import 'package:test/test.dart';
 
@@ -99,6 +100,93 @@ void main() {
       await targetSub.cancel();
       h.stopListening();
     });
+
+    test(
+      'selects correct number of intermediaries based on peer count',
+      () async {
+        // Scenario 1: 2 peers total → 1 intermediary available
+        final h1 = FailureDetectorTestHarness(
+          localName: 'local1',
+          pingTimeout: const Duration(milliseconds: 500),
+        );
+        final peers1 = [h1.addPeer('peerA'), h1.addPeer('peerB')];
+
+        h1.startListening();
+
+        final captures1 = [
+          h1.captureMessages(peers1[0]),
+          h1.captureMessages(peers1[1]),
+        ];
+
+        final probe1 = h1.detector.performProbeRound();
+        await h1.flush();
+
+        // Direct ping timeout → indirect phase
+        await h1.timePort.advance(const Duration(milliseconds: 501));
+        await h1.flush();
+
+        // One peer got the Ping (target), the other should get PingReq
+        var totalPingReqs1 = 0;
+        for (final (msgs, _) in captures1) {
+          totalPingReqs1 += msgs.whereType<PingReq>().length;
+        }
+        expect(
+          totalPingReqs1,
+          equals(1),
+          reason: 'With 2 peers, exactly 1 intermediary should receive PingReq',
+        );
+
+        await h1.timePort.advance(const Duration(milliseconds: 501));
+        await probe1;
+        for (final (_, sub) in captures1) {
+          await sub.cancel();
+        }
+        h1.stopListening();
+
+        // Scenario 2: 4 peers total → 3 intermediaries (capped at 3)
+        final h3 = FailureDetectorTestHarness(
+          localName: 'local3',
+          pingTimeout: const Duration(milliseconds: 500),
+        );
+        final peers3 = [
+          h3.addPeer('peer1'),
+          h3.addPeer('peer2'),
+          h3.addPeer('peer3'),
+          h3.addPeer('peer4'),
+        ];
+
+        h3.startListening();
+
+        final captures3 = <(List<dynamic>, dynamic)>[];
+        for (final p in peers3) {
+          captures3.add(h3.captureMessages(p));
+        }
+
+        final probe3 = h3.detector.performProbeRound();
+        await h3.flush();
+
+        await h3.timePort.advance(const Duration(milliseconds: 501));
+        await h3.flush();
+
+        // 3 of the 4 peers (all except the target) should get PingReqs
+        var totalPingReqs3 = 0;
+        for (final (msgs, _) in captures3) {
+          totalPingReqs3 += msgs.whereType<PingReq>().length;
+        }
+        expect(
+          totalPingReqs3,
+          equals(3),
+          reason: 'With 4 peers, 3 intermediaries should receive PingReq',
+        );
+
+        await h3.timePort.advance(const Duration(milliseconds: 501));
+        await probe3;
+        for (final (_, sub) in captures3) {
+          await sub.cancel();
+        }
+        h3.stopListening();
+      },
+    );
 
     test(
       'PingReq with colliding sequence does not overwrite local pending ping',

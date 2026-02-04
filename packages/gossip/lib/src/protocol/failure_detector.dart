@@ -122,7 +122,6 @@ class FailureDetector {
   // ---------------------------------------------------------------------------
 
   bool _isRunning = false;
-  TimerHandle? _timerHandle;
   int _nextSequence = 1;
   StreamSubscription<IncomingMessage>? _messageSubscription;
   final Map<int, _PendingPing> _pendingPings = {};
@@ -192,8 +191,6 @@ class FailureDetector {
   void stop() {
     if (!_isRunning) return;
     _isRunning = false;
-    _timerHandle?.cancel();
-    _timerHandle = null;
   }
 
   /// Starts listening to incoming SWIM protocol messages.
