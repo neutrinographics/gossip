@@ -23,6 +23,7 @@ import '../infrastructure/ports/message_port.dart';
 import '../infrastructure/ports/time_port.dart';
 import '../protocol/gossip_engine.dart';
 import '../protocol/failure_detector.dart';
+import 'adaptive_timing_status.dart';
 import 'channel.dart';
 import 'coordinator_config.dart';
 import 'health_status.dart';
@@ -510,6 +511,30 @@ class Coordinator {
       incarnation: _peerRegistry.localIncarnation,
       resourceUsage: resourceUsage,
       reachablePeerCount: _peerRegistry.reachablePeers.length,
+    );
+  }
+
+  /// Returns the current adaptive timing status, or null if adaptive
+  /// timing is not active (no message/time ports provided).
+  ///
+  /// Provides a snapshot of RTT estimates, effective protocol intervals,
+  /// and transport backpressure state for observability.
+  AdaptiveTimingStatus? getAdaptiveTimingStatus() {
+    if (_gossipEngine == null || _failureDetector == null) {
+      return null;
+    }
+
+    final rttTracker = _failureDetector!.rttTracker;
+
+    return AdaptiveTimingStatus(
+      smoothedRtt: rttTracker.smoothedRtt,
+      rttVariance: rttTracker.rttVariance,
+      rttSampleCount: rttTracker.sampleCount,
+      hasRttSamples: rttTracker.hasReceivedSamples,
+      effectiveGossipInterval: _gossipEngine!.effectiveGossipInterval,
+      effectivePingTimeout: _failureDetector!.effectivePingTimeout,
+      effectiveProbeInterval: _failureDetector!.effectiveProbeInterval,
+      totalPendingSendCount: _gossipEngine!.messagePort.totalPendingSendCount,
     );
   }
 

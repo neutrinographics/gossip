@@ -53,4 +53,8 @@ class SyncService {
 
   /// Gets resource usage statistics.
   Future<ResourceUsage> getResourceUsage() => _coordinator.getResourceUsage();
+
+  /// Gets adaptive timing status, or null if not active.
+  AdaptiveTimingStatus? getAdaptiveTimingStatus() =>
+      _coordinator.getAdaptiveTimingStatus();
 }

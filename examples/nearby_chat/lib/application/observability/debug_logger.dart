@@ -434,6 +434,7 @@ class DebugLogger {
     if (logLevel != DebugLogLevel.verbose) return;
 
     _logSyncMetrics();
+    _logAdaptiveTimingMetrics();
     _logConnectionMetrics();
     _logPeerMetrics();
   }
@@ -463,6 +464,44 @@ class DebugLogger {
     } catch (e) {
       _logError('METRICS', 'Failed to get sync metrics: $e');
     }
+  }
+
+  void _logAdaptiveTimingMetrics() {
+    final timing = _syncService.getAdaptiveTimingStatus();
+    _logVerbose('METRICS', '=== Adaptive Timing ===');
+    if (timing == null) {
+      _logVerbose('METRICS', '  Not active (local-only mode)');
+      return;
+    }
+
+    _logVerbose(
+      'METRICS',
+      '  Smoothed RTT: ${timing.smoothedRtt.inMilliseconds}ms',
+    );
+    _logVerbose(
+      'METRICS',
+      '  RTT variance: ${timing.rttVariance.inMilliseconds}ms',
+    );
+    _logVerbose('METRICS', '  RTT samples: ${timing.rttSampleCount}');
+    _logVerbose(
+      'METRICS',
+      '  Effective gossip interval: '
+          '${timing.effectiveGossipInterval.inMilliseconds}ms',
+    );
+    _logVerbose(
+      'METRICS',
+      '  Effective ping timeout: '
+          '${timing.effectivePingTimeout.inMilliseconds}ms',
+    );
+    _logVerbose(
+      'METRICS',
+      '  Effective probe interval: '
+          '${timing.effectiveProbeInterval.inMilliseconds}ms',
+    );
+    _logVerbose(
+      'METRICS',
+      '  Pending send count: ${timing.totalPendingSendCount}',
+    );
   }
 
   void _logConnectionMetrics() {

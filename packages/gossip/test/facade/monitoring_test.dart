@@ -1,9 +1,11 @@
 import 'dart:typed_data';
-import 'package:gossip/src/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/facade/coordinator.dart';
 import 'package:gossip/src/facade/sync_state.dart';
+import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
+import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_channel_repository.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_peer_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
@@ -231,5 +233,71 @@ void main() {
         expect(health.isHealthy, isTrue);
       },
     );
+  });
+
+  group('AdaptiveTimingStatus', () {
+    test('returns null in local-only mode (no ports)', () async {
+      final coordinator = await Coordinator.create(
+        localNode: NodeId('local'),
+        channelRepository: InMemoryChannelRepository(),
+        peerRepository: InMemoryPeerRepository(),
+        entryRepository: InMemoryEntryRepository(),
+      );
+
+      final timing = coordinator.getAdaptiveTimingStatus();
+
+      expect(timing, isNull);
+    });
+
+    test('returns non-null when network sync is configured', () async {
+      final bus = InMemoryMessageBus();
+      final coordinator = await Coordinator.create(
+        localNode: NodeId('local'),
+        channelRepository: InMemoryChannelRepository(),
+        peerRepository: InMemoryPeerRepository(),
+        entryRepository: InMemoryEntryRepository(),
+        messagePort: InMemoryMessagePort(NodeId('local'), bus),
+        timerPort: InMemoryTimePort(),
+      );
+
+      final timing = coordinator.getAdaptiveTimingStatus();
+
+      expect(timing, isNotNull);
+    });
+
+    test('reports initial conservative defaults before RTT samples', () async {
+      final bus = InMemoryMessageBus();
+      final coordinator = await Coordinator.create(
+        localNode: NodeId('local'),
+        channelRepository: InMemoryChannelRepository(),
+        peerRepository: InMemoryPeerRepository(),
+        entryRepository: InMemoryEntryRepository(),
+        messagePort: InMemoryMessagePort(NodeId('local'), bus),
+        timerPort: InMemoryTimePort(),
+      );
+
+      final timing = coordinator.getAdaptiveTimingStatus()!;
+
+      expect(timing.smoothedRtt, equals(const Duration(seconds: 1)));
+      expect(timing.rttVariance, equals(const Duration(milliseconds: 500)));
+      expect(timing.rttSampleCount, equals(0));
+      expect(timing.hasRttSamples, isFalse);
+    });
+
+    test('reports zero pending send count when idle', () async {
+      final bus = InMemoryMessageBus();
+      final coordinator = await Coordinator.create(
+        localNode: NodeId('local'),
+        channelRepository: InMemoryChannelRepository(),
+        peerRepository: InMemoryPeerRepository(),
+        entryRepository: InMemoryEntryRepository(),
+        messagePort: InMemoryMessagePort(NodeId('local'), bus),
+        timerPort: InMemoryTimePort(),
+      );
+
+      final timing = coordinator.getAdaptiveTimingStatus()!;
+
+      expect(timing.totalPendingSendCount, equals(0));
+    });
   });
 }

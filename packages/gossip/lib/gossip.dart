@@ -82,6 +82,7 @@
 library;
 
 // Facade layer (main public API)
+export 'src/facade/adaptive_timing_status.dart';
 export 'src/facade/coordinator.dart';
 export 'src/facade/coordinator_config.dart';
 export 'src/facade/channel.dart';
