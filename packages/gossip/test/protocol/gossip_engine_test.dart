@@ -10,7 +10,7 @@ import 'package:gossip/src/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/domain/interfaces/retention_policy.dart';
 import 'package:gossip/src/domain/errors/sync_error.dart';
-import 'package:gossip/src/domain/services/rtt_tracker.dart';
+
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
@@ -411,8 +411,6 @@ void main() {
           localNode,
           InMemoryMessageBus(),
         );
-        final rttTracker = RttTracker();
-
         // Provide explicit gossipInterval
         final engine = GossipEngine(
           localNode: localNode,
@@ -421,10 +419,10 @@ void main() {
           timePort: timerPort,
           messagePort: messagePort,
           gossipInterval: Duration(milliseconds: 100),
-          rttTracker: rttTracker,
+          adaptiveTimingEnabled: true,
         );
 
-        // Should use static interval even with RTT tracker
+        // Should use static interval even with adaptive timing enabled
         expect(
           engine.effectiveGossipInterval,
           equals(Duration(milliseconds: 100)),
@@ -445,15 +443,13 @@ void main() {
           localNode,
           InMemoryMessageBus(),
         );
-        final rttTracker = RttTracker();
-
         final engine = GossipEngine(
           localNode: localNode,
           peerRegistry: registry,
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
-          rttTracker: rttTracker,
+          adaptiveTimingEnabled: true,
         );
 
         // No per-peer RTT yet, should use conservative default (1000ms)
@@ -486,15 +482,13 @@ void main() {
           localNode,
           InMemoryMessageBus(),
         );
-        final rttTracker = RttTracker();
-
         final engine = GossipEngine(
           localNode: localNode,
           peerRegistry: registry,
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
-          rttTracker: rttTracker,
+          adaptiveTimingEnabled: true,
         );
 
         // Record very low per-peer RTT samples to drive EWMA down
@@ -523,15 +517,13 @@ void main() {
           localNode,
           InMemoryMessageBus(),
         );
-        final rttTracker = RttTracker();
-
         final engine = GossipEngine(
           localNode: localNode,
           peerRegistry: registry,
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
-          rttTracker: rttTracker,
+          adaptiveTimingEnabled: true,
         );
 
         // Record very high per-peer RTT samples
@@ -543,7 +535,7 @@ void main() {
         expect(engine.effectiveGossipInterval, equals(Duration(seconds: 5)));
       });
 
-      test('uses default static interval when no RTT tracker provided', () {
+      test('uses default static interval when adaptive timing is disabled', () {
         final localNode = NodeId('local');
         final registry = PeerRegistry(
           localNode: localNode,
@@ -562,7 +554,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
-          // No rttTracker provided
+          // adaptiveTimingEnabled defaults to false
         );
 
         // Should use default static interval (500ms)
@@ -602,7 +594,7 @@ void main() {
             entryRepository: entryRepo,
             timePort: timerPort,
             messagePort: messagePort,
-            rttTracker: RttTracker(), // Enable adaptive mode
+            adaptiveTimingEnabled: true,
           );
 
           // Interval should be based on the FAST peer (100ms * 2 = 200ms)
@@ -638,7 +630,7 @@ void main() {
             entryRepository: entryRepo,
             timePort: timerPort,
             messagePort: messagePort,
-            rttTracker: RttTracker(), // Enable adaptive mode
+            adaptiveTimingEnabled: true,
           );
 
           // Should use conservative default (1000ms)
@@ -680,7 +672,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
-          rttTracker: RttTracker(), // Enable adaptive mode
+          adaptiveTimingEnabled: true,
         );
 
         // Interval should track the fastest peer (~150ms * 2 = 300ms)

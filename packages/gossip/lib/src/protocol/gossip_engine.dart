@@ -3,7 +3,7 @@ import 'dart:math';
 import '../application/observability/log_level.dart';
 import '../domain/errors/sync_error.dart';
 import '../domain/services/hlc_clock.dart';
-import '../domain/services/rtt_tracker.dart';
+
 import '../domain/value_objects/node_id.dart';
 import '../domain/value_objects/channel_id.dart';
 import '../domain/value_objects/stream_id.dart';
@@ -131,11 +131,11 @@ class GossipEngine {
   /// channels the local node is a member of.
   Map<ChannelId, ChannelAggregate> _channels = {};
 
-  /// RTT tracker for adaptive gossip interval calculation.
+  /// Whether adaptive timing is enabled.
   ///
-  /// Shared with FailureDetector to use RTT measurements from SWIM pings.
-  /// When null, uses static gossip interval for backward compatibility.
-  final RttTracker? _rttTracker;
+  /// When true, gossip interval is computed from per-peer RTT data in
+  /// [PeerRegistry]. When false, uses static gossip interval.
+  final bool _adaptiveTimingEnabled;
 
   /// Static gossip interval (used when RTT tracker not provided).
   final Duration _staticGossipInterval;
@@ -196,12 +196,12 @@ class GossipEngine {
     HlcClock? hlcClock,
     Random? random,
     Duration? gossipInterval,
-    RttTracker? rttTracker,
+    bool adaptiveTimingEnabled = false,
   }) : _hlcClock = hlcClock,
        _random = random ?? Random(),
        _staticGossipInterval =
            gossipInterval ?? const Duration(milliseconds: 500),
-       _rttTracker = rttTracker,
+       _adaptiveTimingEnabled = adaptiveTimingEnabled,
        _staticIntervalProvided = gossipInterval != null;
 
   /// Emits an error through the callback if one is registered.
@@ -241,7 +241,7 @@ class GossipEngine {
   /// RTT estimates yet.
   Duration get effectiveGossipInterval {
     // Use static interval if explicitly provided (for backward compatibility)
-    if (_staticIntervalProvided || _rttTracker == null) {
+    if (_staticIntervalProvided || !_adaptiveTimingEnabled) {
       return _staticGossipInterval;
     }
 

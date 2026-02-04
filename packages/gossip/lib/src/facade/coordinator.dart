@@ -239,7 +239,6 @@ class Coordinator {
     // Create GossipEngine and FailureDetector if ports are provided, wiring error callbacks
     if (messagePort != null && timerPort != null) {
       // GossipEngine computes its interval from per-peer RTT data in PeerRegistry.
-      // It still needs rttTracker != null to enable adaptive mode (vs static interval).
       // FailureDetector gets its own RttTracker as a conservative fallback
       // for peers that don't yet have per-peer RTT estimates.
       final failureDetectorRttTracker = RttTracker();
@@ -255,8 +254,7 @@ class Coordinator {
         onLog: onLog,
         hlcClock: hlcClock,
         random: random,
-        rttTracker: failureDetectorRttTracker,
-        // gossipInterval computed from min per-peer SRTT
+        adaptiveTimingEnabled: true,
       );
 
       coordinator._failureDetector = FailureDetector(
@@ -268,7 +266,6 @@ class Coordinator {
         random: random,
         failureThreshold: cfg.suspicionThreshold,
         rttTracker: failureDetectorRttTracker,
-        // Per-peer timeouts from PeerRegistry, global fallback from this tracker
       );
     }
 
