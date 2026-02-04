@@ -182,12 +182,14 @@ void main() {
       await Future.delayed(Duration.zero);
       await Future.delayed(Duration.zero);
 
-      // Target should have received a Ping from intermediary
+      // Target should have received a Ping from intermediary.
+      // The intermediary uses its own local sequence number (not the
+      // prober's sequence) to avoid collisions in _pendingPings.
       expect(targetMessages, hasLength(1));
       expect(targetMessages.first, isA<Ping>());
       final ping = targetMessages.first as Ping;
       expect(ping.sender, equals(intermediary));
-      expect(ping.sequence, equals(99));
+      expect(ping.sequence, greaterThan(0));
 
       // Clean up — advance past timeout so _handlePingReq completes
       await timePort.advance(const Duration(milliseconds: 201));
@@ -849,6 +851,229 @@ void main() {
       expect(errors, hasLength(1));
 
       detector2.stopListening();
+    });
+  });
+
+  // ---------------------------------------------------------------------------
+  // Sequence number collision in intermediary role
+  // ---------------------------------------------------------------------------
+
+  group('Intermediary sequence number collision', () {
+    test(
+      'PingReq with colliding sequence does not overwrite local pending ping',
+      () async {
+        // Setup: Intermediary B has peers A (prober) and C (target).
+        // B starts its own probeNewPeer to C, creating _pendingPings[seq].
+        // Then A sends PingReq(sequence=seq, target=C) to B.
+        // The PingReq must NOT overwrite B's own pending entry.
+        final nodeA = NodeId('prober-A');
+        final nodeB = NodeId('intermediary-B');
+        final nodeC = NodeId('target-C');
+
+        final registryB = PeerRegistry(localNode: nodeB, initialIncarnation: 0);
+        registryB.addPeer(nodeA, occurredAt: DateTime.now());
+        registryB.addPeer(nodeC, occurredAt: DateTime.now());
+
+        final timePort = InMemoryTimePort();
+        final bus = InMemoryMessageBus();
+        final portA = InMemoryMessagePort(nodeA, bus);
+        final portB = InMemoryMessagePort(nodeB, bus);
+        final portC = InMemoryMessagePort(nodeC, bus);
+        final rttTracker = RttTracker();
+
+        final detectorB = FailureDetector(
+          localNode: nodeB,
+          peerRegistry: registryB,
+          timePort: timePort,
+          messagePort: portB,
+          rttTracker: rttTracker,
+          pingTimeout: const Duration(milliseconds: 500),
+        );
+
+        detectorB.startListening();
+
+        // Capture the Ping that B sends to C via probeNewPeer
+        Ping? localPing;
+        final localPingCompleter = Completer<void>();
+        final subC = portC.incoming.listen((msg) {
+          final decoded = codec.decode(msg.bytes);
+          if (decoded is Ping && !localPingCompleter.isCompleted) {
+            localPing = decoded;
+            localPingCompleter.complete();
+          }
+        });
+
+        // B starts probing C (allocates seq from B's counter)
+        final probeFuture = detectorB.probeNewPeer(nodeC);
+        await Future.delayed(Duration.zero);
+        await localPingCompleter.future;
+
+        final collidingSeq = localPing!.sequence;
+
+        // Now A sends a PingReq to B with the SAME sequence number.
+        // In the buggy code, _handlePingReq overwrites _pendingPings[seq],
+        // orphaning probeNewPeer's completer so it never resolves.
+        final pingReq = PingReq(
+          sender: nodeA,
+          sequence: collidingSeq,
+          target: nodeC,
+        );
+        await portA.send(nodeB, codec.encode(pingReq));
+
+        // Allow PingReq to be processed
+        await Future.delayed(Duration.zero);
+        await Future.delayed(Duration.zero);
+
+        // Now C responds to B's original Ping with an Ack.
+        // With the bug, this Ack completes the PingReq handler's entry
+        // instead of B's own probeNewPeer entry.
+        await timePort.advance(const Duration(milliseconds: 100));
+        final ack = Ack(sender: nodeC, sequence: collidingSeq);
+        await portC.send(nodeB, codec.encode(ack));
+        await Future.delayed(Duration.zero);
+
+        // Advance past probeNewPeer's timeout so it doesn't hang.
+        // With the bug, probeNewPeer's completer was orphaned, so it
+        // can only finish via timeout (returning false).
+        await timePort.advance(const Duration(milliseconds: 500));
+
+        final gotAck = await probeFuture;
+
+        expect(
+          gotAck,
+          isTrue,
+          reason:
+              'probeNewPeer Ack should match the local pending ping, '
+              'not be stolen by the PingReq handler',
+        );
+
+        // B should have recorded RTT for the local probe
+        expect(
+          rttTracker.hasReceivedSamples,
+          isTrue,
+          reason:
+              'RTT should be recorded for the local probe, '
+              'not lost due to PingReq collision',
+        );
+
+        // Clean up — advance past intermediary timeout for PingReq handler
+        await timePort.advance(const Duration(milliseconds: 201));
+
+        await subC.cancel();
+        await portA.close();
+        await portC.close();
+        detectorB.stopListening();
+      },
+    );
+  });
+
+  // ---------------------------------------------------------------------------
+  // Additional corner cases
+  // ---------------------------------------------------------------------------
+
+  group('Corner cases', () {
+    test('peer removed during active probe does not crash', () async {
+      final localNode = NodeId('local');
+      final peerNode = NodeId('peer1');
+      final peerRegistry = PeerRegistry(
+        localNode: localNode,
+        initialIncarnation: 0,
+      );
+      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
+
+      final timePort = InMemoryTimePort();
+      final bus = InMemoryMessageBus();
+      final localPort = InMemoryMessagePort(localNode, bus);
+
+      final detector = FailureDetector(
+        localNode: localNode,
+        peerRegistry: peerRegistry,
+        timePort: timePort,
+        messagePort: localPort,
+        pingTimeout: const Duration(milliseconds: 500),
+      );
+
+      // Start a probe round (don't await — blocks on timeout)
+      final probeRoundFuture = detector.performProbeRound();
+      await Future.delayed(Duration.zero);
+
+      // Remove the peer while the probe is in-flight
+      peerRegistry.removePeer(peerNode, occurredAt: DateTime.now());
+
+      // Advance past direct timeout
+      await timePort.advance(const Duration(milliseconds: 501));
+      // Advance past grace period
+      await timePort.advance(const Duration(milliseconds: 501));
+
+      // Should complete without throwing
+      await probeRoundFuture;
+
+      // Peer is gone — no failure recorded
+      expect(peerRegistry.getPeer(peerNode), isNull);
+    });
+
+    test('restart after stop resumes probing', () async {
+      final localNode = NodeId('local');
+      final peerNode = NodeId('peer1');
+      final peerRegistry = PeerRegistry(
+        localNode: localNode,
+        initialIncarnation: 0,
+      );
+      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
+
+      final timePort = InMemoryTimePort();
+      final bus = InMemoryMessageBus();
+      final localPort = InMemoryMessagePort(localNode, bus);
+      final peerPort = InMemoryMessagePort(peerNode, bus);
+
+      final detector = FailureDetector(
+        localNode: localNode,
+        peerRegistry: peerRegistry,
+        timePort: timePort,
+        messagePort: localPort,
+        pingTimeout: const Duration(milliseconds: 200),
+        probeInterval: const Duration(milliseconds: 500),
+      );
+
+      detector.startListening();
+
+      // Start, stop, then start again
+      detector.start();
+      expect(detector.isRunning, isTrue);
+
+      detector.stop();
+      expect(detector.isRunning, isFalse);
+
+      detector.start();
+      expect(detector.isRunning, isTrue);
+
+      // Track messages received by peer to verify probing resumed
+      final pingsReceived = <Ping>[];
+      final peerSub = peerPort.incoming.listen((msg) {
+        final decoded = codec.decode(msg.bytes);
+        if (decoded is Ping) pingsReceived.add(decoded);
+      });
+
+      // Advance past probe interval to trigger a probe round
+      await timePort.advance(const Duration(milliseconds: 501));
+
+      // Allow probe to send
+      await Future.delayed(Duration.zero);
+
+      expect(
+        pingsReceived,
+        isNotEmpty,
+        reason: 'Probing should resume after stop/start cycle',
+      );
+
+      // Clean up — advance past timeouts
+      await timePort.advance(const Duration(milliseconds: 201));
+      await timePort.advance(const Duration(milliseconds: 201));
+
+      await peerSub.cancel();
+      detector.stop();
+      detector.stopListening();
+      await peerPort.close();
     });
   });
 }

@@ -233,7 +233,7 @@ class FailureDetector {
     );
 
     if (!gotDirectAck) {
-      final gotIndirectAck = await _performIndirectPing(peer.id, sequence);
+      final gotIndirectAck = await _performIndirectPing(peer.id);
       _evaluateProbeOutcome(peer.id, sequence, pending, gotIndirectAck);
     }
 
@@ -391,7 +391,7 @@ class FailureDetector {
   /// Sends PingReq to up to 3 intermediaries asking them to probe the
   /// target. When no intermediaries are available (2-device scenario),
   /// waits for a grace period to allow late Acks to arrive.
-  Future<bool> _performIndirectPing(NodeId target, int sequence) async {
+  Future<bool> _performIndirectPing(NodeId target) async {
     final intermediaries = _selectRandomIntermediaries(target, 3);
     final peerTimeout = effectivePingTimeoutForPeer(target);
 
@@ -487,23 +487,28 @@ class FailureDetector {
       'target=${pingReq.target} seq=${pingReq.sequence}',
     );
 
+    // Use a LOCAL sequence number for the intermediary's Ping to the target.
+    // The prober's sequence (pingReq.sequence) is only echoed back in the
+    // forwarded Ack. Using the prober's sequence would collide with the
+    // intermediary's own pending pings in _pendingPings.
+    final localSeq = _nextSequence++;
     final pending = _PendingPing(
       target: pingReq.target,
-      sequence: pingReq.sequence,
+      sequence: localSeq,
       sentAtMs: timePort.nowMs,
     );
-    _pendingPings[pingReq.sequence] = pending;
+    _pendingPings[localSeq] = pending;
 
-    final ping = Ping(sender: localNode, sequence: pingReq.sequence);
+    final ping = Ping(sender: localNode, sequence: localSeq);
     await _safeSend(pingReq.target, _codec.encode(ping), 'Ping');
 
     final gotAck = await _awaitAckWithTimeout(
       pending,
-      pingReq.sequence,
+      localSeq,
       _intermediaryTimeout,
     );
 
-    _cleanupPendingPing(pingReq.sequence);
+    _cleanupPendingPing(localSeq);
 
     if (gotAck) {
       final ack = Ack(sender: localNode, sequence: pingReq.sequence);
