@@ -62,9 +62,7 @@ class Hlc implements Comparable<Hlc> {
   /// Creates a [Hlc] with the given physical and logical components.
   ///
   /// Throws [ArgumentError] if invariants are violated.
-  Hlc(int physicalMs, int logical)
-    : physicalMs = physicalMs,
-      logical = logical {
+  Hlc(this.physicalMs, this.logical) {
     if (physicalMs < 0) {
       throw ArgumentError.value(
         physicalMs,

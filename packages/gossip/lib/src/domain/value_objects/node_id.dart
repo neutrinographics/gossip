@@ -38,7 +38,7 @@ class NodeId {
   /// Creates a [NodeId] with the given unique identifier.
   ///
   /// Throws [ArgumentError] if [value] is empty or contains only whitespace.
-  NodeId(String value) : value = value {
+  NodeId(this.value) {
     if (value.trim().isEmpty) {
       throw ArgumentError.value(
         value,

@@ -42,7 +42,7 @@ class StreamId {
   /// Creates a [StreamId] with the given unique identifier.
   ///
   /// Throws [ArgumentError] if [value] is empty or contains only whitespace.
-  StreamId(String value) : value = value {
+  StreamId(this.value) {
     if (value.trim().isEmpty) {
       throw ArgumentError.value(
         value,

@@ -38,7 +38,7 @@ class ChannelId {
   /// Creates a [ChannelId] with the given unique identifier.
   ///
   /// Throws [ArgumentError] if [value] is empty or contains only whitespace.
-  ChannelId(String value) : value = value {
+  ChannelId(this.value) {
     if (value.trim().isEmpty) {
       throw ArgumentError.value(
         value,

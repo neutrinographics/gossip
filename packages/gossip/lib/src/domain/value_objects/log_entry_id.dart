@@ -26,7 +26,7 @@ class LogEntryId {
   /// Creates a [LogEntryId] from an author and sequence number.
   ///
   /// Throws [ArgumentError] if invariants are violated.
-  LogEntryId(this.author, int sequence) : sequence = sequence {
+  LogEntryId(this.author, this.sequence) {
     if (sequence <= 0) {
       throw ArgumentError.value(
         sequence,
