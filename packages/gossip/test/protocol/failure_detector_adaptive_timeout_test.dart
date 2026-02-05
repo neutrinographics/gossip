@@ -31,10 +31,10 @@ void main() {
       () {
         final h = FailureDetectorTestHarness();
 
-        // Before samples, should use initial estimate (1s + 4 * 500ms = 3s)
+        // Before samples, should use initial estimate (500ms + 4 * 250ms = 1500ms)
         expect(
           h.detector.effectivePingTimeout.inMilliseconds,
-          greaterThanOrEqualTo(2000),
+          greaterThanOrEqualTo(1000),
         );
       },
     );
@@ -187,9 +187,9 @@ void main() {
 
       h.startListening();
 
-      // Initial timeout (conservative, no samples)
+      // Initial timeout (conservative, no samples: 500ms + 4 * 250ms = 1500ms)
       final initialTimeout = h.detector.effectivePingTimeout;
-      expect(initialTimeout.inMilliseconds, greaterThanOrEqualTo(2000));
+      expect(initialTimeout.inMilliseconds, greaterThanOrEqualTo(1000));
 
       // Simulate several fast RTT samples
       for (var i = 0; i < 10; i++) {

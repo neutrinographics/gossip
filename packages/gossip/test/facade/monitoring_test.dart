@@ -278,8 +278,8 @@ void main() {
 
       final timing = coordinator.getAdaptiveTimingStatus()!;
 
-      expect(timing.smoothedRtt, equals(const Duration(seconds: 1)));
-      expect(timing.rttVariance, equals(const Duration(milliseconds: 500)));
+      expect(timing.smoothedRtt, equals(const Duration(milliseconds: 500)));
+      expect(timing.rttVariance, equals(const Duration(milliseconds: 250)));
       expect(timing.rttSampleCount, equals(0));
       expect(timing.hasRttSamples, isFalse);
     });

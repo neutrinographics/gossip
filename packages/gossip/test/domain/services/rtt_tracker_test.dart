@@ -10,11 +10,11 @@ void main() {
 
         expect(
           tracker.estimate.smoothedRtt,
-          equals(const Duration(seconds: 1)),
+          equals(const Duration(milliseconds: 500)),
         );
         expect(
           tracker.estimate.rttVariance,
-          equals(const Duration(milliseconds: 500)),
+          equals(const Duration(milliseconds: 250)),
         );
       });
 
@@ -199,7 +199,7 @@ void main() {
 
         expect(
           tracker.estimate.smoothedRtt,
-          equals(const Duration(seconds: 1)),
+          equals(const Duration(milliseconds: 500)),
         );
         expect(tracker.sampleCount, equals(0));
         expect(tracker.hasReceivedSamples, isFalse);

@@ -295,15 +295,17 @@ class FailureDetector {
   ///
   /// RTT samples that exceed the peer's timeout window are discarded to
   /// prevent late Acks from inflating the SRTT estimate.
+  ///
+  /// Acks that don't match a pending ping are silently ignored. This is
+  /// normal when: (a) a very-late ack arrives after cleanup, (b) both
+  /// direct and indirect acks arrive for the same probe, or (c) a
+  /// forwarded ack races with a direct ack. The peer contact timestamp
+  /// is still updated regardless.
   void handleAck(Ack ack, {required int timestampMs}) {
     peerRegistry.updatePeerContact(ack.sender, timestampMs);
 
     final pending = _pendingPings[ack.sequence];
     if (pending == null || pending.completer.isCompleted) {
-      _log(
-        'Ack seq=${ack.sequence} from ${ack.sender} did not match '
-        'any pending ping (pending: ${_pendingPings.keys.toList()})',
-      );
       return;
     }
 

@@ -7,8 +7,8 @@ void main() {
       test('creates with default initial values', () {
         final estimate = RttEstimate.initial();
 
-        expect(estimate.smoothedRtt, equals(const Duration(seconds: 1)));
-        expect(estimate.rttVariance, equals(const Duration(milliseconds: 500)));
+        expect(estimate.smoothedRtt, equals(const Duration(milliseconds: 500)));
+        expect(estimate.rttVariance, equals(const Duration(milliseconds: 250)));
       });
 
       test('creates with custom initial values', () {
