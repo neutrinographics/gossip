@@ -30,7 +30,7 @@ class ChannelListScreen extends StatelessWidget {
       builder: (context, _) {
         return Scaffold(
           appBar: AppBar(
-            title: const Text('Nearby Chat'),
+            title: const Text('Gossip Chat'),
             actions: [
               IconButton(
                 icon: Icon(

@@ -26,7 +26,7 @@ class _ChatAppState extends State<ChatApp> {
       listenable: _themeController,
       builder: (context, _) {
         return MaterialApp(
-          title: 'Nearby Chat',
+          title: 'Gossip Chat',
           debugShowCheckedModeBanner: false,
           theme: AppTheme.light,
           darkTheme: AppTheme.dark,

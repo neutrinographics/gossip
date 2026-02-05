@@ -1,6 +1,6 @@
 {
-  "name": "gossip_chat",
-  "short_name": "gossip_chat",
+  "name": "Gossip Chat",
+  "short_name": "Gossip Chat",
   "start_url": ".",
   "display": "standalone",
   "background_color": "#0175C2",
