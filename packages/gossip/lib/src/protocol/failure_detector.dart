@@ -274,8 +274,14 @@ class FailureDetector {
   ///
   /// Includes suspected peers so they can recover by responding to probes
   /// (SWIM's incarnation refutation mechanism).
+  ///
+  /// Peers with an active probing hold are excluded to prevent false
+  /// positives during connection startup.
   Peer? selectRandomPeer() {
-    return peerRegistry.selectRandomProbablePeer(_random);
+    return peerRegistry.selectRandomProbablePeer(
+      _random,
+      nowMs: timePort.nowMs,
+    );
   }
 
   // ---------------------------------------------------------------------------

@@ -60,6 +60,15 @@ class Peer {
   /// Communication metrics for this peer.
   final PeerMetrics metrics;
 
+  /// Timestamp (ms since epoch) until which this peer is held from probing.
+  ///
+  /// When a peer is newly added, there's a grace period before it becomes
+  /// eligible for failure detection probes. This prevents false positives
+  /// during connection establishment when the transport layer may not be
+  /// fully ready. Set to null when the grace period expires or when
+  /// [probeNewPeer] confirms connectivity.
+  final int? probingHeldUntilMs;
+
   /// Prefix length for default display name derived from node ID.
   static const int _defaultDisplayNameLength = 8;
 
@@ -76,6 +85,7 @@ class Peer {
     this.lastAntiEntropyMs,
     this.failedProbeCount = 0,
     this.metrics = const PeerMetrics(),
+    this.probingHeldUntilMs,
   }) : displayName = displayName ?? _truncateId(id.value);
 
   /// Truncates an ID to the default display name length.
@@ -86,6 +96,9 @@ class Peer {
   }
 
   /// Creates a copy of this Peer with specified fields replaced.
+  ///
+  /// For nullable fields like [probingHeldUntilMs], use [clearProbingHold]
+  /// to explicitly set to null, since passing null here means "keep current".
   Peer copyWith({
     NodeId? id,
     String? displayName,
@@ -95,6 +108,7 @@ class Peer {
     int? lastAntiEntropyMs,
     int? failedProbeCount,
     PeerMetrics? metrics,
+    int? probingHeldUntilMs,
   }) {
     return Peer(
       id: id ?? this.id,
@@ -105,6 +119,22 @@ class Peer {
       lastAntiEntropyMs: lastAntiEntropyMs ?? this.lastAntiEntropyMs,
       failedProbeCount: failedProbeCount ?? this.failedProbeCount,
       metrics: metrics ?? this.metrics,
+      probingHeldUntilMs: probingHeldUntilMs ?? this.probingHeldUntilMs,
+    );
+  }
+
+  /// Creates a copy with the probing hold cleared (set to null).
+  Peer clearProbingHold() {
+    return Peer(
+      id: id,
+      displayName: displayName,
+      status: status,
+      incarnation: incarnation,
+      lastContactMs: lastContactMs,
+      lastAntiEntropyMs: lastAntiEntropyMs,
+      failedProbeCount: failedProbeCount,
+      metrics: metrics,
+      probingHeldUntilMs: null,
     );
   }
 
@@ -119,7 +149,8 @@ class Peer {
         other.lastContactMs == lastContactMs &&
         other.lastAntiEntropyMs == lastAntiEntropyMs &&
         other.failedProbeCount == failedProbeCount &&
-        other.metrics == metrics;
+        other.metrics == metrics &&
+        other.probingHeldUntilMs == probingHeldUntilMs;
   }
 
   @override
@@ -132,6 +163,7 @@ class Peer {
     lastAntiEntropyMs,
     failedProbeCount,
     metrics,
+    probingHeldUntilMs,
   );
 
   @override

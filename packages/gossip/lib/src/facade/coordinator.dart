@@ -128,6 +128,12 @@ class Coordinator {
   /// Entry repository for gossip engine.
   final EntryRepository _entryRepository;
 
+  /// Time port for timestamps (null if no network sync).
+  final TimePort? _timePort;
+
+  /// Configuration for the coordinator.
+  final CoordinatorConfig _config;
+
   /// Gossip engine for anti-entropy synchronization.
   GossipEngine? _gossipEngine;
 
@@ -155,6 +161,8 @@ class Coordinator {
     required PeerService peerService,
     required ChannelRepository channelRepository,
     required EntryRepository entryRepository,
+    required TimePort? timePort,
+    required CoordinatorConfig config,
     required GossipEngine? gossipEngine,
     required FailureDetector? failureDetector,
     required StreamController<DomainEvent> eventsController,
@@ -163,6 +171,8 @@ class Coordinator {
        _peerService = peerService,
        _channelRepository = channelRepository,
        _entryRepository = entryRepository,
+       _timePort = timePort,
+       _config = config,
        _gossipEngine = gossipEngine,
        _failureDetector = failureDetector,
        _eventsController = eventsController;
@@ -231,6 +241,8 @@ class Coordinator {
       peerService: peerService,
       channelRepository: channelRepository,
       entryRepository: entryRepository,
+      timePort: timerPort,
+      config: cfg,
       gossipEngine: null, // Set below after coordinator is created
       failureDetector: null, // Set below after coordinator is created
       eventsController: eventsController,
@@ -424,14 +436,26 @@ class Coordinator {
   ///
   /// The peer starts in [PeerStatus.reachable] and will be included in:
   /// - Gossip peer selection for anti-entropy
-  /// - SWIM failure detection probing
+  /// - SWIM failure detection probing (after grace period or successful probe)
   ///
   /// If [displayName] is not provided, defaults to a truncated form of the
   /// node ID.
   ///
+  /// A startup grace period prevents false positive failure detections while
+  /// the transport layer is still establishing bidirectional connectivity.
+  /// The grace period is cleared early if [probeNewPeer] succeeds.
+  ///
   /// Throws [Exception] if attempting to add the local node as a peer.
   Future<void> addPeer(NodeId id, {String? displayName}) async {
     await _peerService.addPeer(id, displayName: displayName);
+
+    // Set probing hold to prevent false positives during connection startup.
+    // The hold is cleared early if probeNewPeer succeeds below.
+    if (_timePort != null && _config.startupGracePeriod > Duration.zero) {
+      final holdUntilMs =
+          _timePort!.nowMs + _config.startupGracePeriod.inMilliseconds;
+      _peerRegistry.setProbingHold(id, holdUntilMs);
+    }
 
     // Fire-and-forget immediate probe to bootstrap per-peer RTT estimate.
     // Gets first RTT sample within ~200ms instead of waiting for random
@@ -440,6 +464,8 @@ class Coordinator {
     // Retries up to 3 times on timeout because the transport layer may
     // not be fully bidirectional yet when addPeer is called — the remote
     // peer's receive path may still be initializing.
+    //
+    // On success, clears the probing hold early since connectivity is confirmed.
     if (_failureDetector != null && _state == SyncState.running) {
       final detector = _failureDetector!;
       unawaited(_probeNewPeerWithRetry(detector, id));
@@ -452,6 +478,8 @@ class Coordinator {
   /// called — the remote peer's receive path may still be initializing.
   /// Retrying handles this: the first probe may timeout, but subsequent
   /// attempts succeed once the remote transport is ready.
+  ///
+  /// On success, clears the probing hold to allow normal failure detection.
   Future<void> _probeNewPeerWithRetry(
     FailureDetector detector,
     NodeId peerId,
@@ -463,7 +491,11 @@ class Coordinator {
         if (_peerRegistry.getPeer(peerId) == null) return;
 
         final gotAck = await detector.probeNewPeer(peerId);
-        if (gotAck) return;
+        if (gotAck) {
+          // Clear the probing hold since we confirmed connectivity.
+          _peerRegistry.clearProbingHold(peerId);
+          return;
+        }
       }
     } catch (e) {
       _handleError(

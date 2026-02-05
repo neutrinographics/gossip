@@ -45,8 +45,27 @@ class CoordinatorConfig {
   /// actual failures.
   final int suspicionThreshold;
 
+  /// Grace period for newly added peers before they become eligible for
+  /// failure detection probing.
+  ///
+  /// When a peer is added via [Coordinator.addPeer], there may be a delay
+  /// before the transport layer is fully bidirectional (the remote peer's
+  /// receive path may still be initializing). This grace period prevents
+  /// false positive failure detections during startup.
+  ///
+  /// The grace period is automatically cleared early if [probeNewPeer]
+  /// succeeds, confirming the peer is actually reachable.
+  ///
+  /// **Default: 10 seconds**
+  ///
+  /// Set to [Duration.zero] to disable the grace period.
+  final Duration startupGracePeriod;
+
   /// Creates a [CoordinatorConfig] with the specified options.
-  const CoordinatorConfig({this.suspicionThreshold = 5});
+  const CoordinatorConfig({
+    this.suspicionThreshold = 5,
+    this.startupGracePeriod = const Duration(seconds: 10),
+  });
 
   /// Default configuration with standard values.
   static const CoordinatorConfig defaults = CoordinatorConfig();

@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:test/test.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
@@ -527,5 +529,213 @@ void main() {
         expect(registry.getPeer(peer2)!.metrics.rttEstimate, isNull);
       });
     });
+
+    group('Probing hold (startup grace period)', () {
+      test('setProbingHold sets the hold timestamp', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+        final peerId = NodeId('peer-1');
+        registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
+
+        registry.setProbingHold(peerId, 10000);
+
+        final peer = registry.getPeer(peerId);
+        expect(peer!.probingHeldUntilMs, equals(10000));
+      });
+
+      test('clearProbingHold clears the hold timestamp', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+        final peerId = NodeId('peer-1');
+        registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
+        registry.setProbingHold(peerId, 10000);
+
+        registry.clearProbingHold(peerId);
+
+        final peer = registry.getPeer(peerId);
+        expect(peer!.probingHeldUntilMs, isNull);
+      });
+
+      test('selectRandomProbablePeer excludes peers with active hold', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+        final peer1 = NodeId('peer-1');
+        final peer2 = NodeId('peer-2');
+        registry.addPeer(peer1, occurredAt: DateTime(2024, 1, 1));
+        registry.addPeer(peer2, occurredAt: DateTime(2024, 1, 1));
+
+        // Set hold on peer1 until time 10000
+        registry.setProbingHold(peer1, 10000);
+
+        // At time 5000, peer1 should be excluded
+        final selectedPeers = <NodeId>{};
+        for (var i = 0; i < 20; i++) {
+          final peer = registry.selectRandomProbablePeer(
+            _SeededRandom(i),
+            nowMs: 5000,
+          );
+          if (peer != null) selectedPeers.add(peer.id);
+        }
+
+        expect(selectedPeers, contains(peer2));
+        expect(selectedPeers, isNot(contains(peer1)));
+      });
+
+      test('selectRandomProbablePeer includes peers after hold expires', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+        final peer1 = NodeId('peer-1');
+        registry.addPeer(peer1, occurredAt: DateTime(2024, 1, 1));
+
+        // Set hold on peer1 until time 10000
+        registry.setProbingHold(peer1, 10000);
+
+        // At time 15000 (after hold expires), peer1 should be included
+        final peer = registry.selectRandomProbablePeer(
+          _SeededRandom(0),
+          nowMs: 15000,
+        );
+
+        expect(peer, isNotNull);
+        expect(peer!.id, equals(peer1));
+      });
+
+      test('selectRandomProbablePeer includes peer at exact hold expiry', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+        final peer1 = NodeId('peer-1');
+        registry.addPeer(peer1, occurredAt: DateTime(2024, 1, 1));
+
+        // Set hold on peer1 until time 10000
+        registry.setProbingHold(peer1, 10000);
+
+        // At time 10000 (exact expiry), peer1 should be included
+        final peer = registry.selectRandomProbablePeer(
+          _SeededRandom(0),
+          nowMs: 10000,
+        );
+
+        expect(peer, isNotNull);
+        expect(peer!.id, equals(peer1));
+      });
+
+      test('selectRandomProbablePeer includes peers without hold', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+        final peer1 = NodeId('peer-1');
+        registry.addPeer(peer1, occurredAt: DateTime(2024, 1, 1));
+
+        // No hold set - peer should always be selectable
+        final peer = registry.selectRandomProbablePeer(
+          _SeededRandom(0),
+          nowMs: 5000,
+        );
+
+        expect(peer, isNotNull);
+        expect(peer!.id, equals(peer1));
+      });
+
+      test('selectRandomProbablePeer returns null when all peers held', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+        final peer1 = NodeId('peer-1');
+        final peer2 = NodeId('peer-2');
+        registry.addPeer(peer1, occurredAt: DateTime(2024, 1, 1));
+        registry.addPeer(peer2, occurredAt: DateTime(2024, 1, 1));
+
+        // Hold all peers
+        registry.setProbingHold(peer1, 10000);
+        registry.setProbingHold(peer2, 10000);
+
+        // At time 5000, no peers should be selectable
+        final peer = registry.selectRandomProbablePeer(
+          _SeededRandom(0),
+          nowMs: 5000,
+        );
+
+        expect(peer, isNull);
+      });
+
+      test('setProbingHold emits PeerOperationSkipped for unknown peer', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+
+        registry.setProbingHold(NodeId('unknown'), 10000);
+
+        final events = registry.uncommittedEvents;
+        expect(events.length, equals(1));
+        expect(events.last, isA<PeerOperationSkipped>());
+        final event = events.last as PeerOperationSkipped;
+        expect(event.operation, equals('setProbingHold'));
+      });
+
+      test('clearProbingHold emits PeerOperationSkipped for unknown peer', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+
+        registry.clearProbingHold(NodeId('unknown'));
+
+        final events = registry.uncommittedEvents;
+        expect(events.length, equals(1));
+        expect(events.last, isA<PeerOperationSkipped>());
+        final event = events.last as PeerOperationSkipped;
+        expect(event.operation, equals('clearProbingHold'));
+      });
+
+      test('selectRandomProbablePeer ignores hold when nowMs not provided', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+        final peer1 = NodeId('peer-1');
+        registry.addPeer(peer1, occurredAt: DateTime(2024, 1, 1));
+
+        // Set hold on peer1
+        registry.setProbingHold(peer1, 10000);
+
+        // When nowMs is null, hold is ignored (backwards compatibility)
+        final peer = registry.selectRandomProbablePeer(_SeededRandom(0));
+
+        expect(peer, isNotNull);
+        expect(peer!.id, equals(peer1));
+      });
+    });
   });
+}
+
+/// Simple seeded random for deterministic tests.
+class _SeededRandom implements Random {
+  int _seed;
+
+  _SeededRandom(this._seed);
+
+  @override
+  int nextInt(int max) {
+    _seed = (_seed * 1103515245 + 12345) & 0x7fffffff;
+    return _seed % max;
+  }
+
+  @override
+  double nextDouble() => nextInt(1 << 32) / (1 << 32);
+
+  @override
+  bool nextBool() => nextInt(2) == 0;
 }
