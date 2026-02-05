@@ -128,6 +128,47 @@ class FailureDetector {
   int _acksReceived = 0;
   int _pingsSent = 0;
 
+  /// Tracks peers that are temporarily held from failure detection probing.
+  ///
+  /// Key: peer NodeId, Value: timestamp (ms since epoch) until which the
+  /// peer should be excluded from probe selection.
+  ///
+  /// This is a protocol-layer concern: newly connected peers get a grace
+  /// period before being subject to failure detection, preventing false
+  /// positives during connection establishment.
+  final Map<NodeId, int> _probingHeldUntil = {};
+
+  // ---------------------------------------------------------------------------
+  // Public API: probing hold (startup grace period)
+  // ---------------------------------------------------------------------------
+
+  /// Sets a probing hold for a peer until the given timestamp.
+  ///
+  /// The peer will be excluded from failure detection probing until
+  /// [holdUntilMs] is reached. This provides a grace period for newly
+  /// connected peers while the transport layer stabilizes.
+  ///
+  /// Call [clearProbingHold] to remove the hold early (e.g., when
+  /// [probeNewPeer] confirms connectivity).
+  void setProbingHold(NodeId peerId, int holdUntilMs) {
+    _probingHeldUntil[peerId] = holdUntilMs;
+  }
+
+  /// Clears any probing hold for a peer, making them eligible for probing.
+  ///
+  /// Typically called when [probeNewPeer] succeeds, confirming the peer
+  /// is reachable and the transport layer is working.
+  void clearProbingHold(NodeId peerId) {
+    _probingHeldUntil.remove(peerId);
+  }
+
+  /// Returns true if the peer currently has an active probing hold.
+  bool hasProbingHold(NodeId peerId) {
+    final holdUntil = _probingHeldUntil[peerId];
+    if (holdUntil == null) return false;
+    return timePort.nowMs < holdUntil;
+  }
+
   // ---------------------------------------------------------------------------
   // Public API: adaptive timing
   // ---------------------------------------------------------------------------
@@ -278,10 +319,14 @@ class FailureDetector {
   /// Peers with an active probing hold are excluded to prevent false
   /// positives during connection startup.
   Peer? selectRandomPeer() {
-    return peerRegistry.selectRandomProbablePeer(
-      _random,
-      nowMs: timePort.nowMs,
-    );
+    final nowMs = timePort.nowMs;
+    final probable = peerRegistry.probablePeers.where((p) {
+      final holdUntil = _probingHeldUntil[p.id];
+      if (holdUntil == null) return true;
+      return nowMs >= holdUntil;
+    }).toList();
+    if (probable.isEmpty) return null;
+    return probable[_random.nextInt(probable.length)];
   }
 
   // ---------------------------------------------------------------------------

@@ -39,6 +39,113 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // Probing hold
+  // ---------------------------------------------------------------------------
+
+  group('Probing hold', () {
+    test('setProbingHold prevents peer from being selected', () {
+      final h = FailureDetectorTestHarness();
+      final peer = h.addPeer('peer1');
+
+      // Set hold far in the future
+      final holdUntil = h.timePort.nowMs + 10000;
+      h.detector.setProbingHold(peer.id, holdUntil);
+
+      expect(h.detector.selectRandomPeer(), isNull);
+    });
+
+    test('peer becomes selectable after hold expires', () async {
+      final h = FailureDetectorTestHarness();
+      final peer = h.addPeer('peer1');
+
+      // Set hold 100ms in the future
+      final holdUntil = h.timePort.nowMs + 100;
+      h.detector.setProbingHold(peer.id, holdUntil);
+
+      expect(h.detector.selectRandomPeer(), isNull);
+
+      // Advance past hold expiry
+      await h.timePort.advance(const Duration(milliseconds: 101));
+
+      final selected = h.detector.selectRandomPeer();
+      expect(selected, isNotNull);
+      expect(selected!.id, equals(peer.id));
+    });
+
+    test('clearProbingHold makes peer immediately selectable', () {
+      final h = FailureDetectorTestHarness();
+      final peer = h.addPeer('peer1');
+
+      // Set hold far in the future
+      final holdUntil = h.timePort.nowMs + 10000;
+      h.detector.setProbingHold(peer.id, holdUntil);
+
+      expect(h.detector.selectRandomPeer(), isNull);
+
+      h.detector.clearProbingHold(peer.id);
+
+      final selected = h.detector.selectRandomPeer();
+      expect(selected, isNotNull);
+      expect(selected!.id, equals(peer.id));
+    });
+
+    test('hasProbingHold returns true when hold is active', () {
+      final h = FailureDetectorTestHarness();
+      final peer = h.addPeer('peer1');
+
+      expect(h.detector.hasProbingHold(peer.id), isFalse);
+
+      final holdUntil = h.timePort.nowMs + 10000;
+      h.detector.setProbingHold(peer.id, holdUntil);
+
+      expect(h.detector.hasProbingHold(peer.id), isTrue);
+    });
+
+    test('hasProbingHold returns false after hold expires', () async {
+      final h = FailureDetectorTestHarness();
+      final peer = h.addPeer('peer1');
+
+      final holdUntil = h.timePort.nowMs + 100;
+      h.detector.setProbingHold(peer.id, holdUntil);
+
+      expect(h.detector.hasProbingHold(peer.id), isTrue);
+
+      await h.timePort.advance(const Duration(milliseconds: 101));
+
+      expect(h.detector.hasProbingHold(peer.id), isFalse);
+    });
+
+    test('only held peers are excluded from selection', () {
+      final h = FailureDetectorTestHarness();
+      final peer1 = h.addPeer('peer1');
+      final peer2 = h.addPeer('peer2');
+
+      // Hold peer1, leave peer2 available
+      final holdUntil = h.timePort.nowMs + 10000;
+      h.detector.setProbingHold(peer1.id, holdUntil);
+
+      // Should always select peer2
+      for (var i = 0; i < 10; i++) {
+        final selected = h.detector.selectRandomPeer();
+        expect(selected, isNotNull);
+        expect(selected!.id, equals(peer2.id));
+      }
+    });
+
+    test('clearProbingHold on non-held peer is no-op', () {
+      final h = FailureDetectorTestHarness();
+      final peer = h.addPeer('peer1');
+
+      // Should not throw
+      h.detector.clearProbingHold(peer.id);
+
+      final selected = h.detector.selectRandomPeer();
+      expect(selected, isNotNull);
+      expect(selected!.id, equals(peer.id));
+    });
+  });
+
+  // ---------------------------------------------------------------------------
   // Message handling
   // ---------------------------------------------------------------------------
 

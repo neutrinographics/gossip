@@ -128,9 +128,6 @@ class Coordinator {
   /// Entry repository for gossip engine.
   final EntryRepository _entryRepository;
 
-  /// Time port for timestamps (null if no network sync).
-  final TimePort? _timePort;
-
   /// Configuration for the coordinator.
   final CoordinatorConfig _config;
 
@@ -161,7 +158,6 @@ class Coordinator {
     required PeerService peerService,
     required ChannelRepository channelRepository,
     required EntryRepository entryRepository,
-    required TimePort? timePort,
     required CoordinatorConfig config,
     required GossipEngine? gossipEngine,
     required FailureDetector? failureDetector,
@@ -171,7 +167,6 @@ class Coordinator {
        _peerService = peerService,
        _channelRepository = channelRepository,
        _entryRepository = entryRepository,
-       _timePort = timePort,
        _config = config,
        _gossipEngine = gossipEngine,
        _failureDetector = failureDetector,
@@ -241,7 +236,6 @@ class Coordinator {
       peerService: peerService,
       channelRepository: channelRepository,
       entryRepository: entryRepository,
-      timePort: timerPort,
       config: cfg,
       gossipEngine: null, // Set below after coordinator is created
       failureDetector: null, // Set below after coordinator is created
@@ -451,10 +445,12 @@ class Coordinator {
 
     // Set probing hold to prevent false positives during connection startup.
     // The hold is cleared early if probeNewPeer succeeds below.
-    if (_timePort != null && _config.startupGracePeriod > Duration.zero) {
+    if (_failureDetector != null &&
+        _config.startupGracePeriod > Duration.zero) {
       final holdUntilMs =
-          _timePort!.nowMs + _config.startupGracePeriod.inMilliseconds;
-      _peerRegistry.setProbingHold(id, holdUntilMs);
+          _failureDetector!.timePort.nowMs +
+          _config.startupGracePeriod.inMilliseconds;
+      _failureDetector!.setProbingHold(id, holdUntilMs);
     }
 
     // Fire-and-forget immediate probe to bootstrap per-peer RTT estimate.
@@ -493,7 +489,7 @@ class Coordinator {
         final gotAck = await detector.probeNewPeer(peerId);
         if (gotAck) {
           // Clear the probing hold since we confirmed connectivity.
-          _peerRegistry.clearProbingHold(peerId);
+          detector.clearProbingHold(peerId);
           return;
         }
       }

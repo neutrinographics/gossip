@@ -93,8 +93,7 @@ class PeerRegistry {
   /// Excludes unreachable peers as they have exceeded the suspicion window.
   /// Suspected peers are included to allow them to recover by responding.
   ///
-  /// Note: This does NOT filter by probing hold. Use [selectRandomProbablePeer]
-  /// with a timestamp to get peers eligible for probing.
+  /// Used by: FailureDetector for probe target selection.
   List<Peer> get probablePeers => _peers.values
       .where(
         (p) =>
@@ -102,29 +101,6 @@ class PeerRegistry {
             p.status == PeerStatus.suspected,
       )
       .toList();
-
-  /// Selects a random peer for probing (reachable or suspected).
-  ///
-  /// Unlike [selectRandomReachablePeer], this includes suspected peers to
-  /// give them a chance to recover by responding to probes. This is essential
-  /// for SWIM protocol's ability to detect network healing.
-  ///
-  /// Peers with an active probing hold (where [nowMs] < [Peer.probingHeldUntilMs])
-  /// are excluded. This prevents false positives during connection startup
-  /// when the transport layer may not be fully ready.
-  ///
-  /// Returns null if no eligible peers exist.
-  ///
-  /// Used by: FailureDetector for probe target selection.
-  Peer? selectRandomProbablePeer(Random random, {int? nowMs}) {
-    final probable = probablePeers.where((p) {
-      if (p.probingHeldUntilMs == null) return true;
-      if (nowMs == null) return true;
-      return nowMs >= p.probingHeldUntilMs!;
-    }).toList();
-    if (probable.isEmpty) return null;
-    return probable[random.nextInt(probable.length)];
-  }
 
   /// Returns domain events emitted since last clearing.
   ///
@@ -388,44 +364,5 @@ class PeerRegistry {
       return;
     }
     _peers[id] = peer.copyWith(failedProbeCount: peer.failedProbeCount + 1);
-  }
-
-  /// Sets the probing hold timestamp for a peer.
-  ///
-  /// The peer will be excluded from failure detection probing until
-  /// the current time exceeds [holdUntilMs]. This provides a grace period
-  /// for newly connected peers while the transport layer stabilizes.
-  ///
-  /// Emits [PeerOperationSkipped] if peer doesn't exist.
-  void setProbingHold(NodeId id, int holdUntilMs) {
-    final peer = _peers[id];
-    if (peer == null) {
-      _addEvent(
-        PeerOperationSkipped(id, 'setProbingHold', occurredAt: DateTime.now()),
-      );
-      return;
-    }
-    _peers[id] = peer.copyWith(probingHeldUntilMs: holdUntilMs);
-  }
-
-  /// Clears the probing hold for a peer, making them eligible for probing.
-  ///
-  /// Called when [probeNewPeer] succeeds, confirming the peer is reachable
-  /// and the transport layer is working.
-  ///
-  /// Emits [PeerOperationSkipped] if peer doesn't exist.
-  void clearProbingHold(NodeId id) {
-    final peer = _peers[id];
-    if (peer == null) {
-      _addEvent(
-        PeerOperationSkipped(
-          id,
-          'clearProbingHold',
-          occurredAt: DateTime.now(),
-        ),
-      );
-      return;
-    }
-    _peers[id] = peer.clearProbingHold();
   }
 }
