@@ -50,26 +50,6 @@ class EndpointDiscovered extends NearbyEvent {
   String toString() => 'EndpointDiscovered(id: $id, displayName: $displayName)';
 }
 
-/// A remote device initiated a connection to this endpoint.
-///
-/// This event fires when the Nearby Connections layer receives an incoming
-/// connection request and we've called acceptConnection(). At this point,
-/// we can send/receive payloads, but the connection may not yet be fully
-/// established (ConnectionEstablished fires later when the platform confirms).
-///
-/// The [displayName] is the advertised name of the remote device, which
-/// typically contains the remote NodeId in the format "nodeId|displayName".
-class ConnectionInitiated extends NearbyEvent {
-  final EndpointId id;
-  final String displayName;
-
-  const ConnectionInitiated({required this.id, required this.displayName});
-
-  @override
-  String toString() =>
-      'ConnectionInitiated(id: $id, displayName: $displayName)';
-}
-
 /// A connection was established to an endpoint.
 class ConnectionEstablished extends NearbyEvent {
   final EndpointId id;

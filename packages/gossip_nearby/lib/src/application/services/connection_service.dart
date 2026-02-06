@@ -210,8 +210,6 @@ class ConnectionService {
     switch (event) {
       case EndpointDiscovered(:final id, :final displayName):
         _onEndpointDiscovered(id, displayName);
-      case ConnectionInitiated(:final id, :final displayName):
-        _onConnectionInitiated(id, displayName);
       case ConnectionEstablished(:final id):
         _onConnectionEstablished(id);
       case PayloadReceived(:final id, :final bytes):
@@ -255,56 +253,21 @@ class ConnectionService {
     return advertisedName.substring(0, separatorIndex);
   }
 
-  /// Handles an incoming connection initiated by a remote device.
-  ///
-  /// This fires when we're the acceptor (the remote device called
-  /// requestConnection to us). We send our handshake immediately here,
-  /// rather than waiting for ConnectionEstablished, to ensure the remote
-  /// device receives our handshake even if ConnectionEstablished is delayed
-  /// or never fires.
-  void _onConnectionInitiated(EndpointId id, String advertisedName) {
-    _log(LogLevel.debug, 'Connection initiated: $id ($advertisedName)');
-
-    // Register pending handshake and send our NodeId immediately
-    // This ensures the initiator receives our handshake even if
-    // ConnectionEstablished is delayed
-    if (!_registry.hasPendingHandshake(id)) {
-      _registry.registerPendingHandshake(id);
-      _handshakeStartTimes[id] = DateTime.now();
-      _metrics.recordHandshakeStarted();
-
-      final handshakeBytes = _codec.encode(
-        _localNodeId,
-        displayName: _displayName,
-      );
-      unawaited(_nearbyPort.sendPayload(id, handshakeBytes));
-      _log(LogLevel.debug, 'Sent handshake to $id (on connection initiated)');
-    }
-  }
-
   void _onConnectionEstablished(EndpointId id) {
     _log(LogLevel.info, 'Connection established: $id');
     _metrics.recordConnectionEstablished();
 
-    // Only send handshake if we haven't already (e.g., via _onConnectionInitiated)
-    // This happens when we're the initiator, or if ConnectionInitiated didn't fire
-    if (!_registry.hasPendingHandshake(id)) {
-      _registry.registerPendingHandshake(id);
-      _handshakeStartTimes[id] = DateTime.now();
-      _metrics.recordHandshakeStarted();
+    // Register pending handshake and send our NodeId
+    _registry.registerPendingHandshake(id);
+    _handshakeStartTimes[id] = DateTime.now();
+    _metrics.recordHandshakeStarted();
 
-      final handshakeBytes = _codec.encode(
-        _localNodeId,
-        displayName: _displayName,
-      );
-      unawaited(_nearbyPort.sendPayload(id, handshakeBytes));
-      _log(LogLevel.debug, 'Sent handshake to $id');
-    } else {
-      _log(
-        LogLevel.debug,
-        'Handshake already sent to $id (via connection initiated)',
-      );
-    }
+    final handshakeBytes = _codec.encode(
+      _localNodeId,
+      displayName: _displayName,
+    );
+    unawaited(_nearbyPort.sendPayload(id, handshakeBytes));
+    _log(LogLevel.debug, 'Sent handshake to $id');
   }
 
   // Track message counts for diagnostics
