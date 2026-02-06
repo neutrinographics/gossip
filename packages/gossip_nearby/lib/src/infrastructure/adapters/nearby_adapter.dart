@@ -122,15 +122,9 @@ class NearbyAdapter implements NearbyPort {
   void _onEndpointLost(String? endpointId) {}
 
   void _onConnectionInitiated(String endpointId, ConnectionInfo info) {
-    // Emit event BEFORE accepting so connection_service can prepare
-    // (e.g., register pending handshake, send our handshake early)
-    _eventController.add(
-      ConnectionInitiated(
-        id: EndpointId(endpointId),
-        displayName: info.endpointName,
-      ),
-    );
-
+    // Accept connection first, then emit event so connection_service can
+    // send handshake immediately. We must await acceptConnection() because
+    // payloads can only be sent after the connection is accepted.
     _nearby
         .acceptConnection(
           endpointId,
@@ -138,9 +132,19 @@ class NearbyAdapter implements NearbyPort {
               _onPayloadReceived(endpointId, payload),
           onPayloadTransferUpdate: (endpointId, update) {},
         )
+        .then((_) {
+          // Connection accepted - now safe to send payloads
+          // Emit event so connection_service can send handshake early
+          // (before waiting for ConnectionEstablished/onConnectionResult)
+          _eventController.add(
+            ConnectionInitiated(
+              id: EndpointId(endpointId),
+              displayName: info.endpointName,
+            ),
+          );
+        })
         .catchError((error) {
-          // Log error - connection_service will handle via disconnect event
-          // or timeout. We emit Disconnected to signal the connection failed.
+          // Accept failed - emit Disconnected so connection_service cleans up
           _eventController.add(Disconnected(id: EndpointId(endpointId)));
         });
   }
