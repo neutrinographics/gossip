@@ -9,6 +9,7 @@ import '../domain/entities/peer.dart';
 import '../domain/entities/peer_metrics.dart';
 import '../domain/interfaces/channel_repository.dart';
 import '../domain/interfaces/entry_repository.dart';
+import '../domain/interfaces/local_node_repository.dart';
 import '../domain/interfaces/peer_repository.dart';
 import '../domain/value_objects/channel_id.dart';
 import '../domain/value_objects/log_entry.dart';
@@ -18,6 +19,7 @@ import '../domain/events/domain_event.dart';
 import '../domain/errors/sync_error.dart';
 import '../domain/services/hlc_clock.dart';
 import '../domain/services/rtt_tracker.dart';
+import '../domain/value_objects/hlc.dart';
 import '../domain/value_objects/rtt_estimate.dart';
 import '../domain/services/time_source.dart';
 import '../infrastructure/ports/message_port.dart';
@@ -131,6 +133,9 @@ class Coordinator {
   /// Configuration for the coordinator.
   final CoordinatorConfig _config;
 
+  /// HLC clock for reading current clock state. Null in local-only mode.
+  final HlcClock? _hlcClock;
+
   /// Gossip engine for anti-entropy synchronization.
   GossipEngine? _gossipEngine;
 
@@ -159,6 +164,7 @@ class Coordinator {
     required ChannelRepository channelRepository,
     required EntryRepository entryRepository,
     required CoordinatorConfig config,
+    required HlcClock? hlcClock,
     required GossipEngine? gossipEngine,
     required FailureDetector? failureDetector,
     required StreamController<DomainEvent> eventsController,
@@ -168,6 +174,7 @@ class Coordinator {
        _channelRepository = channelRepository,
        _entryRepository = entryRepository,
        _config = config,
+       _hlcClock = hlcClock,
        _gossipEngine = gossipEngine,
        _failureDetector = failureDetector,
        _eventsController = eventsController;
@@ -188,6 +195,7 @@ class Coordinator {
     required ChannelRepository channelRepository,
     required PeerRepository peerRepository,
     required EntryRepository entryRepository,
+    LocalNodeRepository? localNodeRepository,
     MessagePort? messagePort,
     TimePort? timerPort,
     Random? random,
@@ -197,9 +205,14 @@ class Coordinator {
     final cfg = config ?? CoordinatorConfig.defaults;
     // Note: NodeId validates its own invariants (non-empty) in constructor
 
+    // Restore incarnation from LocalNodeRepository if provided
+    final incarnation = localNodeRepository != null
+        ? await localNodeRepository.getIncarnation()
+        : 0;
+
     final peerRegistry = PeerRegistry(
       localNode: localNode,
-      initialIncarnation: 0,
+      initialIncarnation: incarnation,
     );
 
     // Create HlcClock if TimePort is provided for proper timestamp generation
@@ -207,6 +220,14 @@ class Coordinator {
     if (timerPort != null) {
       final timeSource = TimeSource(timerPort);
       hlcClock = HlcClock(timeSource);
+
+      // Restore clock state from LocalNodeRepository if provided
+      if (localNodeRepository != null) {
+        final clockState = await localNodeRepository.getClockState();
+        if (clockState != Hlc.zero) {
+          hlcClock.restore(clockState);
+        }
+      }
     }
 
     // Create event controller to capture in closure before coordinator is created
@@ -217,6 +238,7 @@ class Coordinator {
       hlcClock: hlcClock,
       channelRepository: channelRepository,
       entryRepository: entryRepository,
+      localNodeRepository: localNodeRepository,
       onEvent: (event) {
         if (!eventsController.isClosed) {
           eventsController.add(event);
@@ -227,6 +249,7 @@ class Coordinator {
       localNode: localNode,
       registry: peerRegistry,
       repository: peerRepository,
+      localNodeRepository: localNodeRepository,
     );
 
     final coordinator = Coordinator._(
@@ -237,6 +260,7 @@ class Coordinator {
       channelRepository: channelRepository,
       entryRepository: entryRepository,
       config: cfg,
+      hlcClock: hlcClock,
       gossipEngine: null, // Set below after coordinator is created
       failureDetector: null, // Set below after coordinator is created
       eventsController: eventsController,
@@ -259,6 +283,7 @@ class Coordinator {
         onEntriesMerged: coordinator._handleEntriesMerged,
         onLog: onLog,
         hlcClock: hlcClock,
+        localNodeRepository: localNodeRepository,
         random: random,
         adaptiveTimingEnabled: true,
       );
@@ -536,6 +561,15 @@ class Coordinator {
   int get localIncarnation {
     return _peerRegistry.localIncarnation;
   }
+
+  /// Returns the current HLC clock state, or null if no clock is configured.
+  ///
+  /// When a [LocalNodeRepository] is provided to [create], the clock state
+  /// is persisted automatically on each entry write. On the next [create]
+  /// call, it is restored to preserve timestamp monotonicity across restarts.
+  ///
+  /// Returns null when no [TimePort] was provided (local-only mode).
+  Hlc? get currentClockState => _hlcClock?.current;
 
   /// Returns metrics for a specific peer, or null if not found.
   ///
