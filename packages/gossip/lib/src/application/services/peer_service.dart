@@ -108,6 +108,12 @@ class PeerService {
   /// incarnation is broadcast to peers to override their suspected state.
   ///
   /// Transaction: Increment in registry → save to LocalNodeRepository.
+  ///
+  // TODO: Wire this into FailureDetector's SWIM refutation flow. When a
+  // Suspicion message about the local node is received, FailureDetector
+  // should call this method (via a callback or by accepting PeerService as
+  // a dependency instead of PeerRegistry directly) to refute the suspicion
+  // and persist the new incarnation number.
   Future<void> incrementLocalIncarnation() async {
     registry.incrementLocalIncarnation();
     await localNodeRepository?.saveIncarnation(registry.localIncarnation);

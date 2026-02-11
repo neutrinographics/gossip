@@ -370,6 +370,13 @@ class FailureDetector {
   }
 
   /// Transitions peer to suspected if failure threshold is exceeded.
+  // TODO: Implement SWIM refutation. When this node receives a Suspicion
+  // message about itself, it should call PeerService.incrementLocalIncarnation()
+  // to refute the false suspicion. This requires:
+  // 1. A Suspicion protocol message type
+  // 2. Handling incoming Suspicion in _handleIncomingMessage
+  // 3. Accepting PeerService (or a callback) instead of PeerRegistry directly,
+  //    so the incarnation increment is persisted via LocalNodeRepository
   void checkPeerHealth(NodeId peerId, {required DateTime occurredAt}) {
     final peer = peerRegistry.getPeer(peerId);
     if (peer == null) return;
