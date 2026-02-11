@@ -10,6 +10,7 @@ import '../../domain/aggregates/channel_aggregate.dart';
 import '../../domain/interfaces/channel_repository.dart';
 import '../../domain/interfaces/retention_policy.dart';
 import '../../domain/interfaces/entry_repository.dart';
+import '../../domain/interfaces/local_node_repository.dart';
 import '../../domain/interfaces/state_materializer.dart';
 import '../../domain/services/hlc_clock.dart';
 
@@ -74,16 +75,21 @@ class ChannelService {
   /// this callback for observability.
   final void Function(DomainEvent)? onEvent;
 
+  /// Optional repository for persisting local node state (HLC clock).
+  final LocalNodeRepository? _localNodeRepository;
+
   ChannelService({
     required this.localNode,
     HlcClock? hlcClock,
     ChannelRepository? channelRepository,
     EntryRepository? entryRepository,
+    LocalNodeRepository? localNodeRepository,
     this.onError,
     this.onEvent,
   }) : _hlcClock = hlcClock,
        _channelRepository = channelRepository,
-       _entryRepository = entryRepository;
+       _entryRepository = entryRepository,
+       _localNodeRepository = localNodeRepository;
 
   /// Emits an error through the callback if one is registered.
   void _emitError(SyncError error) {
@@ -318,6 +324,11 @@ class ChannelService {
     // Generate timestamp from HlcClock if available, otherwise fallback to system time
     final timestamp =
         _hlcClock?.now() ?? Hlc(DateTime.now().millisecondsSinceEpoch, 0);
+
+    // Persist clock state for restart recovery
+    if (_hlcClock != null && _localNodeRepository != null) {
+      await _localNodeRepository.saveClockState(_hlcClock.current);
+    }
 
     final entry = LogEntry(
       author: localNode,

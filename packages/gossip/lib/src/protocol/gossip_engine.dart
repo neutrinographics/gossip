@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import '../application/observability/log_level.dart';
 import '../domain/errors/sync_error.dart';
+import '../domain/interfaces/local_node_repository.dart';
 import '../domain/services/hlc_clock.dart';
 
 import '../domain/value_objects/node_id.dart';
@@ -104,6 +105,9 @@ class GossipEngine {
   /// When null, HLC updates are skipped (not recommended for production).
   final HlcClock? _hlcClock;
 
+  /// Optional repository for persisting local node state (HLC clock).
+  final LocalNodeRepository? _localNodeRepository;
+
   /// Optional callback for logging protocol messages.
   ///
   /// When provided, logs message types, sizes, and other protocol details.
@@ -191,10 +195,12 @@ class GossipEngine {
     this.onEntriesMerged,
     this.onLog,
     HlcClock? hlcClock,
+    LocalNodeRepository? localNodeRepository,
     Random? random,
     Duration? gossipInterval,
     bool adaptiveTimingEnabled = false,
   }) : _hlcClock = hlcClock,
+       _localNodeRepository = localNodeRepository,
        _random = random ?? Random(),
        _staticGossipInterval =
            gossipInterval ?? const Duration(milliseconds: 500),
@@ -768,5 +774,8 @@ class GossipEngine {
         .reduce((a, b) => a.compareTo(b) > 0 ? a : b);
 
     _hlcClock.receive(maxHlc);
+
+    // Persist clock state for restart recovery (fire-and-forget)
+    _localNodeRepository?.saveClockState(_hlcClock.current);
   }
 }

@@ -1,12 +1,14 @@
 import 'dart:typed_data';
 import 'package:gossip/src/domain/events/domain_event.dart';
 import 'package:gossip/src/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/domain/value_objects/hlc.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/facade/coordinator.dart';
 import 'package:gossip/src/facade/coordinator_config.dart';
 import 'package:gossip/src/facade/sync_state.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_channel_repository.dart';
+import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_peer_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
@@ -754,6 +756,175 @@ void main() {
         await coordinator.removeChannel(ChannelId('nonexistent'));
 
         expect(events, isEmpty);
+      });
+    });
+
+    group('local node state persistence', () {
+      group('currentClockState', () {
+        test('returns null when no TimePort provided', () async {
+          final coordinator = await Coordinator.create(
+            localNode: localNode,
+            channelRepository: InMemoryChannelRepository(),
+            peerRepository: InMemoryPeerRepository(),
+            entryRepository: InMemoryEntryRepository(),
+          );
+
+          expect(coordinator.currentClockState, isNull);
+        });
+
+        test(
+          'returns Hlc.zero when TimePort provided but no activity',
+          () async {
+            final bus = InMemoryMessageBus();
+            final coordinator = await Coordinator.create(
+              localNode: localNode,
+              channelRepository: InMemoryChannelRepository(),
+              peerRepository: InMemoryPeerRepository(),
+              entryRepository: InMemoryEntryRepository(),
+              messagePort: InMemoryMessagePort(localNode, bus),
+              timerPort: InMemoryTimePort(),
+            );
+
+            expect(coordinator.currentClockState, equals(Hlc.zero));
+          },
+        );
+      });
+
+      group('clock state restoration', () {
+        test('restores clock state from LocalNodeRepository', () async {
+          final bus = InMemoryMessageBus();
+          final localNodeRepo = InMemoryLocalNodeRepository();
+          await localNodeRepo.saveClockState(Hlc(5000, 42));
+
+          final coordinator = await Coordinator.create(
+            localNode: localNode,
+            channelRepository: InMemoryChannelRepository(),
+            peerRepository: InMemoryPeerRepository(),
+            entryRepository: InMemoryEntryRepository(),
+            localNodeRepository: localNodeRepo,
+            messagePort: InMemoryMessagePort(localNode, bus),
+            timerPort: InMemoryTimePort(),
+          );
+
+          expect(coordinator.currentClockState, equals(Hlc(5000, 42)));
+        });
+
+        test('persists clock state after appending entry', () async {
+          final bus = InMemoryMessageBus();
+          final localNodeRepo = InMemoryLocalNodeRepository();
+          final timePort = InMemoryTimePort();
+          timePort.advance(Duration(milliseconds: 1000));
+
+          final coordinator = await Coordinator.create(
+            localNode: localNode,
+            channelRepository: InMemoryChannelRepository(),
+            peerRepository: InMemoryPeerRepository(),
+            entryRepository: InMemoryEntryRepository(),
+            localNodeRepository: localNodeRepo,
+            messagePort: InMemoryMessagePort(localNode, bus),
+            timerPort: timePort,
+          );
+
+          final channel = await coordinator.createChannel(ChannelId('ch'));
+          final stream = await channel.getOrCreateStream(StreamId('s'));
+          await stream.append(Uint8List.fromList([1, 2, 3]));
+
+          final savedState = await localNodeRepo.getClockState();
+          expect(savedState, greaterThan(Hlc.zero));
+          expect(savedState, equals(coordinator.currentClockState));
+        });
+
+        test(
+          'ignores LocalNodeRepository clock state without TimePort',
+          () async {
+            final localNodeRepo = InMemoryLocalNodeRepository();
+            await localNodeRepo.saveClockState(Hlc(5000, 42));
+
+            final coordinator = await Coordinator.create(
+              localNode: localNode,
+              channelRepository: InMemoryChannelRepository(),
+              peerRepository: InMemoryPeerRepository(),
+              entryRepository: InMemoryEntryRepository(),
+              localNodeRepository: localNodeRepo,
+            );
+
+            expect(coordinator.currentClockState, isNull);
+          },
+        );
+      });
+
+      group('incarnation restoration', () {
+        test('restores incarnation from LocalNodeRepository', () async {
+          final localNodeRepo = InMemoryLocalNodeRepository();
+          await localNodeRepo.saveIncarnation(5);
+
+          final coordinator = await Coordinator.create(
+            localNode: localNode,
+            channelRepository: InMemoryChannelRepository(),
+            peerRepository: InMemoryPeerRepository(),
+            entryRepository: InMemoryEntryRepository(),
+            localNodeRepository: localNodeRepo,
+          );
+
+          expect(coordinator.localIncarnation, equals(5));
+        });
+
+        test('defaults incarnation to 0 without LocalNodeRepository', () async {
+          final coordinator = await Coordinator.create(
+            localNode: localNode,
+            channelRepository: InMemoryChannelRepository(),
+            peerRepository: InMemoryPeerRepository(),
+            entryRepository: InMemoryEntryRepository(),
+          );
+
+          expect(coordinator.localIncarnation, equals(0));
+        });
+      });
+
+      group('round-trip persistence', () {
+        test(
+          'clock and incarnation survive across coordinator creates',
+          () async {
+            final bus = InMemoryMessageBus();
+            final channelRepo = InMemoryChannelRepository();
+            final entryRepo = InMemoryEntryRepository();
+            final localNodeRepo = InMemoryLocalNodeRepository();
+            final timePort = InMemoryTimePort();
+            timePort.advance(Duration(milliseconds: 1000));
+
+            // First session: write entries
+            final coord1 = await Coordinator.create(
+              localNode: localNode,
+              channelRepository: channelRepo,
+              peerRepository: InMemoryPeerRepository(),
+              entryRepository: entryRepo,
+              localNodeRepository: localNodeRepo,
+              messagePort: InMemoryMessagePort(localNode, bus),
+              timerPort: timePort,
+            );
+
+            final channel = await coord1.createChannel(ChannelId('ch'));
+            final stream = await channel.getOrCreateStream(StreamId('s'));
+            await stream.append(Uint8List.fromList([1, 2, 3]));
+
+            final savedClock = coord1.currentClockState;
+            final savedIncarnation = coord1.localIncarnation;
+
+            // Second session: restore from same repositories
+            final coord2 = await Coordinator.create(
+              localNode: localNode,
+              channelRepository: channelRepo,
+              peerRepository: InMemoryPeerRepository(),
+              entryRepository: entryRepo,
+              localNodeRepository: localNodeRepo,
+              messagePort: InMemoryMessagePort(localNode, bus),
+              timerPort: InMemoryTimePort(),
+            );
+
+            expect(coord2.currentClockState, equals(savedClock));
+            expect(coord2.localIncarnation, equals(savedIncarnation));
+          },
+        );
       });
     });
   });
