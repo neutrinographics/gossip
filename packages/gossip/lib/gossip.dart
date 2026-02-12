@@ -130,6 +130,7 @@ export 'src/infrastructure/ports/message_port.dart';
 export 'src/infrastructure/ports/time_port.dart';
 
 // In-memory implementations (for testing and simple use cases)
+export 'src/infrastructure/repositories/caching_channel_repository.dart';
 export 'src/infrastructure/repositories/in_memory_channel_repository.dart';
 export 'src/infrastructure/repositories/in_memory_local_node_repository.dart';
 export 'src/infrastructure/repositories/in_memory_peer_repository.dart';

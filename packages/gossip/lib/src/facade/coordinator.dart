@@ -8,6 +8,7 @@ import '../domain/aggregates/channel_aggregate.dart';
 import '../domain/entities/peer.dart';
 import '../domain/entities/peer_metrics.dart';
 import '../domain/interfaces/channel_repository.dart';
+import '../infrastructure/repositories/caching_channel_repository.dart';
 import '../domain/interfaces/entry_repository.dart';
 import '../domain/interfaces/local_node_repository.dart';
 import '../domain/interfaces/peer_repository.dart';
@@ -227,13 +228,20 @@ class Coordinator {
       }
     }
 
+    // Wrap the channel repository in an identity map so that all consumers
+    // (ChannelService, _loadChannels, _loadExistingChannels) share the same
+    // in-memory object references. Persistent repositories (e.g. Hive-backed)
+    // return new objects on each findById(), which breaks the gossip engine's
+    // assumption that channel aggregates are mutated in-place.
+    final cachedChannelRepo = CachingChannelRepository(channelRepository);
+
     // Create event controller to capture in closure before coordinator is created
     final eventsController = StreamController<DomainEvent>.broadcast();
 
     final channelService = ChannelService(
       localNode: localNode,
       hlcClock: hlcClock,
-      channelRepository: channelRepository,
+      channelRepository: cachedChannelRepo,
       entryRepository: entryRepository,
       localNodeRepository: localNodeRepository,
       onEvent: (event) {
@@ -253,7 +261,7 @@ class Coordinator {
       peerRegistry: peerRegistry,
       channelService: channelService,
       peerService: peerService,
-      channelRepository: channelRepository,
+      channelRepository: cachedChannelRepo,
       entryRepository: entryRepository,
       config: cfg,
       hlcClock: hlcClock,
