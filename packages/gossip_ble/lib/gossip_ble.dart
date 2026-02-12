@@ -9,16 +9,17 @@
 /// import 'package:gossip/gossip.dart';
 /// import 'package:gossip_ble/gossip_ble.dart';
 ///
-/// // Create transport
-/// final transport = BleTransport(
-///   localNodeId: NodeId('device-uuid'),
+/// // Create transport (resolves node ID automatically)
+/// final localNodeRepo = InMemoryLocalNodeRepository();
+/// final transport = await BleTransport.create(
+///   localNodeRepository: localNodeRepo,
 ///   serviceId: ServiceId('com.example.app'),
 ///   displayName: 'My Device',
 /// );
 ///
-/// // Create gossip coordinator with BLE transport
+/// // Create gossip coordinator (same repo guarantees same node ID)
 /// final coordinator = await Coordinator.create(
-///   localNode: transport.localNodeId,
+///   localNodeRepository: localNodeRepo,
 ///   messagePort: transport.messagePort,
 ///   // ... other params
 /// );

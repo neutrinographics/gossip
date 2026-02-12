@@ -68,6 +68,32 @@ class ChannelAggregate {
     _addEvent(ChannelCreated(id, occurredAt: occurredAt ?? DateTime.now()));
   }
 
+  /// Private constructor for reconstitute — no events, no auto-member-add.
+  ChannelAggregate._reconstitute({required this.id, required this.localNode});
+
+  /// Restores a previously persisted channel aggregate.
+  ///
+  /// Unlike the default constructor, this does NOT emit domain events
+  /// (no [ChannelCreated], [MemberAdded], [StreamCreated]) since this
+  /// represents loading existing state, not creating new state.
+  ///
+  /// The caller provides the full [memberIds] set (which should already
+  /// include localNode if it was a member when persisted).
+  factory ChannelAggregate.reconstitute({
+    required ChannelId id,
+    required NodeId localNode,
+    required Set<NodeId> memberIds,
+    required Map<StreamId, RetentionPolicy> streams,
+  }) {
+    final aggregate = ChannelAggregate._reconstitute(
+      id: id,
+      localNode: localNode,
+    );
+    aggregate._memberIds.addAll(memberIds);
+    aggregate._streams.addAll(streams);
+    return aggregate;
+  }
+
   /// Returns true if the given node is a member of this channel.
   bool hasMember(NodeId id) => _memberIds.contains(id);
 
@@ -180,7 +206,10 @@ class ChannelAggregate {
   ///
   /// Note: This method performs a full scan of entries. For large streams,
   /// consider implementing incremental materialization or caching.
-  T? getState<T>(StreamId streamId, EntryRepository entryRepository) {
+  Future<T?> getState<T>(
+    StreamId streamId,
+    EntryRepository entryRepository,
+  ) async {
     final materializer = _materializers[streamId];
     if (materializer == null) return null;
     if (!_streams.containsKey(streamId)) return null;
@@ -190,7 +219,7 @@ class ChannelAggregate {
       throw TypeError();
     }
 
-    final entries = entryRepository.getAll(id, streamId);
+    final entries = await entryRepository.getAll(id, streamId);
     T state = materializer.initial();
     for (final entry in entries) {
       state = materializer.fold(state, entry);

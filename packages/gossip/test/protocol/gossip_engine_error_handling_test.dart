@@ -95,7 +95,7 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('HLC updates', () {
-    test('handleDeltaResponse updates HLC from received entries', () {
+    test('handleDeltaResponse updates HLC from received entries', () async {
       final h = GossipEngineTestHarness(withHlcClock: true);
       h.createChannel('ch1', streamIds: ['s1']);
 
@@ -117,7 +117,7 @@ void main() {
         entries: [entry],
       );
 
-      h.engine.handleDeltaResponse(response);
+      await h.engine.handleDeltaResponse(response);
 
       // HLC should have advanced past the remote timestamp
       final clockAfter = h.hlcClock!.current;
@@ -133,7 +133,7 @@ void main() {
       );
     });
 
-    test('handleDeltaResponse works without HLC clock', () {
+    test('handleDeltaResponse works without HLC clock', () async {
       final h = GossipEngineTestHarness();
       h.createChannel('ch1', streamIds: ['s1']);
 
@@ -152,11 +152,11 @@ void main() {
       );
 
       // Should not crash when no HLC clock is configured
-      h.engine.handleDeltaResponse(response);
+      await h.engine.handleDeltaResponse(response);
 
       // Entries should still be merged
       expect(
-        h.entryRepository.entryCount(ChannelId('ch1'), StreamId('s1')),
+        await h.entryRepository.entryCount(ChannelId('ch1'), StreamId('s1')),
         equals(1),
       );
     });

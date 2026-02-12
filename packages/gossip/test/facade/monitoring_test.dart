@@ -7,6 +7,7 @@ import 'package:gossip/src/facade/sync_state.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_channel_repository.dart';
+import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_peer_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:test/test.dart';
@@ -15,7 +16,9 @@ void main() {
   group('ResourceUsage', () {
     test('has correct initial values with no data', () async {
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -31,7 +34,9 @@ void main() {
 
     test('counts peers correctly', () async {
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -47,7 +52,9 @@ void main() {
 
     test('counts channels correctly', () async {
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -65,7 +72,9 @@ void main() {
     test('counts entries across all channels and streams', () async {
       final entryRepo = InMemoryEntryRepository();
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: entryRepo,
@@ -88,7 +97,9 @@ void main() {
     test('calculates storage bytes across all channels and streams', () async {
       final entryRepo = InMemoryEntryRepository();
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: entryRepo,
@@ -111,7 +122,9 @@ void main() {
   group('HealthStatus', () {
     test('reports correct state when stopped', () async {
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -125,7 +138,9 @@ void main() {
 
     test('reports correct state when running', () async {
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -140,7 +155,9 @@ void main() {
 
     test('reports correct incarnation', () async {
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -153,7 +170,9 @@ void main() {
 
     test('includes resource usage', () async {
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -170,7 +189,9 @@ void main() {
 
     test('reports reachable peer count', () async {
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -186,7 +207,9 @@ void main() {
 
     test('isHealthy returns true when running with reachable peers', () async {
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -202,7 +225,9 @@ void main() {
 
     test('isHealthy returns false when stopped', () async {
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -219,7 +244,9 @@ void main() {
       'isHealthy returns true when running with no peers (standalone mode)',
       () async {
         final coordinator = await Coordinator.create(
-          localNode: NodeId('local'),
+          localNodeRepository: InMemoryLocalNodeRepository(
+            nodeId: NodeId('local'),
+          ),
           channelRepository: InMemoryChannelRepository(),
           peerRepository: InMemoryPeerRepository(),
           entryRepository: InMemoryEntryRepository(),
@@ -238,7 +265,9 @@ void main() {
   group('AdaptiveTimingStatus', () {
     test('returns null in local-only mode (no ports)', () async {
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -252,7 +281,9 @@ void main() {
     test('returns non-null when network sync is configured', () async {
       final bus = InMemoryMessageBus();
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -268,7 +299,9 @@ void main() {
     test('reports initial conservative defaults before RTT samples', () async {
       final bus = InMemoryMessageBus();
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -287,7 +320,9 @@ void main() {
     test('reports zero pending send count when idle', () async {
       final bus = InMemoryMessageBus();
       final coordinator = await Coordinator.create(
-        localNode: NodeId('local'),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),

@@ -10,7 +10,7 @@ import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart
 
 void main() {
   group('InMemoryEntryRepository', () {
-    test('append and getAll stores and retrieves entries', () {
+    test('append and getAll stores and retrieves entries', () async {
       final store = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
       final streamId = StreamId('stream-1');
@@ -22,22 +22,22 @@ void main() {
         payload: Uint8List.fromList([1, 2, 3]),
       );
 
-      store.append(channelId, streamId, entry);
-      final entries = store.getAll(channelId, streamId);
+      await store.append(channelId, streamId, entry);
+      final entries = await store.getAll(channelId, streamId);
 
       expect(entries, hasLength(1));
       expect(entries[0].author, equals(author));
       expect(entries[0].sequence, equals(1));
     });
 
-    test('entriesSince returns only entries after version vector', () {
+    test('entriesSince returns only entries after version vector', () async {
       final store = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
       final streamId = StreamId('stream-1');
       final author1 = NodeId('author-1');
       final author2 = NodeId('author-2');
 
-      store.append(
+      await store.append(
         channelId,
         streamId,
         LogEntry(
@@ -47,7 +47,7 @@ void main() {
           payload: Uint8List.fromList([1]),
         ),
       );
-      store.append(
+      await store.append(
         channelId,
         streamId,
         LogEntry(
@@ -57,7 +57,7 @@ void main() {
           payload: Uint8List.fromList([2]),
         ),
       );
-      store.append(
+      await store.append(
         channelId,
         streamId,
         LogEntry(
@@ -69,7 +69,7 @@ void main() {
       );
 
       final since = VersionVector({author1: 1, author2: 0});
-      final newEntries = store.entriesSince(channelId, streamId, since);
+      final newEntries = await store.entriesSince(channelId, streamId, since);
 
       expect(newEntries, hasLength(2)); // author1:2 and author2:1
       expect(
@@ -82,15 +82,18 @@ void main() {
       );
     });
 
-    test('latestSequence returns highest sequence for author', () {
+    test('latestSequence returns highest sequence for author', () async {
       final store = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
       final streamId = StreamId('stream-1');
       final author = NodeId('author-1');
 
-      expect(store.latestSequence(channelId, streamId, author), equals(0));
+      expect(
+        await store.latestSequence(channelId, streamId, author),
+        equals(0),
+      );
 
-      store.append(
+      await store.append(
         channelId,
         streamId,
         LogEntry(
@@ -100,9 +103,12 @@ void main() {
           payload: Uint8List.fromList([1]),
         ),
       );
-      expect(store.latestSequence(channelId, streamId, author), equals(1));
+      expect(
+        await store.latestSequence(channelId, streamId, author),
+        equals(1),
+      );
 
-      store.append(
+      await store.append(
         channelId,
         streamId,
         LogEntry(
@@ -112,10 +118,13 @@ void main() {
           payload: Uint8List.fromList([2]),
         ),
       );
-      expect(store.latestSequence(channelId, streamId, author), equals(3));
+      expect(
+        await store.latestSequence(channelId, streamId, author),
+        equals(3),
+      );
     });
 
-    test('removeEntries removes specified entries', () {
+    test('removeEntries removes specified entries', () async {
       final store = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
       final streamId = StreamId('stream-1');
@@ -134,18 +143,18 @@ void main() {
         payload: Uint8List.fromList([2]),
       );
 
-      store.append(channelId, streamId, entry1);
-      store.append(channelId, streamId, entry2);
-      expect(store.entryCount(channelId, streamId), equals(2));
+      await store.append(channelId, streamId, entry1);
+      await store.append(channelId, streamId, entry2);
+      expect(await store.entryCount(channelId, streamId), equals(2));
 
-      store.removeEntries(channelId, streamId, [entry1.id]);
+      await store.removeEntries(channelId, streamId, [entry1.id]);
 
-      expect(store.entryCount(channelId, streamId), equals(1));
-      final remaining = store.getAll(channelId, streamId);
+      expect(await store.entryCount(channelId, streamId), equals(1));
+      final remaining = await store.getAll(channelId, streamId);
       expect(remaining[0].sequence, equals(2));
     });
 
-    test('sizeBytes calculates total size of entries', () {
+    test('sizeBytes calculates total size of entries', () async {
       final store = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
       final streamId = StreamId('stream-1');
@@ -164,45 +173,48 @@ void main() {
         payload: Uint8List.fromList([4, 5]),
       );
 
-      store.append(channelId, streamId, entry1);
-      store.append(channelId, streamId, entry2);
+      await store.append(channelId, streamId, entry1);
+      await store.append(channelId, streamId, entry2);
 
       final expectedSize = entry1.sizeBytes + entry2.sizeBytes;
-      expect(store.sizeBytes(channelId, streamId), equals(expectedSize));
+      expect(await store.sizeBytes(channelId, streamId), equals(expectedSize));
     });
 
-    test('append ignores duplicate entries with same author and sequence', () {
-      final store = InMemoryEntryRepository();
-      final channelId = ChannelId('channel-1');
-      final streamId = StreamId('stream-1');
-      final author = NodeId('author-1');
+    test(
+      'append ignores duplicate entries with same author and sequence',
+      () async {
+        final store = InMemoryEntryRepository();
+        final channelId = ChannelId('channel-1');
+        final streamId = StreamId('stream-1');
+        final author = NodeId('author-1');
 
-      final entry1 = LogEntry(
-        author: author,
-        sequence: 1,
-        timestamp: Hlc(1000, 0),
-        payload: Uint8List.fromList([1, 2, 3]),
-      );
+        final entry1 = LogEntry(
+          author: author,
+          sequence: 1,
+          timestamp: Hlc(1000, 0),
+          payload: Uint8List.fromList([1, 2, 3]),
+        );
 
-      // Same author and sequence, different timestamp and payload
-      final duplicate = LogEntry(
-        author: author,
-        sequence: 1,
-        timestamp: Hlc(2000, 0),
-        payload: Uint8List.fromList([4, 5, 6]),
-      );
+        // Same author and sequence, different timestamp and payload
+        final duplicate = LogEntry(
+          author: author,
+          sequence: 1,
+          timestamp: Hlc(2000, 0),
+          payload: Uint8List.fromList([4, 5, 6]),
+        );
 
-      store.append(channelId, streamId, entry1);
-      store.append(channelId, streamId, duplicate);
+        await store.append(channelId, streamId, entry1);
+        await store.append(channelId, streamId, duplicate);
 
-      final entries = store.getAll(channelId, streamId);
-      expect(entries, hasLength(1));
-      // Original entry is preserved
-      expect(entries[0].timestamp, equals(Hlc(1000, 0)));
-      expect(entries[0].payload, equals(Uint8List.fromList([1, 2, 3])));
-    });
+        final entries = await store.getAll(channelId, streamId);
+        expect(entries, hasLength(1));
+        // Original entry is preserved
+        expect(entries[0].timestamp, equals(Hlc(1000, 0)));
+        expect(entries[0].payload, equals(Uint8List.fromList([1, 2, 3])));
+      },
+    );
 
-    test('appendAll ignores duplicate entries', () {
+    test('appendAll ignores duplicate entries', () async {
       final store = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
       final streamId = StreamId('stream-1');
@@ -222,12 +234,12 @@ void main() {
       );
 
       // First append
-      store.appendAll(channelId, streamId, [entry1, entry2]);
-      expect(store.entryCount(channelId, streamId), equals(2));
+      await store.appendAll(channelId, streamId, [entry1, entry2]);
+      expect(await store.entryCount(channelId, streamId), equals(2));
 
       // Append same entries again (simulating gossip re-sync)
-      store.appendAll(channelId, streamId, [entry1, entry2]);
-      expect(store.entryCount(channelId, streamId), equals(2));
+      await store.appendAll(channelId, streamId, [entry1, entry2]);
+      expect(await store.entryCount(channelId, streamId), equals(2));
 
       // Append mix of new and duplicate
       final entry3 = LogEntry(
@@ -236,29 +248,29 @@ void main() {
         timestamp: Hlc(3000, 0),
         payload: Uint8List.fromList([3]),
       );
-      store.appendAll(channelId, streamId, [entry1, entry3]);
-      expect(store.entryCount(channelId, streamId), equals(3));
+      await store.appendAll(channelId, streamId, [entry1, entry3]);
+      expect(await store.entryCount(channelId, streamId), equals(3));
     });
 
     group('getVersionVector', () {
-      test('returns empty version vector for empty stream', () {
+      test('returns empty version vector for empty stream', () async {
         final store = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
         final streamId = StreamId('stream-1');
 
-        final vv = store.getVersionVector(channelId, streamId);
+        final vv = await store.getVersionVector(channelId, streamId);
 
         expect(vv.entries, isEmpty);
       });
 
-      test('returns version vector with max sequence per author', () {
+      test('returns version vector with max sequence per author', () async {
         final store = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
         final streamId = StreamId('stream-1');
         final author1 = NodeId('author-1');
         final author2 = NodeId('author-2');
 
-        store.append(
+        await store.append(
           channelId,
           streamId,
           LogEntry(
@@ -268,7 +280,7 @@ void main() {
             payload: Uint8List.fromList([1]),
           ),
         );
-        store.append(
+        await store.append(
           channelId,
           streamId,
           LogEntry(
@@ -278,7 +290,7 @@ void main() {
             payload: Uint8List.fromList([2]),
           ),
         );
-        store.append(
+        await store.append(
           channelId,
           streamId,
           LogEntry(
@@ -288,7 +300,7 @@ void main() {
             payload: Uint8List.fromList([3]),
           ),
         );
-        store.append(
+        await store.append(
           channelId,
           streamId,
           LogEntry(
@@ -299,20 +311,20 @@ void main() {
           ),
         );
 
-        final vv = store.getVersionVector(channelId, streamId);
+        final vv = await store.getVersionVector(channelId, streamId);
 
         expect(vv[author1], equals(2));
         expect(vv[author2], equals(3));
       });
 
-      test('returns separate version vectors for different streams', () {
+      test('returns separate version vectors for different streams', () async {
         final store = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
         final streamId1 = StreamId('stream-1');
         final streamId2 = StreamId('stream-2');
         final author = NodeId('author-1');
 
-        store.append(
+        await store.append(
           channelId,
           streamId1,
           LogEntry(
@@ -322,7 +334,7 @@ void main() {
             payload: Uint8List.fromList([1]),
           ),
         );
-        store.append(
+        await store.append(
           channelId,
           streamId2,
           LogEntry(
@@ -333,20 +345,20 @@ void main() {
           ),
         );
 
-        final vv1 = store.getVersionVector(channelId, streamId1);
-        final vv2 = store.getVersionVector(channelId, streamId2);
+        final vv1 = await store.getVersionVector(channelId, streamId1);
+        final vv2 = await store.getVersionVector(channelId, streamId2);
 
         expect(vv1[author], equals(1));
         expect(vv2[author], equals(5));
       });
 
-      test('version vector updates after appendAll', () {
+      test('version vector updates after appendAll', () async {
         final store = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
         final streamId = StreamId('stream-1');
         final author = NodeId('author-1');
 
-        store.appendAll(channelId, streamId, [
+        await store.appendAll(channelId, streamId, [
           LogEntry(
             author: author,
             sequence: 1,
@@ -361,7 +373,7 @@ void main() {
           ),
         ]);
 
-        final vv = store.getVersionVector(channelId, streamId);
+        final vv = await store.getVersionVector(channelId, streamId);
 
         expect(vv[author], equals(2));
       });

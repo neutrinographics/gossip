@@ -9,6 +9,7 @@ import 'package:gossip/src/domain/value_objects/hlc.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/domain/interfaces/retention_policy.dart';
+import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
@@ -35,11 +36,12 @@ void main() {
       entryRepository: entryRepo,
       timePort: timer,
       messagePort: messagePort,
+      localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
     );
   }
 
   group('GossipEngine Message Handling', () {
-    test('handleDigestRequest returns our digest for the channel', () {
+    test('handleDigestRequest returns our digest for the channel', () async {
       final localNode = NodeId('local');
       final peerNode = NodeId('peer-1');
       final registry = PeerRegistry(
@@ -62,7 +64,7 @@ void main() {
       final peerDigest = ChannelDigest(channelId: channelId, streams: []);
       final request = DigestRequest(sender: peerNode, digests: [peerDigest]);
 
-      final response = engine.handleDigestRequest(request, [channel]);
+      final response = await engine.handleDigestRequest(request, [channel]);
 
       expect(response.sender, equals(localNode));
       expect(response.digests, hasLength(1));
@@ -72,7 +74,7 @@ void main() {
 
     test(
       'handleDigestResponse generates delta requests for missing entries',
-      () {
+      () async {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
@@ -85,7 +87,7 @@ void main() {
         final streamId = StreamId('stream-1');
 
         // We have one entry
-        entryRepo.append(
+        await entryRepo.append(
           channelId,
           streamId,
           LogEntry(
@@ -120,7 +122,7 @@ void main() {
           ],
         );
 
-        final deltaRequests = engine.handleDigestResponse(response);
+        final deltaRequests = await engine.handleDigestResponse(response);
 
         expect(deltaRequests, hasLength(1));
         expect(deltaRequests[0].sender, equals(localNode));
@@ -131,7 +133,7 @@ void main() {
       },
     );
 
-    test('handleDeltaRequest responds with missing entries', () {
+    test('handleDeltaRequest responds with missing entries', () async {
       final localNode = NodeId('local');
       final peerNode = NodeId('peer-1');
       final author1 = NodeId('author-1');
@@ -156,8 +158,8 @@ void main() {
         timestamp: Hlc(2000, 0),
         payload: Uint8List.fromList([2]),
       );
-      entryRepo.append(channelId, streamId, entry1);
-      entryRepo.append(channelId, streamId, entry2);
+      await entryRepo.append(channelId, streamId, entry1);
+      await entryRepo.append(channelId, streamId, entry2);
 
       final engine = createEngine(localNode, registry, entryRepo);
 
@@ -170,7 +172,7 @@ void main() {
         since: peerVersion,
       );
 
-      final response = engine.handleDeltaRequest(request);
+      final response = await engine.handleDeltaRequest(request);
 
       expect(response.sender, equals(localNode));
       expect(response.channelId, equals(channelId));
@@ -180,7 +182,7 @@ void main() {
       expect(response.entries[1].sequence, equals(2));
     });
 
-    test('handleDeltaResponse merges received entries into store', () {
+    test('handleDeltaResponse merges received entries into store', () async {
       final localNode = NodeId('local');
       final peerNode = NodeId('peer-1');
       final author1 = NodeId('author-1');
@@ -195,7 +197,7 @@ void main() {
       final engine = createEngine(localNode, registry, entryRepo);
 
       // Initially empty
-      expect(entryRepo.entryCount(channelId, streamId), equals(0));
+      expect(await entryRepo.entryCount(channelId, streamId), equals(0));
 
       // Receive entries from peer
       final entry1 = LogEntry(
@@ -217,18 +219,18 @@ void main() {
         entries: [entry1, entry2],
       );
 
-      engine.handleDeltaResponse(response);
+      await engine.handleDeltaResponse(response);
 
       // Entries should now be in our store
-      expect(entryRepo.entryCount(channelId, streamId), equals(2));
-      final stored = entryRepo.getAll(channelId, streamId);
+      expect(await entryRepo.entryCount(channelId, streamId), equals(2));
+      final stored = await entryRepo.getAll(channelId, streamId);
       expect(stored[0].sequence, equals(1));
       expect(stored[1].sequence, equals(2));
     });
 
     test(
       'handleDigestResponse skips delta request when versions are equal',
-      () {
+      () async {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
@@ -241,7 +243,7 @@ void main() {
         final streamId = StreamId('stream-1');
 
         // We have entry with sequence 5
-        entryRepo.append(
+        await entryRepo.append(
           channelId,
           streamId,
           LogEntry(
@@ -276,7 +278,7 @@ void main() {
           ],
         );
 
-        final deltaRequests = engine.handleDigestResponse(response);
+        final deltaRequests = await engine.handleDigestResponse(response);
 
         // Should NOT generate a delta request since we're already in sync
         expect(deltaRequests, isEmpty);
@@ -285,7 +287,7 @@ void main() {
 
     test(
       'handleDigestResponse skips delta request when we are ahead of peer',
-      () {
+      () async {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
@@ -299,7 +301,7 @@ void main() {
 
         // We have entries up to sequence 10
         for (var i = 1; i <= 10; i++) {
-          entryRepo.append(
+          await entryRepo.append(
             channelId,
             streamId,
             LogEntry(
@@ -335,7 +337,7 @@ void main() {
           ],
         );
 
-        final deltaRequests = engine.handleDigestResponse(response);
+        final deltaRequests = await engine.handleDigestResponse(response);
 
         // Should NOT generate a delta request since we have everything peer has
         expect(deltaRequests, isEmpty);
@@ -344,7 +346,7 @@ void main() {
 
     test(
       'handleDigestResponse generates delta request only for streams where peer is ahead',
-      () {
+      () async {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
@@ -358,7 +360,7 @@ void main() {
         final streamId2 = StreamId('stream-2');
 
         // Stream 1: we have sequence 5, peer has 5 (in sync)
-        entryRepo.append(
+        await entryRepo.append(
           channelId,
           streamId1,
           LogEntry(
@@ -370,7 +372,7 @@ void main() {
         );
 
         // Stream 2: we have sequence 3, peer has 7 (peer ahead)
-        entryRepo.append(
+        await entryRepo.append(
           channelId,
           streamId2,
           LogEntry(
@@ -416,7 +418,7 @@ void main() {
           ],
         );
 
-        final deltaRequests = engine.handleDigestResponse(response);
+        final deltaRequests = await engine.handleDigestResponse(response);
 
         // Should only generate delta request for stream2 where peer is ahead
         expect(deltaRequests, hasLength(1));
@@ -427,7 +429,7 @@ void main() {
 
     test(
       'handleDigestResponse skips delta request when one is already pending for the same stream',
-      () {
+      () async {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
@@ -440,7 +442,7 @@ void main() {
         final streamId = StreamId('stream-1');
 
         // We have sequence 1, peer has 5 (peer ahead)
-        entryRepo.append(
+        await entryRepo.append(
           channelId,
           streamId,
           LogEntry(
@@ -473,19 +475,19 @@ void main() {
         );
 
         // First DigestResponse should generate a DeltaRequest
-        final firstRequests = engine.handleDigestResponse(response);
+        final firstRequests = await engine.handleDigestResponse(response);
         expect(firstRequests, hasLength(1));
 
         // Second DigestResponse (before DeltaResponse arrives) should NOT
         // generate another DeltaRequest for the same stream
-        final secondRequests = engine.handleDigestResponse(response);
+        final secondRequests = await engine.handleDigestResponse(response);
         expect(secondRequests, isEmpty);
       },
     );
 
     test(
       'handleDeltaResponse clears pending state allowing new delta requests',
-      () {
+      () async {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
@@ -498,7 +500,7 @@ void main() {
         final streamId = StreamId('stream-1');
 
         // We have sequence 1
-        entryRepo.append(
+        await entryRepo.append(
           channelId,
           streamId,
           LogEntry(
@@ -532,11 +534,13 @@ void main() {
         );
 
         // First request goes through
-        final firstRequests = engine.handleDigestResponse(digestResponse);
+        final firstRequests = await engine.handleDigestResponse(digestResponse);
         expect(firstRequests, hasLength(1));
 
         // Second request blocked (pending)
-        final secondRequests = engine.handleDigestResponse(digestResponse);
+        final secondRequests = await engine.handleDigestResponse(
+          digestResponse,
+        );
         expect(secondRequests, isEmpty);
 
         // Receive DeltaResponse with entries 2-5
@@ -559,10 +563,10 @@ void main() {
             ),
           ],
         );
-        engine.handleDeltaResponse(deltaResponse);
+        await engine.handleDeltaResponse(deltaResponse);
 
         // Now we have sequence 3, peer still claims 5 - should allow new request
-        final thirdRequests = engine.handleDigestResponse(digestResponse);
+        final thirdRequests = await engine.handleDigestResponse(digestResponse);
         expect(thirdRequests, hasLength(1));
         // Request should be since our current version (author1:3)
         expect(thirdRequests[0].since[author1], equals(3));
@@ -571,7 +575,7 @@ void main() {
 
     test(
       'pending delta requests expire after timeout allowing new requests',
-      () {
+      () async {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
@@ -583,7 +587,7 @@ void main() {
         final channelId = ChannelId('channel-1');
         final streamId = StreamId('stream-1');
 
-        entryRepo.append(
+        await entryRepo.append(
           channelId,
           streamId,
           LogEntry(
@@ -603,6 +607,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timePort,
           messagePort: messagePort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         );
 
         final channel = ChannelAggregate(id: channelId, localNode: localNode);
@@ -625,25 +630,25 @@ void main() {
         );
 
         // First request goes through
-        final firstRequests = engine.handleDigestResponse(response);
+        final firstRequests = await engine.handleDigestResponse(response);
         expect(firstRequests, hasLength(1));
 
         // Second request blocked (pending)
-        final secondRequests = engine.handleDigestResponse(response);
+        final secondRequests = await engine.handleDigestResponse(response);
         expect(secondRequests, isEmpty);
 
         // Advance time past the timeout (default 5 seconds)
         timePort.advance(const Duration(seconds: 6));
 
         // Now the pending request should have expired, allowing a new one
-        final thirdRequests = engine.handleDigestResponse(response);
+        final thirdRequests = await engine.handleDigestResponse(response);
         expect(thirdRequests, hasLength(1));
       },
     );
 
     test(
       'clearPendingRequestsForPeer removes pending requests when peer disconnects',
-      () {
+      () async {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
@@ -655,7 +660,7 @@ void main() {
         final channelId = ChannelId('channel-1');
         final streamId = StreamId('stream-1');
 
-        entryRepo.append(
+        await entryRepo.append(
           channelId,
           streamId,
           LogEntry(
@@ -675,6 +680,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timePort,
           messagePort: messagePort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         );
 
         final channel = ChannelAggregate(id: channelId, localNode: localNode);
@@ -697,25 +703,25 @@ void main() {
         );
 
         // First request goes through
-        final firstRequests = engine.handleDigestResponse(response);
+        final firstRequests = await engine.handleDigestResponse(response);
         expect(firstRequests, hasLength(1));
 
         // Second request blocked (pending)
-        final secondRequests = engine.handleDigestResponse(response);
+        final secondRequests = await engine.handleDigestResponse(response);
         expect(secondRequests, isEmpty);
 
         // Simulate peer disconnect - clear pending requests
         engine.clearPendingRequests();
 
         // Now should allow new request
-        final thirdRequests = engine.handleDigestResponse(response);
+        final thirdRequests = await engine.handleDigestResponse(response);
         expect(thirdRequests, hasLength(1));
       },
     );
 
     test(
       'handleDigestResponse generates delta requests across multiple channels',
-      () {
+      () async {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
@@ -729,7 +735,7 @@ void main() {
         final streamId = StreamId('stream-1');
 
         // Channel 1: we're in sync (author1:5)
-        entryRepo.append(
+        await entryRepo.append(
           channelId1,
           streamId,
           LogEntry(
@@ -741,7 +747,7 @@ void main() {
         );
 
         // Channel 2: we're behind (author1:2, peer has 5)
-        entryRepo.append(
+        await entryRepo.append(
           channelId2,
           streamId,
           LogEntry(
@@ -793,7 +799,7 @@ void main() {
           ],
         );
 
-        final deltaRequests = engine.handleDigestResponse(response);
+        final deltaRequests = await engine.handleDigestResponse(response);
 
         // Only channel 2 should generate a delta request (we're behind)
         expect(deltaRequests, hasLength(1));
@@ -804,7 +810,7 @@ void main() {
 
     test(
       'handleDigestResponse generates delta request for unknown stream from peer',
-      () {
+      () async {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
@@ -818,7 +824,7 @@ void main() {
         final unknownStream = StreamId('unknown-stream');
 
         // We have entries for known stream only
-        entryRepo.append(
+        await entryRepo.append(
           channelId,
           knownStream,
           LogEntry(
@@ -859,7 +865,7 @@ void main() {
           ],
         );
 
-        final deltaRequests = engine.handleDigestResponse(response);
+        final deltaRequests = await engine.handleDigestResponse(response);
 
         // Should generate a delta request for the unknown stream
         // (our version is empty, which doesn't dominate peer's {author1:3})

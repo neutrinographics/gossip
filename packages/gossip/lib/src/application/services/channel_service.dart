@@ -75,15 +75,15 @@ class ChannelService {
   /// this callback for observability.
   final void Function(DomainEvent)? onEvent;
 
-  /// Optional repository for persisting local node state (HLC clock).
-  final LocalNodeRepository? _localNodeRepository;
+  /// Repository for persisting local node state (HLC clock).
+  final LocalNodeRepository _localNodeRepository;
 
   ChannelService({
     required this.localNode,
+    required LocalNodeRepository localNodeRepository,
     HlcClock? hlcClock,
     ChannelRepository? channelRepository,
     EntryRepository? entryRepository,
-    LocalNodeRepository? localNodeRepository,
     this.onError,
     this.onEvent,
   }) : _hlcClock = hlcClock,
@@ -156,7 +156,7 @@ class ChannelService {
 
     // Clear all entries for this channel
     if (_entryRepository != null) {
-      _entryRepository.clearChannel(channelId);
+      await _entryRepository.clearChannel(channelId);
     }
 
     // Delete the channel aggregate
@@ -319,14 +319,15 @@ class ChannelService {
     }
 
     final sequence =
-        _entryRepository.latestSequence(channelId, streamId, localNode) + 1;
+        await _entryRepository.latestSequence(channelId, streamId, localNode) +
+        1;
 
     // Generate timestamp from HlcClock if available, otherwise fallback to system time
     final timestamp =
         _hlcClock?.now() ?? Hlc(DateTime.now().millisecondsSinceEpoch, 0);
 
     // Persist clock state for restart recovery
-    if (_hlcClock != null && _localNodeRepository != null) {
+    if (_hlcClock != null) {
       await _localNodeRepository.saveClockState(_hlcClock.current);
     }
 
@@ -337,7 +338,7 @@ class ChannelService {
       payload: payload,
     );
 
-    _entryRepository.append(channelId, streamId, entry);
+    await _entryRepository.append(channelId, streamId, entry);
 
     // Emit EntryAppended event
     final appendEvent = EntryAppended(
@@ -371,7 +372,7 @@ class ChannelService {
       );
       return [];
     }
-    return _entryRepository.getAll(channelId, streamId);
+    return await _entryRepository.getAll(channelId, streamId);
   }
 
   /// Returns the set of member node IDs for a channel.
@@ -456,6 +457,6 @@ class ChannelService {
       return null;
     }
 
-    return channel.getState<T>(streamId, _entryRepository);
+    return await channel.getState<T>(streamId, _entryRepository);
   }
 }

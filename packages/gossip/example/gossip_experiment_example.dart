@@ -18,7 +18,7 @@ void main() async {
 
   // 2. Create coordinator
   final coordinator = await Coordinator.create(
-    localNode: NodeId('example-device'),
+    localNodeRepository: InMemoryLocalNodeRepository(),
     channelRepository: channelRepo,
     peerRepository: peerRepo,
     entryRepository: entryRepo,

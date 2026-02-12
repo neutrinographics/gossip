@@ -49,9 +49,10 @@ class PeerDisconnected extends PeerEvent {
 /// ## Usage
 ///
 /// ```dart
-/// // Create transport
-/// final transport = NearbyTransport(
-///   localNodeId: NodeId('device-uuid'),
+/// // Create transport (resolves node ID from repository)
+/// final localNodeRepo = InMemoryLocalNodeRepository();
+/// final transport = await NearbyTransport.create(
+///   localNodeRepository: localNodeRepo,
 ///   serviceId: ServiceId('com.example.app'),
 ///   displayName: 'My Device',
 ///   onLog: (level, message, [error, stack]) {
@@ -59,9 +60,9 @@ class PeerDisconnected extends PeerEvent {
 ///   },
 /// );
 ///
-/// // Get the message port for gossip
+/// // Create coordinator (same repo guarantees same node ID)
 /// final coordinator = await Coordinator.create(
-///   localNode: transport.localNodeId,
+///   localNodeRepository: localNodeRepo,
 ///   messagePort: transport.messagePort,
 ///   // ... other params
 /// );
@@ -116,7 +117,32 @@ class NearbyTransport {
     _eventSubscription = _connectionService.events.listen(_onConnectionEvent);
   }
 
-  /// Creates a new Nearby Connections transport.
+  /// Creates a new Nearby Connections transport, resolving the node ID from
+  /// the given [localNodeRepository].
+  ///
+  /// This is the recommended way to create a transport in production code.
+  /// Pass the same [LocalNodeRepository] instance to both this method and
+  /// [Coordinator.create] to guarantee consistent node identity.
+  static Future<NearbyTransport> create({
+    required LocalNodeRepository localNodeRepository,
+    required ServiceId serviceId,
+    required String displayName,
+    LogCallback? onLog,
+  }) async {
+    final nodeId = await localNodeRepository.resolveNodeId();
+    return NearbyTransport(
+      localNodeId: nodeId,
+      serviceId: serviceId,
+      displayName: displayName,
+      onLog: onLog,
+    );
+  }
+
+  /// Creates a new Nearby Connections transport with an explicit [localNodeId].
+  ///
+  /// Prefer [NearbyTransport.create] in production code to avoid node ID
+  /// mismatches. This constructor is useful for tests where you control the
+  /// node ID directly.
   factory NearbyTransport({
     required NodeId localNodeId,
     required ServiceId serviceId,

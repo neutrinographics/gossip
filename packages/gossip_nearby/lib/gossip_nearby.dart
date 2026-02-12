@@ -10,16 +10,17 @@
 /// import 'package:gossip_nearby/gossip_nearby.dart';
 ///
 /// void main() async {
-///   // 1. Create the nearby transport
-///   final transport = NearbyTransport(
-///     localNodeId: NodeId('my-device-uuid'),
+///   // 1. Create the nearby transport (resolves node ID automatically)
+///   final localNodeRepo = InMemoryLocalNodeRepository();
+///   final transport = await NearbyTransport.create(
+///     localNodeRepository: localNodeRepo,
 ///     serviceId: ServiceId('com.example.myapp'),
 ///     displayName: 'My Device',
 ///   );
 ///
-///   // 2. Create gossip coordinator with nearby transport
+///   // 2. Create gossip coordinator (same repo guarantees same node ID)
 ///   final coordinator = await Coordinator.create(
-///     localNode: NodeId('my-device-uuid'),
+///     localNodeRepository: localNodeRepo,
 ///     channelRepository: channelRepo,
 ///     peerRepository: peerRepo,
 ///     entryRepository: entryRepo,

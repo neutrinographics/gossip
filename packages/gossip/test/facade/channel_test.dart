@@ -6,6 +6,7 @@ import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/facade/channel.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_channel_repository.dart';
+import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:test/test.dart';
 
@@ -27,6 +28,7 @@ void main() {
       entryRepo = InMemoryEntryRepository();
       channelService = ChannelService(
         localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: channelRepo,
         entryRepository: entryRepo,
       );

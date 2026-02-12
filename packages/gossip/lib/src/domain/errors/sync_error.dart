@@ -190,7 +190,7 @@ typedef ErrorCallback = void Function(SyncError error);
 /// during anti-entropy synchronization. Applications wire this up to emit
 /// [EntriesMerged] events for UI updates.
 typedef EntriesMergedCallback =
-    void Function(
+    Future<void> Function(
       ChannelId channelId,
       StreamId streamId,
       List<LogEntry> entries,

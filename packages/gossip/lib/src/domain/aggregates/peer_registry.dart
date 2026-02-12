@@ -47,6 +47,35 @@ class PeerRegistry {
   PeerRegistry({required this.localNode, required int initialIncarnation})
     : _localIncarnation = initialIncarnation;
 
+  /// Private constructor for reconstitute — no events.
+  PeerRegistry._reconstitute({
+    required this.localNode,
+    required int localIncarnation,
+  }) : _localIncarnation = localIncarnation;
+
+  /// Restores a previously persisted peer registry.
+  ///
+  /// Unlike the default constructor followed by [addPeer] calls, this does
+  /// NOT emit domain events (no [PeerAdded]) since this represents loading
+  /// existing state, not creating new state.
+  ///
+  /// The caller provides the full list of [peers] with all their state
+  /// (status, incarnation, metrics, etc.) as previously persisted.
+  factory PeerRegistry.reconstitute({
+    required NodeId localNode,
+    required int localIncarnation,
+    required List<Peer> peers,
+  }) {
+    final registry = PeerRegistry._reconstitute(
+      localNode: localNode,
+      localIncarnation: localIncarnation,
+    );
+    for (final peer in peers) {
+      registry._peers[peer.id] = peer;
+    }
+    return registry;
+  }
+
   /// Returns the local node's current incarnation number.
   int get localIncarnation => _localIncarnation;
 

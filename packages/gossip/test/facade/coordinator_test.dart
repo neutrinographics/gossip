@@ -25,7 +25,7 @@ void main() {
 
     test('create returns coordinator with local node', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -36,7 +36,7 @@ void main() {
 
     test('createChannel creates and returns channel facade', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -50,7 +50,7 @@ void main() {
 
     test('createChannel emits ChannelCreated event', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -72,7 +72,7 @@ void main() {
 
     test('getChannel returns null for non-existent channel', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -84,7 +84,7 @@ void main() {
 
     test('getChannel returns facade for existing channel', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -100,7 +100,7 @@ void main() {
 
     test('channelIds returns list of created channels', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -118,7 +118,7 @@ void main() {
 
     test('coordinator starts in stopped state', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -130,7 +130,7 @@ void main() {
 
     test('start transitions from stopped to running', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -143,7 +143,7 @@ void main() {
 
     test('start throws when already running', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -156,7 +156,7 @@ void main() {
 
     test('stop transitions from running to stopped', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -170,7 +170,7 @@ void main() {
 
     test('stop throws when already stopped', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -181,7 +181,7 @@ void main() {
 
     test('pause transitions from running to paused', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -195,7 +195,7 @@ void main() {
 
     test('pause throws when not running', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -206,7 +206,7 @@ void main() {
 
     test('resume transitions from paused to running', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -221,7 +221,7 @@ void main() {
 
     test('resume throws when not paused', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -232,7 +232,7 @@ void main() {
 
     test('dispose transitions to disposed and closes streams', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -246,7 +246,7 @@ void main() {
 
     test('dispose is idempotent', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -260,7 +260,7 @@ void main() {
 
     test('dispose stops running coordinator', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -274,7 +274,7 @@ void main() {
 
     test('start throws when disposed', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -287,7 +287,7 @@ void main() {
 
     test('events stream is available', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -298,7 +298,7 @@ void main() {
 
     test('errors stream is available', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -312,7 +312,7 @@ void main() {
       () async {
         final bus = InMemoryMessageBus();
         final coordinator = await Coordinator.create(
-          localNode: localNode,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: InMemoryChannelRepository(),
           peerRepository: InMemoryPeerRepository(),
           entryRepository: InMemoryEntryRepository(),
@@ -328,7 +328,7 @@ void main() {
     test('coordinator with protocols can start and stop', () async {
       final bus = InMemoryMessageBus();
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -346,7 +346,7 @@ void main() {
     test('creating channel updates gossip engine when running', () async {
       final bus = InMemoryMessageBus();
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -367,7 +367,7 @@ void main() {
     test('coordinator with protocols can pause and resume', () async {
       final bus = InMemoryMessageBus();
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -387,7 +387,7 @@ void main() {
 
     test('addPeer adds peer to registry', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -402,7 +402,7 @@ void main() {
 
     test('addPeer throws when adding local node', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -413,7 +413,7 @@ void main() {
 
     test('removePeer removes peer from registry', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -429,7 +429,7 @@ void main() {
 
     test('peers returns all registered peers', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -447,7 +447,7 @@ void main() {
 
     test('reachablePeers returns only reachable peers', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -462,7 +462,7 @@ void main() {
 
     test('localIncarnation returns peer registry incarnation', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -473,7 +473,7 @@ void main() {
 
     test('getPeerMetrics returns metrics for peer', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -490,7 +490,7 @@ void main() {
 
     test('getPeerMetrics returns null for unknown peer', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -506,7 +506,7 @@ void main() {
         // Create a channel and persist it
         final channelRepo = InMemoryChannelRepository();
         final coordinator1 = await Coordinator.create(
-          localNode: localNode,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: channelRepo,
           peerRepository: InMemoryPeerRepository(),
           entryRepository: InMemoryEntryRepository(),
@@ -518,7 +518,7 @@ void main() {
         // Create a new coordinator instance with same repository
         // It should load the existing channel
         final coordinator2 = await Coordinator.create(
-          localNode: localNode,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: channelRepo,
           peerRepository: InMemoryPeerRepository(),
           entryRepository: InMemoryEntryRepository(),
@@ -535,7 +535,7 @@ void main() {
       // Create channels and persist them
       final channelRepo = InMemoryChannelRepository();
       final coordinator1 = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: channelRepo,
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -548,7 +548,7 @@ void main() {
 
       // Create new coordinator with same repository
       final coordinator2 = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: channelRepo,
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -561,7 +561,7 @@ void main() {
     test('create throws when localNode is empty', () async {
       expect(
         () => Coordinator.create(
-          localNode: NodeId(''),
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: NodeId('')),
           channelRepository: InMemoryChannelRepository(),
           peerRepository: InMemoryPeerRepository(),
           entryRepository: InMemoryEntryRepository(),
@@ -573,7 +573,9 @@ void main() {
     test('create throws when channelRepository is null', () async {
       expect(
         () => Coordinator.create(
-          localNode: NodeId('local'),
+          localNodeRepository: InMemoryLocalNodeRepository(
+            nodeId: NodeId('local'),
+          ),
           channelRepository: null as dynamic,
           peerRepository: InMemoryPeerRepository(),
           entryRepository: InMemoryEntryRepository(),
@@ -585,7 +587,9 @@ void main() {
     test('create throws when peerRepository is null', () async {
       expect(
         () => Coordinator.create(
-          localNode: NodeId('local'),
+          localNodeRepository: InMemoryLocalNodeRepository(
+            nodeId: NodeId('local'),
+          ),
           channelRepository: InMemoryChannelRepository(),
           peerRepository: null as dynamic,
           entryRepository: InMemoryEntryRepository(),
@@ -597,7 +601,9 @@ void main() {
     test('create throws when entryRepository is null', () async {
       expect(
         () => Coordinator.create(
-          localNode: NodeId('local'),
+          localNodeRepository: InMemoryLocalNodeRepository(
+            nodeId: NodeId('local'),
+          ),
           channelRepository: InMemoryChannelRepository(),
           peerRepository: InMemoryPeerRepository(),
           entryRepository: null as dynamic,
@@ -611,7 +617,7 @@ void main() {
 
       final messageBus = InMemoryMessageBus();
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -628,7 +634,7 @@ void main() {
     test('create uses default config when not specified', () async {
       final messageBus = InMemoryMessageBus();
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -644,7 +650,7 @@ void main() {
     group('removeChannel', () {
       test('removes channel from coordinator', () async {
         final coordinator = await Coordinator.create(
-          localNode: localNode,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: InMemoryChannelRepository(),
           peerRepository: InMemoryPeerRepository(),
           entryRepository: InMemoryEntryRepository(),
@@ -664,7 +670,7 @@ void main() {
       test('removes channel entries from store', () async {
         final entryRepo = InMemoryEntryRepository();
         final coordinator = await Coordinator.create(
-          localNode: localNode,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: InMemoryChannelRepository(),
           peerRepository: InMemoryPeerRepository(),
           entryRepository: entryRepo,
@@ -676,16 +682,16 @@ void main() {
         final stream = await channel.getOrCreateStream(streamId);
         await stream.append(Uint8List.fromList([1, 2, 3]));
 
-        expect(entryRepo.getAll(channelId, streamId), hasLength(1));
+        expect(await entryRepo.getAll(channelId, streamId), hasLength(1));
 
         await coordinator.removeChannel(channelId);
 
-        expect(entryRepo.getAll(channelId, streamId), isEmpty);
+        expect(await entryRepo.getAll(channelId, streamId), isEmpty);
       });
 
       test('returns false for non-existent channel', () async {
         final coordinator = await Coordinator.create(
-          localNode: localNode,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: InMemoryChannelRepository(),
           peerRepository: InMemoryPeerRepository(),
           entryRepository: InMemoryEntryRepository(),
@@ -700,7 +706,7 @@ void main() {
 
       test('emits ChannelRemoved event', () async {
         final coordinator = await Coordinator.create(
-          localNode: localNode,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: InMemoryChannelRepository(),
           peerRepository: InMemoryPeerRepository(),
           entryRepository: InMemoryEntryRepository(),
@@ -722,7 +728,7 @@ void main() {
       test('updates gossip engine when running', () async {
         final bus = InMemoryMessageBus();
         final coordinator = await Coordinator.create(
-          localNode: localNode,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: InMemoryChannelRepository(),
           peerRepository: InMemoryPeerRepository(),
           entryRepository: InMemoryEntryRepository(),
@@ -744,7 +750,7 @@ void main() {
 
       test('does not emit event when channel does not exist', () async {
         final coordinator = await Coordinator.create(
-          localNode: localNode,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: InMemoryChannelRepository(),
           peerRepository: InMemoryPeerRepository(),
           entryRepository: InMemoryEntryRepository(),
@@ -763,7 +769,7 @@ void main() {
       group('currentClockState', () {
         test('returns null when no TimePort provided', () async {
           final coordinator = await Coordinator.create(
-            localNode: localNode,
+            localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
             channelRepository: InMemoryChannelRepository(),
             peerRepository: InMemoryPeerRepository(),
             entryRepository: InMemoryEntryRepository(),
@@ -777,7 +783,9 @@ void main() {
           () async {
             final bus = InMemoryMessageBus();
             final coordinator = await Coordinator.create(
-              localNode: localNode,
+              localNodeRepository: InMemoryLocalNodeRepository(
+                nodeId: localNode,
+              ),
               channelRepository: InMemoryChannelRepository(),
               peerRepository: InMemoryPeerRepository(),
               entryRepository: InMemoryEntryRepository(),
@@ -793,11 +801,10 @@ void main() {
       group('clock state restoration', () {
         test('restores clock state from LocalNodeRepository', () async {
           final bus = InMemoryMessageBus();
-          final localNodeRepo = InMemoryLocalNodeRepository();
+          final localNodeRepo = InMemoryLocalNodeRepository(nodeId: localNode);
           await localNodeRepo.saveClockState(Hlc(5000, 42));
 
           final coordinator = await Coordinator.create(
-            localNode: localNode,
             channelRepository: InMemoryChannelRepository(),
             peerRepository: InMemoryPeerRepository(),
             entryRepository: InMemoryEntryRepository(),
@@ -811,12 +818,11 @@ void main() {
 
         test('persists clock state after appending entry', () async {
           final bus = InMemoryMessageBus();
-          final localNodeRepo = InMemoryLocalNodeRepository();
+          final localNodeRepo = InMemoryLocalNodeRepository(nodeId: localNode);
           final timePort = InMemoryTimePort();
           timePort.advance(Duration(milliseconds: 1000));
 
           final coordinator = await Coordinator.create(
-            localNode: localNode,
             channelRepository: InMemoryChannelRepository(),
             peerRepository: InMemoryPeerRepository(),
             entryRepository: InMemoryEntryRepository(),
@@ -837,11 +843,12 @@ void main() {
         test(
           'ignores LocalNodeRepository clock state without TimePort',
           () async {
-            final localNodeRepo = InMemoryLocalNodeRepository();
+            final localNodeRepo = InMemoryLocalNodeRepository(
+              nodeId: localNode,
+            );
             await localNodeRepo.saveClockState(Hlc(5000, 42));
 
             final coordinator = await Coordinator.create(
-              localNode: localNode,
               channelRepository: InMemoryChannelRepository(),
               peerRepository: InMemoryPeerRepository(),
               entryRepository: InMemoryEntryRepository(),
@@ -855,11 +862,10 @@ void main() {
 
       group('incarnation restoration', () {
         test('restores incarnation from LocalNodeRepository', () async {
-          final localNodeRepo = InMemoryLocalNodeRepository();
+          final localNodeRepo = InMemoryLocalNodeRepository(nodeId: localNode);
           await localNodeRepo.saveIncarnation(5);
 
           final coordinator = await Coordinator.create(
-            localNode: localNode,
             channelRepository: InMemoryChannelRepository(),
             peerRepository: InMemoryPeerRepository(),
             entryRepository: InMemoryEntryRepository(),
@@ -871,7 +877,7 @@ void main() {
 
         test('defaults incarnation to 0 without LocalNodeRepository', () async {
           final coordinator = await Coordinator.create(
-            localNode: localNode,
+            localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
             channelRepository: InMemoryChannelRepository(),
             peerRepository: InMemoryPeerRepository(),
             entryRepository: InMemoryEntryRepository(),
@@ -888,13 +894,14 @@ void main() {
             final bus = InMemoryMessageBus();
             final channelRepo = InMemoryChannelRepository();
             final entryRepo = InMemoryEntryRepository();
-            final localNodeRepo = InMemoryLocalNodeRepository();
+            final localNodeRepo = InMemoryLocalNodeRepository(
+              nodeId: localNode,
+            );
             final timePort = InMemoryTimePort();
             timePort.advance(Duration(milliseconds: 1000));
 
             // First session: write entries
             final coord1 = await Coordinator.create(
-              localNode: localNode,
               channelRepository: channelRepo,
               peerRepository: InMemoryPeerRepository(),
               entryRepository: entryRepo,
@@ -912,7 +919,6 @@ void main() {
 
             // Second session: restore from same repositories
             final coord2 = await Coordinator.create(
-              localNode: localNode,
               channelRepository: channelRepo,
               peerRepository: InMemoryPeerRepository(),
               entryRepository: entryRepo,

@@ -15,6 +15,7 @@ import 'package:gossip/src/protocol/gossip_engine.dart';
 import 'package:gossip/src/protocol/failure_detector.dart';
 import 'package:gossip/src/application/services/channel_service.dart';
 import 'package:gossip/src/application/services/peer_service.dart';
+import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 
 /// A mock MessagePort that throws on send for testing error handling.
 class ThrowingMessagePort implements MessagePort {
@@ -94,6 +95,7 @@ void main() {
         entryRepository: entryRepo,
         timePort: timerPort,
         messagePort: throwingPort,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         onError: (error) => errors.add(error),
       );
 
@@ -126,6 +128,7 @@ void main() {
         entryRepository: entryRepo,
         timePort: timerPort,
         messagePort: messagePort,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         onError: (error) => errors.add(error),
       );
 
@@ -203,6 +206,7 @@ void main() {
       final errors = <SyncError>[];
       final service = ChannelService(
         localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: null, // No repository
         entryRepository: null,
         onError: (e) => errors.add(e),
@@ -227,6 +231,7 @@ void main() {
         final errors = <SyncError>[];
         final service = ChannelService(
           localNode: localNode,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: null,
           entryRepository: null, // No entry store
           onError: (e) => errors.add(e),
@@ -256,6 +261,7 @@ void main() {
         final errors = <SyncError>[];
         final service = ChannelService(
           localNode: localNode,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: null,
           entryRepository: null, // No entry store
           onError: (e) => errors.add(e),
@@ -281,8 +287,8 @@ void main() {
 
       final errors = <SyncError>[];
       final service = PeerService(
-        localNode: localNode,
         registry: registry,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         repository: null, // No repository
         onError: (e) => errors.add(e),
       );

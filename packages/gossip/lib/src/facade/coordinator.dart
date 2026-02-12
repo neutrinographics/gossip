@@ -51,7 +51,7 @@ import 'sync_state.dart';
 ///
 /// // Create coordinator
 /// final coordinator = await Coordinator.create(
-///   localNode: NodeId('device-1'),
+///   localNodeRepository: InMemoryLocalNodeRepository(),
 ///   channelRepository: channelRepo,
 ///   peerRepository: peerRepo,
 ///   entryRepository: entryRepo,
@@ -81,7 +81,7 @@ import 'sync_state.dart';
 ///
 /// ```dart
 /// final coordinator = await Coordinator.create(
-///   localNode: NodeId('device-1'),
+///   localNodeRepository: InMemoryLocalNodeRepository(),
 ///   channelRepository: channelRepo,
 ///   peerRepository: peerRepo,
 ///   entryRepository: entryRepo,
@@ -191,11 +191,10 @@ class Coordinator {
   /// [config] allows tuning of gossip and failure detection parameters.
   /// If null, default values are used.
   static Future<Coordinator> create({
-    required NodeId localNode,
+    required LocalNodeRepository localNodeRepository,
     required ChannelRepository channelRepository,
     required PeerRepository peerRepository,
     required EntryRepository entryRepository,
-    LocalNodeRepository? localNodeRepository,
     MessagePort? messagePort,
     TimePort? timerPort,
     Random? random,
@@ -203,12 +202,12 @@ class Coordinator {
     LogCallback? onLog,
   }) async {
     final cfg = config ?? CoordinatorConfig.defaults;
-    // Note: NodeId validates its own invariants (non-empty) in constructor
 
-    // Restore incarnation from LocalNodeRepository if provided
-    final incarnation = localNodeRepository != null
-        ? await localNodeRepository.getIncarnation()
-        : 0;
+    // Resolve localNode from repository — single source of truth
+    final localNode = await localNodeRepository.resolveNodeId();
+
+    // Restore incarnation from LocalNodeRepository
+    final incarnation = await localNodeRepository.getIncarnation();
 
     final peerRegistry = PeerRegistry(
       localNode: localNode,
@@ -221,12 +220,10 @@ class Coordinator {
       final timeSource = TimeSource(timerPort);
       hlcClock = HlcClock(timeSource);
 
-      // Restore clock state from LocalNodeRepository if provided
-      if (localNodeRepository != null) {
-        final clockState = await localNodeRepository.getClockState();
-        if (clockState != Hlc.zero) {
-          hlcClock.restore(clockState);
-        }
+      // Restore clock state from LocalNodeRepository
+      final clockState = await localNodeRepository.getClockState();
+      if (clockState != Hlc.zero) {
+        hlcClock.restore(clockState);
       }
     }
 
@@ -246,10 +243,9 @@ class Coordinator {
       },
     );
     final peerService = PeerService(
-      localNode: localNode,
       registry: peerRegistry,
-      repository: peerRepository,
       localNodeRepository: localNodeRepository,
+      repository: peerRepository,
     );
 
     final coordinator = Coordinator._(
@@ -325,15 +321,18 @@ class Coordinator {
   }
 
   /// Handles entries merged from peers and emits EntriesMerged events.
-  void _handleEntriesMerged(
+  Future<void> _handleEntriesMerged(
     ChannelId channelId,
     StreamId streamId,
     List<LogEntry> entries,
-  ) {
+  ) async {
     if (_eventsController.isClosed || entries.isEmpty) return;
 
     // Compute the new version vector for the stream
-    final newVersion = _entryRepository.getVersionVector(channelId, streamId);
+    final newVersion = await _entryRepository.getVersionVector(
+      channelId,
+      streamId,
+    );
 
     _eventsController.add(
       EntriesMerged(
@@ -592,8 +591,14 @@ class Coordinator {
       final channel = await _channelRepository.findById(channelId);
       if (channel != null) {
         for (final streamId in channel.streamIds) {
-          totalEntries += _entryRepository.entryCount(channelId, streamId);
-          totalStorageBytes += _entryRepository.sizeBytes(channelId, streamId);
+          totalEntries += await _entryRepository.entryCount(
+            channelId,
+            streamId,
+          );
+          totalStorageBytes += await _entryRepository.sizeBytes(
+            channelId,
+            streamId,
+          );
         }
       }
     }

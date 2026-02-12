@@ -1,9 +1,56 @@
 import 'package:test/test.dart';
 import 'package:gossip/src/domain/value_objects/hlc.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 
 void main() {
   group('InMemoryLocalNodeRepository', () {
+    group('node ID', () {
+      test('returns null initially when no nodeId provided', () async {
+        final repository = InMemoryLocalNodeRepository();
+
+        final nodeId = await repository.getNodeId();
+
+        expect(nodeId, isNull);
+      });
+
+      test('returns provided nodeId from constructor', () async {
+        final repository = InMemoryLocalNodeRepository(
+          nodeId: NodeId('test-node'),
+        );
+
+        final nodeId = await repository.getNodeId();
+
+        expect(nodeId, equals(NodeId('test-node')));
+      });
+
+      test('save and get round-trips nodeId', () async {
+        final repository = InMemoryLocalNodeRepository();
+
+        await repository.saveNodeId(NodeId('my-node'));
+        final retrieved = await repository.getNodeId();
+
+        expect(retrieved, equals(NodeId('my-node')));
+      });
+
+      test('generateNodeId returns a valid NodeId', () async {
+        final repository = InMemoryLocalNodeRepository();
+
+        final nodeId = await repository.generateNodeId();
+
+        expect(nodeId.value, isNotEmpty);
+      });
+
+      test('generateNodeId returns unique values on each call', () async {
+        final repository = InMemoryLocalNodeRepository();
+
+        final id1 = await repository.generateNodeId();
+        final id2 = await repository.generateNodeId();
+
+        expect(id1, isNot(equals(id2)));
+      });
+    });
+
     group('clock state', () {
       test('returns Hlc.zero initially', () async {
         final repository = InMemoryLocalNodeRepository();

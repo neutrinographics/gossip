@@ -1,7 +1,6 @@
-import 'dart:math';
-
 import 'package:test/test.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/domain/entities/peer.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/events/domain_event.dart';
 
@@ -455,6 +454,94 @@ void main() {
           expect(event.operation, equals('incrementFailedProbeCount'));
         },
       );
+    });
+
+    group('reconstitute', () {
+      test('restores peers', () {
+        final localNode = NodeId('local');
+        final peer1 = Peer(id: NodeId('peer-1'), displayName: 'Peer 1');
+        final peer2 = Peer(
+          id: NodeId('peer-2'),
+          status: PeerStatus.suspected,
+          incarnation: 3,
+          lastContactMs: 5000,
+          failedProbeCount: 2,
+        );
+
+        final registry = PeerRegistry.reconstitute(
+          localNode: localNode,
+          localIncarnation: 7,
+          peers: [peer1, peer2],
+        );
+
+        expect(registry.localNode, equals(localNode));
+        expect(registry.localIncarnation, equals(7));
+        expect(registry.peerCount, equals(2));
+        expect(registry.getPeer(NodeId('peer-1')), equals(peer1));
+        expect(registry.getPeer(NodeId('peer-2')), equals(peer2));
+        expect(
+          registry.getPeer(NodeId('peer-2'))!.status,
+          equals(PeerStatus.suspected),
+        );
+        expect(registry.getPeer(NodeId('peer-2'))!.incarnation, equals(3));
+      });
+
+      test('emits no domain events', () {
+        final registry = PeerRegistry.reconstitute(
+          localNode: NodeId('local'),
+          localIncarnation: 0,
+          peers: [
+            Peer(id: NodeId('peer-1')),
+            Peer(id: NodeId('peer-2')),
+          ],
+        );
+
+        expect(registry.uncommittedEvents, isEmpty);
+      });
+
+      test('does not auto-add localNode as a peer', () {
+        final registry = PeerRegistry.reconstitute(
+          localNode: NodeId('local'),
+          localIncarnation: 0,
+          peers: [],
+        );
+
+        expect(registry.peerCount, equals(0));
+        expect(registry.isKnown(NodeId('local')), isFalse);
+      });
+
+      test('reconstituted registry supports normal operations', () {
+        final registry = PeerRegistry.reconstitute(
+          localNode: NodeId('local'),
+          localIncarnation: 5,
+          peers: [Peer(id: NodeId('peer-1'))],
+        );
+
+        // Can add a new peer
+        registry.addPeer(NodeId('peer-3'), occurredAt: DateTime(2024, 1, 1));
+        expect(registry.peerCount, equals(2));
+        expect(registry.isKnown(NodeId('peer-3')), isTrue);
+
+        // Can update existing peer status
+        registry.updatePeerStatus(
+          NodeId('peer-1'),
+          PeerStatus.suspected,
+          occurredAt: DateTime(2024, 1, 1),
+        );
+        expect(
+          registry.getPeer(NodeId('peer-1'))!.status,
+          equals(PeerStatus.suspected),
+        );
+
+        // Can increment incarnation
+        registry.incrementLocalIncarnation();
+        expect(registry.localIncarnation, equals(6));
+
+        // Events only from operations after reconstitution
+        expect(registry.uncommittedEvents, hasLength(2));
+        expect(registry.uncommittedEvents[0], isA<PeerAdded>());
+        expect(registry.uncommittedEvents[1], isA<PeerStatusChanged>());
+      });
     });
 
     group('recordPeerRtt', () {

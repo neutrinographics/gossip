@@ -41,7 +41,7 @@ import '../value_objects/version_vector.dart';
 /// ```dart
 /// final entryRepo = InMemoryEntryRepository();
 /// final coordinator = await Coordinator.create(
-///   localNode: NodeId('test'),
+///   localNodeRepository: InMemoryLocalNodeRepository(),
 ///   channelRepository: InMemoryChannelRepository(),
 ///   peerRepository: InMemoryPeerRepository(),
 ///   entryRepository: entryRepo,
@@ -68,7 +68,7 @@ abstract interface class EntryRepository {
   /// Throws if the sequence number is invalid or if the entry already exists.
   ///
   /// Used when: The local node creates a new entry.
-  void append(ChannelId channel, StreamId stream, LogEntry entry);
+  Future<void> append(ChannelId channel, StreamId stream, LogEntry entry);
 
   /// Appends multiple entries atomically during synchronization.
   ///
@@ -77,7 +77,11 @@ abstract interface class EntryRepository {
   /// to ensure atomicity.
   ///
   /// Used when: Merging entries received from a peer during anti-entropy.
-  void appendAll(ChannelId channel, StreamId stream, List<LogEntry> entries);
+  Future<void> appendAll(
+    ChannelId channel,
+    StreamId stream,
+    List<LogEntry> entries,
+  );
 
   /// Returns all entries for a stream, ordered by timestamp.
   ///
@@ -86,7 +90,7 @@ abstract interface class EntryRepository {
   /// pagination or streaming results.
   ///
   /// Used when: Computing version vectors, applying retention policies.
-  List<LogEntry> getAll(ChannelId channel, StreamId stream);
+  Future<List<LogEntry>> getAll(ChannelId channel, StreamId stream);
 
   /// Returns entries missing from the given version vector.
   ///
@@ -97,7 +101,7 @@ abstract interface class EntryRepository {
   /// Returns entries in timestamp order.
   ///
   /// Used when: Responding to delta requests during gossip.
-  List<LogEntry> entriesSince(
+  Future<List<LogEntry>> entriesSince(
     ChannelId channel,
     StreamId stream,
     VersionVector since,
@@ -109,7 +113,7 @@ abstract interface class EntryRepository {
   /// Results are in sequence order.
   ///
   /// Used when: Resolving out-of-order entry gaps for a specific author.
-  List<LogEntry> entriesForAuthorAfter(
+  Future<List<LogEntry>> entriesForAuthorAfter(
     ChannelId channel,
     StreamId stream,
     NodeId author,
@@ -119,19 +123,19 @@ abstract interface class EntryRepository {
   /// Returns the highest sequence number for an author, or 0 if none exist.
   ///
   /// Used when: Determining the next sequence number for a local entry.
-  int latestSequence(ChannelId channel, StreamId stream, NodeId author);
+  Future<int> latestSequence(ChannelId channel, StreamId stream, NodeId author);
 
   /// Returns the number of entries in a stream.
   ///
   /// Used when: Monitoring storage usage, enforcing quotas.
-  int entryCount(ChannelId channel, StreamId stream);
+  Future<int> entryCount(ChannelId channel, StreamId stream);
 
   /// Returns the total storage size of a stream in bytes.
   ///
   /// Sums the [LogEntry.sizeBytes] for all entries in the stream.
   ///
   /// Used when: Monitoring storage usage, triggering compaction.
-  int sizeBytes(ChannelId channel, StreamId stream);
+  Future<int> sizeBytes(ChannelId channel, StreamId stream);
 
   /// Removes specific entries during compaction.
   ///
@@ -139,17 +143,21 @@ abstract interface class EntryRepository {
   /// transactions to ensure atomicity when removing multiple entries.
   ///
   /// Used when: Applying retention policies to reclaim storage.
-  void removeEntries(ChannelId channel, StreamId stream, List<LogEntryId> ids);
+  Future<void> removeEntries(
+    ChannelId channel,
+    StreamId stream,
+    List<LogEntryId> ids,
+  );
 
   /// Removes all entries from a stream.
   ///
   /// Used when: Deleting a stream or clearing data for testing.
-  void clearStream(ChannelId channel, StreamId stream);
+  Future<void> clearStream(ChannelId channel, StreamId stream);
 
   /// Removes all entries from all streams in a channel.
   ///
   /// Used when: Deleting a channel or clearing data for testing.
-  void clearChannel(ChannelId channel);
+  Future<void> clearChannel(ChannelId channel);
 
   /// Returns the version vector for a stream.
   ///
@@ -160,5 +168,5 @@ abstract interface class EntryRepository {
   /// vector, avoiding the need to iterate all entries.
   ///
   /// Used when: Computing stream digests for anti-entropy gossip protocol.
-  VersionVector getVersionVector(ChannelId channel, StreamId stream);
+  Future<VersionVector> getVersionVector(ChannelId channel, StreamId stream);
 }

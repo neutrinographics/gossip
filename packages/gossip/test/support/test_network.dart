@@ -9,6 +9,7 @@ import 'package:gossip/src/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_channel_repository.dart';
+import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_peer_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
@@ -86,7 +87,7 @@ class TestNetwork {
       final random = Random(seed + nodeIndex);
 
       final coordinator = await Coordinator.create(
-        localNode: nodeId,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: nodeId),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
