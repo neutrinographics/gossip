@@ -102,6 +102,9 @@ export 'src/domain/value_objects/log_entry_id.dart';
 export 'src/domain/value_objects/hlc.dart';
 export 'src/domain/value_objects/version_vector.dart';
 
+// Domain aggregates
+export 'src/domain/aggregates/channel_aggregate.dart';
+
 // Domain entities
 export 'src/domain/entities/peer.dart';
 export 'src/domain/entities/peer_metrics.dart';
