@@ -162,7 +162,7 @@ void main() {
         final repository = FakeChannelRepository();
         final service = ChannelService(
           localNode: localNode,
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: repository,
         );
         final channelId = ChannelId('channel-1');
@@ -287,7 +287,7 @@ void main() {
         final repository = FakeChannelRepository();
         final service = ChannelService(
           localNode: localNode,
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: repository,
         );
         final channelId = ChannelId('channel-1');
@@ -307,7 +307,7 @@ void main() {
         final entryRepo = FakeEntryRepository();
         final service = ChannelService(
           localNode: localNode,
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: channelRepo,
           entryRepository: entryRepo,
         );
@@ -331,7 +331,7 @@ void main() {
         final repository = FakeChannelRepository();
         final service = ChannelService(
           localNode: localNode,
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: repository,
         );
         final channelId = ChannelId('non-existent');
@@ -345,7 +345,7 @@ void main() {
         final localNode = NodeId('local');
         final service = ChannelService(
           localNode: localNode,
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: null,
         );
         final channelId = ChannelId('channel-1');
@@ -363,7 +363,7 @@ void main() {
         final errors = <SyncError>[];
         final service = ChannelService(
           localNode: localNode,
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: repository,
           onError: errors.add,
         );
@@ -384,7 +384,7 @@ void main() {
         final errors = <SyncError>[];
         final service = ChannelService(
           localNode: localNode,
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: repository,
           onError: errors.add,
         );
@@ -401,7 +401,7 @@ void main() {
         final errors = <SyncError>[];
         final service = ChannelService(
           localNode: localNode,
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: repository,
           onError: errors.add,
         );
@@ -421,7 +421,7 @@ void main() {
         final repository = FakeChannelRepository();
         final service = ChannelService(
           localNode: localNode,
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: repository,
         );
 

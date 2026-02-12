@@ -12,7 +12,7 @@ import '../../domain/interfaces/nearby_port.dart';
 import '../../domain/value_objects/endpoint.dart';
 import '../../domain/value_objects/endpoint_id.dart';
 import '../../infrastructure/codec/handshake_codec.dart'
-    show HandshakeCodec, HandshakeData, MessageType, WireFormat;
+    show HandshakeCodec, MessageType, WireFormat;
 import '../observability/nearby_metrics.dart';
 
 /// Callback for receiving gossip messages.

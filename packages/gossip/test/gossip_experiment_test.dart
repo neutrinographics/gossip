@@ -5,7 +5,9 @@ void main() {
   group('Gossip Library', () {
     test('Coordinator can be created', () async {
       final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: NodeId('test')),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('test'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -16,7 +18,9 @@ void main() {
 
     test('Channel can be created and accessed', () async {
       final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: NodeId('test')),
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('test'),
+        ),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
