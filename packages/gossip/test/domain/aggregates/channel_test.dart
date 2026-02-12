@@ -42,68 +42,82 @@ class FakeEntryRepository implements EntryRepository {
       '${channel.value}:${stream.value}';
 
   @override
-  void append(ChannelId channel, StreamId stream, LogEntry entry) {
+  Future<void> append(
+    ChannelId channel,
+    StreamId stream,
+    LogEntry entry,
+  ) async {
     final key = _key(channel, stream);
     _entries.putIfAbsent(key, () => []).add(entry);
   }
 
   @override
-  void appendAll(ChannelId channel, StreamId stream, List<LogEntry> entries) {
+  Future<void> appendAll(
+    ChannelId channel,
+    StreamId stream,
+    List<LogEntry> entries,
+  ) async {
     for (final entry in entries) {
-      append(channel, stream, entry);
+      await append(channel, stream, entry);
     }
   }
 
   @override
-  List<LogEntry> getAll(ChannelId channel, StreamId stream) {
+  Future<List<LogEntry>> getAll(ChannelId channel, StreamId stream) async {
     return _entries[_key(channel, stream)]?.toList() ?? [];
   }
 
   @override
-  List<LogEntry> entriesSince(
+  Future<List<LogEntry>> entriesSince(
     ChannelId channel,
     StreamId stream,
     VersionVector since,
-  ) => [];
+  ) async => [];
 
   @override
-  List<LogEntry> entriesForAuthorAfter(
+  Future<List<LogEntry>> entriesForAuthorAfter(
     ChannelId channel,
     StreamId stream,
     NodeId author,
     int afterSequence,
-  ) => [];
+  ) async => [];
 
   @override
-  int latestSequence(ChannelId channel, StreamId stream, NodeId author) => 0;
+  Future<int> latestSequence(
+    ChannelId channel,
+    StreamId stream,
+    NodeId author,
+  ) async => 0;
 
   @override
-  int entryCount(ChannelId channel, StreamId stream) =>
-      getAll(channel, stream).length;
+  Future<int> entryCount(ChannelId channel, StreamId stream) async =>
+      (_entries[_key(channel, stream)]?.length ?? 0);
 
   @override
-  int sizeBytes(ChannelId channel, StreamId stream) => 0;
+  Future<int> sizeBytes(ChannelId channel, StreamId stream) async => 0;
 
   @override
-  void removeEntries(
+  Future<void> removeEntries(
     ChannelId channel,
     StreamId stream,
     List<LogEntryId> ids,
-  ) {}
+  ) async {}
 
   @override
-  void clearStream(ChannelId channel, StreamId stream) {
+  Future<void> clearStream(ChannelId channel, StreamId stream) async {
     _entries.remove(_key(channel, stream));
   }
 
   @override
-  void clearChannel(ChannelId channel) {
+  Future<void> clearChannel(ChannelId channel) async {
     _entries.removeWhere((key, _) => key.startsWith('${channel.value}:'));
   }
 
   @override
-  VersionVector getVersionVector(ChannelId channel, StreamId stream) =>
-      VersionVector.empty;
+  Future<VersionVector> getVersionVector(
+    ChannelId channel,
+    StreamId stream,
+  ) async => VersionVector.empty;
 }
 
 void main() {
@@ -336,7 +350,7 @@ void main() {
       // This is tested in getState tests below
     });
 
-    test('getState returns null when no materializer registered', () {
+    test('getState returns null when no materializer registered', () async {
       final channel = ChannelAggregate(
         id: ChannelId('channel-1'),
         localNode: NodeId('local'),
@@ -350,12 +364,12 @@ void main() {
 
       final entryRepo = FakeEntryRepository();
 
-      final state = channel.getState<int>(streamId, entryRepo);
+      final state = await channel.getState<int>(streamId, entryRepo);
 
       expect(state, isNull);
     });
 
-    test('getState returns null when stream does not exist', () {
+    test('getState returns null when stream does not exist', () async {
       final channel = ChannelAggregate(
         id: ChannelId('channel-1'),
         localNode: NodeId('local'),
@@ -365,12 +379,12 @@ void main() {
       channel.registerMaterializer(streamId, TestCountMaterializer());
       final entryRepo = FakeEntryRepository();
 
-      final state = channel.getState<int>(streamId, entryRepo);
+      final state = await channel.getState<int>(streamId, entryRepo);
 
       expect(state, isNull);
     });
 
-    test('getState returns initial state when no entries exist', () {
+    test('getState returns initial state when no entries exist', () async {
       final channelId = ChannelId('channel-1');
       final channel = ChannelAggregate(
         id: channelId,
@@ -386,12 +400,12 @@ void main() {
       channel.registerMaterializer(streamId, TestCountMaterializer());
       final entryRepo = FakeEntryRepository();
 
-      final state = channel.getState<int>(streamId, entryRepo);
+      final state = await channel.getState<int>(streamId, entryRepo);
 
       expect(state, equals(0)); // Initial state from materializer
     });
 
-    test('getState folds entries with count materializer', () {
+    test('getState folds entries with count materializer', () async {
       final channelId = ChannelId('channel-1');
       final channel = ChannelAggregate(
         id: channelId,
@@ -407,7 +421,7 @@ void main() {
 
       // Add entries to repository
       final entryRepo = FakeEntryRepository();
-      entryRepo.append(
+      await entryRepo.append(
         channelId,
         streamId,
         LogEntry(
@@ -417,7 +431,7 @@ void main() {
           payload: Uint8List.fromList([1]),
         ),
       );
-      entryRepo.append(
+      await entryRepo.append(
         channelId,
         streamId,
         LogEntry(
@@ -427,7 +441,7 @@ void main() {
           payload: Uint8List.fromList([2]),
         ),
       );
-      entryRepo.append(
+      await entryRepo.append(
         channelId,
         streamId,
         LogEntry(
@@ -440,12 +454,12 @@ void main() {
 
       // Register materializer and get state
       channel.registerMaterializer(streamId, TestCountMaterializer());
-      final state = channel.getState<int>(streamId, entryRepo);
+      final state = await channel.getState<int>(streamId, entryRepo);
 
       expect(state, equals(3)); // Should count 3 entries
     });
 
-    test('getState folds entries with sum materializer', () {
+    test('getState folds entries with sum materializer', () async {
       final channelId = ChannelId('channel-1');
       final channel = ChannelAggregate(
         id: channelId,
@@ -461,7 +475,7 @@ void main() {
 
       // Add entries to repository
       final entryRepo = FakeEntryRepository();
-      entryRepo.append(
+      await entryRepo.append(
         channelId,
         streamId,
         LogEntry(
@@ -471,7 +485,7 @@ void main() {
           payload: Uint8List.fromList([10]),
         ),
       );
-      entryRepo.append(
+      await entryRepo.append(
         channelId,
         streamId,
         LogEntry(
@@ -481,7 +495,7 @@ void main() {
           payload: Uint8List.fromList([20]),
         ),
       );
-      entryRepo.append(
+      await entryRepo.append(
         channelId,
         streamId,
         LogEntry(
@@ -494,12 +508,12 @@ void main() {
 
       // Register sum materializer
       channel.registerMaterializer(streamId, TestSumMaterializer());
-      final state = channel.getState<int>(streamId, entryRepo);
+      final state = await channel.getState<int>(streamId, entryRepo);
 
       expect(state, equals(35)); // 10 + 20 + 5
     });
 
-    test('registerMaterializer replaces previous materializer', () {
+    test('registerMaterializer replaces previous materializer', () async {
       final channelId = ChannelId('channel-1');
       final channel = ChannelAggregate(
         id: channelId,
@@ -515,7 +529,7 @@ void main() {
 
       // Add entries
       final entryRepo = FakeEntryRepository();
-      entryRepo.append(
+      await entryRepo.append(
         channelId,
         streamId,
         LogEntry(
@@ -525,7 +539,7 @@ void main() {
           payload: Uint8List.fromList([10]),
         ),
       );
-      entryRepo.append(
+      await entryRepo.append(
         channelId,
         streamId,
         LogEntry(
@@ -538,18 +552,18 @@ void main() {
 
       // Register count materializer first
       channel.registerMaterializer(streamId, TestCountMaterializer());
-      var state = channel.getState<int>(streamId, entryRepo);
+      var state = await channel.getState<int>(streamId, entryRepo);
       expect(state, equals(2)); // Count: 2 entries
 
       // Replace with sum materializer
       channel.registerMaterializer(streamId, TestSumMaterializer());
-      state = channel.getState<int>(streamId, entryRepo);
+      state = await channel.getState<int>(streamId, entryRepo);
       expect(state, equals(30)); // Sum: 10 + 20
     });
 
     test(
       'getState throws TypeError when type parameter does not match materializer',
-      () {
+      () async {
         final channelId = ChannelId('channel-1');
         final channel = ChannelAggregate(
           id: channelId,
@@ -573,5 +587,99 @@ void main() {
         );
       },
     );
+  });
+
+  group('reconstitute', () {
+    test('restores members and streams', () {
+      final channelId = ChannelId('channel-1');
+      final localNode = NodeId('local');
+      final peer1 = NodeId('peer-1');
+      final peer2 = NodeId('peer-2');
+      final stream1 = StreamId('stream-1');
+      final stream2 = StreamId('stream-2');
+
+      final channel = ChannelAggregate.reconstitute(
+        id: channelId,
+        localNode: localNode,
+        memberIds: {localNode, peer1, peer2},
+        streams: {stream1: KeepAllRetention(), stream2: KeepAllRetention()},
+      );
+
+      expect(channel.id, equals(channelId));
+      expect(channel.localNode, equals(localNode));
+      expect(channel.hasMember(localNode), isTrue);
+      expect(channel.hasMember(peer1), isTrue);
+      expect(channel.hasMember(peer2), isTrue);
+      expect(channel.hasStream(stream1), isTrue);
+      expect(channel.hasStream(stream2), isTrue);
+      expect(channel.streamCount, equals(2));
+    });
+
+    test('emits no domain events', () {
+      final channel = ChannelAggregate.reconstitute(
+        id: ChannelId('channel-1'),
+        localNode: NodeId('local'),
+        memberIds: {NodeId('local'), NodeId('peer-1')},
+        streams: {StreamId('stream-1'): KeepAllRetention()},
+      );
+
+      expect(channel.uncommittedEvents, isEmpty);
+    });
+
+    test('does not auto-add localNode to members', () {
+      final localNode = NodeId('local');
+      final peer = NodeId('peer-1');
+
+      // Deliberately omit localNode from memberIds
+      final channel = ChannelAggregate.reconstitute(
+        id: ChannelId('channel-1'),
+        localNode: localNode,
+        memberIds: {peer},
+        streams: {},
+      );
+
+      // localNode should NOT be present since we didn't include it
+      expect(channel.hasMember(localNode), isFalse);
+      expect(channel.hasMember(peer), isTrue);
+      expect(channel.memberIds.length, equals(1));
+    });
+
+    test('supports normal operations after reconstitution', () async {
+      final channelId = ChannelId('channel-1');
+      final localNode = NodeId('local');
+      final stream1 = StreamId('stream-1');
+
+      final channel = ChannelAggregate.reconstitute(
+        id: channelId,
+        localNode: localNode,
+        memberIds: {localNode},
+        streams: {stream1: KeepAllRetention()},
+      );
+
+      // Can add members
+      final newPeer = NodeId('new-peer');
+      channel.addMember(newPeer, occurredAt: DateTime(2024, 1, 1));
+      expect(channel.hasMember(newPeer), isTrue);
+
+      // Can create new streams
+      final stream2 = StreamId('stream-2');
+      channel.createStream(
+        stream2,
+        KeepAllRetention(),
+        occurredAt: DateTime(2024, 1, 1),
+      );
+      expect(channel.hasStream(stream2), isTrue);
+
+      // Can register materializer and get state
+      channel.registerMaterializer(stream1, TestCountMaterializer());
+      final entryRepo = FakeEntryRepository();
+      final state = await channel.getState<int>(stream1, entryRepo);
+      expect(state, equals(0));
+
+      // Events from post-reconstitution operations are emitted
+      expect(channel.uncommittedEvents, hasLength(2));
+      expect(channel.uncommittedEvents[0], isA<MemberAdded>());
+      expect(channel.uncommittedEvents[1], isA<StreamCreated>());
+    });
   });
 }

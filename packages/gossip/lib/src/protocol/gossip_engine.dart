@@ -377,9 +377,10 @@ class GossipEngine {
 
     final peer = candidates[_random.nextInt(candidates.length)];
 
-    final digests = _channels.values.map((channel) {
-      return generateDigest(channel);
-    }).toList();
+    final digests = <ChannelDigest>[];
+    for (final channel in _channels.values) {
+      digests.add(await generateDigest(channel));
+    }
 
     final request = DigestRequest(sender: localNode, digests: digests);
     await _sendMessage(peer.id, request);
@@ -414,7 +415,7 @@ class GossipEngine {
           'RECV DigestRequest from ${_shortId(message.sender.value)}: '
           '${protocolMessage.digests.length} channels',
         );
-        final response = _handleDigestRequest(protocolMessage);
+        final response = await _handleDigestRequest(protocolMessage);
         await _sendMessage(message.sender, response);
       } else if (protocolMessage is DigestResponse) {
         _log(
@@ -422,7 +423,7 @@ class GossipEngine {
           'RECV DigestResponse from ${_shortId(message.sender.value)}: '
           '${protocolMessage.digests.length} channels',
         );
-        final deltaRequests = handleDigestResponse(protocolMessage);
+        final deltaRequests = await handleDigestResponse(protocolMessage);
         await _sendMessages(message.sender, deltaRequests);
       } else if (protocolMessage is DeltaRequest) {
         _log(
@@ -431,7 +432,7 @@ class GossipEngine {
           'channel=${_shortId(protocolMessage.channelId.value)} '
           'stream=${protocolMessage.streamId.value}',
         );
-        final response = handleDeltaRequest(protocolMessage);
+        final response = await handleDeltaRequest(protocolMessage);
         await _sendMessage(message.sender, response);
       } else if (protocolMessage is DeltaResponse) {
         final level = protocolMessage.entries.isEmpty
@@ -444,7 +445,7 @@ class GossipEngine {
           'stream=${protocolMessage.streamId.value} '
           'entries=${protocolMessage.entries.length}',
         );
-        handleDeltaResponse(protocolMessage);
+        await handleDeltaResponse(protocolMessage);
       }
     } catch (e) {
       // Emit error for observability (intentionally non-fatal for DoS prevention)
@@ -536,7 +537,7 @@ class GossipEngine {
   }
 
   /// Handle digest request using the current channel map.
-  DigestResponse _handleDigestRequest(DigestRequest request) {
+  Future<DigestResponse> _handleDigestRequest(DigestRequest request) {
     final requestedChannels = request.digests
         .map((d) => d.channelId)
         .map((id) => _channels[id])
@@ -584,17 +585,21 @@ class GossipEngine {
   /// Used in: [performGossipRound] (Step 1) and [handleDigestRequest] (Step 2).
   ///
   /// Exposed as public for testing.
-  ChannelDigest generateDigest(ChannelAggregate channel) {
-    final streamDigests = channel.streamIds.map((streamId) {
-      final version = _computeVersionVector(channel.id, streamId);
-      return StreamDigest(streamId: streamId, version: version);
-    }).toList();
+  Future<ChannelDigest> generateDigest(ChannelAggregate channel) async {
+    final streamDigests = <StreamDigest>[];
+    for (final streamId in channel.streamIds) {
+      final version = await _computeVersionVector(channel.id, streamId);
+      streamDigests.add(StreamDigest(streamId: streamId, version: version));
+    }
 
     return ChannelDigest(channelId: channel.id, streams: streamDigests);
   }
 
   /// Gets version vector for a stream from the entry store.
-  VersionVector _computeVersionVector(ChannelId channelId, StreamId streamId) {
+  Future<VersionVector> _computeVersionVector(
+    ChannelId channelId,
+    StreamId streamId,
+  ) {
     return entryRepository.getVersionVector(channelId, streamId);
   }
 
@@ -609,7 +614,7 @@ class GossipEngine {
   /// Used in: [handleDeltaRequest] (Step 4).
   ///
   /// Exposed as public for testing.
-  List<LogEntry> computeDelta(
+  Future<List<LogEntry>> computeDelta(
     ChannelId channelId,
     StreamId streamId,
     VersionVector peerVersion,
@@ -626,13 +631,14 @@ class GossipEngine {
   /// the [channels] parameter).
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
-  DigestResponse handleDigestRequest(
+  Future<DigestResponse> handleDigestRequest(
     DigestRequest request,
     List<ChannelAggregate> channels,
-  ) {
-    final responseDigests = channels.map((channel) {
-      return generateDigest(channel);
-    }).toList();
+  ) async {
+    final responseDigests = <ChannelDigest>[];
+    for (final channel in channels) {
+      responseDigests.add(await generateDigest(channel));
+    }
 
     return DigestResponse(sender: localNode, digests: responseDigests);
   }
@@ -644,7 +650,9 @@ class GossipEngine {
   /// entries we don't have (i.e., where our version does not dominate theirs).
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
-  List<DeltaRequest> handleDigestResponse(DigestResponse response) {
+  Future<List<DeltaRequest>> handleDigestResponse(
+    DigestResponse response,
+  ) async {
     final deltaRequests = <DeltaRequest>[];
 
     for (final channelDigest in response.digests) {
@@ -675,7 +683,7 @@ class GossipEngine {
           _pendingDeltaRequests.remove(key);
         }
 
-        final ourVersion = _computeVersionVector(
+        final ourVersion = await _computeVersionVector(
           channelDigest.channelId,
           streamDigest.streamId,
         );
@@ -705,8 +713,8 @@ class GossipEngine {
   /// into their [EntryRepository].
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
-  DeltaResponse handleDeltaRequest(DeltaRequest request) {
-    final delta = computeDelta(
+  Future<DeltaResponse> handleDeltaRequest(DeltaRequest request) async {
+    final delta = await computeDelta(
       request.channelId,
       request.streamId,
       request.since,
@@ -732,7 +740,7 @@ class GossipEngine {
   /// this stream.
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
-  void handleDeltaResponse(DeltaResponse response) {
+  Future<void> handleDeltaResponse(DeltaResponse response) async {
     // Clear pending flag to allow future requests for this stream
     _pendingDeltaRequests.remove((response.channelId, response.streamId));
 
@@ -740,13 +748,13 @@ class GossipEngine {
 
     _updateHlcFromEntries(response.entries);
 
-    entryRepository.appendAll(
+    await entryRepository.appendAll(
       response.channelId,
       response.streamId,
       response.entries,
     );
 
-    onEntriesMerged?.call(
+    await onEntriesMerged?.call(
       response.channelId,
       response.streamId,
       response.entries,

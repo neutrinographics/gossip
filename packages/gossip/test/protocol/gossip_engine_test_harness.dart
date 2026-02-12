@@ -127,7 +127,7 @@ class GossipEngineTestHarness {
       timePort: timePort,
       messagePort: messagePort ?? localPort,
       onError: errors.add,
-      onEntriesMerged: (channelId, streamId, entries) {
+      onEntriesMerged: (channelId, streamId, entries) async {
         mergedEntries.add(MergedEntriesRecord(channelId, streamId, entries));
       },
       hlcClock: hlcClock,
@@ -191,8 +191,12 @@ class GossipEngineTestHarness {
   // -------------------------------------------------------------------------
 
   /// Appends a log entry to the entry repository.
-  void appendEntry(ChannelId channelId, StreamId streamId, LogEntry entry) {
-    entryRepository.append(channelId, streamId, entry);
+  Future<void> appendEntry(
+    ChannelId channelId,
+    StreamId streamId,
+    LogEntry entry,
+  ) async {
+    await entryRepository.append(channelId, streamId, entry);
   }
 
   // -------------------------------------------------------------------------

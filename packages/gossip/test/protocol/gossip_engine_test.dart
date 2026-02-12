@@ -88,7 +88,7 @@ void main() {
       expect(peer!.id, equals(peerId));
     });
 
-    test('generateDigest creates digest for channel with no streams', () {
+    test('generateDigest creates digest for channel with no streams', () async {
       final localNode = NodeId('local');
       final registry = PeerRegistry(
         localNode: localNode,
@@ -99,13 +99,13 @@ void main() {
       final channelId = ChannelId('channel-1');
       final channel = ChannelAggregate(id: channelId, localNode: localNode);
 
-      final digest = engine.generateDigest(channel);
+      final digest = await engine.generateDigest(channel);
 
       expect(digest.channelId, equals(channelId));
       expect(digest.streams, isEmpty);
     });
 
-    test('generateDigest creates digest for channel with streams', () {
+    test('generateDigest creates digest for channel with streams', () async {
       final localNode = NodeId('local');
       final registry = PeerRegistry(
         localNode: localNode,
@@ -122,14 +122,14 @@ void main() {
         occurredAt: DateTime.now(),
       );
 
-      final digest = engine.generateDigest(channel);
+      final digest = await engine.generateDigest(channel);
 
       expect(digest.channelId, equals(channelId));
       expect(digest.streams, hasLength(1));
       expect(digest.streams[0].streamId, equals(streamId));
     });
 
-    test('generateDigest computes version vectors from entry store', () {
+    test('generateDigest computes version vectors from entry store', () async {
       final localNode = NodeId('local');
       final author1 = NodeId('author-1');
       final author2 = NodeId('author-2');
@@ -142,7 +142,7 @@ void main() {
       final streamId = StreamId('stream-1');
 
       // Add entries to store
-      entryRepo.append(
+      await entryRepo.append(
         channelId,
         streamId,
         LogEntry(
@@ -152,7 +152,7 @@ void main() {
           payload: Uint8List.fromList([1]),
         ),
       );
-      entryRepo.append(
+      await entryRepo.append(
         channelId,
         streamId,
         LogEntry(
@@ -162,7 +162,7 @@ void main() {
           payload: Uint8List.fromList([2]),
         ),
       );
-      entryRepo.append(
+      await entryRepo.append(
         channelId,
         streamId,
         LogEntry(
@@ -181,7 +181,7 @@ void main() {
       );
       final engine = createEngine(localNode, registry, entryRepo);
 
-      final digest = engine.generateDigest(channel);
+      final digest = await engine.generateDigest(channel);
 
       expect(digest.streams, hasLength(1));
       final streamDigest = digest.streams[0];
@@ -190,7 +190,7 @@ void main() {
       expect(streamDigest.version[author2], equals(1));
     });
 
-    test('computeDelta returns entries peer is missing', () {
+    test('computeDelta returns entries peer is missing', () async {
       final localNode = NodeId('local');
       final author1 = NodeId('author-1');
       final author2 = NodeId('author-2');
@@ -221,15 +221,15 @@ void main() {
         timestamp: Hlc(1500, 0),
         payload: Uint8List.fromList([3]),
       );
-      entryRepo.append(channelId, streamId, entry1);
-      entryRepo.append(channelId, streamId, entry2);
-      entryRepo.append(channelId, streamId, entry3);
+      await entryRepo.append(channelId, streamId, entry1);
+      await entryRepo.append(channelId, streamId, entry2);
+      await entryRepo.append(channelId, streamId, entry3);
 
       final engine = createEngine(localNode, registry, entryRepo);
 
       // Peer has author1:1, author2:0 (missing author1:2 and author2:1)
       final peerVersion = VersionVector({author1: 1, author2: 0});
-      final delta = engine.computeDelta(channelId, streamId, peerVersion);
+      final delta = await engine.computeDelta(channelId, streamId, peerVersion);
 
       expect(delta, hasLength(2));
       expect(delta.any((e) => e.author == author1 && e.sequence == 2), isTrue);
@@ -361,7 +361,7 @@ void main() {
       },
     );
 
-    test('handleDigestResponse emits error for unknown channel', () {
+    test('handleDigestResponse emits error for unknown channel', () async {
       final localNode = NodeId('local');
       final peerRegistry = PeerRegistry(
         localNode: localNode,
@@ -390,7 +390,7 @@ void main() {
       );
 
       // Handle the response
-      engine.handleDigestResponse(response);
+      await engine.handleDigestResponse(response);
 
       // Verify error was emitted
       expect(errors.length, equals(1));
@@ -963,8 +963,8 @@ void main() {
           timestamp: Hlc(2000, 0),
           payload: Uint8List.fromList([2]),
         );
-        entryRepoB.append(channelId, streamId, entry1);
-        entryRepoB.append(channelId, streamId, entry2);
+        await entryRepoB.append(channelId, streamId, entry1);
+        await entryRepoB.append(channelId, streamId, entry2);
 
         final timePortA = InMemoryTimePort();
         final timePortB = InMemoryTimePort();
@@ -1015,8 +1015,8 @@ void main() {
         await Future.delayed(Duration.zero);
 
         // Node A should now have the entries
-        expect(entryRepoA.entryCount(channelId, streamId), equals(2));
-        final stored = entryRepoA.getAll(channelId, streamId);
+        expect(await entryRepoA.entryCount(channelId, streamId), equals(2));
+        final stored = await entryRepoA.getAll(channelId, streamId);
         expect(stored[0].sequence, equals(1));
         expect(stored[1].sequence, equals(2));
 
@@ -1056,7 +1056,7 @@ void main() {
         await sub.cancel();
       });
 
-      test('onEntriesMerged callback fires after delta response', () {
+      test('onEntriesMerged callback fires after delta response', () async {
         final h = GossipEngineTestHarness();
         h.createChannel('ch1', streamIds: ['s1']);
 
@@ -1074,7 +1074,7 @@ void main() {
           entries: [entry],
         );
 
-        h.engine.handleDeltaResponse(response);
+        await h.engine.handleDeltaResponse(response);
 
         expect(h.mergedEntries, hasLength(1));
         expect(h.mergedEntries.first.channelId, equals(ChannelId('ch1')));
@@ -1085,7 +1085,7 @@ void main() {
 
       test(
         'handleDeltaResponse with empty entries clears pending but skips merge',
-        () {
+        () async {
           final h = GossipEngineTestHarness();
           h.createChannel('ch1', streamIds: ['s1']);
 
@@ -1096,11 +1096,14 @@ void main() {
             entries: [],
           );
 
-          h.engine.handleDeltaResponse(response);
+          await h.engine.handleDeltaResponse(response);
 
           // No entries merged
           expect(
-            h.entryRepository.entryCount(ChannelId('ch1'), StreamId('s1')),
+            await h.entryRepository.entryCount(
+              ChannelId('ch1'),
+              StreamId('s1'),
+            ),
             equals(0),
           );
           // Callback not fired for empty entries

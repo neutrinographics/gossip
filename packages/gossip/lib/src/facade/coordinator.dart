@@ -325,15 +325,18 @@ class Coordinator {
   }
 
   /// Handles entries merged from peers and emits EntriesMerged events.
-  void _handleEntriesMerged(
+  Future<void> _handleEntriesMerged(
     ChannelId channelId,
     StreamId streamId,
     List<LogEntry> entries,
-  ) {
+  ) async {
     if (_eventsController.isClosed || entries.isEmpty) return;
 
     // Compute the new version vector for the stream
-    final newVersion = _entryRepository.getVersionVector(channelId, streamId);
+    final newVersion = await _entryRepository.getVersionVector(
+      channelId,
+      streamId,
+    );
 
     _eventsController.add(
       EntriesMerged(
@@ -592,8 +595,14 @@ class Coordinator {
       final channel = await _channelRepository.findById(channelId);
       if (channel != null) {
         for (final streamId in channel.streamIds) {
-          totalEntries += _entryRepository.entryCount(channelId, streamId);
-          totalStorageBytes += _entryRepository.sizeBytes(channelId, streamId);
+          totalEntries += await _entryRepository.entryCount(
+            channelId,
+            streamId,
+          );
+          totalStorageBytes += await _entryRepository.sizeBytes(
+            channelId,
+            streamId,
+          );
         }
       }
     }

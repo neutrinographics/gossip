@@ -676,11 +676,11 @@ void main() {
         final stream = await channel.getOrCreateStream(streamId);
         await stream.append(Uint8List.fromList([1, 2, 3]));
 
-        expect(entryRepo.getAll(channelId, streamId), hasLength(1));
+        expect(await entryRepo.getAll(channelId, streamId), hasLength(1));
 
         await coordinator.removeChannel(channelId);
 
-        expect(entryRepo.getAll(channelId, streamId), isEmpty);
+        expect(await entryRepo.getAll(channelId, streamId), isEmpty);
       });
 
       test('returns false for non-existent channel', () async {

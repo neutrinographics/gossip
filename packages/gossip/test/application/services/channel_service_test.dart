@@ -44,82 +44,101 @@ class FakeChannelRepository implements ChannelRepository {
 class FakeEntryRepository implements EntryRepository {
   final Map<ChannelId, Map<StreamId, List<LogEntry>>> _storage = {};
 
+  List<LogEntry> _getAllSync(ChannelId channel, StreamId stream) {
+    return _storage[channel]?[stream]?.toList() ?? [];
+  }
+
   @override
-  void append(ChannelId channel, StreamId stream, LogEntry entry) {
+  Future<void> append(
+    ChannelId channel,
+    StreamId stream,
+    LogEntry entry,
+  ) async {
     final channelMap = _storage.putIfAbsent(channel, () => {});
     final entries = channelMap.putIfAbsent(stream, () => []);
     entries.add(entry);
   }
 
   @override
-  void appendAll(ChannelId channel, StreamId stream, List<LogEntry> entries) {
+  Future<void> appendAll(
+    ChannelId channel,
+    StreamId stream,
+    List<LogEntry> entries,
+  ) async {
     for (final entry in entries) {
-      append(channel, stream, entry);
+      await append(channel, stream, entry);
     }
   }
 
   @override
-  List<LogEntry> getAll(ChannelId channel, StreamId stream) {
-    return _storage[channel]?[stream]?.toList() ?? [];
+  Future<List<LogEntry>> getAll(ChannelId channel, StreamId stream) async {
+    return _getAllSync(channel, stream);
   }
 
   @override
-  List<LogEntry> entriesSince(
+  Future<List<LogEntry>> entriesSince(
     ChannelId channel,
     StreamId stream,
     VersionVector since,
-  ) {
+  ) async {
     return [];
   }
 
   @override
-  List<LogEntry> entriesForAuthorAfter(
+  Future<List<LogEntry>> entriesForAuthorAfter(
     ChannelId channel,
     StreamId stream,
     NodeId author,
     int afterSequence,
-  ) {
+  ) async {
     return [];
   }
 
   @override
-  int latestSequence(ChannelId channel, StreamId stream, NodeId author) {
-    final entries = getAll(channel, stream);
+  Future<int> latestSequence(
+    ChannelId channel,
+    StreamId stream,
+    NodeId author,
+  ) async {
+    final entries = _getAllSync(channel, stream);
     final authorEntries = entries.where((e) => e.author == author);
     if (authorEntries.isEmpty) return 0;
     return authorEntries.map((e) => e.sequence).reduce((a, b) => a > b ? a : b);
   }
 
   @override
-  int entryCount(ChannelId channel, StreamId stream) {
+  Future<int> entryCount(ChannelId channel, StreamId stream) async {
     return _storage[channel]?[stream]?.length ?? 0;
   }
 
   @override
-  int sizeBytes(ChannelId channel, StreamId stream) {
+  Future<int> sizeBytes(ChannelId channel, StreamId stream) async {
     return 0;
   }
 
   @override
-  void removeEntries(
+  Future<void> removeEntries(
     ChannelId channel,
     StreamId stream,
     List<LogEntryId> ids,
-  ) {}
+  ) async {}
 
   @override
-  void clearStream(ChannelId channel, StreamId stream) {
+  Future<void> clearStream(ChannelId channel, StreamId stream) async {
     _storage[channel]?.remove(stream);
   }
 
   @override
-  void clearChannel(ChannelId channel) {
+  Future<void> clearChannel(ChannelId channel) async {
     _storage.remove(channel);
   }
 
   @override
-  VersionVector getVersionVector(ChannelId channel, StreamId stream) {
-    final entries = getAll(channel, stream);
+  Future<VersionVector> getVersionVector(
+    ChannelId channel,
+    StreamId stream,
+  ) async {
+    final entries = _getAllSync(channel, stream);
     if (entries.isEmpty) return VersionVector.empty;
 
     final versions = <NodeId, int>{};
@@ -224,7 +243,7 @@ void main() {
       await service.createStream(channelId, streamId, KeepAllRetention());
       await service.appendEntry(channelId, streamId, payload);
 
-      final entries = entryRepo.getAll(channelId, streamId);
+      final entries = await entryRepo.getAll(channelId, streamId);
       expect(entries, hasLength(1));
       expect(entries[0].author, equals(localNode));
       expect(entries[0].sequence, equals(1));
@@ -291,11 +310,11 @@ void main() {
         await service.appendEntry(channelId, streamId, Uint8List.fromList([1]));
         await service.appendEntry(channelId, streamId, Uint8List.fromList([2]));
 
-        expect(entryRepo.getAll(channelId, streamId), hasLength(2));
+        expect(await entryRepo.getAll(channelId, streamId), hasLength(2));
 
         await service.removeChannel(channelId);
 
-        expect(entryRepo.getAll(channelId, streamId), isEmpty);
+        expect(await entryRepo.getAll(channelId, streamId), isEmpty);
       });
 
       test('returns false for non-existent channel', () async {

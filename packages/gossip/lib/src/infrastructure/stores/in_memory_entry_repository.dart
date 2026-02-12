@@ -45,7 +45,11 @@ class InMemoryEntryRepository implements EntryRepository {
       {};
 
   @override
-  void append(ChannelId channel, StreamId stream, LogEntry entry) {
+  Future<void> append(
+    ChannelId channel,
+    StreamId stream,
+    LogEntry entry,
+  ) async {
     final channelMap = _storage.putIfAbsent(channel, () => {});
     final entries = channelMap.putIfAbsent(stream, () => []);
 
@@ -101,24 +105,28 @@ class InMemoryEntryRepository implements EntryRepository {
   }
 
   @override
-  void appendAll(ChannelId channel, StreamId stream, List<LogEntry> entries) {
+  Future<void> appendAll(
+    ChannelId channel,
+    StreamId stream,
+    List<LogEntry> entries,
+  ) async {
     for (final entry in entries) {
-      append(channel, stream, entry);
+      await append(channel, stream, entry);
     }
   }
 
   @override
-  List<LogEntry> getAll(ChannelId channel, StreamId stream) {
+  Future<List<LogEntry>> getAll(ChannelId channel, StreamId stream) async {
     return _storage[channel]?[stream]?.toList() ?? [];
   }
 
   @override
-  List<LogEntry> entriesSince(
+  Future<List<LogEntry>> entriesSince(
     ChannelId channel,
     StreamId stream,
     VersionVector since,
-  ) {
-    final entries = getAll(channel, stream);
+  ) async {
+    final entries = await getAll(channel, stream);
     return entries.where((entry) {
       final authorSeq = since[entry.author];
       return entry.sequence > authorSeq;
@@ -126,36 +134,44 @@ class InMemoryEntryRepository implements EntryRepository {
   }
 
   @override
-  List<LogEntry> entriesForAuthorAfter(
+  Future<List<LogEntry>> entriesForAuthorAfter(
     ChannelId channel,
     StreamId stream,
     NodeId author,
     int afterSequence,
-  ) {
-    final entries = getAll(channel, stream);
+  ) async {
+    final entries = await getAll(channel, stream);
     return entries
         .where((e) => e.author == author && e.sequence > afterSequence)
         .toList();
   }
 
   @override
-  int latestSequence(ChannelId channel, StreamId stream, NodeId author) {
+  Future<int> latestSequence(
+    ChannelId channel,
+    StreamId stream,
+    NodeId author,
+  ) async {
     return _latestSequenceCache[channel]?[stream]?[author] ?? 0;
   }
 
   @override
-  int entryCount(ChannelId channel, StreamId stream) {
+  Future<int> entryCount(ChannelId channel, StreamId stream) async {
     return _storage[channel]?[stream]?.length ?? 0;
   }
 
   @override
-  int sizeBytes(ChannelId channel, StreamId stream) {
-    final entries = getAll(channel, stream);
-    return entries.fold(0, (sum, entry) => sum + entry.sizeBytes);
+  Future<int> sizeBytes(ChannelId channel, StreamId stream) async {
+    final entries = await getAll(channel, stream);
+    return entries.fold<int>(0, (sum, entry) => sum + entry.sizeBytes);
   }
 
   @override
-  void removeEntries(ChannelId channel, StreamId stream, List<LogEntryId> ids) {
+  Future<void> removeEntries(
+    ChannelId channel,
+    StreamId stream,
+    List<LogEntryId> ids,
+  ) async {
     final entries = _storage[channel]?[stream];
     if (entries == null) return;
 
@@ -166,19 +182,22 @@ class InMemoryEntryRepository implements EntryRepository {
   }
 
   @override
-  void clearStream(ChannelId channel, StreamId stream) {
+  Future<void> clearStream(ChannelId channel, StreamId stream) async {
     _storage[channel]?[stream]?.clear();
     _latestSequenceCache[channel]?.remove(stream);
   }
 
   @override
-  void clearChannel(ChannelId channel) {
+  Future<void> clearChannel(ChannelId channel) async {
     _storage.remove(channel);
     _latestSequenceCache.remove(channel);
   }
 
   @override
-  VersionVector getVersionVector(ChannelId channel, StreamId stream) {
+  Future<VersionVector> getVersionVector(
+    ChannelId channel,
+    StreamId stream,
+  ) async {
     final streamCache = _latestSequenceCache[channel]?[stream];
     if (streamCache == null || streamCache.isEmpty) {
       return VersionVector.empty;
