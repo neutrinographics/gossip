@@ -21,7 +21,7 @@ void main() {
       // Create a real Coordinator with in-memory repositories for testing
       final messageBus = InMemoryMessageBus();
       coordinator = await Coordinator.create(
-        localNode: localNodeId,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNodeId),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),

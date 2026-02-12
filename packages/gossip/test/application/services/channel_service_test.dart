@@ -11,6 +11,7 @@ import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/domain/interfaces/channel_repository.dart';
 import 'package:gossip/src/domain/interfaces/retention_policy.dart';
 import 'package:gossip/src/domain/interfaces/entry_repository.dart';
+import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 import 'package:gossip/src/domain/errors/sync_error.dart';
 
 // Fake repository for testing
@@ -161,6 +162,7 @@ void main() {
         final repository = FakeChannelRepository();
         final service = ChannelService(
           localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: repository,
         );
         final channelId = ChannelId('channel-1');
@@ -179,6 +181,7 @@ void main() {
       final repository = FakeChannelRepository();
       final service = ChannelService(
         localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: repository,
       );
       final channelId = ChannelId('channel-1');
@@ -196,6 +199,7 @@ void main() {
       final repository = FakeChannelRepository();
       final service = ChannelService(
         localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: repository,
       );
       final channelId = ChannelId('channel-1');
@@ -214,6 +218,7 @@ void main() {
       final repository = FakeChannelRepository();
       final service = ChannelService(
         localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: repository,
       );
       final channelId = ChannelId('channel-1');
@@ -232,6 +237,7 @@ void main() {
       final entryRepo = FakeEntryRepository();
       final service = ChannelService(
         localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: channelRepo,
         entryRepository: entryRepo,
       );
@@ -256,6 +262,7 @@ void main() {
       final entryRepo = FakeEntryRepository();
       final service = ChannelService(
         localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: channelRepo,
         entryRepository: entryRepo,
       );
@@ -280,6 +287,7 @@ void main() {
         final repository = FakeChannelRepository();
         final service = ChannelService(
           localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: repository,
         );
         final channelId = ChannelId('channel-1');
@@ -299,6 +307,7 @@ void main() {
         final entryRepo = FakeEntryRepository();
         final service = ChannelService(
           localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: channelRepo,
           entryRepository: entryRepo,
         );
@@ -322,6 +331,7 @@ void main() {
         final repository = FakeChannelRepository();
         final service = ChannelService(
           localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: repository,
         );
         final channelId = ChannelId('non-existent');
@@ -335,6 +345,7 @@ void main() {
         final localNode = NodeId('local');
         final service = ChannelService(
           localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: null,
         );
         final channelId = ChannelId('channel-1');
@@ -352,6 +363,7 @@ void main() {
         final errors = <SyncError>[];
         final service = ChannelService(
           localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: repository,
           onError: errors.add,
         );
@@ -372,6 +384,7 @@ void main() {
         final errors = <SyncError>[];
         final service = ChannelService(
           localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: repository,
           onError: errors.add,
         );
@@ -388,6 +401,7 @@ void main() {
         final errors = <SyncError>[];
         final service = ChannelService(
           localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: repository,
           onError: errors.add,
         );
@@ -407,6 +421,7 @@ void main() {
         final repository = FakeChannelRepository();
         final service = ChannelService(
           localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: repository,
         );
 

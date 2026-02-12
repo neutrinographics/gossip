@@ -41,7 +41,7 @@ import '../value_objects/version_vector.dart';
 /// ```dart
 /// final entryRepo = InMemoryEntryRepository();
 /// final coordinator = await Coordinator.create(
-///   localNode: NodeId('test'),
+///   localNodeRepository: InMemoryLocalNodeRepository(),
 ///   channelRepository: InMemoryChannelRepository(),
 ///   peerRepository: InMemoryPeerRepository(),
 ///   entryRepository: entryRepo,

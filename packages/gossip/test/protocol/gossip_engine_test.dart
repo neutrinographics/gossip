@@ -11,6 +11,7 @@ import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/domain/interfaces/retention_policy.dart';
 import 'package:gossip/src/domain/errors/sync_error.dart';
 
+import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
@@ -39,6 +40,7 @@ void main() {
       entryRepository: entryRepo,
       timePort: timer,
       messagePort: messagePort,
+      localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
     );
   }
 
@@ -259,6 +261,7 @@ void main() {
         entryRepository: entryRepo,
         timePort: timer,
         messagePort: localPort,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
       );
 
       // Create a channel with a stream
@@ -313,6 +316,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timer,
           messagePort: localPort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         );
 
         // Create a channel
@@ -378,6 +382,7 @@ void main() {
         peerRegistry: peerRegistry,
         entryRepository: entryRepo,
         messagePort: port,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         timePort: timerPort,
         onError: errors.add,
       );
@@ -421,6 +426,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           gossipInterval: Duration(milliseconds: 100),
           adaptiveTimingEnabled: true,
         );
@@ -452,6 +458,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           adaptiveTimingEnabled: true,
         );
 
@@ -491,6 +498,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           adaptiveTimingEnabled: true,
         );
 
@@ -526,6 +534,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           adaptiveTimingEnabled: true,
         );
 
@@ -557,6 +566,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           // adaptiveTimingEnabled defaults to false
         );
 
@@ -597,6 +607,7 @@ void main() {
             entryRepository: entryRepo,
             timePort: timerPort,
             messagePort: messagePort,
+            localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
             adaptiveTimingEnabled: true,
           );
 
@@ -633,6 +644,7 @@ void main() {
             entryRepository: entryRepo,
             timePort: timerPort,
             messagePort: messagePort,
+            localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
             adaptiveTimingEnabled: true,
           );
 
@@ -675,6 +687,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           adaptiveTimingEnabled: true,
         );
 
@@ -708,6 +721,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         );
 
         // Simulate per-peer congestion (above threshold of 3)
@@ -749,6 +763,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         );
 
         // No congestion (below per-peer threshold of 3)
@@ -793,6 +808,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         );
 
         // Set up a channel
@@ -848,6 +864,7 @@ void main() {
             entryRepository: entryRepo,
             timePort: timerPort,
             messagePort: messagePort,
+            localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           );
 
           // Set up a channel
@@ -903,6 +920,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         );
 
         // Set up a channel
@@ -992,6 +1010,7 @@ void main() {
           entryRepository: entryRepoA,
           timePort: timePortA,
           messagePort: portA,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: nodeA),
         );
 
         final engineB = GossipEngine(
@@ -1000,6 +1019,7 @@ void main() {
           entryRepository: entryRepoB,
           timePort: timePortB,
           messagePort: portB,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: nodeB),
         );
 
         // Both nodes start listening

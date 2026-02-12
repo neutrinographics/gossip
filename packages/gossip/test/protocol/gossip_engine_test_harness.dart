@@ -13,6 +13,7 @@ import 'package:gossip/src/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
 import 'package:gossip/src/infrastructure/ports/message_port.dart';
+import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:gossip/src/protocol/gossip_engine.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
@@ -126,6 +127,7 @@ class GossipEngineTestHarness {
       entryRepository: entryRepository,
       timePort: timePort,
       messagePort: messagePort ?? localPort,
+      localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
       onError: errors.add,
       onEntriesMerged: (channelId, streamId, entries) async {
         mergedEntries.add(MergedEntriesRecord(channelId, streamId, entries));

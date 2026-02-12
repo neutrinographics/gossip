@@ -2,6 +2,7 @@ import 'package:gossip/src/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/facade/coordinator.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_channel_repository.dart';
+import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_peer_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:test/test.dart';
@@ -16,7 +17,7 @@ void main() {
 
     test('channelsForPeer returns empty list for unknown peer', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -31,7 +32,7 @@ void main() {
       'channelsForPeer returns empty list for peer with no channel memberships',
       () async {
         final coordinator = await Coordinator.create(
-          localNode: localNode,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           channelRepository: InMemoryChannelRepository(),
           peerRepository: InMemoryPeerRepository(),
           entryRepository: InMemoryEntryRepository(),
@@ -47,7 +48,7 @@ void main() {
 
     test('channelsForPeer returns channels where peer is a member', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -68,7 +69,7 @@ void main() {
 
     test('channelsForPeer returns multiple channels for peer', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -97,7 +98,7 @@ void main() {
 
     test('channelsForPeer excludes channels after peer is removed', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
@@ -119,7 +120,7 @@ void main() {
 
     test('channelsForPeer works for local node', () async {
       final coordinator = await Coordinator.create(
-        localNode: localNode,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),

@@ -22,7 +22,7 @@ import '../aggregates/channel_aggregate.dart';
 ///
 /// // Create coordinator with the repository
 /// final coordinator = await Coordinator.create(
-///   localNode: NodeId('device-1'),
+///   localNodeRepository: InMemoryLocalNodeRepository(),
 ///   channelRepository: channelRepo,
 ///   peerRepository: InMemoryPeerRepository(),
 ///   entryRepository: InMemoryEntryRepository(),

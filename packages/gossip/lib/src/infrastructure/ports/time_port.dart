@@ -27,7 +27,7 @@ abstract class TimerHandle {
 ///
 /// ```dart
 /// final coordinator = await Coordinator.create(
-///   localNode: NodeId('device-1'),
+///   localNodeRepository: localNodeRepo,
 ///   channelRepository: channelRepo,
 ///   peerRepository: peerRepo,
 ///   entryRepository: entryRepo,
@@ -41,7 +41,7 @@ abstract class TimerHandle {
 /// ```dart
 /// final timePort = InMemoryTimePort();
 /// final coordinator = await Coordinator.create(
-///   localNode: NodeId('test'),
+///   localNodeRepository: InMemoryLocalNodeRepository(),
 ///   // ... other params
 ///   timerPort: timePort,
 /// );

@@ -105,8 +105,8 @@ class GossipEngine {
   /// When null, HLC updates are skipped (not recommended for production).
   final HlcClock? _hlcClock;
 
-  /// Optional repository for persisting local node state (HLC clock).
-  final LocalNodeRepository? _localNodeRepository;
+  /// Repository for persisting local node state (HLC clock).
+  final LocalNodeRepository _localNodeRepository;
 
   /// Optional callback for logging protocol messages.
   ///
@@ -195,7 +195,7 @@ class GossipEngine {
     this.onEntriesMerged,
     this.onLog,
     HlcClock? hlcClock,
-    LocalNodeRepository? localNodeRepository,
+    required LocalNodeRepository localNodeRepository,
     Random? random,
     Duration? gossipInterval,
     bool adaptiveTimingEnabled = false,
@@ -784,6 +784,6 @@ class GossipEngine {
     _hlcClock.receive(maxHlc);
 
     // Persist clock state for restart recovery (fire-and-forget)
-    _localNodeRepository?.saveClockState(_hlcClock.current);
+    _localNodeRepository.saveClockState(_hlcClock.current);
   }
 }

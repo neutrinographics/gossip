@@ -33,9 +33,6 @@ import '../../domain/events/domain_event.dart';
 ///
 /// Used by: Protocol services (FailureDetector, GossipEngine) and public facades.
 class PeerService {
-  /// Local node identifier for this instance.
-  final NodeId localNode;
-
   /// The peer registry aggregate managing all peer state.
   ///
   /// Injected instance serves as single source of truth for peer state.
@@ -46,8 +43,8 @@ class PeerService {
   /// When null, peers are not persisted (in-memory only).
   final PeerRepository? repository;
 
-  /// Optional repository for persisting local node state (incarnation).
-  final LocalNodeRepository? localNodeRepository;
+  /// Repository for persisting local node state (incarnation).
+  final LocalNodeRepository localNodeRepository;
 
   /// Optional callback for reporting synchronization errors.
   ///
@@ -56,10 +53,9 @@ class PeerService {
   final ErrorCallback? onError;
 
   PeerService({
-    required this.localNode,
     required this.registry,
+    required this.localNodeRepository,
     this.repository,
-    this.localNodeRepository,
     this.onError,
   });
 
@@ -116,7 +112,7 @@ class PeerService {
   // and persist the new incarnation number.
   Future<void> incrementLocalIncarnation() async {
     registry.incrementLocalIncarnation();
-    await localNodeRepository?.saveIncarnation(registry.localIncarnation);
+    await localNodeRepository.saveIncarnation(registry.localIncarnation);
   }
 
   /// Updates a peer's SWIM status (reachable/suspected/unreachable).

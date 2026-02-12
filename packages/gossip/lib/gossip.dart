@@ -14,9 +14,11 @@
 ///   final peerRepo = InMemoryPeerRepository();
 ///   final entryRepo = InMemoryEntryRepository();
 ///
+///   final localNodeRepo = InMemoryLocalNodeRepository();
+///
 ///   // 2. Create coordinator
 ///   final coordinator = await Coordinator.create(
-///     localNode: NodeId('my-device'),
+///     localNodeRepository: localNodeRepo,
 ///     channelRepository: channelRepo,
 ///     peerRepository: peerRepo,
 ///     entryRepository: entryRepo,
@@ -42,7 +44,7 @@
 ///
 /// ```dart
 /// final coordinator = await Coordinator.create(
-///   localNode: NodeId('device-1'),
+///   localNodeRepository: localNodeRepo,
 ///   channelRepository: channelRepo,
 ///   peerRepository: peerRepo,
 ///   entryRepository: entryRepo,

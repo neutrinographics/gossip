@@ -10,11 +10,8 @@
 /// // Create from any unique string (UUID, device ID, etc.)
 /// final nodeId = NodeId('device-uuid-123');
 ///
-/// // Use as local node when creating coordinator
-/// final coordinator = await Coordinator.create(
-///   localNode: NodeId('my-device'),
-///   // ...
-/// );
+/// // Pre-set in a local node repository
+/// final repo = InMemoryLocalNodeRepository(nodeId: NodeId('my-device'));
 ///
 /// // Add as peer
 /// await coordinator.addPeer(NodeId('other-device'));
@@ -24,7 +21,8 @@
 ///
 /// Node IDs should be:
 /// - **Globally unique**: UUIDs work well
-/// - **Stable**: Same device should use same ID across restarts
+/// - **Persisted**: The [LocalNodeRepository] handles persistence; generate
+///   once and reuse across restarts
 /// - **Meaningful**: Optional - can include device name for debugging
 ///
 /// Value objects are immutable and compared by value equality.

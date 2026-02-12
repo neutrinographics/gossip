@@ -18,7 +18,7 @@
 ///
 /// // Create gossip coordinator with BLE transport
 /// final coordinator = await Coordinator.create(
-///   localNode: transport.localNodeId,
+///   localNodeRepository: localNodeRepo,
 ///   messagePort: transport.messagePort,
 ///   // ... other params
 /// );

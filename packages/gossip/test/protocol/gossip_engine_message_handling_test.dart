@@ -9,6 +9,7 @@ import 'package:gossip/src/domain/value_objects/hlc.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/domain/interfaces/retention_policy.dart';
+import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
@@ -35,6 +36,7 @@ void main() {
       entryRepository: entryRepo,
       timePort: timer,
       messagePort: messagePort,
+      localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
     );
   }
 
@@ -605,6 +607,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timePort,
           messagePort: messagePort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         );
 
         final channel = ChannelAggregate(id: channelId, localNode: localNode);
@@ -677,6 +680,7 @@ void main() {
           entryRepository: entryRepo,
           timePort: timePort,
           messagePort: messagePort,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         );
 
         final channel = ChannelAggregate(id: channelId, localNode: localNode);

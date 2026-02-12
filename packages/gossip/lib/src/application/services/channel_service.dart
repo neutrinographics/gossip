@@ -75,15 +75,15 @@ class ChannelService {
   /// this callback for observability.
   final void Function(DomainEvent)? onEvent;
 
-  /// Optional repository for persisting local node state (HLC clock).
-  final LocalNodeRepository? _localNodeRepository;
+  /// Repository for persisting local node state (HLC clock).
+  final LocalNodeRepository _localNodeRepository;
 
   ChannelService({
     required this.localNode,
+    required LocalNodeRepository localNodeRepository,
     HlcClock? hlcClock,
     ChannelRepository? channelRepository,
     EntryRepository? entryRepository,
-    LocalNodeRepository? localNodeRepository,
     this.onError,
     this.onEvent,
   }) : _hlcClock = hlcClock,
@@ -327,7 +327,7 @@ class ChannelService {
         _hlcClock?.now() ?? Hlc(DateTime.now().millisecondsSinceEpoch, 0);
 
     // Persist clock state for restart recovery
-    if (_hlcClock != null && _localNodeRepository != null) {
+    if (_hlcClock != null) {
       await _localNodeRepository.saveClockState(_hlcClock.current);
     }
 

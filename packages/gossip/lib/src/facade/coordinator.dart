@@ -51,7 +51,7 @@ import 'sync_state.dart';
 ///
 /// // Create coordinator
 /// final coordinator = await Coordinator.create(
-///   localNode: NodeId('device-1'),
+///   localNodeRepository: InMemoryLocalNodeRepository(),
 ///   channelRepository: channelRepo,
 ///   peerRepository: peerRepo,
 ///   entryRepository: entryRepo,
@@ -81,7 +81,7 @@ import 'sync_state.dart';
 ///
 /// ```dart
 /// final coordinator = await Coordinator.create(
-///   localNode: NodeId('device-1'),
+///   localNodeRepository: InMemoryLocalNodeRepository(),
 ///   channelRepository: channelRepo,
 ///   peerRepository: peerRepo,
 ///   entryRepository: entryRepo,
@@ -191,11 +191,10 @@ class Coordinator {
   /// [config] allows tuning of gossip and failure detection parameters.
   /// If null, default values are used.
   static Future<Coordinator> create({
-    required NodeId localNode,
+    required LocalNodeRepository localNodeRepository,
     required ChannelRepository channelRepository,
     required PeerRepository peerRepository,
     required EntryRepository entryRepository,
-    LocalNodeRepository? localNodeRepository,
     MessagePort? messagePort,
     TimePort? timerPort,
     Random? random,
@@ -203,12 +202,16 @@ class Coordinator {
     LogCallback? onLog,
   }) async {
     final cfg = config ?? CoordinatorConfig.defaults;
-    // Note: NodeId validates its own invariants (non-empty) in constructor
 
-    // Restore incarnation from LocalNodeRepository if provided
-    final incarnation = localNodeRepository != null
-        ? await localNodeRepository.getIncarnation()
-        : 0;
+    // Resolve localNode from repository — single source of truth
+    var localNode = await localNodeRepository.getNodeId();
+    if (localNode == null) {
+      localNode = await localNodeRepository.generateNodeId();
+      await localNodeRepository.saveNodeId(localNode);
+    }
+
+    // Restore incarnation from LocalNodeRepository
+    final incarnation = await localNodeRepository.getIncarnation();
 
     final peerRegistry = PeerRegistry(
       localNode: localNode,
@@ -221,12 +224,10 @@ class Coordinator {
       final timeSource = TimeSource(timerPort);
       hlcClock = HlcClock(timeSource);
 
-      // Restore clock state from LocalNodeRepository if provided
-      if (localNodeRepository != null) {
-        final clockState = await localNodeRepository.getClockState();
-        if (clockState != Hlc.zero) {
-          hlcClock.restore(clockState);
-        }
+      // Restore clock state from LocalNodeRepository
+      final clockState = await localNodeRepository.getClockState();
+      if (clockState != Hlc.zero) {
+        hlcClock.restore(clockState);
       }
     }
 
@@ -246,10 +247,9 @@ class Coordinator {
       },
     );
     final peerService = PeerService(
-      localNode: localNode,
       registry: peerRegistry,
-      repository: peerRepository,
       localNodeRepository: localNodeRepository,
+      repository: peerRepository,
     );
 
     final coordinator = Coordinator._(

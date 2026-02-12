@@ -19,14 +19,14 @@
 /// ```dart
 /// // Use defaults (recommended for most cases)
 /// final coordinator = await Coordinator.create(
-///   localNode: NodeId('device-1'),
+///   localNodeRepository: localNodeRepo,
 ///   // ... other params
 /// );
 ///
 /// // Or customize suspicion threshold for stricter failure detection
 /// final config = CoordinatorConfig(suspicionThreshold: 3);
 /// final coordinator = await Coordinator.create(
-///   localNode: NodeId('device-1'),
+///   localNodeRepository: localNodeRepo,
 ///   config: config,
 ///   // ... other params
 /// );
