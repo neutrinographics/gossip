@@ -2,7 +2,6 @@ import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:gossip/gossip.dart';
 import 'package:gossip_nearby/gossip_nearby.dart';
-import 'package:uuid/uuid.dart';
 
 import 'app.dart';
 import 'application/application.dart';
@@ -21,20 +20,21 @@ void main() async {
   nearbyMinLogLevel = _verboseLogging ? LogLevel.trace : LogLevel.warning;
 
   // Generate or load device identity
-  final nodeId = NodeId(const Uuid().v4());
+  final localNodeRepo = InMemoryLocalNodeRepository();
   final deviceName = await _getDeviceName();
 
   // Create NearbyTransport for Android Nearby Connections
-  final transport = NearbyTransport(
-    localNodeId: nodeId,
-    serviceId: ServiceId('nearbychat'),
+  final transport = await NearbyTransport.create(
+    localNodeRepository: localNodeRepo,
+    serviceId: ServiceId('gossipchat'),
     displayName: deviceName,
     onLog: nearbyLogCallback,
   );
+  final nodeId = transport.localNodeId;
 
   // Create Coordinator with in-memory storage
   final coordinator = await Coordinator.create(
-    localNode: nodeId,
+    localNodeRepository: localNodeRepo,
     channelRepository: InMemoryChannelRepository(),
     peerRepository: InMemoryPeerRepository(),
     entryRepository: InMemoryEntryRepository(),

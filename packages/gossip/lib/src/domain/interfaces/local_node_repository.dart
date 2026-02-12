@@ -75,3 +75,21 @@ abstract interface class LocalNodeRepository {
   /// Persists the current incarnation number.
   Future<void> saveIncarnation(int incarnation);
 }
+
+/// Convenience extension on [LocalNodeRepository].
+extension LocalNodeRepositoryExtension on LocalNodeRepository {
+  /// Resolves the local node ID, generating and persisting one if needed.
+  ///
+  /// On the first call (no persisted ID), this generates a new node ID via
+  /// [LocalNodeRepository.generateNodeId], saves it via
+  /// [LocalNodeRepository.saveNodeId], and returns it. On subsequent calls,
+  /// it returns the persisted ID directly.
+  Future<NodeId> resolveNodeId() async {
+    var nodeId = await getNodeId();
+    if (nodeId == null) {
+      nodeId = await generateNodeId();
+      await saveNodeId(nodeId);
+    }
+    return nodeId;
+  }
+}

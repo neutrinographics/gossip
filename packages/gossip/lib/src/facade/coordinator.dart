@@ -204,11 +204,7 @@ class Coordinator {
     final cfg = config ?? CoordinatorConfig.defaults;
 
     // Resolve localNode from repository — single source of truth
-    var localNode = await localNodeRepository.getNodeId();
-    if (localNode == null) {
-      localNode = await localNodeRepository.generateNodeId();
-      await localNodeRepository.saveNodeId(localNode);
-    }
+    final localNode = await localNodeRepository.resolveNodeId();
 
     // Restore incarnation from LocalNodeRepository
     final incarnation = await localNodeRepository.getIncarnation();
