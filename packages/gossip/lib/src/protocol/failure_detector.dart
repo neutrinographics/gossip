@@ -359,14 +359,14 @@ class FailureDetector {
   /// forwarded ack races with a direct ack. The peer contact timestamp
   /// is still updated regardless.
   void handleAck(Ack ack, {required int timestampMs}) {
-    peerRegistry.updatePeerContact(ack.sender, timestampMs);
+    _recordPeerContact(ack.sender, timestampMs);
 
     final pending = _pendingPings[ack.sequence];
     if (pending == null || pending.completer.isCompleted) {
       return;
     }
 
-    _tryRecordRtt(pending, ack.sender, timestampMs);
+    _recordRttIfValid(pending, ack.sender, timestampMs);
     pending.completer.complete(true);
   }
 
@@ -546,9 +546,7 @@ class FailureDetector {
 
   Future<void> _handleIncomingPing(Ping ping, NodeId sender) async {
     _log('Received Ping from $sender seq=${ping.sequence}');
-    // Receiving a Ping is proof of life — update contact to recover
-    // unreachable/suspected peers that contact us.
-    peerRegistry.updatePeerContact(sender, timePort.nowMs);
+    _recordPeerContact(sender, timePort.nowMs);
     final ack = handlePing(ping);
     final ackBytes = _codec.encode(ack);
     await _safeSend(sender, ackBytes, 'Ack');
@@ -608,7 +606,11 @@ class FailureDetector {
   ///
   /// Late Acks (RTT > timeout) are discarded to prevent SRTT inflation
   /// from timeout-delayed responses.
-  void _tryRecordRtt(_PendingPing pending, NodeId ackSender, int timestampMs) {
+  void _recordRttIfValid(
+    _PendingPing pending,
+    NodeId ackSender,
+    int timestampMs,
+  ) {
     final rttMs = timestampMs - pending.sentAtMs;
     final timeout = effectivePingTimeoutForPeer(pending.target);
 
@@ -725,6 +727,22 @@ class FailureDetector {
           occurredAt: DateTime.now(),
           cause: e,
         ),
+      );
+    }
+  }
+
+  /// Updates peer contact and logs recovery if the peer was non-reachable.
+  void _recordPeerContact(NodeId peerId, int timestampMs) {
+    final peer = peerRegistry.getPeer(peerId);
+    final oldStatus = peer?.status;
+
+    peerRegistry.updatePeerContact(peerId, timestampMs);
+
+    if (oldStatus != null && oldStatus != PeerStatus.reachable) {
+      _log(
+        'Peer $peerId transitioning to REACHABLE '
+        '(was: ${oldStatus.name}, '
+        'failed probes reset to 0)',
       );
     }
   }
