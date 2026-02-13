@@ -141,6 +141,38 @@ void main() {
       expect(reachable.first.id, equals(NodeId('peer-1')));
     });
 
+    test('unreachablePeers returns only unreachable peers', () {
+      final registry = PeerRegistry(
+        localNode: NodeId('local'),
+        initialIncarnation: 0,
+      );
+      registry.addPeer(NodeId('peer-1'), occurredAt: DateTime(2024, 1, 1));
+      registry.addPeer(NodeId('peer-2'), occurredAt: DateTime(2024, 1, 1));
+      registry.addPeer(NodeId('peer-3'), occurredAt: DateTime(2024, 1, 1));
+      // peer-2 → suspected
+      registry.updatePeerStatus(
+        NodeId('peer-2'),
+        PeerStatus.suspected,
+        occurredAt: DateTime(2024, 1, 1),
+      );
+      // peer-3 → suspected → unreachable
+      registry.updatePeerStatus(
+        NodeId('peer-3'),
+        PeerStatus.suspected,
+        occurredAt: DateTime(2024, 1, 1),
+      );
+      registry.updatePeerStatus(
+        NodeId('peer-3'),
+        PeerStatus.unreachable,
+        occurredAt: DateTime(2024, 1, 1),
+      );
+
+      final unreachable = registry.unreachablePeers;
+
+      expect(unreachable.length, equals(1));
+      expect(unreachable.first.id, equals(NodeId('peer-3')));
+    });
+
     test('incrementLocalIncarnation increases incarnation', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),

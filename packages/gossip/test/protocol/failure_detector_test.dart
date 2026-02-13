@@ -747,6 +747,324 @@ void main() {
   });
 
   // ---------------------------------------------------------------------------
+  // Unreachable peer probing
+  // ---------------------------------------------------------------------------
+
+  group('Unreachable peer probing', () {
+    /// Helper: drives a single peer to unreachable status.
+    Future<void> driveToUnreachable(
+      FailureDetectorTestHarness h, {
+      required int failures,
+    }) async {
+      for (var i = 0; i < failures; i++) {
+        await h.probeWithTimeout();
+      }
+    }
+
+    test(
+      'probes unreachable peer after unreachableProbeInterval rounds',
+      () async {
+        final h = FailureDetectorTestHarness(
+          failureThreshold: 3,
+          unreachableThreshold: 6,
+          unreachableProbeInterval: 3,
+          pingTimeout: const Duration(milliseconds: 500),
+        );
+        final peer = h.addPeer('peer1');
+        final codec = ProtocolCodec();
+
+        h.startListening();
+
+        // Drive to unreachable
+        await driveToUnreachable(h, failures: 6);
+        expect(
+          h.peerRegistry.getPeer(peer.id)!.status,
+          equals(PeerStatus.unreachable),
+        );
+
+        // Track pings received by the peer
+        final pingsReceived = <Ping>[];
+        final sub = peer.port.incoming.listen((msg) {
+          final decoded = codec.decode(msg.bytes);
+          if (decoded is Ping) pingsReceived.add(decoded);
+        });
+
+        // Run 3 probe rounds — unreachable probe fires on the 3rd
+        // (selectRandomPeer returns null since peer is unreachable,
+        // so only the unreachable probe mechanism sends pings)
+        for (var i = 0; i < 3; i++) {
+          final probeFuture = h.detector.performProbeRound();
+          await h.flush();
+          await h.advancePastTimeout();
+          await probeFuture;
+        }
+
+        expect(
+          pingsReceived,
+          isNotEmpty,
+          reason: 'Unreachable peer should receive a Ping after interval',
+        );
+
+        await sub.cancel();
+        h.stopListening();
+      },
+    );
+
+    test(
+      'unreachable peer recovers when it responds to periodic probe',
+      () async {
+        final h = FailureDetectorTestHarness(
+          failureThreshold: 3,
+          unreachableThreshold: 6,
+          unreachableProbeInterval: 3,
+          pingTimeout: const Duration(milliseconds: 500),
+        );
+        final peer = h.addPeer('peer1');
+
+        h.startListening();
+
+        // Drive to unreachable
+        await driveToUnreachable(h, failures: 6);
+        expect(
+          h.peerRegistry.getPeer(peer.id)!.status,
+          equals(PeerStatus.unreachable),
+        );
+
+        // Run probe rounds until the unreachable probe fires (round 3).
+        // On rounds 1 & 2, just let them pass (no regular peer to probe).
+        for (var i = 0; i < 2; i++) {
+          final probeFuture = h.detector.performProbeRound();
+          await h.flush();
+          await h.advancePastTimeout();
+          await probeFuture;
+        }
+
+        // Round 3: unreachable probe fires. Intercept the Ping and respond.
+        // After recovery, the peer is reachable again so the regular probe
+        // in performProbeRound() will also fire — advance time to let it
+        // complete.
+        final pingFuture = peer.capturePing(h.codec);
+        final probeFuture = h.detector.performProbeRound();
+        final ping = await pingFuture;
+        await h.sendAck(
+          peer,
+          ping.sequence,
+          afterDelay: const Duration(milliseconds: 50),
+        );
+        // Advance time for the regular probe round that follows recovery
+        await h.flush();
+        await h.advancePastTimeout();
+        await probeFuture;
+
+        expect(
+          h.peerRegistry.getPeer(peer.id)!.status,
+          equals(PeerStatus.reachable),
+        );
+        // failedProbeCount may be > 0 if the regular probe that followed
+        // recovery timed out; the important assertion is the status.
+
+        h.stopListening();
+      },
+    );
+
+    test('unreachable probe does not record failure on timeout', () async {
+      final h = FailureDetectorTestHarness(
+        failureThreshold: 3,
+        unreachableThreshold: 6,
+        unreachableProbeInterval: 3,
+        pingTimeout: const Duration(milliseconds: 500),
+      );
+      h.addPeer('peer1');
+
+      h.startListening();
+
+      // Drive to unreachable
+      await driveToUnreachable(h, failures: 6);
+      final failedCountBefore = h.peerRegistry
+          .getPeer(NodeId('peer1'))!
+          .failedProbeCount;
+
+      // Run 3 rounds to trigger unreachable probe (no Ack sent → timeout)
+      for (var i = 0; i < 3; i++) {
+        final probeFuture = h.detector.performProbeRound();
+        await h.flush();
+        await h.advancePastTimeout();
+        await probeFuture;
+      }
+
+      final failedCountAfter = h.peerRegistry
+          .getPeer(NodeId('peer1'))!
+          .failedProbeCount;
+      expect(
+        failedCountAfter,
+        equals(failedCountBefore),
+        reason: 'Unreachable probe should not increment failedProbeCount',
+      );
+
+      h.stopListening();
+    });
+
+    test('round-robins across multiple unreachable peers', () async {
+      final h = FailureDetectorTestHarness(
+        failureThreshold: 3,
+        unreachableThreshold: 6,
+        unreachableProbeInterval: 3,
+        pingTimeout: const Duration(milliseconds: 500),
+      );
+      final peer1 = h.addPeer('peer1');
+      final peer2 = h.addPeer('peer2');
+      final codec = ProtocolCodec();
+
+      h.startListening();
+
+      // Drive both to unreachable via direct registry manipulation
+      for (final peerId in [peer1.id, peer2.id]) {
+        h.peerRegistry.updatePeerStatus(
+          peerId,
+          PeerStatus.suspected,
+          occurredAt: DateTime.now(),
+        );
+        h.peerRegistry.updatePeerStatus(
+          peerId,
+          PeerStatus.unreachable,
+          occurredAt: DateTime.now(),
+        );
+      }
+      expect(
+        h.peerRegistry.getPeer(peer1.id)!.status,
+        equals(PeerStatus.unreachable),
+      );
+      expect(
+        h.peerRegistry.getPeer(peer2.id)!.status,
+        equals(PeerStatus.unreachable),
+      );
+
+      // Track which peers receive pings
+      final peer1Pings = <Ping>[];
+      final peer2Pings = <Ping>[];
+      final sub1 = peer1.port.incoming.listen((msg) {
+        final decoded = codec.decode(msg.bytes);
+        if (decoded is Ping) peer1Pings.add(decoded);
+      });
+      final sub2 = peer2.port.incoming.listen((msg) {
+        final decoded = codec.decode(msg.bytes);
+        if (decoded is Ping) peer2Pings.add(decoded);
+      });
+
+      // Run 6 rounds to trigger 2 unreachable probes (at rounds 3 and 6)
+      for (var i = 0; i < 6; i++) {
+        final probeFuture = h.detector.performProbeRound();
+        await h.flush();
+        await h.advancePastTimeout();
+        await probeFuture;
+      }
+
+      expect(
+        peer1Pings,
+        isNotEmpty,
+        reason: 'peer1 should receive an unreachable probe',
+      );
+      expect(
+        peer2Pings,
+        isNotEmpty,
+        reason: 'peer2 should receive an unreachable probe',
+      );
+
+      await sub1.cancel();
+      await sub2.cancel();
+      h.stopListening();
+    });
+
+    test(
+      'recovers unreachable peer via indirect ping through intermediary',
+      () async {
+        final h = FailureDetectorTestHarness(
+          failureThreshold: 3,
+          unreachableThreshold: 6,
+          unreachableProbeInterval: 3,
+          pingTimeout: const Duration(milliseconds: 500),
+        );
+        final target = h.addPeer('target');
+        final intermediary = h.addPeer('intermediary');
+        final codec = ProtocolCodec();
+
+        h.startListening();
+
+        // Drive target to unreachable via direct registry manipulation
+        // (avoids random peer selection issues with 2 peers).
+        h.peerRegistry.updatePeerStatus(
+          target.id,
+          PeerStatus.suspected,
+          occurredAt: DateTime.now(),
+        );
+        h.peerRegistry.updatePeerStatus(
+          target.id,
+          PeerStatus.unreachable,
+          occurredAt: DateTime.now(),
+        );
+        expect(
+          h.peerRegistry.getPeer(target.id)!.status,
+          equals(PeerStatus.unreachable),
+        );
+
+        // Intermediary handles PingReq: pings target, forwards Ack back.
+        intermediary.port.incoming.listen((msg) async {
+          final decoded = codec.decode(msg.bytes);
+          if (decoded is PingReq) {
+            final ping = Ping(
+              sender: intermediary.id,
+              sequence: decoded.sequence,
+            );
+            await intermediary.port.send(decoded.target, codec.encode(ping));
+          } else if (decoded is Ack) {
+            final forwardedAck = Ack(
+              sender: intermediary.id,
+              sequence: decoded.sequence,
+            );
+            await intermediary.port.send(
+              h.localNode,
+              codec.encode(forwardedAck),
+            );
+          }
+        });
+
+        // Target responds to pings from intermediary only (not from local),
+        // forcing recovery through the indirect path.
+        target.port.incoming.listen((msg) async {
+          final decoded = codec.decode(msg.bytes);
+          if (decoded is Ping && msg.sender == intermediary.id) {
+            final ack = Ack(sender: target.id, sequence: decoded.sequence);
+            await target.port.send(msg.sender, codec.encode(ack));
+          }
+        });
+
+        // Run 3 rounds to trigger unreachable probe.
+        // On the firing round, the unreachable probe does:
+        //   1. Direct Ping → timeout (needs 1 time advance)
+        //   2. Indirect PingReq → intermediary relays → Ack (needs 1 more)
+        // Then the regular probe may also fire if recovery succeeded.
+        for (var i = 0; i < 3; i++) {
+          final probeFuture = h.detector.performProbeRound();
+          await h.flush();
+          await h.advancePastTimeout();
+          await h.flush();
+          await h.advancePastTimeout();
+          await probeFuture;
+        }
+
+        expect(
+          h.peerRegistry.getPeer(target.id)!.status,
+          equals(PeerStatus.reachable),
+          reason:
+              'Target should recover via indirect ping through intermediary',
+        );
+
+        h.stopListening();
+      },
+    );
+  });
+
+  // ---------------------------------------------------------------------------
   // Lifecycle
   // ---------------------------------------------------------------------------
 

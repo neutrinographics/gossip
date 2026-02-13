@@ -63,7 +63,9 @@ class _PendingPing {
 /// - After [unreachableThreshold] consecutive failures, mark suspected peer
 ///   as unreachable (excluded from probing and gossip)
 /// - Suspected peers can recover by responding to future probes
-/// - Unreachable peers recover via transport reconnection (incoming Ping
+/// - Unreachable peers are periodically probed (every [unreachableProbeInterval]
+///   rounds) to detect transport recovery without requiring explicit reconnection
+/// - Unreachable peers also recover via transport reconnection (incoming Ping
 ///   or re-adding the peer)
 ///
 /// ## Lifecycle
@@ -80,6 +82,7 @@ class FailureDetector {
   final PeerRegistry peerRegistry;
   final int failureThreshold;
   final int unreachableThreshold;
+  final int unreachableProbeInterval;
   final TimePort timePort;
   final MessagePort messagePort;
   final ErrorCallback? onError;
@@ -97,6 +100,7 @@ class FailureDetector {
     required this.peerRegistry,
     this.failureThreshold = 3,
     this.unreachableThreshold = 9,
+    this.unreachableProbeInterval = 5,
     required this.timePort,
     required this.messagePort,
     this.onError,
@@ -129,6 +133,8 @@ class FailureDetector {
 
   bool _isRunning = false;
   int _nextSequence = 1;
+  int _unreachableProbeCounter = 0;
+  int _unreachableProbeIndex = 0;
   StreamSubscription<IncomingMessage>? _messageSubscription;
   final Map<int, _PendingPing> _pendingPings = {};
   int _acksReceived = 0;
@@ -263,6 +269,16 @@ class FailureDetector {
   /// 4. If no Ack, fall back to indirect ping
   /// 5. Check if late Ack arrived during indirect phase
   Future<void> performProbeRound() async {
+    // Periodically probe one unreachable peer for recovery.
+    if (unreachableProbeInterval > 0) {
+      _unreachableProbeCounter++;
+      if (_unreachableProbeCounter >= unreachableProbeInterval) {
+        _unreachableProbeCounter = 0;
+        await _probeUnreachablePeer();
+      }
+    }
+
+    // Regular probe round: select reachable or suspected peer.
     final peer = selectRandomPeer();
     if (peer == null) return;
 
@@ -315,6 +331,66 @@ class FailureDetector {
     }
 
     return gotAck;
+  }
+
+  /// Probes one unreachable peer on a round-robin schedule.
+  ///
+  /// Called every [unreachableProbeInterval] probe rounds to detect
+  /// transport recovery for peers stuck in unreachable state. This breaks
+  /// mutual-unreachable deadlocks where both sides have marked each other
+  /// unreachable and neither sends messages.
+  ///
+  /// Like [probeNewPeer], this is best-effort: no failure is recorded on
+  /// timeout since the peer is already unreachable. Falls back to indirect
+  /// ping via intermediaries, which is critical for 3+ device scenarios
+  /// where a third peer can relay the probe.
+  ///
+  /// Recovery happens via the existing path: if the peer responds with an
+  /// Ack, [handleAck] → [_recordPeerContact] → [updatePeerContact]
+  /// transitions it back to reachable.
+  Future<void> _probeUnreachablePeer() async {
+    final unreachable = peerRegistry.unreachablePeers;
+    if (unreachable.isEmpty) return;
+
+    // Round-robin: wrap index if peers changed since last probe.
+    _unreachableProbeIndex = _unreachableProbeIndex % unreachable.length;
+    final peer = unreachable[_unreachableProbeIndex];
+    _unreachableProbeIndex = (_unreachableProbeIndex + 1) % unreachable.length;
+
+    _log('Probing unreachable peer ${peer.id} (best-effort recovery)');
+
+    final sequence = _nextSequence++;
+    final pending = _trackPendingPing(peer.id, sequence);
+    await _sendPing(peer.id, sequence);
+
+    final gotDirectAck = await _awaitAckWithTimeout(
+      pending,
+      sequence,
+      effectivePingTimeoutForPeer(peer.id),
+    );
+
+    if (!gotDirectAck) {
+      // Indirect ping: ask intermediaries to probe on our behalf.
+      // In 2-device scenarios this finds no intermediaries and returns false.
+      final gotIndirectAck = await _performIndirectPing(peer.id);
+      final recovered = gotIndirectAck || pending.completer.isCompleted;
+
+      _cleanupPendingPing(sequence);
+
+      if (recovered) {
+        // The forwarded Ack has the intermediary as sender, so handleAck()
+        // only updated the intermediary's contact. Explicitly recover the
+        // target peer.
+        _recordPeerContact(peer.id, timePort.nowMs);
+        _log('Unreachable peer ${peer.id} responded (indirect) — recovered');
+      } else {
+        _log('Unreachable peer ${peer.id} did not respond (still unreachable)');
+      }
+      return;
+    }
+
+    _cleanupPendingPing(sequence);
+    _log('Unreachable peer ${peer.id} responded — recovered to reachable');
   }
 
   /// Selects a random peer to probe (reachable or suspected).

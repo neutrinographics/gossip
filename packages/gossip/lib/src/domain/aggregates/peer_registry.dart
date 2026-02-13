@@ -117,6 +117,13 @@ class PeerRegistry {
     return reachable[random.nextInt(reachable.length)];
   }
 
+  /// Returns peers with unreachable status.
+  ///
+  /// Used by FailureDetector for periodic unreachable peer probing
+  /// to break mutual-unreachable deadlocks.
+  List<Peer> get unreachablePeers =>
+      _peers.values.where((p) => p.status == PeerStatus.unreachable).toList();
+
   /// Returns peers that can be probed (reachable or suspected).
   ///
   /// Excludes unreachable peers as they have exceeded the suspicion window.

@@ -174,5 +174,75 @@ void main() {
         expect(network['node1'].reachablePeers.length, equals(1));
       });
     });
+
+    group('Mutual unreachable recovery', () {
+      late TestNetwork network;
+
+      setUp(() async {
+        // Low thresholds for fast test + unreachable probing every 3 rounds.
+        network = await TestNetwork.create(
+          ['node1', 'node2'],
+          config: const CoordinatorConfig(
+            suspicionThreshold: 3,
+            unreachableThreshold: 6,
+            unreachableProbeInterval: 3,
+          ),
+        );
+        await network.connect('node1', 'node2');
+      });
+
+      tearDown(() async {
+        await network.dispose();
+      });
+
+      test(
+        'mutual unreachable deadlock recovers via periodic probing',
+        () async {
+          await network.startAll();
+
+          // Both nodes see each other as reachable.
+          expect(network['node1'].reachablePeers.length, equals(1));
+          expect(network['node2'].reachablePeers.length, equals(1));
+
+          // Partition both nodes simultaneously — simulates both apps
+          // backgrounded, neither can send or receive.
+          network.partition('node1');
+          network.partition('node2');
+
+          // Run enough rounds for both to reach unreachable (6 failed probes).
+          // With RTT-adaptive timing, 80 rounds is more than enough.
+          await network.runRounds(80);
+
+          expect(
+            network['node1'].peerStatus(network['node2'].id),
+            equals(PeerStatus.unreachable),
+          );
+          expect(
+            network['node2'].peerStatus(network['node1'].id),
+            equals(PeerStatus.unreachable),
+          );
+
+          // Heal both — transport is reconnected, but neither side knows.
+          // Without periodic unreachable probing, this deadlock is permanent.
+          network.heal('node1');
+          network.heal('node2');
+
+          // Run rounds until the unreachable probe interval triggers.
+          // With interval=3, a probe fires every 3rd round. 30 rounds should
+          // give ~10 opportunities for recovery probes.
+          await network.runRounds(30);
+
+          // Both nodes should recover each other to reachable.
+          expect(
+            network['node1'].peerStatus(network['node2'].id),
+            equals(PeerStatus.reachable),
+          );
+          expect(
+            network['node2'].peerStatus(network['node1'].id),
+            equals(PeerStatus.reachable),
+          );
+        },
+      );
+    });
   });
 }

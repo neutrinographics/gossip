@@ -302,6 +302,7 @@ class Coordinator {
         random: random,
         failureThreshold: cfg.suspicionThreshold,
         unreachableThreshold: cfg.unreachableThreshold,
+        unreachableProbeInterval: cfg.unreachableProbeInterval,
         rttTracker: failureDetectorRttTracker,
       );
     }
