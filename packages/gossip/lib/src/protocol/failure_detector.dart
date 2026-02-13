@@ -116,12 +116,12 @@ class FailureDetector {
   // ---------------------------------------------------------------------------
 
   static const int _metricsWindowDurationMs = 10000;
-  static const Duration _minPingTimeout = Duration(milliseconds: 200);
+  static const Duration _minPingTimeout = Duration(milliseconds: 500);
   static const Duration _maxPingTimeout = Duration(seconds: 10);
   static const Duration _minProbeInterval = Duration(milliseconds: 500);
   static const Duration _maxProbeInterval = Duration(seconds: 30);
   static const int _probeIntervalMultiplier = 3;
-  static const Duration _intermediaryTimeout = Duration(milliseconds: 200);
+  static const Duration _intermediaryTimeout = Duration(milliseconds: 500);
 
   // ---------------------------------------------------------------------------
   // State
@@ -350,9 +350,6 @@ class FailureDetector {
   /// not `ack.sender` — because forwarded indirect Acks have the
   /// intermediary as sender, not the original target.
   ///
-  /// RTT samples that exceed the peer's timeout window are discarded to
-  /// prevent late Acks from inflating the SRTT estimate.
-  ///
   /// Acks that don't match a pending ping are silently ignored. This is
   /// normal when: (a) a very-late ack arrives after cleanup, (b) both
   /// direct and indirect acks arrive for the same probe, or (c) a
@@ -366,7 +363,7 @@ class FailureDetector {
       return;
     }
 
-    _recordRttIfValid(pending, ack.sender, timestampMs);
+    _recordRtt(pending, ack.sender, timestampMs);
     pending.completer.complete(true);
   }
 
@@ -599,38 +596,29 @@ class FailureDetector {
   // Private: RTT recording
   // ---------------------------------------------------------------------------
 
-  /// Records an RTT sample if the Ack arrived within the timeout window.
+  /// Records an RTT sample from a matched Ack.
   ///
   /// RTT is attributed to [pending.target] (the peer being probed), not
   /// [ackSender] — forwarded indirect Acks have the intermediary as sender.
   ///
-  /// Late Acks (RTT > timeout) are discarded to prevent SRTT inflation
-  /// from timeout-delayed responses.
-  void _recordRttIfValid(
-    _PendingPing pending,
-    NodeId ackSender,
-    int timestampMs,
-  ) {
+  /// All valid RTT samples are recorded regardless of whether they exceeded
+  /// the timeout. Unlike TCP (where Karn's algorithm avoids ambiguity between
+  /// original and retransmitted segments), SWIM pings have unique sequence
+  /// numbers so every Ack is unambiguously matched. Recording all samples
+  /// lets the EWMA adapt upward when latency increases, preventing a
+  /// survivorship bias where only fast samples feed the estimate.
+  void _recordRtt(_PendingPing pending, NodeId ackSender, int timestampMs) {
     final rttMs = timestampMs - pending.sentAtMs;
-    final timeout = effectivePingTimeoutForPeer(pending.target);
 
     if (rttMs <= 0) return;
 
-    if (rttMs <= timeout.inMilliseconds) {
-      final rttSample = Duration(milliseconds: rttMs);
-      _rttTracker.recordSample(rttSample);
-      peerRegistry.recordPeerRtt(pending.target, rttSample);
-      _log(
-        'Ack seq=${pending.sequence} from $ackSender target=${pending.target} '
-        '(RTT: ${rttMs}ms)',
-      );
-    } else {
-      _log(
-        'Late Ack seq=${pending.sequence} from $ackSender '
-        'RTT ${rttMs}ms exceeds timeout ${timeout.inMilliseconds}ms '
-        '— sample discarded',
-      );
-    }
+    final rttSample = Duration(milliseconds: rttMs);
+    _rttTracker.recordSample(rttSample);
+    peerRegistry.recordPeerRtt(pending.target, rttSample);
+    _log(
+      'Ack seq=${pending.sequence} from $ackSender target=${pending.target} '
+      '(RTT: ${rttMs}ms)',
+    );
   }
 
   // ---------------------------------------------------------------------------

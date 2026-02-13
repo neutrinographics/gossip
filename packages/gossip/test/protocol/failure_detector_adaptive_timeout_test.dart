@@ -12,16 +12,16 @@ void main() {
       () {
         final rttTracker = RttTracker(
           initialEstimate: RttEstimate(
-            smoothedRtt: const Duration(milliseconds: 100),
-            rttVariance: const Duration(milliseconds: 25),
+            smoothedRtt: const Duration(milliseconds: 300),
+            rttVariance: const Duration(milliseconds: 75),
           ),
         );
         final h = FailureDetectorTestHarness(rttTracker: rttTracker);
 
-        // timeout = 100 + 4 * 25 = 200ms (minimum bound)
+        // timeout = 300 + 4 * 75 = 600ms
         expect(
           h.detector.effectivePingTimeout,
-          equals(const Duration(milliseconds: 200)),
+          equals(const Duration(milliseconds: 600)),
         );
       },
     );
@@ -39,7 +39,7 @@ void main() {
       },
     );
 
-    test('effectivePingTimeout respects minimum bound of 200ms', () {
+    test('effectivePingTimeout respects minimum bound of 500ms', () {
       final rttTracker = RttTracker(
         initialEstimate: RttEstimate(
           smoothedRtt: const Duration(milliseconds: 20),
@@ -50,10 +50,10 @@ void main() {
 
       final h = FailureDetectorTestHarness(rttTracker: rttTracker);
 
-      // Raw timeout = 20 + 4 * 5 = 40ms, but min is 200ms
+      // Raw timeout = 20 + 4 * 5 = 40ms, but min is 500ms
       expect(
         h.detector.effectivePingTimeout,
-        equals(const Duration(milliseconds: 200)),
+        equals(const Duration(milliseconds: 500)),
       );
     });
 
@@ -78,17 +78,17 @@ void main() {
     test('effectiveProbeInterval is 3x effectivePingTimeout', () {
       final rttTracker = RttTracker(
         initialEstimate: RttEstimate(
-          smoothedRtt: const Duration(milliseconds: 200),
-          rttVariance: const Duration(milliseconds: 50),
+          smoothedRtt: const Duration(milliseconds: 300),
+          rttVariance: const Duration(milliseconds: 75),
         ),
       );
       final h = FailureDetectorTestHarness(rttTracker: rttTracker);
 
-      // pingTimeout = 200 + 4 * 50 = 400ms
-      // probeInterval = 3 * 400 = 1200ms
+      // pingTimeout = 300 + 4 * 75 = 600ms
+      // probeInterval = 3 * 600 = 1800ms
       expect(
         h.detector.effectiveProbeInterval,
-        equals(const Duration(milliseconds: 1200)),
+        equals(const Duration(milliseconds: 1800)),
       );
     });
 
@@ -103,7 +103,7 @@ void main() {
 
       final h = FailureDetectorTestHarness(rttTracker: rttTracker);
 
-      // pingTimeout = 200ms (minimum), probeInterval = 3 * 200 = 600ms
+      // pingTimeout = 500ms (minimum), probeInterval = 3 * 500 = 1500ms
       expect(
         h.detector.effectiveProbeInterval.inMilliseconds,
         greaterThanOrEqualTo(500),
@@ -137,7 +137,7 @@ void main() {
 
       final peerTimeout = h.detector.effectivePingTimeoutForPeer(peer.id);
       expect(peerTimeout.inMilliseconds, lessThan(1000));
-      expect(peerTimeout.inMilliseconds, greaterThanOrEqualTo(200));
+      expect(peerTimeout.inMilliseconds, greaterThanOrEqualTo(500));
     });
 
     test(
@@ -169,7 +169,7 @@ void main() {
       final h = FailureDetectorTestHarness();
       final peer = h.addPeer('peer1');
 
-      // Seed per-peer RTT: 100ms → timeout ~300ms (clamped to min 200ms)
+      // Seed per-peer RTT: 100ms → timeout ~300ms (clamped to min 500ms)
       h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 100));
 
       h.startListening();

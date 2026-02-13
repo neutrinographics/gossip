@@ -52,7 +52,7 @@ class RttEstimate {
   static const double _beta = 0.25;
 
   /// Default minimum timeout (network physics floor).
-  static const Duration _defaultMinTimeout = Duration(milliseconds: 200);
+  static const Duration _defaultMinTimeout = Duration(milliseconds: 500);
 
   /// Default maximum timeout (reasonable upper limit).
   static const Duration _defaultMaxTimeout = Duration(seconds: 10);
