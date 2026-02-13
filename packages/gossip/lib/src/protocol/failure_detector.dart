@@ -75,6 +75,7 @@ class FailureDetector {
   final NodeId localNode;
   final PeerRegistry peerRegistry;
   final int failureThreshold;
+  final int unreachableThreshold;
   final TimePort timePort;
   final MessagePort messagePort;
   final ErrorCallback? onError;
@@ -91,6 +92,7 @@ class FailureDetector {
     required this.localNode,
     required this.peerRegistry,
     this.failureThreshold = 3,
+    this.unreachableThreshold = 9,
     required this.timePort,
     required this.messagePort,
     this.onError,
@@ -381,7 +383,19 @@ class FailureDetector {
     final peer = peerRegistry.getPeer(peerId);
     if (peer == null) return;
 
-    if (peer.failedProbeCount >= failureThreshold &&
+    if (peer.failedProbeCount >= unreachableThreshold &&
+        peer.status == PeerStatus.suspected) {
+      _log(
+        'Peer $peerId transitioning to UNREACHABLE '
+        '(failed probes: ${peer.failedProbeCount}, '
+        'threshold: $unreachableThreshold)',
+      );
+      peerRegistry.updatePeerStatus(
+        peerId,
+        PeerStatus.unreachable,
+        occurredAt: occurredAt,
+      );
+    } else if (peer.failedProbeCount >= failureThreshold &&
         peer.status == PeerStatus.reachable) {
       _log(
         'Peer $peerId transitioning to SUSPECTED '
@@ -525,6 +539,9 @@ class FailureDetector {
 
   Future<void> _handleIncomingPing(Ping ping, NodeId sender) async {
     _log('Received Ping from $sender seq=${ping.sequence}');
+    // Receiving a Ping is proof of life — update contact to recover
+    // unreachable/suspected peers that contact us.
+    peerRegistry.updatePeerContact(sender, timePort.nowMs);
     final ack = handlePing(ping);
     final ackBytes = _codec.encode(ack);
     await _safeSend(sender, ackBytes, 'Ack');

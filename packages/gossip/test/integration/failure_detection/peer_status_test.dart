@@ -1,5 +1,6 @@
 import 'package:test/test.dart';
 import 'package:gossip/src/domain/events/domain_event.dart';
+import 'package:gossip/src/facade/coordinator_config.dart';
 
 import '../../support/test_network.dart';
 
@@ -110,6 +111,65 @@ void main() {
 
         // Peer should be reachable again
         status = network['node1'].peerStatus(network['node2'].id);
+        expect(status, equals(PeerStatus.reachable));
+        expect(network['node1'].reachablePeers.length, equals(1));
+      });
+    });
+
+    group('Unreachable transition', () {
+      late TestNetwork network;
+
+      setUp(() async {
+        // Use lower thresholds for faster test execution:
+        // suspicionThreshold: 3 (reachable → suspected after 3 failures)
+        // unreachableThreshold: 6 (suspected → unreachable after 6 total)
+        network = await TestNetwork.create(
+          ['node1', 'node2'],
+          config: const CoordinatorConfig(
+            suspicionThreshold: 3,
+            unreachableThreshold: 6,
+          ),
+        );
+        await network.connect('node1', 'node2');
+      });
+
+      tearDown(() async {
+        await network.dispose();
+      });
+
+      test('peer becomes unreachable after prolonged partition', () async {
+        await network.startAll();
+        expect(network['node1'].reachablePeers.length, equals(1));
+
+        network.partition('node2');
+        // With adaptive timing and low thresholds, 80 rounds should be
+        // more than enough for 6+ failed probes.
+        await network.runRounds(80);
+
+        final status = network['node1'].peerStatus(network['node2'].id);
+        expect(status, equals(PeerStatus.unreachable));
+      });
+
+      test('unreachable peer recovers to reachable after heal', () async {
+        await network.startAll();
+
+        // Partition until unreachable
+        network.partition('node2');
+        await network.runRounds(80);
+
+        expect(
+          network['node1'].peerStatus(network['node2'].id),
+          equals(PeerStatus.unreachable),
+        );
+
+        // Heal the network and re-add peers to simulate transport reconnection.
+        // In production, Nearby Connections fires addPeer on reconnection.
+        network.heal('node2');
+        await network['node1'].coordinator.addPeer(network['node2'].id);
+        await network['node2'].coordinator.addPeer(network['node1'].id);
+        await network.runRounds(30);
+
+        final status = network['node1'].peerStatus(network['node2'].id);
         expect(status, equals(PeerStatus.reachable));
         expect(network['node1'].reachablePeers.length, equals(1));
       });

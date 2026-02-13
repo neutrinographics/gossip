@@ -45,6 +45,21 @@ class CoordinatorConfig {
   /// actual failures.
   final int suspicionThreshold;
 
+  /// Number of consecutive probe failures before marking a suspected peer
+  /// as unreachable.
+  ///
+  /// After this many total failed probes (including those that triggered
+  /// suspicion), the peer transitions from [PeerStatus.suspected] to
+  /// [PeerStatus.unreachable]. Unreachable peers are excluded from probing
+  /// and gossip, but remain in the registry so they can recover if the
+  /// transport reconnects.
+  ///
+  /// **Default: 15** (gives suspected peers 10 additional probe cycles
+  /// beyond [suspicionThreshold] to recover)
+  ///
+  /// Must be greater than [suspicionThreshold].
+  final int unreachableThreshold;
+
   /// Grace period for newly added peers before they become eligible for
   /// failure detection probing.
   ///
@@ -64,6 +79,7 @@ class CoordinatorConfig {
   /// Creates a [CoordinatorConfig] with the specified options.
   const CoordinatorConfig({
     this.suspicionThreshold = 5,
+    this.unreachableThreshold = 15,
     this.startupGracePeriod = const Duration(seconds: 10),
   });
 

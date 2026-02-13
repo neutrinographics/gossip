@@ -2,6 +2,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:gossip/src/facade/coordinator.dart';
+import 'package:gossip/src/facade/coordinator_config.dart';
 import 'package:gossip/src/domain/entities/peer.dart';
 import 'package:gossip/src/domain/events/domain_event.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
@@ -70,6 +71,7 @@ class TestNetwork {
   static Future<TestNetwork> create(
     List<String> nodeNames, {
     int seed = 42,
+    CoordinatorConfig? config,
   }) async {
     final messageBus = InMemoryMessageBus();
     final nodes = <String, TestNode>{};
@@ -94,6 +96,7 @@ class TestNetwork {
         messagePort: messagePort,
         timerPort: timePort,
         random: random,
+        config: config,
       );
 
       nodes[name] = TestNode._(

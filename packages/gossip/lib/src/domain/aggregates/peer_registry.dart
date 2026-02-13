@@ -155,7 +155,16 @@ class PeerRegistry {
     if (id == localNode) {
       throw Exception('Cannot add local node as peer');
     }
-    if (_peers.containsKey(id)) return;
+    final existing = _peers[id];
+    if (existing != null) {
+      // Peer already exists. If unreachable or suspected, recover it —
+      // addPeer is called on transport reconnection, which is proof of life.
+      if (existing.status != PeerStatus.reachable) {
+        updatePeerStatus(id, PeerStatus.reachable, occurredAt: occurredAt);
+        _peers[id] = _peers[id]!.copyWith(failedProbeCount: 0);
+      }
+      return;
+    }
     _peers[id] = Peer(id: id, displayName: displayName);
     _addEvent(PeerAdded(id, occurredAt: occurredAt));
   }
@@ -236,16 +245,22 @@ class PeerRegistry {
       );
       return;
     }
-    // Reset to reachable if suspected (recovery from suspected state)
-    final newStatus = peer.status == PeerStatus.suspected
-        ? PeerStatus.reachable
-        : peer.status;
 
-    _peers[id] = peer.copyWith(
-      lastContactMs: timestampMs,
-      status: newStatus,
-      failedProbeCount: 0,
-    );
+    // Recover to reachable if suspected or unreachable.
+    // Delegate to updatePeerStatus() so PeerStatusChanged is emitted.
+    if (peer.status != PeerStatus.reachable) {
+      updatePeerStatus(id, PeerStatus.reachable, occurredAt: DateTime.now());
+    }
+
+    // Update contact time and reset failed probe count.
+    // Re-read peer since updatePeerStatus may have modified it.
+    final current = _peers[id];
+    if (current != null) {
+      _peers[id] = current.copyWith(
+        lastContactMs: timestampMs,
+        failedProbeCount: 0,
+      );
+    }
   }
 
   /// Updates the last anti-entropy timestamp for a peer.

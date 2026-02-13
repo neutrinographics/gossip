@@ -301,6 +301,7 @@ class Coordinator {
         onLog: onLog,
         random: random,
         failureThreshold: cfg.suspicionThreshold,
+        unreachableThreshold: cfg.unreachableThreshold,
         rttTracker: failureDetectorRttTracker,
       );
     }

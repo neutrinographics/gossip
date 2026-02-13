@@ -1,6 +1,7 @@
 import 'dart:math';
 
-import 'package:gossip/src/domain/events/domain_event.dart' show PeerStatus;
+import 'package:gossip/src/domain/events/domain_event.dart'
+    show PeerStatus, PeerStatusChanged;
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
 import 'package:gossip/src/infrastructure/ports/message_port.dart';
@@ -534,6 +535,135 @@ void main() {
       );
     });
 
+    test(
+      'transitions suspected peer to unreachable at unreachable threshold',
+      () async {
+        final h = FailureDetectorTestHarness(
+          failureThreshold: 3,
+          unreachableThreshold: 6,
+          pingTimeout: const Duration(milliseconds: 500),
+        );
+        final peer = h.addPeer('peer1');
+
+        h.startListening();
+
+        // 3 failures → suspected
+        for (var i = 0; i < 3; i++) {
+          await h.probeWithTimeout();
+        }
+        expect(
+          h.peerRegistry.getPeer(peer.id)!.status,
+          equals(PeerStatus.suspected),
+        );
+
+        // 3 more failures (6 total) → unreachable
+        for (var i = 0; i < 3; i++) {
+          await h.probeWithTimeout();
+        }
+        expect(
+          h.peerRegistry.getPeer(peer.id)!.status,
+          equals(PeerStatus.unreachable),
+        );
+
+        h.stopListening();
+      },
+    );
+
+    test(
+      'does not transition suspected peer to unreachable below threshold',
+      () async {
+        final h = FailureDetectorTestHarness(
+          failureThreshold: 3,
+          unreachableThreshold: 6,
+          pingTimeout: const Duration(milliseconds: 500),
+        );
+        final peer = h.addPeer('peer1');
+
+        h.startListening();
+
+        // 3 failures → suspected
+        for (var i = 0; i < 3; i++) {
+          await h.probeWithTimeout();
+        }
+        expect(
+          h.peerRegistry.getPeer(peer.id)!.status,
+          equals(PeerStatus.suspected),
+        );
+
+        // 2 more failures (5 total, below 6) → still suspected
+        for (var i = 0; i < 2; i++) {
+          await h.probeWithTimeout();
+        }
+        expect(
+          h.peerRegistry.getPeer(peer.id)!.status,
+          equals(PeerStatus.suspected),
+        );
+        expect(h.peerRegistry.getPeer(peer.id)!.failedProbeCount, equals(5));
+
+        h.stopListening();
+      },
+    );
+
+    test('unreachable peer is not selected for probing', () async {
+      final h = FailureDetectorTestHarness(
+        failureThreshold: 3,
+        unreachableThreshold: 6,
+        pingTimeout: const Duration(milliseconds: 500),
+      );
+      h.addPeer('peer1');
+
+      h.startListening();
+
+      // Drive to unreachable: 6 failures
+      for (var i = 0; i < 6; i++) {
+        await h.probeWithTimeout();
+      }
+      expect(
+        h.peerRegistry.getPeer(NodeId('peer1'))!.status,
+        equals(PeerStatus.unreachable),
+      );
+
+      // Unreachable peer should not be selectable
+      expect(h.detector.selectRandomPeer(), isNull);
+
+      h.stopListening();
+    });
+
+    test(
+      'unreachable peer recovers to reachable when contact received',
+      () async {
+        final h = FailureDetectorTestHarness(
+          failureThreshold: 3,
+          unreachableThreshold: 6,
+          pingTimeout: const Duration(milliseconds: 500),
+        );
+        final peer = h.addPeer('peer1');
+
+        h.startListening();
+
+        // Drive to unreachable: 6 failures
+        for (var i = 0; i < 6; i++) {
+          await h.probeWithTimeout();
+        }
+        expect(
+          h.peerRegistry.getPeer(peer.id)!.status,
+          equals(PeerStatus.unreachable),
+        );
+
+        // Simulate receiving an Ack (e.g., transport reconnection)
+        h.detector.handleAck(
+          Ack(sender: peer.id, sequence: 999),
+          timestampMs: h.timePort.nowMs,
+        );
+
+        final recovered = h.peerRegistry.getPeer(peer.id)!;
+        expect(recovered.status, equals(PeerStatus.reachable));
+        expect(recovered.failedProbeCount, equals(0));
+
+        h.stopListening();
+      },
+    );
+
     test('no-ops for unknown peer', () {
       final h = FailureDetectorTestHarness();
       h.detector.checkPeerHealth(NodeId('unknown'), occurredAt: DateTime.now());
@@ -576,6 +706,41 @@ void main() {
         equals(0),
         reason: 'Failed probe count should reset on recovery',
       );
+
+      h.stopListening();
+    });
+
+    test('suspected peer recovery emits PeerStatusChanged event', () async {
+      final h = FailureDetectorTestHarness(
+        pingTimeout: const Duration(milliseconds: 500),
+        failureThreshold: 3,
+      );
+      final peer = h.addPeer('peer1');
+
+      h.startListening();
+
+      // Drive peer to suspected state via 3 failed probes
+      for (var i = 0; i < 3; i++) {
+        await h.probeWithTimeout();
+      }
+      expect(
+        h.peerRegistry.getPeer(peer.id)!.status,
+        equals(PeerStatus.suspected),
+      );
+
+      // Clear events from setup phase
+      final eventsBefore = h.peerRegistry.uncommittedEvents.length;
+
+      // Peer responds to probe → recovers
+      await h.probeWithAck(peer, afterDelay: const Duration(milliseconds: 100));
+
+      final newEvents = h.peerRegistry.uncommittedEvents
+          .skip(eventsBefore)
+          .toList();
+      final statusChanges = newEvents.whereType<PeerStatusChanged>().toList();
+      expect(statusChanges, hasLength(1));
+      expect(statusChanges.first.oldStatus, equals(PeerStatus.suspected));
+      expect(statusChanges.first.newStatus, equals(PeerStatus.reachable));
 
       h.stopListening();
     });
