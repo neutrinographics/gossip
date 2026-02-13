@@ -67,6 +67,73 @@ void main() {
 
         verify(() => mockNearbyPort.requestConnection(endpointId)).called(1);
       });
+
+      group('duplicate discovery', () {
+        test(
+          'does not request connection when peer is already connected',
+          () async {
+            final ep1 = EndpointId('ep1');
+            final ep2 = EndpointId('ep2');
+            final remoteNodeId = NodeId('remote-node-456');
+            const advertisedName = 'remote-node-456|Remote Device';
+
+            // First discovery → connection → handshake (full lifecycle)
+            nearbyEventController.add(
+              EndpointDiscovered(id: ep1, displayName: advertisedName),
+            );
+            await Future.delayed(Duration.zero);
+
+            nearbyEventController.add(ConnectionEstablished(id: ep1));
+            await Future.delayed(Duration.zero);
+
+            nearbyEventController.add(
+              PayloadReceived(id: ep1, bytes: _encodeHandshake(remoteNodeId)),
+            );
+            await Future.delayed(Duration.zero);
+
+            // Verify peer is now connected
+            expect(registry.getEndpointIdForNodeId(remoteNodeId), equals(ep1));
+
+            clearInteractions(mockNearbyPort);
+
+            // Second discovery with different EndpointId, same NodeId
+            nearbyEventController.add(
+              EndpointDiscovered(id: ep2, displayName: advertisedName),
+            );
+            await Future.delayed(Duration.zero);
+
+            verifyNever(() => mockNearbyPort.requestConnection(ep2));
+          },
+        );
+
+        test('requests connection when peer is not yet connected', () async {
+          final endpointId = EndpointId('remote-ep');
+          const advertisedName = 'remote-node-456|Remote Device';
+
+          nearbyEventController.add(
+            EndpointDiscovered(id: endpointId, displayName: advertisedName),
+          );
+          await Future.delayed(Duration.zero);
+
+          verify(() => mockNearbyPort.requestConnection(endpointId)).called(1);
+        });
+
+        test(
+          'requests connection when nodeId cannot be parsed from name',
+          () async {
+            final endpointId = EndpointId('remote-ep');
+
+            nearbyEventController.add(
+              EndpointDiscovered(id: endpointId, displayName: 'Remote Device'),
+            );
+            await Future.delayed(Duration.zero);
+
+            verify(
+              () => mockNearbyPort.requestConnection(endpointId),
+            ).called(1);
+          },
+        );
+      });
     });
 
     group('handshake flow', () {

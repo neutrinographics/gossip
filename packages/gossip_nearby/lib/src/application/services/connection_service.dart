@@ -222,6 +222,22 @@ class ConnectionService {
   void _onEndpointDiscovered(EndpointId id, String advertisedName) {
     _log(LogLevel.debug, 'Endpoint discovered: $id ($advertisedName)');
 
+    // Skip if we're already connected to this NodeId
+    final remoteNodeId = _parseNodeId(advertisedName);
+    if (remoteNodeId != null) {
+      final existingEndpoint = _registry.getEndpointIdForNodeId(
+        NodeId(remoteNodeId),
+      );
+      if (existingEndpoint != null) {
+        _log(
+          LogLevel.debug,
+          'Already connected to $remoteNodeId via $existingEndpoint, '
+          'ignoring discovery of $id',
+        );
+        return;
+      }
+    }
+
     if (_shouldInitiateConnection(advertisedName)) {
       _log(LogLevel.debug, 'Initiating connection (we have smaller nodeId)');
       unawaited(_nearbyPort.requestConnection(id));
