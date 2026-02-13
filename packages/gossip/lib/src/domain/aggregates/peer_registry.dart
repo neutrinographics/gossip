@@ -144,13 +144,16 @@ class PeerRegistry {
 
   /// Adds a new peer to the registry with reachable status.
   ///
+  /// If the peer already exists and is suspected or unreachable, recovers
+  /// it to reachable — this is called on transport reconnection, which is
+  /// proof of life. No-op if the peer is already reachable.
+  ///
   /// If [displayName] is not provided, defaults to a truncated form of the
   /// node ID.
   ///
   /// Throws if attempting to add the local node as a peer.
-  /// No-op if the peer is already registered.
   ///
-  /// Emits: [PeerAdded] event.
+  /// Emits: [PeerAdded] for new peers, [PeerStatusChanged] for recovered peers.
   void addPeer(NodeId id, {String? displayName, required DateTime occurredAt}) {
     if (id == localNode) {
       throw Exception('Cannot add local node as peer');
@@ -222,15 +225,9 @@ class PeerRegistry {
 
   /// Updates the last contact timestamp for a peer.
   ///
-  /// Records successful contact with a peer (received an Ack).
-  ///
-  /// Updates the last contact timestamp and, critically, resets the peer
-  /// to reachable status if suspected. This implements SWIM's recovery
-  /// mechanism: a suspected peer that responds to probes is immediately
-  /// considered alive again.
-  ///
-  /// Also resets the failed probe count since successful contact proves
-  /// the peer is responsive.
+  /// Records successful contact with a peer (received an Ack or Ping).
+  /// Resets the failed probe count and recovers the peer to reachable if
+  /// suspected or unreachable, emitting a [PeerStatusChanged] event.
   ///
   /// Emits [PeerOperationSkipped] if peer doesn't exist.
   void updatePeerContact(NodeId id, int timestampMs) {

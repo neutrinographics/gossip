@@ -60,7 +60,11 @@ class _PendingPing {
 ///
 /// **Failure Detection**:
 /// - After [failureThreshold] consecutive failures, mark peer as suspected
+/// - After [unreachableThreshold] consecutive failures, mark suspected peer
+///   as unreachable (excluded from probing and gossip)
 /// - Suspected peers can recover by responding to future probes
+/// - Unreachable peers recover via transport reconnection (incoming Ping
+///   or re-adding the peer)
 ///
 /// ## Lifecycle
 ///
@@ -371,7 +375,10 @@ class FailureDetector {
     peerRegistry.incrementFailedProbeCount(peerId);
   }
 
-  /// Transitions peer to suspected if failure threshold is exceeded.
+  /// Transitions peer status based on consecutive probe failure count.
+  ///
+  /// - `reachable → suspected` at [failureThreshold]
+  /// - `suspected → unreachable` at [unreachableThreshold]
   // TODO: Implement SWIM refutation. When this node receives a Suspicion
   // message about itself, it should call PeerService.incrementLocalIncarnation()
   // to refute the false suspicion. This requires:

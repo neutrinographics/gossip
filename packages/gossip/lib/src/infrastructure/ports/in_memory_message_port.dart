@@ -46,7 +46,6 @@ class InMemoryMessageBus {
   /// (unregistered via [unregister]) cannot send messages either, making
   /// partitions bidirectional.
   void deliver(NodeId destination, NodeId sender, Uint8List bytes) {
-    // Bidirectional partition: unregistered nodes can neither send nor receive.
     if (!_ports.containsKey(sender)) return;
 
     final controller = _ports[destination];
