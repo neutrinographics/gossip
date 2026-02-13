@@ -133,6 +133,22 @@ void main() {
             ).called(1);
           },
         );
+
+        test(
+          'does not request connection when discovered nodeId is own nodeId',
+          () async {
+            final endpointId = EndpointId('self-ep');
+            // localNodeId is 'local-node-123' from setUp
+            const advertisedName = 'local-node-123|My Device';
+
+            nearbyEventController.add(
+              EndpointDiscovered(id: endpointId, displayName: advertisedName),
+            );
+            await Future.delayed(Duration.zero);
+
+            verifyNever(() => mockNearbyPort.requestConnection(endpointId));
+          },
+        );
       });
     });
 

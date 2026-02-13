@@ -222,9 +222,15 @@ class ConnectionService {
   void _onEndpointDiscovered(EndpointId id, String advertisedName) {
     _log(LogLevel.debug, 'Endpoint discovered: $id ($advertisedName)');
 
-    // Skip if we're already connected to this NodeId
+    // Skip if this is our own advertisement (self-discovery)
     final remoteNodeId = _parseNodeId(advertisedName);
     if (remoteNodeId != null) {
+      if (remoteNodeId == _localNodeId.value) {
+        _log(LogLevel.debug, 'Ignoring own advertisement: $id');
+        return;
+      }
+
+      // Skip if we're already connected to this NodeId
       final existingEndpoint = _registry.getEndpointIdForNodeId(
         NodeId(remoteNodeId),
       );
