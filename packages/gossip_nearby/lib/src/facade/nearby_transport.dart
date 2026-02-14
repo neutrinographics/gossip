@@ -153,7 +153,7 @@ class NearbyTransport {
       localNodeId: localNodeId,
       serviceId: serviceId,
       displayName: displayName,
-      nearbyPort: NearbyAdapter(),
+      nearbyPort: NearbyAdapter(onLog: onLog),
       onLog: onLog,
     );
   }
@@ -223,8 +223,12 @@ class NearbyTransport {
     if (_isAdvertising) return;
 
     _log(LogLevel.info, 'Starting advertising as "$_displayName"');
-    await _nearbyPort.startAdvertising(_serviceId, _advertisedName);
-    _isAdvertising = true;
+    try {
+      await _nearbyPort.startAdvertising(_serviceId, _advertisedName);
+      _isAdvertising = true;
+    } catch (_) {
+      // Error already logged by adapter; flag stays false so retry is possible.
+    }
   }
 
   /// The name advertised to nearby devices.
@@ -239,8 +243,13 @@ class NearbyTransport {
     if (!_isAdvertising) return;
 
     _log(LogLevel.info, 'Stopping advertising');
-    await _nearbyPort.stopAdvertising();
-    _isAdvertising = false;
+    try {
+      await _nearbyPort.stopAdvertising();
+    } catch (_) {
+      // Error already logged by adapter.
+    } finally {
+      _isAdvertising = false;
+    }
   }
 
   /// Starts discovering nearby peers.
@@ -248,8 +257,12 @@ class NearbyTransport {
     if (_isDiscovering) return;
 
     _log(LogLevel.info, 'Starting discovery for service ${_serviceId.value}');
-    await _nearbyPort.startDiscovery(_serviceId);
-    _isDiscovering = true;
+    try {
+      await _nearbyPort.startDiscovery(_serviceId);
+      _isDiscovering = true;
+    } catch (_) {
+      // Error already logged by adapter; flag stays false so retry is possible.
+    }
   }
 
   /// Stops discovery.
@@ -257,8 +270,13 @@ class NearbyTransport {
     if (!_isDiscovering) return;
 
     _log(LogLevel.info, 'Stopping discovery');
-    await _nearbyPort.stopDiscovery();
-    _isDiscovering = false;
+    try {
+      await _nearbyPort.stopDiscovery();
+    } catch (_) {
+      // Error already logged by adapter.
+    } finally {
+      _isDiscovering = false;
+    }
   }
 
   /// Disconnects all connected peers.
@@ -266,7 +284,11 @@ class NearbyTransport {
     final endpoints = _registry.connections.map((c) => c.endpointId).toList();
     _log(LogLevel.info, 'Disconnecting all ${endpoints.length} peers');
     for (final endpointId in endpoints) {
-      await _nearbyPort.disconnect(endpointId);
+      try {
+        await _nearbyPort.disconnect(endpointId);
+      } catch (e, stack) {
+        _log(LogLevel.warning, 'Failed to disconnect $endpointId', e, stack);
+      }
     }
   }
 

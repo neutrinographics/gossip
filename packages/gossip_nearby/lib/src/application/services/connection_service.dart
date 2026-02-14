@@ -131,7 +131,6 @@ class ConnectionService {
   }) async {
     final endpointId = _registry.getEndpointIdForNodeId(destination);
     if (endpointId == null) {
-      _log(LogLevel.warning, 'Cannot send: no connection for $destination');
       _errorController.add(
         ConnectionNotFoundError(
           destination,
@@ -212,7 +211,6 @@ class ConnectionService {
       );
       message.completer.complete();
     } catch (e, stack) {
-      _log(LogLevel.error, 'Send failed to ${message.destination}', e, stack);
       _errorController.add(
         SendFailedError(
           message.destination,
@@ -234,19 +232,23 @@ class ConnectionService {
   }
 
   void _handleNearbyEvent(NearbyEvent event) {
-    switch (event) {
-      case EndpointDiscovered(:final id, :final displayName):
-        _onEndpointDiscovered(id, displayName);
-      case ConnectionEstablished(:final id):
-        _onConnectionEstablished(id);
-      case PayloadReceived(:final id, :final bytes):
-        _onPayloadReceived(id, bytes);
-      case EndpointLost(:final id):
-        _onEndpointLost(id);
-      case ConnectionFailed(:final id):
-        _onConnectionFailed(id);
-      case Disconnected(:final id):
-        _onDisconnected(id);
+    try {
+      switch (event) {
+        case EndpointDiscovered(:final id, :final displayName):
+          _onEndpointDiscovered(id, displayName);
+        case ConnectionEstablished(:final id):
+          _onConnectionEstablished(id);
+        case PayloadReceived(:final id, :final bytes):
+          _onPayloadReceived(id, bytes);
+        case EndpointLost(:final id):
+          _onEndpointLost(id);
+        case ConnectionFailed(:final id, :final reason):
+          _onConnectionFailed(id, reason);
+        case Disconnected(:final id):
+          _onDisconnected(id);
+      }
+    } catch (e, stack) {
+      _log(LogLevel.error, 'Error handling nearby event: $event', e, stack);
     }
   }
 
@@ -327,7 +329,23 @@ class ConnectionService {
       _localNodeId,
       displayName: _displayName,
     );
-    unawaited(_nearbyPort.sendPayload(id, handshakeBytes));
+    unawaited(
+      _nearbyPort.sendPayload(id, handshakeBytes).catchError((
+        Object e,
+        StackTrace stack,
+      ) {
+        _metrics.recordHandshakeFailed();
+        _handshakeStartTimes.remove(id);
+        _errorController.add(
+          HandshakeTimeoutError(
+            id,
+            'Handshake send failed: $e',
+            occurredAt: DateTime.now(),
+            cause: e,
+          ),
+        );
+      }),
+    );
     _log(LogLevel.debug, 'Sent handshake to $id');
   }
 
@@ -380,7 +398,6 @@ class ConnectionService {
   void _handleHandshakeMessage(EndpointId id, Uint8List bytes) {
     final handshakeData = _codec.decode(bytes);
     if (handshakeData == null) {
-      _log(LogLevel.error, 'Invalid handshake from $id');
       _metrics.recordHandshakeFailed();
       _handshakeStartTimes.remove(id);
       _errorController.add(
@@ -416,7 +433,19 @@ class ConnectionService {
       );
       _handshakeStartTimes.remove(replaced.endpointId);
       _pendingDiscoveries.remove(replaced.endpointId);
-      unawaited(_nearbyPort.disconnect(replaced.endpointId));
+      unawaited(
+        _nearbyPort.disconnect(replaced.endpointId).catchError((
+          Object e,
+          StackTrace stack,
+        ) {
+          _log(
+            LogLevel.warning,
+            'Failed to disconnect replaced endpoint ${replaced.endpointId}',
+            e,
+            stack,
+          );
+        }),
+      );
     }
 
     final event = HandshakeCompleted(
@@ -463,12 +492,20 @@ class ConnectionService {
   /// that cause both sides to fail indefinitely.
   void _scheduleNextRetry() {
     if (_disposed) return;
-    _timePort.delay(_jitteredTimeout()).then((_) {
-      if (!_disposed) {
-        _retryPendingConnections();
-        _scheduleNextRetry();
-      }
-    });
+    _timePort
+        .delay(_jitteredTimeout())
+        .then((_) {
+          if (!_disposed) {
+            _retryPendingConnections();
+            _scheduleNextRetry();
+          }
+        })
+        .catchError((Object e, StackTrace stack) {
+          if (!_disposed) {
+            _log(LogLevel.error, 'Retry timer failed, rescheduling', e, stack);
+            _scheduleNextRetry();
+          }
+        });
   }
 
   /// Returns the connection timeout with ±30% random jitter.
@@ -485,6 +522,7 @@ class ConnectionService {
     unawaited(
       _nearbyPort.requestConnection(id).catchError((e, stack) {
         _log(LogLevel.warning, 'requestConnection failed for $id', e, stack);
+        _metrics.recordConnectionFailed();
       }),
     );
   }
@@ -512,9 +550,15 @@ class ConnectionService {
     _pendingDiscoveries.remove(id);
   }
 
-  void _onConnectionFailed(EndpointId id) {
-    _log(LogLevel.info, 'Connection failed for endpoint: $id');
+  void _onConnectionFailed(EndpointId id, String? reason) {
+    _log(
+      LogLevel.info,
+      'Connection failed for endpoint: $id (reason: $reason)',
+    );
     _metrics.recordConnectionFailed();
+    if (_handshakeStartTimes.remove(id) != null) {
+      _metrics.recordHandshakeFailed();
+    }
   }
 
   void _onDisconnected(EndpointId id) {
