@@ -1,6 +1,7 @@
 import 'dart:async'
     show Completer, StreamController, StreamSubscription, unawaited;
 import 'dart:collection' show Queue;
+import 'dart:math' show Random;
 import 'dart:typed_data';
 
 import 'package:gossip/gossip.dart';
@@ -61,6 +62,7 @@ class ConnectionService {
   final NearbyMetrics _metrics;
   final LogCallback? _onLog;
   final TimePort _timePort;
+  final Random _random;
 
   final Duration _connectionTimeout;
   final _eventController = StreamController<ConnectionEvent>.broadcast();
@@ -69,7 +71,7 @@ class ConnectionService {
 
   final Map<EndpointId, DateTime> _handshakeStartTimes = {};
   final Map<EndpointId, _PendingDiscovery> _pendingDiscoveries = {};
-  TimerHandle? _retryTimer;
+  bool _disposed = false;
 
   /// High-priority message queue (SWIM pings/acks).
   final Queue<_QueuedMessage> _highPriorityQueue = Queue<_QueuedMessage>();
@@ -93,6 +95,7 @@ class ConnectionService {
     LogCallback? onLog,
     TimePort? timePort,
     Duration connectionTimeout = const Duration(seconds: 5),
+    Random? random,
   }) : _localNodeId = localNodeId,
        _displayName = displayName,
        _nearbyPort = nearbyPort,
@@ -101,12 +104,10 @@ class ConnectionService {
        _metrics = metrics ?? NearbyMetrics(),
        _onLog = onLog,
        _timePort = timePort ?? RealTimePort(),
-       _connectionTimeout = connectionTimeout {
+       _connectionTimeout = connectionTimeout,
+       _random = random ?? Random() {
     _nearbySubscription = _nearbyPort.events.listen(_handleNearbyEvent);
-    _retryTimer = _timePort.schedulePeriodic(
-      _connectionTimeout,
-      _retryPendingConnections,
-    );
+    _scheduleNextRetry();
   }
 
   /// Stream of connection events (HandshakeCompleted, ConnectionClosed, etc.)
@@ -226,7 +227,7 @@ class ConnectionService {
 
   /// Disposes resources.
   Future<void> dispose() async {
-    _retryTimer?.cancel();
+    _disposed = true;
     await _nearbySubscription?.cancel();
     await _eventController.close();
     await _errorController.close();
@@ -452,6 +453,32 @@ class ConnectionService {
       'Gossip message from $nodeId: ${payload.length} bytes',
     );
     onGossipMessage?.call(nodeId, payload);
+  }
+
+  /// Schedules the next retry check with a jittered interval.
+  ///
+  /// Uses self-scheduling via [TimePort.delay] (not periodic timer) so each
+  /// tick gets a freshly randomized interval. This decorrelates retry timers
+  /// across devices, preventing synchronized `requestConnection()` collisions
+  /// that cause both sides to fail indefinitely.
+  void _scheduleNextRetry() {
+    if (_disposed) return;
+    _timePort.delay(_jitteredTimeout()).then((_) {
+      if (!_disposed) {
+        _retryPendingConnections();
+        _scheduleNextRetry();
+      }
+    });
+  }
+
+  /// Returns the connection timeout with ±30% random jitter.
+  ///
+  /// With a 5s base timeout, this produces intervals between 3.5s and 6.5s.
+  Duration _jitteredTimeout() {
+    // nextDouble() returns [0.0, 1.0) → scale to [0.7, 1.3)
+    final multiplier = 0.7 + _random.nextDouble() * 0.6;
+    final jitteredMs = (_connectionTimeout.inMilliseconds * multiplier).round();
+    return Duration(milliseconds: jitteredMs);
   }
 
   void _requestConnectionSafely(EndpointId id) {
