@@ -40,9 +40,14 @@ class InMemoryMessageBus {
 
   /// Delivers a message from sender to destination.
   ///
-  /// If the destination port is not registered or is closed, the message
-  /// is silently dropped (simulating network unreachability).
+  /// If the destination or sender port is not registered or the destination
+  /// is closed, the message is silently dropped (simulating network
+  /// unreachability). Checking the sender ensures that partitioned nodes
+  /// (unregistered via [unregister]) cannot send messages either, making
+  /// partitions bidirectional.
   void deliver(NodeId destination, NodeId sender, Uint8List bytes) {
+    if (!_ports.containsKey(sender)) return;
+
     final controller = _ports[destination];
     if (controller != null && !controller.isClosed) {
       controller.add(

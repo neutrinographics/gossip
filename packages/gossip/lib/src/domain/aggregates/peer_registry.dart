@@ -117,6 +117,13 @@ class PeerRegistry {
     return reachable[random.nextInt(reachable.length)];
   }
 
+  /// Returns peers with unreachable status.
+  ///
+  /// Used by FailureDetector for periodic unreachable peer probing
+  /// to break mutual-unreachable deadlocks.
+  List<Peer> get unreachablePeers =>
+      _peers.values.where((p) => p.status == PeerStatus.unreachable).toList();
+
   /// Returns peers that can be probed (reachable or suspected).
   ///
   /// Excludes unreachable peers as they have exceeded the suspicion window.
@@ -144,18 +151,30 @@ class PeerRegistry {
 
   /// Adds a new peer to the registry with reachable status.
   ///
+  /// If the peer already exists and is suspected or unreachable, recovers
+  /// it to reachable — this is called on transport reconnection, which is
+  /// proof of life. No-op if the peer is already reachable.
+  ///
   /// If [displayName] is not provided, defaults to a truncated form of the
   /// node ID.
   ///
   /// Throws if attempting to add the local node as a peer.
-  /// No-op if the peer is already registered.
   ///
-  /// Emits: [PeerAdded] event.
+  /// Emits: [PeerAdded] for new peers, [PeerStatusChanged] for recovered peers.
   void addPeer(NodeId id, {String? displayName, required DateTime occurredAt}) {
     if (id == localNode) {
       throw Exception('Cannot add local node as peer');
     }
-    if (_peers.containsKey(id)) return;
+    final existing = _peers[id];
+    if (existing != null) {
+      // Peer already exists. If unreachable or suspected, recover it —
+      // addPeer is called on transport reconnection, which is proof of life.
+      if (existing.status != PeerStatus.reachable) {
+        updatePeerStatus(id, PeerStatus.reachable, occurredAt: occurredAt);
+        _peers[id] = _peers[id]!.copyWith(failedProbeCount: 0);
+      }
+      return;
+    }
     _peers[id] = Peer(id: id, displayName: displayName);
     _addEvent(PeerAdded(id, occurredAt: occurredAt));
   }
@@ -213,15 +232,9 @@ class PeerRegistry {
 
   /// Updates the last contact timestamp for a peer.
   ///
-  /// Records successful contact with a peer (received an Ack).
-  ///
-  /// Updates the last contact timestamp and, critically, resets the peer
-  /// to reachable status if suspected. This implements SWIM's recovery
-  /// mechanism: a suspected peer that responds to probes is immediately
-  /// considered alive again.
-  ///
-  /// Also resets the failed probe count since successful contact proves
-  /// the peer is responsive.
+  /// Records successful contact with a peer (received an Ack or Ping).
+  /// Resets the failed probe count and recovers the peer to reachable if
+  /// suspected or unreachable, emitting a [PeerStatusChanged] event.
   ///
   /// Emits [PeerOperationSkipped] if peer doesn't exist.
   void updatePeerContact(NodeId id, int timestampMs) {
@@ -236,16 +249,22 @@ class PeerRegistry {
       );
       return;
     }
-    // Reset to reachable if suspected (recovery from suspected state)
-    final newStatus = peer.status == PeerStatus.suspected
-        ? PeerStatus.reachable
-        : peer.status;
 
-    _peers[id] = peer.copyWith(
-      lastContactMs: timestampMs,
-      status: newStatus,
-      failedProbeCount: 0,
-    );
+    // Recover to reachable if suspected or unreachable.
+    // Delegate to updatePeerStatus() so PeerStatusChanged is emitted.
+    if (peer.status != PeerStatus.reachable) {
+      updatePeerStatus(id, PeerStatus.reachable, occurredAt: DateTime.now());
+    }
+
+    // Update contact time and reset failed probe count.
+    // Re-read peer since updatePeerStatus may have modified it.
+    final current = _peers[id];
+    if (current != null) {
+      _peers[id] = current.copyWith(
+        lastContactMs: timestampMs,
+        failedProbeCount: 0,
+      );
+    }
   }
 
   /// Updates the last anti-entropy timestamp for a peer.

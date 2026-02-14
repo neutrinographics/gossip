@@ -141,14 +141,14 @@ void main() {
     group('suggestedTimeout', () {
       test('returns smoothedRtt plus 4x variance', () {
         final estimate = RttEstimate(
-          smoothedRtt: const Duration(milliseconds: 200),
-          rttVariance: const Duration(milliseconds: 50),
+          smoothedRtt: const Duration(milliseconds: 300),
+          rttVariance: const Duration(milliseconds: 75),
         );
 
-        // timeout = 200 + 4 * 50 = 400ms
+        // timeout = 300 + 4 * 75 = 600ms
         expect(
           estimate.suggestedTimeout(),
-          equals(const Duration(milliseconds: 400)),
+          equals(const Duration(milliseconds: 600)),
         );
       });
 
@@ -158,10 +158,10 @@ void main() {
           rttVariance: const Duration(milliseconds: 10),
         );
 
-        // Raw timeout = 50 + 4 * 10 = 90ms, but min is 200ms
+        // Raw timeout = 50 + 4 * 10 = 90ms, but min is 500ms
         expect(
           estimate.suggestedTimeout(),
-          equals(const Duration(milliseconds: 200)),
+          equals(const Duration(milliseconds: 500)),
         );
       });
 

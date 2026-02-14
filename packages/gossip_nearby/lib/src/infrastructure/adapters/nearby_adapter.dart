@@ -119,7 +119,11 @@ class NearbyAdapter implements NearbyPort {
     );
   }
 
-  void _onEndpointLost(String? endpointId) {}
+  void _onEndpointLost(String? endpointId) {
+    if (endpointId != null) {
+      _eventController.add(EndpointLost(id: EndpointId(endpointId)));
+    }
+  }
 
   void _onConnectionInitiated(String endpointId, ConnectionInfo info) {
     unawaited(
@@ -135,6 +139,8 @@ class NearbyAdapter implements NearbyPort {
   void _onConnectionResult(String endpointId, Status status) {
     if (status == Status.CONNECTED) {
       _eventController.add(ConnectionEstablished(id: EndpointId(endpointId)));
+    } else {
+      _eventController.add(ConnectionFailed(id: EndpointId(endpointId)));
     }
   }
 

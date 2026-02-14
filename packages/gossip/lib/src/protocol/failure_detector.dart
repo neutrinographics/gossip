@@ -60,7 +60,13 @@ class _PendingPing {
 ///
 /// **Failure Detection**:
 /// - After [failureThreshold] consecutive failures, mark peer as suspected
+/// - After [unreachableThreshold] consecutive failures, mark suspected peer
+///   as unreachable (excluded from probing and gossip)
 /// - Suspected peers can recover by responding to future probes
+/// - Unreachable peers are periodically probed (every [unreachableProbeInterval]
+///   rounds) to detect transport recovery without requiring explicit reconnection
+/// - Unreachable peers also recover via transport reconnection (incoming Ping
+///   or re-adding the peer)
 ///
 /// ## Lifecycle
 ///
@@ -75,6 +81,8 @@ class FailureDetector {
   final NodeId localNode;
   final PeerRegistry peerRegistry;
   final int failureThreshold;
+  final int unreachableThreshold;
+  final int unreachableProbeInterval;
   final TimePort timePort;
   final MessagePort messagePort;
   final ErrorCallback? onError;
@@ -91,6 +99,8 @@ class FailureDetector {
     required this.localNode,
     required this.peerRegistry,
     this.failureThreshold = 3,
+    this.unreachableThreshold = 9,
+    this.unreachableProbeInterval = 5,
     required this.timePort,
     required this.messagePort,
     this.onError,
@@ -110,12 +120,12 @@ class FailureDetector {
   // ---------------------------------------------------------------------------
 
   static const int _metricsWindowDurationMs = 10000;
-  static const Duration _minPingTimeout = Duration(milliseconds: 200);
+  static const Duration _minPingTimeout = Duration(milliseconds: 500);
   static const Duration _maxPingTimeout = Duration(seconds: 10);
   static const Duration _minProbeInterval = Duration(milliseconds: 500);
   static const Duration _maxProbeInterval = Duration(seconds: 30);
   static const int _probeIntervalMultiplier = 3;
-  static const Duration _intermediaryTimeout = Duration(milliseconds: 200);
+  static const Duration _intermediaryTimeout = Duration(milliseconds: 500);
 
   // ---------------------------------------------------------------------------
   // State
@@ -123,6 +133,8 @@ class FailureDetector {
 
   bool _isRunning = false;
   int _nextSequence = 1;
+  int _unreachableProbeCounter = 0;
+  int _unreachableProbeIndex = 0;
   StreamSubscription<IncomingMessage>? _messageSubscription;
   final Map<int, _PendingPing> _pendingPings = {};
   int _acksReceived = 0;
@@ -257,6 +269,16 @@ class FailureDetector {
   /// 4. If no Ack, fall back to indirect ping
   /// 5. Check if late Ack arrived during indirect phase
   Future<void> performProbeRound() async {
+    // Periodically probe one unreachable peer for recovery.
+    if (unreachableProbeInterval > 0) {
+      _unreachableProbeCounter++;
+      if (_unreachableProbeCounter >= unreachableProbeInterval) {
+        _unreachableProbeCounter = 0;
+        await _probeUnreachablePeer();
+      }
+    }
+
+    // Regular probe round: select reachable or suspected peer.
     final peer = selectRandomPeer();
     if (peer == null) return;
 
@@ -311,6 +333,66 @@ class FailureDetector {
     return gotAck;
   }
 
+  /// Probes one unreachable peer on a round-robin schedule.
+  ///
+  /// Called every [unreachableProbeInterval] probe rounds to detect
+  /// transport recovery for peers stuck in unreachable state. This breaks
+  /// mutual-unreachable deadlocks where both sides have marked each other
+  /// unreachable and neither sends messages.
+  ///
+  /// Like [probeNewPeer], this is best-effort: no failure is recorded on
+  /// timeout since the peer is already unreachable. Falls back to indirect
+  /// ping via intermediaries, which is critical for 3+ device scenarios
+  /// where a third peer can relay the probe.
+  ///
+  /// Recovery happens via the existing path: if the peer responds with an
+  /// Ack, [handleAck] → [_recordPeerContact] → [updatePeerContact]
+  /// transitions it back to reachable.
+  Future<void> _probeUnreachablePeer() async {
+    final unreachable = peerRegistry.unreachablePeers;
+    if (unreachable.isEmpty) return;
+
+    // Round-robin: wrap index if peers changed since last probe.
+    _unreachableProbeIndex = _unreachableProbeIndex % unreachable.length;
+    final peer = unreachable[_unreachableProbeIndex];
+    _unreachableProbeIndex = (_unreachableProbeIndex + 1) % unreachable.length;
+
+    _log('Probing unreachable peer ${peer.id} (best-effort recovery)');
+
+    final sequence = _nextSequence++;
+    final pending = _trackPendingPing(peer.id, sequence);
+    await _sendPing(peer.id, sequence);
+
+    final gotDirectAck = await _awaitAckWithTimeout(
+      pending,
+      sequence,
+      effectivePingTimeoutForPeer(peer.id),
+    );
+
+    if (!gotDirectAck) {
+      // Indirect ping: ask intermediaries to probe on our behalf.
+      // In 2-device scenarios this finds no intermediaries and returns false.
+      final gotIndirectAck = await _performIndirectPing(peer.id);
+      final recovered = gotIndirectAck || pending.completer.isCompleted;
+
+      _cleanupPendingPing(sequence);
+
+      if (recovered) {
+        // The forwarded Ack has the intermediary as sender, so handleAck()
+        // only updated the intermediary's contact. Explicitly recover the
+        // target peer.
+        _recordPeerContact(peer.id, timePort.nowMs);
+        _log('Unreachable peer ${peer.id} responded (indirect) — recovered');
+      } else {
+        _log('Unreachable peer ${peer.id} did not respond (still unreachable)');
+      }
+      return;
+    }
+
+    _cleanupPendingPing(sequence);
+    _log('Unreachable peer ${peer.id} responded — recovered to reachable');
+  }
+
   /// Selects a random peer to probe (reachable or suspected).
   ///
   /// Includes suspected peers so they can recover by responding to probes
@@ -344,23 +426,20 @@ class FailureDetector {
   /// not `ack.sender` — because forwarded indirect Acks have the
   /// intermediary as sender, not the original target.
   ///
-  /// RTT samples that exceed the peer's timeout window are discarded to
-  /// prevent late Acks from inflating the SRTT estimate.
-  ///
   /// Acks that don't match a pending ping are silently ignored. This is
   /// normal when: (a) a very-late ack arrives after cleanup, (b) both
   /// direct and indirect acks arrive for the same probe, or (c) a
   /// forwarded ack races with a direct ack. The peer contact timestamp
   /// is still updated regardless.
   void handleAck(Ack ack, {required int timestampMs}) {
-    peerRegistry.updatePeerContact(ack.sender, timestampMs);
+    _recordPeerContact(ack.sender, timestampMs);
 
     final pending = _pendingPings[ack.sequence];
     if (pending == null || pending.completer.isCompleted) {
       return;
     }
 
-    _tryRecordRtt(pending, ack.sender, timestampMs);
+    _recordRtt(pending, ack.sender, timestampMs);
     pending.completer.complete(true);
   }
 
@@ -369,7 +448,10 @@ class FailureDetector {
     peerRegistry.incrementFailedProbeCount(peerId);
   }
 
-  /// Transitions peer to suspected if failure threshold is exceeded.
+  /// Transitions peer status based on consecutive probe failure count.
+  ///
+  /// - `reachable → suspected` at [failureThreshold]
+  /// - `suspected → unreachable` at [unreachableThreshold]
   // TODO: Implement SWIM refutation. When this node receives a Suspicion
   // message about itself, it should call PeerService.incrementLocalIncarnation()
   // to refute the false suspicion. This requires:
@@ -381,7 +463,19 @@ class FailureDetector {
     final peer = peerRegistry.getPeer(peerId);
     if (peer == null) return;
 
-    if (peer.failedProbeCount >= failureThreshold &&
+    if (peer.failedProbeCount >= unreachableThreshold &&
+        peer.status == PeerStatus.suspected) {
+      _log(
+        'Peer $peerId transitioning to UNREACHABLE '
+        '(failed probes: ${peer.failedProbeCount}, '
+        'threshold: $unreachableThreshold)',
+      );
+      peerRegistry.updatePeerStatus(
+        peerId,
+        PeerStatus.unreachable,
+        occurredAt: occurredAt,
+      );
+    } else if (peer.failedProbeCount >= failureThreshold &&
         peer.status == PeerStatus.reachable) {
       _log(
         'Peer $peerId transitioning to SUSPECTED '
@@ -525,6 +619,7 @@ class FailureDetector {
 
   Future<void> _handleIncomingPing(Ping ping, NodeId sender) async {
     _log('Received Ping from $sender seq=${ping.sequence}');
+    _recordPeerContact(sender, timePort.nowMs);
     final ack = handlePing(ping);
     final ackBytes = _codec.encode(ack);
     await _safeSend(sender, ackBytes, 'Ack');
@@ -577,34 +672,29 @@ class FailureDetector {
   // Private: RTT recording
   // ---------------------------------------------------------------------------
 
-  /// Records an RTT sample if the Ack arrived within the timeout window.
+  /// Records an RTT sample from a matched Ack.
   ///
   /// RTT is attributed to [pending.target] (the peer being probed), not
   /// [ackSender] — forwarded indirect Acks have the intermediary as sender.
   ///
-  /// Late Acks (RTT > timeout) are discarded to prevent SRTT inflation
-  /// from timeout-delayed responses.
-  void _tryRecordRtt(_PendingPing pending, NodeId ackSender, int timestampMs) {
+  /// All valid RTT samples are recorded regardless of whether they exceeded
+  /// the timeout. Unlike TCP (where Karn's algorithm avoids ambiguity between
+  /// original and retransmitted segments), SWIM pings have unique sequence
+  /// numbers so every Ack is unambiguously matched. Recording all samples
+  /// lets the EWMA adapt upward when latency increases, preventing a
+  /// survivorship bias where only fast samples feed the estimate.
+  void _recordRtt(_PendingPing pending, NodeId ackSender, int timestampMs) {
     final rttMs = timestampMs - pending.sentAtMs;
-    final timeout = effectivePingTimeoutForPeer(pending.target);
 
     if (rttMs <= 0) return;
 
-    if (rttMs <= timeout.inMilliseconds) {
-      final rttSample = Duration(milliseconds: rttMs);
-      _rttTracker.recordSample(rttSample);
-      peerRegistry.recordPeerRtt(pending.target, rttSample);
-      _log(
-        'Ack seq=${pending.sequence} from $ackSender target=${pending.target} '
-        '(RTT: ${rttMs}ms)',
-      );
-    } else {
-      _log(
-        'Late Ack seq=${pending.sequence} from $ackSender '
-        'RTT ${rttMs}ms exceeds timeout ${timeout.inMilliseconds}ms '
-        '— sample discarded',
-      );
-    }
+    final rttSample = Duration(milliseconds: rttMs);
+    _rttTracker.recordSample(rttSample);
+    peerRegistry.recordPeerRtt(pending.target, rttSample);
+    _log(
+      'Ack seq=${pending.sequence} from $ackSender target=${pending.target} '
+      '(RTT: ${rttMs}ms)',
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -701,6 +791,22 @@ class FailureDetector {
           occurredAt: DateTime.now(),
           cause: e,
         ),
+      );
+    }
+  }
+
+  /// Updates peer contact and logs recovery if the peer was non-reachable.
+  void _recordPeerContact(NodeId peerId, int timestampMs) {
+    final peer = peerRegistry.getPeer(peerId);
+    final oldStatus = peer?.status;
+
+    peerRegistry.updatePeerContact(peerId, timestampMs);
+
+    if (oldStatus != null && oldStatus != PeerStatus.reachable) {
+      _log(
+        'Peer $peerId transitioning to REACHABLE '
+        '(was: ${oldStatus.name}, '
+        'failed probes reset to 0)',
       );
     }
   }

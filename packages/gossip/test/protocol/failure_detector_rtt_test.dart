@@ -183,7 +183,7 @@ void main() {
     });
 
     test(
-      'does not record RTT for late Ack that exceeds timeout window',
+      'records RTT for late Ack that arrives during indirect phase',
       () async {
         h.startListening();
 
@@ -194,24 +194,24 @@ void main() {
         // Advance past the direct ping timeout (500ms)
         await h.timePort.advance(const Duration(milliseconds: 501));
 
-        // Send the late direct Ack during the grace phase
+        // Send the late direct Ack during the indirect phase
         final lateAck = Ack(sender: peer.id, sequence: ping.sequence);
         await peer.port.send(h.localNode, h.codec.encode(lateAck));
         await h.flush();
 
-        // Finish the grace phase
+        // Finish the indirect phase
         await h.timePort.advance(const Duration(milliseconds: 501));
         await probeRoundFuture;
 
         expect(
           h.rttTracker.hasReceivedSamples,
-          isFalse,
-          reason: 'Late Ack RTT should be discarded',
+          isTrue,
+          reason: 'Late Ack RTT should be recorded (no Karn ambiguity in SWIM)',
         );
         expect(
           h.peerRegistry.getPeer(peer.id)!.metrics.rttEstimate,
-          isNull,
-          reason: 'Late Ack should not record per-peer RTT',
+          isNotNull,
+          reason: 'Late Ack should record per-peer RTT',
         );
 
         h.stopListening();

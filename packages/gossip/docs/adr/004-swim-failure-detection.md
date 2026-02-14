@@ -45,32 +45,74 @@ Indirect Probe (when direct fails):
 
 ### States
 
-- **Reachable**: Peer responds to probes
-- **Suspected**: Direct probe failed, indirect probe in progress
-- **Unreachable**: Confirmed failed after threshold exceeded
+- **Reachable**: Peer responds to probes normally
+- **Suspected**: After `suspicionThreshold` (default 5) consecutive probe failures.
+  Peer is still probed and can recover by responding.
+- **Unreachable**: After `unreachableThreshold` (default 15) consecutive probe failures.
+  Excluded from regular probing and gossip. Periodically probed every
+  `unreachableProbeInterval` (default 5) rounds for recovery.
 
 ### Configuration
 
 ```dart
 CoordinatorConfig(
-  probeInterval: Duration(milliseconds: 1000),    // How often to probe
-  pingTimeout: Duration(milliseconds: 500),        // Direct probe timeout
-  indirectPingTimeout: Duration(milliseconds: 500), // Indirect probe timeout
-  suspicionThreshold: 3,                           // Failures before unreachable
+  suspicionThreshold: 5,       // Failed probes before suspected (default: 5)
+  unreachableThreshold: 15,    // Failed probes before unreachable (default: 15)
+  unreachableProbeInterval: 5, // Probe unreachable peers every N rounds (default: 5)
+  startupGracePeriod: Duration(seconds: 10), // Grace period for new peers
 )
 ```
+
+Timing parameters (ping timeout, probe interval, gossip interval) are
+RTT-adaptive and not directly configurable — see ADR-013.
 
 ### Incarnation Numbers
 
 Each node maintains an incarnation number that increments when refuting false suspicions. This prevents stale failure information from propagating.
 
+### Tuning Guide
+
+All parameters are set via `CoordinatorConfig` and passed to `Coordinator.create()`.
+Timing values (ping timeout, probe interval) are RTT-adaptive and not directly
+configurable — only the policy thresholds below are tunable.
+
+| Parameter | Default | Effect of raising | Effect of lowering |
+|-----------|---------|-------------------|--------------------|
+| `suspicionThreshold` | 5 | Slower to suspect, fewer false positives | Faster detection, more false positives on flaky networks |
+| `unreachableThreshold` | 15 | Longer recovery window for suspected peers | Faster eviction, less chance to recover |
+| `unreachableProbeInterval` | 5 | Less overhead probing dead peers, slower deadlock recovery | Faster deadlock recovery, negligible extra bandwidth (~66 bytes/probe) |
+| `startupGracePeriod` | 10s | More time for transport to stabilize | Faster initial failure detection |
+
+#### Failure detection timeline (defaults, ~1.5s probe interval)
+
+1. **0–7.5s**: First 5 probes fail → peer becomes **suspected**
+2. **7.5–22.5s**: 10 more probes fail → peer becomes **unreachable**
+3. **Every ~7.5s thereafter**: One unreachable probe fires. If the peer responds
+   (directly or via an intermediary), it recovers to **reachable** immediately.
+
+#### Recovery paths
+
+- **Suspected → Reachable**: Peer responds to any regular probe
+- **Unreachable → Reachable**: Three ways:
+  1. Periodic unreachable probe gets a response (direct or indirect via intermediary)
+  2. Peer sends an incoming Ping (handled by `_handleIncomingPing`)
+  3. Transport reconnection triggers `addPeer()` (e.g., BLE reconnect)
+
+#### Bandwidth cost of unreachable probing
+
+A SWIM Ping is ~66 bytes. At `unreachableProbeInterval: 5` with ~1.5s probe
+intervals, that's one 66-byte message every ~7.5s per unreachable peer — roughly
+9 bytes/second, or 0.06% of typical gossip traffic. Lowering the interval to 1
+(probe every round) costs ~44 bytes/second, still negligible.
+
 ## Consequences
 
 ### Positive
 
-- Fast detection of actual failures (~2-3 seconds)
-- Low false positive rate with indirect probes
+- Fast detection of actual failures (~7.5s to suspected, ~22.5s to unreachable)
+- Low false positive rate with indirect probes and two-tier thresholds
 - Works well with unreliable mobile networks
+- Automatic recovery from mutual-unreachable deadlocks via periodic probing
 - Minimal bandwidth overhead
 
 ### Negative

@@ -5,6 +5,16 @@ import '../events/connection_event.dart';
 import '../value_objects/endpoint.dart';
 import '../value_objects/endpoint_id.dart';
 
+/// Returned by [ConnectionRegistry.completeHandshake] when a new connection
+/// replaces an existing one for the same [NodeId].
+///
+/// The caller should disconnect the replaced endpoint at the platform level
+/// to avoid leaving a stale BLE connection on the remote device.
+class ReplacedEndpoint {
+  final EndpointId endpointId;
+  const ReplacedEndpoint(this.endpointId);
+}
+
 /// Aggregate root managing connections and pending handshakes.
 ///
 /// Enforces the invariant that a [NodeId] can only be associated with
@@ -28,16 +38,20 @@ class ConnectionRegistry {
   /// Completes the handshake, creating a connection.
   ///
   /// If the [nodeId] is already associated with a different endpoint,
-  /// the old connection is removed (enforcing NodeId uniqueness).
+  /// the old connection is removed (enforcing NodeId uniqueness) and
+  /// a [ReplacedEndpoint] is returned so the caller can disconnect
+  /// the stale platform connection.
   ///
-  /// Returns [HandshakeCompleted] event.
-  HandshakeCompleted completeHandshake(Endpoint endpoint, NodeId nodeId) {
+  /// Returns [ReplacedEndpoint] if a duplicate was replaced, or `null`.
+  ReplacedEndpoint? completeHandshake(Endpoint endpoint, NodeId nodeId) {
     _pendingHandshakes.remove(endpoint.id);
 
-    // Enforce NodeId uniqueness - remove any existing connection with same NodeId
+    ReplacedEndpoint? replaced;
     final existingEndpointId = _nodeIdToEndpointId[nodeId];
     if (existingEndpointId != null && existingEndpointId != endpoint.id) {
       _connections.remove(existingEndpointId);
+      _pendingHandshakes.remove(existingEndpointId);
+      replaced = ReplacedEndpoint(existingEndpointId);
     }
 
     final connection = Connection(
@@ -49,7 +63,7 @@ class ConnectionRegistry {
     _connections[endpoint.id] = connection;
     _nodeIdToEndpointId[nodeId] = endpoint.id;
 
-    return HandshakeCompleted(endpoint: endpoint, nodeId: nodeId);
+    return replaced;
   }
 
   /// Cancels a pending handshake.

@@ -141,6 +141,38 @@ void main() {
       expect(reachable.first.id, equals(NodeId('peer-1')));
     });
 
+    test('unreachablePeers returns only unreachable peers', () {
+      final registry = PeerRegistry(
+        localNode: NodeId('local'),
+        initialIncarnation: 0,
+      );
+      registry.addPeer(NodeId('peer-1'), occurredAt: DateTime(2024, 1, 1));
+      registry.addPeer(NodeId('peer-2'), occurredAt: DateTime(2024, 1, 1));
+      registry.addPeer(NodeId('peer-3'), occurredAt: DateTime(2024, 1, 1));
+      // peer-2 → suspected
+      registry.updatePeerStatus(
+        NodeId('peer-2'),
+        PeerStatus.suspected,
+        occurredAt: DateTime(2024, 1, 1),
+      );
+      // peer-3 → suspected → unreachable
+      registry.updatePeerStatus(
+        NodeId('peer-3'),
+        PeerStatus.suspected,
+        occurredAt: DateTime(2024, 1, 1),
+      );
+      registry.updatePeerStatus(
+        NodeId('peer-3'),
+        PeerStatus.unreachable,
+        occurredAt: DateTime(2024, 1, 1),
+      );
+
+      final unreachable = registry.unreachablePeers;
+
+      expect(unreachable.length, equals(1));
+      expect(unreachable.first.id, equals(NodeId('peer-3')));
+    });
+
     test('incrementLocalIncarnation increases incarnation', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
@@ -541,6 +573,87 @@ void main() {
         expect(registry.uncommittedEvents, hasLength(2));
         expect(registry.uncommittedEvents[0], isA<PeerAdded>());
         expect(registry.uncommittedEvents[1], isA<PeerStatusChanged>());
+      });
+    });
+
+    group('updatePeerContact event emission', () {
+      test('emits PeerStatusChanged when recovering from suspected', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+        final peerId = NodeId('peer-1');
+        registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
+        registry.updatePeerStatus(
+          peerId,
+          PeerStatus.suspected,
+          occurredAt: DateTime(2024, 1, 1),
+        );
+
+        final eventsBefore = registry.uncommittedEvents.length;
+
+        registry.updatePeerContact(peerId, 5000);
+
+        final newEvents = registry.uncommittedEvents
+            .skip(eventsBefore)
+            .toList();
+        expect(newEvents, hasLength(1));
+        expect(newEvents.first, isA<PeerStatusChanged>());
+        final event = newEvents.first as PeerStatusChanged;
+        expect(event.peerId, equals(peerId));
+        expect(event.oldStatus, equals(PeerStatus.suspected));
+        expect(event.newStatus, equals(PeerStatus.reachable));
+      });
+
+      test('emits PeerStatusChanged when recovering from unreachable', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+        final peerId = NodeId('peer-1');
+        registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
+        registry.updatePeerStatus(
+          peerId,
+          PeerStatus.suspected,
+          occurredAt: DateTime(2024, 1, 1),
+        );
+        registry.updatePeerStatus(
+          peerId,
+          PeerStatus.unreachable,
+          occurredAt: DateTime(2024, 1, 1),
+        );
+
+        final eventsBefore = registry.uncommittedEvents.length;
+
+        registry.updatePeerContact(peerId, 5000);
+
+        final newEvents = registry.uncommittedEvents
+            .skip(eventsBefore)
+            .toList();
+        expect(newEvents, hasLength(1));
+        expect(newEvents.first, isA<PeerStatusChanged>());
+        final event = newEvents.first as PeerStatusChanged;
+        expect(event.peerId, equals(peerId));
+        expect(event.oldStatus, equals(PeerStatus.unreachable));
+        expect(event.newStatus, equals(PeerStatus.reachable));
+      });
+
+      test('does not emit PeerStatusChanged when already reachable', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+        final peerId = NodeId('peer-1');
+        registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
+
+        final eventsBefore = registry.uncommittedEvents.length;
+
+        registry.updatePeerContact(peerId, 5000);
+
+        final newEvents = registry.uncommittedEvents
+            .skip(eventsBefore)
+            .toList();
+        expect(newEvents, isEmpty);
       });
     });
 

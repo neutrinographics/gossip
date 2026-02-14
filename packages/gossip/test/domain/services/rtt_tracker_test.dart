@@ -118,15 +118,15 @@ void main() {
       test('delegates to estimate', () {
         final tracker = RttTracker(
           initialEstimate: RttEstimate(
-            smoothedRtt: const Duration(milliseconds: 200),
-            rttVariance: const Duration(milliseconds: 50),
+            smoothedRtt: const Duration(milliseconds: 300),
+            rttVariance: const Duration(milliseconds: 75),
           ),
         );
 
-        // timeout = 200 + 4 * 50 = 400ms
+        // timeout = 300 + 4 * 75 = 600ms
         expect(
           tracker.suggestedTimeout(),
-          equals(const Duration(milliseconds: 400)),
+          equals(const Duration(milliseconds: 600)),
         );
       });
 

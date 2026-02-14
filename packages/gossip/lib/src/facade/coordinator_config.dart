@@ -7,7 +7,7 @@
 /// ## Adaptive Timing (ADR-013)
 ///
 /// The following timing parameters are automatically derived from RTT measurements:
-/// - **Ping timeout**: `RTT + 4 * variance` (clamped to 200ms-10s)
+/// - **Ping timeout**: `RTT + 4 * variance` (clamped to 500ms-10s)
 /// - **Probe interval**: `3 * ping timeout` (clamped to 500ms-30s)
 /// - **Gossip interval**: `2 * RTT` (clamped to 100ms-5s)
 ///
@@ -45,6 +45,21 @@ class CoordinatorConfig {
   /// actual failures.
   final int suspicionThreshold;
 
+  /// Number of consecutive probe failures before marking a suspected peer
+  /// as unreachable.
+  ///
+  /// After this many total failed probes (including those that triggered
+  /// suspicion), the peer transitions from [PeerStatus.suspected] to
+  /// [PeerStatus.unreachable]. Unreachable peers are excluded from probing
+  /// and gossip, but remain in the registry so they can recover if the
+  /// transport reconnects.
+  ///
+  /// **Default: 15** (gives suspected peers 10 additional probe cycles
+  /// beyond [suspicionThreshold] to recover)
+  ///
+  /// Must be greater than [suspicionThreshold].
+  final int unreachableThreshold;
+
   /// Grace period for newly added peers before they become eligible for
   /// failure detection probing.
   ///
@@ -61,9 +76,25 @@ class CoordinatorConfig {
   /// Set to [Duration.zero] to disable the grace period.
   final Duration startupGracePeriod;
 
+  /// How often to probe unreachable peers, expressed as a multiple of regular
+  /// probe rounds.
+  ///
+  /// Every [unreachableProbeInterval] probe rounds, the failure detector
+  /// probes one unreachable peer (round-robin) to detect transport recovery
+  /// without requiring an explicit reconnection event.
+  ///
+  /// **Default: 5** (probes unreachable peers approximately every 7.5 seconds
+  /// at default timing)
+  ///
+  /// Lower values detect recovery faster but add more traffic for peers that
+  /// are likely still down. Set to 0 to disable unreachable probing.
+  final int unreachableProbeInterval;
+
   /// Creates a [CoordinatorConfig] with the specified options.
   const CoordinatorConfig({
     this.suspicionThreshold = 5,
+    this.unreachableThreshold = 15,
+    this.unreachableProbeInterval = 5,
     this.startupGracePeriod = const Duration(seconds: 10),
   });
 

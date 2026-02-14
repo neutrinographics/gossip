@@ -32,6 +32,19 @@ class _QueuedMessage {
   }) : completer = Completer<void>();
 }
 
+/// Tracks a discovered-but-not-connected endpoint for retry logic.
+class _PendingDiscovery {
+  final EndpointId endpointId;
+  final String advertisedName;
+  final int discoveredAtMs;
+
+  _PendingDiscovery({
+    required this.endpointId,
+    required this.advertisedName,
+    required this.discoveredAtMs,
+  });
+}
+
 /// Application service coordinating connection lifecycle and handshakes.
 ///
 /// Responsibilities:
@@ -47,12 +60,16 @@ class ConnectionService {
   final HandshakeCodec _codec;
   final NearbyMetrics _metrics;
   final LogCallback? _onLog;
+  final TimePort _timePort;
 
+  final Duration _connectionTimeout;
   final _eventController = StreamController<ConnectionEvent>.broadcast();
   final _errorController = StreamController<ConnectionError>.broadcast();
   StreamSubscription<NearbyEvent>? _nearbySubscription;
 
   final Map<EndpointId, DateTime> _handshakeStartTimes = {};
+  final Map<EndpointId, _PendingDiscovery> _pendingDiscoveries = {};
+  TimerHandle? _retryTimer;
 
   /// High-priority message queue (SWIM pings/acks).
   final Queue<_QueuedMessage> _highPriorityQueue = Queue<_QueuedMessage>();
@@ -74,14 +91,22 @@ class ConnectionService {
     HandshakeCodec codec = const HandshakeCodec(),
     NearbyMetrics? metrics,
     LogCallback? onLog,
+    TimePort? timePort,
+    Duration connectionTimeout = const Duration(seconds: 5),
   }) : _localNodeId = localNodeId,
        _displayName = displayName,
        _nearbyPort = nearbyPort,
        _registry = registry,
        _codec = codec,
        _metrics = metrics ?? NearbyMetrics(),
-       _onLog = onLog {
+       _onLog = onLog,
+       _timePort = timePort ?? RealTimePort(),
+       _connectionTimeout = connectionTimeout {
     _nearbySubscription = _nearbyPort.events.listen(_handleNearbyEvent);
+    _retryTimer = _timePort.schedulePeriodic(
+      _connectionTimeout,
+      _retryPendingConnections,
+    );
   }
 
   /// Stream of connection events (HandshakeCompleted, ConnectionClosed, etc.)
@@ -201,6 +226,7 @@ class ConnectionService {
 
   /// Disposes resources.
   Future<void> dispose() async {
+    _retryTimer?.cancel();
     await _nearbySubscription?.cancel();
     await _eventController.close();
     await _errorController.close();
@@ -214,6 +240,10 @@ class ConnectionService {
         _onConnectionEstablished(id);
       case PayloadReceived(:final id, :final bytes):
         _onPayloadReceived(id, bytes);
+      case EndpointLost(:final id):
+        _onEndpointLost(id);
+      case ConnectionFailed(:final id):
+        _onConnectionFailed(id);
       case Disconnected(:final id):
         _onDisconnected(id);
     }
@@ -222,9 +252,38 @@ class ConnectionService {
   void _onEndpointDiscovered(EndpointId id, String advertisedName) {
     _log(LogLevel.debug, 'Endpoint discovered: $id ($advertisedName)');
 
+    // Skip if this is our own advertisement (self-discovery)
+    final remoteNodeId = _parseNodeId(advertisedName);
+    if (remoteNodeId != null) {
+      if (remoteNodeId == _localNodeId.value) {
+        _log(LogLevel.debug, 'Ignoring own advertisement: $id');
+        return;
+      }
+
+      // Skip if we're already connected to this NodeId
+      final existingEndpoint = _registry.getEndpointIdForNodeId(
+        NodeId(remoteNodeId),
+      );
+      if (existingEndpoint != null) {
+        _log(
+          LogLevel.debug,
+          'Already connected to $remoteNodeId via $existingEndpoint, '
+          'ignoring discovery of $id',
+        );
+        return;
+      }
+    }
+
+    // Track for retry logic
+    _pendingDiscoveries[id] = _PendingDiscovery(
+      endpointId: id,
+      advertisedName: advertisedName,
+      discoveredAtMs: _timePort.nowMs,
+    );
+
     if (_shouldInitiateConnection(advertisedName)) {
       _log(LogLevel.debug, 'Initiating connection (we have smaller nodeId)');
-      unawaited(_nearbyPort.requestConnection(id));
+      _requestConnectionSafely(id);
     } else {
       _log(LogLevel.debug, 'Waiting for connection (they have smaller nodeId)');
     }
@@ -256,6 +315,7 @@ class ConnectionService {
   void _onConnectionEstablished(EndpointId id) {
     _log(LogLevel.info, 'Connection established: $id');
     _metrics.recordConnectionEstablished();
+    _pendingDiscoveries.remove(id);
 
     // Register pending handshake and send our NodeId
     _registry.registerPendingHandshake(id);
@@ -341,7 +401,22 @@ class ConnectionService {
       id: id,
       displayName: handshakeData.displayName ?? '',
     );
-    _registry.completeHandshake(endpoint, handshakeData.nodeId);
+    final replaced = _registry.completeHandshake(
+      endpoint,
+      handshakeData.nodeId,
+    );
+
+    // Disconnect old endpoint to avoid loose ends on the remote device
+    if (replaced != null) {
+      _log(
+        LogLevel.info,
+        'Duplicate connection for ${handshakeData.nodeId}: '
+        'disconnecting old endpoint ${replaced.endpointId}',
+      );
+      _handshakeStartTimes.remove(replaced.endpointId);
+      _pendingDiscoveries.remove(replaced.endpointId);
+      unawaited(_nearbyPort.disconnect(replaced.endpointId));
+    }
 
     final event = HandshakeCompleted(
       endpoint: endpoint,
@@ -377,6 +452,42 @@ class ConnectionService {
       'Gossip message from $nodeId: ${payload.length} bytes',
     );
     onGossipMessage?.call(nodeId, payload);
+  }
+
+  void _requestConnectionSafely(EndpointId id) {
+    unawaited(
+      _nearbyPort.requestConnection(id).catchError((e, stack) {
+        _log(LogLevel.warning, 'requestConnection failed for $id', e, stack);
+      }),
+    );
+  }
+
+  void _retryPendingConnections() {
+    if (_pendingDiscoveries.isEmpty) return;
+
+    final nowMs = _timePort.nowMs;
+    final timeoutMs = _connectionTimeout.inMilliseconds;
+    for (final pending in _pendingDiscoveries.values) {
+      final ageMs = nowMs - pending.discoveredAtMs;
+      if (ageMs >= timeoutMs) {
+        _log(
+          LogLevel.debug,
+          'Retrying connection to ${pending.endpointId} '
+          '(pending for ${ageMs ~/ 1000}s)',
+        );
+        _requestConnectionSafely(pending.endpointId);
+      }
+    }
+  }
+
+  void _onEndpointLost(EndpointId id) {
+    _log(LogLevel.debug, 'Endpoint lost: $id');
+    _pendingDiscoveries.remove(id);
+  }
+
+  void _onConnectionFailed(EndpointId id) {
+    _log(LogLevel.info, 'Connection failed for endpoint: $id');
+    _metrics.recordConnectionFailed();
   }
 
   void _onDisconnected(EndpointId id) {

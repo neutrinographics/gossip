@@ -32,16 +32,14 @@ void main() {
     });
 
     group('completeHandshake', () {
-      test('creates connection and emits HandshakeCompleted event', () {
+      test('creates connection and returns null when no duplicate', () {
         final endpoint = Endpoint(id: EndpointId('abc123'), displayName: 'A');
         final nodeId = NodeId('node-123');
         registry.registerPendingHandshake(endpoint.id);
 
-        final event = registry.completeHandshake(endpoint, nodeId);
+        final replaced = registry.completeHandshake(endpoint, nodeId);
 
-        expect(event, isA<HandshakeCompleted>());
-        expect(event.endpoint, equals(endpoint));
-        expect(event.nodeId, equals(nodeId));
+        expect(replaced, isNull);
       });
 
       test('connection is retrievable after completion', () {
@@ -106,18 +104,37 @@ void main() {
 
           // Second connection with same NodeId
           registry.registerPendingHandshake(endpoint2.id);
-          final event = registry.completeHandshake(endpoint2, nodeId);
+          final replaced = registry.completeHandshake(endpoint2, nodeId);
 
+          // Should return the replaced endpoint
+          expect(replaced, isNotNull);
+          expect(replaced!.endpointId, equals(endpoint1.id));
           // Old connection should be removed
           expect(registry.getConnection(endpoint1.id), isNull);
           // New connection should exist
           expect(registry.getConnection(endpoint2.id), isNotNull);
           // NodeId should map to new endpoint
           expect(registry.getEndpointIdForNodeId(nodeId), equals(endpoint2.id));
-          // Event should indicate successful handshake
-          expect(event, isA<HandshakeCompleted>());
         },
       );
+
+      test('cleans up pending handshake for replaced endpoint', () {
+        final endpoint1 = Endpoint(id: EndpointId('old-ep'), displayName: 'A');
+        final endpoint2 = Endpoint(id: EndpointId('new-ep'), displayName: 'A');
+        final nodeId = NodeId('node-123');
+
+        // Both have pending handshakes
+        registry.registerPendingHandshake(endpoint1.id);
+        registry.registerPendingHandshake(endpoint2.id);
+
+        // Complete first, then second with same NodeId
+        registry.completeHandshake(endpoint1, nodeId);
+        registry.completeHandshake(endpoint2, nodeId);
+
+        // Old endpoint's pending handshake should be cleaned up
+        expect(registry.hasPendingHandshake(endpoint1.id), isFalse);
+        expect(registry.hasPendingHandshake(endpoint2.id), isFalse);
+      });
     });
 
     group('removeConnection', () {
