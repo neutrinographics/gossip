@@ -71,6 +71,26 @@ class PayloadReceived extends NearbyEvent {
   String toString() => 'PayloadReceived(id: $id, bytes: ${bytes.length} bytes)';
 }
 
+/// An endpoint is no longer visible during discovery.
+class EndpointLost extends NearbyEvent {
+  final EndpointId id;
+
+  const EndpointLost({required this.id});
+
+  @override
+  String toString() => 'EndpointLost(id: $id)';
+}
+
+/// A connection attempt to an endpoint failed at the platform level.
+class ConnectionFailed extends NearbyEvent {
+  final EndpointId id;
+
+  const ConnectionFailed({required this.id});
+
+  @override
+  String toString() => 'ConnectionFailed(id: $id)';
+}
+
 /// An endpoint disconnected.
 class Disconnected extends NearbyEvent {
   final EndpointId id;

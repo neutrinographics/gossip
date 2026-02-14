@@ -567,6 +567,273 @@ void main() {
         expect(service.pendingSendCount(remoteNodeId), equals(0));
       });
     });
+
+    group('connection retry', () {
+      late MockNearbyPort retryMockPort;
+      late ConnectionRegistry retryRegistry;
+      late StreamController<NearbyEvent> retryController;
+      late InMemoryTimePort timePort;
+
+      setUp(() {
+        retryMockPort = MockNearbyPort();
+        retryRegistry = ConnectionRegistry();
+        retryController = StreamController<NearbyEvent>.broadcast();
+        timePort = InMemoryTimePort();
+
+        when(
+          () => retryMockPort.events,
+        ).thenAnswer((_) => retryController.stream);
+        when(
+          () => retryMockPort.requestConnection(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => retryMockPort.sendPayload(any(), any()),
+        ).thenAnswer((_) async {});
+        when(() => retryMockPort.disconnect(any())).thenAnswer((_) async {});
+      });
+
+      tearDown(() async {
+        await retryController.close();
+      });
+
+      ConnectionService createRetryService({required NodeId localNodeId}) {
+        return ConnectionService(
+          localNodeId: localNodeId,
+          nearbyPort: retryMockPort,
+          registry: retryRegistry,
+          timePort: timePort,
+          connectionTimeout: const Duration(seconds: 5),
+        );
+      }
+
+      test('passive side retries after connectionTimeout', () async {
+        // Local has larger nodeId → passive side
+        final svc = createRetryService(localNodeId: NodeId('zzz'));
+
+        retryController.add(
+          EndpointDiscovered(id: EndpointId('ep1'), displayName: 'aaa|Device'),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Passive side should NOT initiate immediately
+        verifyNever(() => retryMockPort.requestConnection(EndpointId('ep1')));
+
+        // Advance past timeout → retry should fire
+        await timePort.advance(const Duration(seconds: 5));
+
+        verify(
+          () => retryMockPort.requestConnection(EndpointId('ep1')),
+        ).called(1);
+
+        await svc.dispose();
+      });
+
+      test('active side retries after connectionTimeout', () async {
+        // Local has smaller nodeId → active side
+        final svc = createRetryService(localNodeId: NodeId('aaa'));
+
+        retryController.add(
+          EndpointDiscovered(id: EndpointId('ep1'), displayName: 'zzz|Device'),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Active side initiates immediately
+        verify(
+          () => retryMockPort.requestConnection(EndpointId('ep1')),
+        ).called(1);
+
+        // Advance past timeout → retry fires again
+        await timePort.advance(const Duration(seconds: 5));
+
+        verify(
+          () => retryMockPort.requestConnection(EndpointId('ep1')),
+        ).called(1);
+
+        await svc.dispose();
+      });
+
+      test('successful connection stops retry', () async {
+        final svc = createRetryService(localNodeId: NodeId('zzz'));
+
+        retryController.add(
+          EndpointDiscovered(id: EndpointId('ep1'), displayName: 'aaa|Device'),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Connection established → removes from pending
+        retryController.add(ConnectionEstablished(id: EndpointId('ep1')));
+        await Future.delayed(Duration.zero);
+
+        // Advance well past timeout
+        await timePort.advance(const Duration(seconds: 10));
+
+        // Should never have called requestConnection (passive + connected)
+        verifyNever(() => retryMockPort.requestConnection(EndpointId('ep1')));
+
+        await svc.dispose();
+      });
+
+      test('EndpointLost stops retry', () async {
+        final svc = createRetryService(localNodeId: NodeId('zzz'));
+
+        retryController.add(
+          EndpointDiscovered(id: EndpointId('ep1'), displayName: 'aaa|Device'),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Endpoint lost → removes from pending
+        retryController.add(EndpointLost(id: EndpointId('ep1')));
+        await Future.delayed(Duration.zero);
+
+        // Advance well past timeout
+        await timePort.advance(const Duration(seconds: 10));
+
+        verifyNever(() => retryMockPort.requestConnection(EndpointId('ep1')));
+
+        await svc.dispose();
+      });
+
+      test('ConnectionFailed keeps endpoint pending for retry', () async {
+        // Active side so we get an immediate attempt
+        final svc = createRetryService(localNodeId: NodeId('aaa'));
+
+        retryController.add(
+          EndpointDiscovered(id: EndpointId('ep1'), displayName: 'zzz|Device'),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Immediate attempt
+        verify(
+          () => retryMockPort.requestConnection(EndpointId('ep1')),
+        ).called(1);
+
+        // Connection failed — endpoint stays in pending
+        retryController.add(ConnectionFailed(id: EndpointId('ep1')));
+        await Future.delayed(Duration.zero);
+
+        // Advance past timeout → retry fires
+        await timePort.advance(const Duration(seconds: 5));
+
+        verify(
+          () => retryMockPort.requestConnection(EndpointId('ep1')),
+        ).called(1);
+
+        await svc.dispose();
+      });
+
+      test('requestConnection exception does not crash', () async {
+        when(
+          () => retryMockPort.requestConnection(any()),
+        ).thenAnswer((_) => Future.error(Exception('platform error')));
+
+        // Active side triggers immediate attempt which throws
+        final svc = createRetryService(localNodeId: NodeId('aaa'));
+
+        retryController.add(
+          EndpointDiscovered(id: EndpointId('ep1'), displayName: 'zzz|Device'),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Should not crash — error is caught
+        verify(
+          () => retryMockPort.requestConnection(EndpointId('ep1')),
+        ).called(1);
+
+        // Retry after timeout also throws — still no crash
+        await timePort.advance(const Duration(seconds: 5));
+
+        verify(
+          () => retryMockPort.requestConnection(EndpointId('ep1')),
+        ).called(1);
+
+        await svc.dispose();
+      });
+
+      test('duplicate NodeId disconnects old endpoint', () async {
+        final svc = createRetryService(localNodeId: NodeId('aaa'));
+
+        // First connection via ep1
+        retryController.add(ConnectionEstablished(id: EndpointId('ep1')));
+        await Future.delayed(Duration.zero);
+        retryController.add(
+          PayloadReceived(
+            id: EndpointId('ep1'),
+            bytes: _encodeHandshake(NodeId('remote')),
+          ),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Second connection via ep2 with same NodeId
+        retryController.add(ConnectionEstablished(id: EndpointId('ep2')));
+        await Future.delayed(Duration.zero);
+        retryController.add(
+          PayloadReceived(
+            id: EndpointId('ep2'),
+            bytes: _encodeHandshake(NodeId('remote')),
+          ),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Old endpoint should be disconnected
+        verify(() => retryMockPort.disconnect(EndpointId('ep1'))).called(1);
+
+        await svc.dispose();
+      });
+
+      test('does not retry for own advertisement', () async {
+        final svc = createRetryService(localNodeId: NodeId('local-node'));
+
+        // Discover own nodeId
+        retryController.add(
+          EndpointDiscovered(
+            id: EndpointId('ep1'),
+            displayName: 'local-node|My Device',
+          ),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Advance well past timeout
+        await timePort.advance(const Duration(seconds: 10));
+
+        verifyNever(() => retryMockPort.requestConnection(any()));
+
+        await svc.dispose();
+      });
+
+      test('does not retry when already connected to NodeId', () async {
+        final svc = createRetryService(localNodeId: NodeId('aaa'));
+
+        // Complete handshake with remote
+        retryController.add(ConnectionEstablished(id: EndpointId('ep1')));
+        await Future.delayed(Duration.zero);
+        retryController.add(
+          PayloadReceived(
+            id: EndpointId('ep1'),
+            bytes: _encodeHandshake(NodeId('remote')),
+          ),
+        );
+        await Future.delayed(Duration.zero);
+
+        clearInteractions(retryMockPort);
+
+        // Discover same NodeId via new endpoint
+        retryController.add(
+          EndpointDiscovered(
+            id: EndpointId('ep2'),
+            displayName: 'remote|Device',
+          ),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Advance well past timeout
+        await timePort.advance(const Duration(seconds: 10));
+
+        // Should never request connection for ep2
+        verifyNever(() => retryMockPort.requestConnection(EndpointId('ep2')));
+
+        await svc.dispose();
+      });
+    });
   });
 }
 
