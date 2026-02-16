@@ -65,6 +65,59 @@ void main() {
       expect(hlc1.hashCode, isNot(equals(hlc3.hashCode)));
     });
 
+    group('parse and tryParse', () {
+      test('round-trip: toString then parse returns equal Hlc', () {
+        final hlc = Hlc(1000, 5);
+        final parsed = Hlc.parse(hlc.toString());
+        expect(parsed, equals(hlc));
+      });
+
+      test('round-trip with zero values', () {
+        final hlc = Hlc(0, 0);
+        final parsed = Hlc.parse(hlc.toString());
+        expect(parsed, equals(hlc));
+      });
+
+      test('round-trip with max logical value', () {
+        final hlc = Hlc(999999999, 65535);
+        final parsed = Hlc.parse(hlc.toString());
+        expect(parsed, equals(hlc));
+      });
+
+      test('parse throws FormatException on empty string', () {
+        expect(() => Hlc.parse(''), throwsA(isA<FormatException>()));
+      });
+
+      test('parse throws FormatException on malformed string', () {
+        expect(() => Hlc.parse('not-an-hlc'), throwsA(isA<FormatException>()));
+      });
+
+      test('parse throws FormatException on missing prefix', () {
+        expect(() => Hlc.parse('(1000:5)'), throwsA(isA<FormatException>()));
+      });
+
+      test('parse throws FormatException on missing logical', () {
+        expect(() => Hlc.parse('Hlc(1000)'), throwsA(isA<FormatException>()));
+      });
+
+      test('parse throws FormatException on negative values', () {
+        expect(() => Hlc.parse('Hlc(-1:0)'), throwsA(isA<FormatException>()));
+      });
+
+      test('tryParse returns Hlc on valid string', () {
+        final hlc = Hlc.tryParse('Hlc(1000:5)');
+        expect(hlc, equals(Hlc(1000, 5)));
+      });
+
+      test('tryParse returns null on malformed string', () {
+        expect(Hlc.tryParse('garbage'), isNull);
+      });
+
+      test('tryParse returns null on empty string', () {
+        expect(Hlc.tryParse(''), isNull);
+      });
+    });
+
     group('invariant validation', () {
       test('constructor throws ArgumentError when physicalMs is negative', () {
         expect(() => Hlc(-1, 0), throwsA(isA<ArgumentError>()));

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import '../application/observability/log_level.dart';
 import '../application/services/channel_service.dart';
+import '../application/services/materialization_service.dart';
 import '../application/services/peer_service.dart';
 import '../domain/aggregates/peer_registry.dart';
 import '../domain/aggregates/channel_aggregate.dart';
@@ -238,12 +239,17 @@ class Coordinator {
     // Create event controller to capture in closure before coordinator is created
     final eventsController = StreamController<DomainEvent>.broadcast();
 
+    final materializationService = MaterializationService(
+      entryRepository: entryRepository,
+    );
+
     final channelService = ChannelService(
       localNode: localNode,
       hlcClock: hlcClock,
       channelRepository: cachedChannelRepo,
       entryRepository: entryRepository,
       localNodeRepository: localNodeRepository,
+      materializationService: materializationService,
       onEvent: (event) {
         if (!eventsController.isClosed) {
           eventsController.add(event);
@@ -335,8 +341,17 @@ class Coordinator {
     ChannelId channelId,
     StreamId streamId,
     List<LogEntry> entries,
+    bool containsOutOfOrderEntries,
   ) async {
     if (_eventsController.isClosed || entries.isEmpty) return;
+
+    // Fold merged entries into registered materializers
+    await _channelService.foldMergedEntries(
+      channelId,
+      streamId,
+      entries,
+      containsOutOfOrderEntries: containsOutOfOrderEntries,
+    );
 
     // Compute the new version vector for the stream
     final newVersion = await _entryRepository.getVersionVector(
@@ -350,6 +365,7 @@ class Coordinator {
         streamId,
         entries,
         newVersion,
+        containsOutOfOrderEntries: containsOutOfOrderEntries,
         occurredAt: DateTime.now(),
       ),
     );

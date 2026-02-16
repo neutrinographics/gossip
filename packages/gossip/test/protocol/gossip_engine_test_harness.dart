@@ -39,8 +39,14 @@ class MergedEntriesRecord {
   final ChannelId channelId;
   final StreamId streamId;
   final List<LogEntry> entries;
+  final bool containsOutOfOrderEntries;
 
-  MergedEntriesRecord(this.channelId, this.streamId, this.entries);
+  MergedEntriesRecord(
+    this.channelId,
+    this.streamId,
+    this.entries,
+    this.containsOutOfOrderEntries,
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -129,9 +135,17 @@ class GossipEngineTestHarness {
       messagePort: messagePort ?? localPort,
       localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
       onError: errors.add,
-      onEntriesMerged: (channelId, streamId, entries) async {
-        mergedEntries.add(MergedEntriesRecord(channelId, streamId, entries));
-      },
+      onEntriesMerged:
+          (channelId, streamId, entries, containsOutOfOrderEntries) async {
+            mergedEntries.add(
+              MergedEntriesRecord(
+                channelId,
+                streamId,
+                entries,
+                containsOutOfOrderEntries,
+              ),
+            );
+          },
       hlcClock: hlcClock,
       gossipInterval: gossipInterval,
       adaptiveTimingEnabled: adaptiveTimingEnabled,

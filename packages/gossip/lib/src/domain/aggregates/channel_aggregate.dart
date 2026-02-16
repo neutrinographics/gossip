@@ -2,8 +2,6 @@ import '../value_objects/channel_id.dart';
 import '../value_objects/node_id.dart';
 import '../value_objects/stream_id.dart';
 import '../interfaces/retention_policy.dart';
-import '../interfaces/state_materializer.dart';
-import '../interfaces/entry_repository.dart';
 import '../events/domain_event.dart';
 
 /// Aggregate root managing channel membership and stream metadata.
@@ -34,7 +32,6 @@ import '../events/domain_event.dart';
 /// the channel maintains only:
 /// - Membership set
 /// - Stream IDs and retention policies
-/// - (Version vectors are tracked per stream in future implementations)
 ///
 /// ## Invariants
 /// - Local node is always a member (cannot be removed)
@@ -53,7 +50,6 @@ class ChannelAggregate {
 
   final Set<NodeId> _memberIds = {};
   final Map<StreamId, RetentionPolicy> _streams = {};
-  final Map<StreamId, StateMaterializer<dynamic>> _materializers = {};
   final List<DomainEvent> _uncommittedEvents = [];
 
   /// Creates a [ChannelAggregate] with the local node as the initial member.
@@ -171,59 +167,5 @@ class ChannelAggregate {
     _streams[streamId] = retention;
     _addEvent(StreamCreated(id, streamId, occurredAt: occurredAt));
     return true;
-  }
-
-  /// Registers a materializer for computing derived state from stream entries.
-  ///
-  /// The materializer will be used by [getState] to fold entries into
-  /// application-specific state. Only one materializer can be registered
-  /// per stream; subsequent calls replace the previous materializer.
-  ///
-  /// Example use case: Computing current document state from a stream
-  /// of edit operations.
-  ///
-  /// Note: Materializers are not persisted. Applications must re-register
-  /// materializers after loading a channel from storage.
-  void registerMaterializer<T>(
-    StreamId streamId,
-    StateMaterializer<T> materializer,
-  ) {
-    _materializers[streamId] = materializer;
-  }
-
-  /// Computes the materialized state for a stream by folding all entries.
-  ///
-  /// Retrieves all entries from the [EntryRepository], then applies the
-  /// registered materializer's [fold] method in timestamp order to produce
-  /// the final state.
-  ///
-  /// Returns null if:
-  /// - No materializer is registered for this stream
-  /// - The stream doesn't exist
-  ///
-  /// Throws if the type parameter [T] doesn't match the registered
-  /// materializer's type.
-  ///
-  /// Note: This method performs a full scan of entries. For large streams,
-  /// consider implementing incremental materialization or caching.
-  Future<T?> getState<T>(
-    StreamId streamId,
-    EntryRepository entryRepository,
-  ) async {
-    final materializer = _materializers[streamId];
-    if (materializer == null) return null;
-    if (!_streams.containsKey(streamId)) return null;
-
-    // Type safety check
-    if (materializer is! StateMaterializer<T>) {
-      throw TypeError();
-    }
-
-    final entries = await entryRepository.getAll(id, streamId);
-    T state = materializer.initial();
-    for (final entry in entries) {
-      state = materializer.fold(state, entry);
-    }
-    return state;
   }
 }

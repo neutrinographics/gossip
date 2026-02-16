@@ -119,6 +119,27 @@ class Hlc implements Comparable<Hlc> {
   /// Used for calculating time-based thresholds (e.g., retention policies).
   Hlc subtract(Duration d) => Hlc(physicalMs - d.inMilliseconds, 0);
 
+  /// Parses an HLC from its string representation.
+  ///
+  /// Expected format: `Hlc(physicalMs:logical)` as produced by [toString].
+  /// Throws [FormatException] if the string is malformed.
+  factory Hlc.parse(String s) {
+    final match = RegExp(r'^Hlc\((\d+):(\d+)\)$').firstMatch(s);
+    if (match == null) {
+      throw FormatException('Invalid Hlc string', s);
+    }
+    return Hlc(int.parse(match.group(1)!), int.parse(match.group(2)!));
+  }
+
+  /// Tries to parse an HLC string, returning null on failure.
+  static Hlc? tryParse(String s) {
+    try {
+      return Hlc.parse(s);
+    } on FormatException {
+      return null;
+    }
+  }
+
   @override
   String toString() => 'Hlc($physicalMs:$logical)';
 }

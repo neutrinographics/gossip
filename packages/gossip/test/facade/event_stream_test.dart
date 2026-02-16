@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:gossip/src/application/services/channel_service.dart';
+import 'package:gossip/src/application/services/materialization_service.dart';
 import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/domain/interfaces/retention_policy.dart';
 import 'package:gossip/src/domain/interfaces/state_materializer.dart';
@@ -15,18 +16,18 @@ import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart
 import 'package:test/test.dart';
 
 // Test materializer that counts entries
-class CountMaterializer implements StateMaterializer<int> {
+class CountMaterializer extends StateMaterializer<int> {
   @override
-  int initial() => 0;
+  (int, String?) initial({required bool isReset}) => (0, null);
 
   @override
   int fold(int state, LogEntry entry) => state + 1;
 }
 
 // Test materializer that sums payload values
-class SumMaterializer implements StateMaterializer<int> {
+class SumMaterializer extends StateMaterializer<int> {
   @override
-  int initial() => 0;
+  (int, String?) initial({required bool isReset}) => (0, null);
 
   @override
   int fold(int state, LogEntry entry) {
@@ -57,6 +58,9 @@ void main() {
         localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: channelRepo,
         entryRepository: entryRepo,
+        materializationService: MaterializationService(
+          entryRepository: entryRepo,
+        ),
       );
 
       // Create channel and stream

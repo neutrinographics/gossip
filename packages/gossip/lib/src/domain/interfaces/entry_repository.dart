@@ -1,4 +1,5 @@
 import '../value_objects/channel_id.dart';
+import '../value_objects/hlc.dart';
 import '../value_objects/log_entry.dart';
 import '../value_objects/log_entry_id.dart';
 import '../value_objects/node_id.dart';
@@ -169,4 +170,12 @@ abstract interface class EntryRepository {
   ///
   /// Used when: Computing stream digests for anti-entropy gossip protocol.
   Future<VersionVector> getVersionVector(ChannelId channel, StreamId stream);
+
+  /// Returns the HLC timestamp of the last (tail) entry in the stream,
+  /// or null if the stream has no entries.
+  ///
+  /// O(1) for implementations that maintain sorted entry lists in memory.
+  ///
+  /// Used when: Detecting out-of-order entry insertion during merge.
+  Future<Hlc?> getTailTimestamp(ChannelId channel, StreamId stream);
 }

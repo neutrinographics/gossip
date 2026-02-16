@@ -1131,5 +1131,155 @@ void main() {
         },
       );
     });
+
+    group('out-of-order detection', () {
+      test(
+        'entries newer than tail reports containsOutOfOrderEntries false',
+        () async {
+          final h = GossipEngineTestHarness();
+          h.createChannel('ch1', streamIds: ['s1']);
+
+          // Pre-populate with an entry at Hlc(1000, 0)
+          await h.entryRepository.append(
+            ChannelId('ch1'),
+            StreamId('s1'),
+            LogEntry(
+              author: NodeId('node-a'),
+              sequence: 1,
+              timestamp: Hlc(1000, 0),
+              payload: Uint8List.fromList([1]),
+            ),
+          );
+
+          // Merge an entry at Hlc(2000, 0) — newer than tail
+          final response = DeltaResponse(
+            sender: NodeId('remote'),
+            channelId: ChannelId('ch1'),
+            streamId: StreamId('s1'),
+            entries: [
+              LogEntry(
+                author: NodeId('remote'),
+                sequence: 1,
+                timestamp: Hlc(2000, 0),
+                payload: Uint8List.fromList([2]),
+              ),
+            ],
+          );
+
+          await h.engine.handleDeltaResponse(response);
+
+          expect(h.mergedEntries, hasLength(1));
+          expect(h.mergedEntries.first.containsOutOfOrderEntries, isFalse);
+        },
+      );
+
+      test(
+        'entries older than tail reports containsOutOfOrderEntries true',
+        () async {
+          final h = GossipEngineTestHarness();
+          h.createChannel('ch1', streamIds: ['s1']);
+
+          // Pre-populate with an entry at Hlc(2000, 0)
+          await h.entryRepository.append(
+            ChannelId('ch1'),
+            StreamId('s1'),
+            LogEntry(
+              author: NodeId('node-a'),
+              sequence: 1,
+              timestamp: Hlc(2000, 0),
+              payload: Uint8List.fromList([1]),
+            ),
+          );
+
+          // Merge an entry at Hlc(500, 0) — older than tail
+          final response = DeltaResponse(
+            sender: NodeId('remote'),
+            channelId: ChannelId('ch1'),
+            streamId: StreamId('s1'),
+            entries: [
+              LogEntry(
+                author: NodeId('remote'),
+                sequence: 1,
+                timestamp: Hlc(500, 0),
+                payload: Uint8List.fromList([2]),
+              ),
+            ],
+          );
+
+          await h.engine.handleDeltaResponse(response);
+
+          expect(h.mergedEntries, hasLength(1));
+          expect(h.mergedEntries.first.containsOutOfOrderEntries, isTrue);
+        },
+      );
+
+      test('empty stream reports containsOutOfOrderEntries false', () async {
+        final h = GossipEngineTestHarness();
+        h.createChannel('ch1', streamIds: ['s1']);
+
+        // No pre-existing entries — merge into empty stream
+        final response = DeltaResponse(
+          sender: NodeId('remote'),
+          channelId: ChannelId('ch1'),
+          streamId: StreamId('s1'),
+          entries: [
+            LogEntry(
+              author: NodeId('remote'),
+              sequence: 1,
+              timestamp: Hlc(1000, 0),
+              payload: Uint8List.fromList([1]),
+            ),
+          ],
+        );
+
+        await h.engine.handleDeltaResponse(response);
+
+        expect(h.mergedEntries, hasLength(1));
+        expect(h.mergedEntries.first.containsOutOfOrderEntries, isFalse);
+      });
+
+      test('mixed batch with at least one older entry reports true', () async {
+        final h = GossipEngineTestHarness();
+        h.createChannel('ch1', streamIds: ['s1']);
+
+        // Pre-populate with tail at Hlc(1000, 0)
+        await h.entryRepository.append(
+          ChannelId('ch1'),
+          StreamId('s1'),
+          LogEntry(
+            author: NodeId('node-a'),
+            sequence: 1,
+            timestamp: Hlc(1000, 0),
+            payload: Uint8List.fromList([1]),
+          ),
+        );
+
+        // Merge batch: one newer (2000), one older (500)
+        final response = DeltaResponse(
+          sender: NodeId('remote'),
+          channelId: ChannelId('ch1'),
+          streamId: StreamId('s1'),
+          entries: [
+            LogEntry(
+              author: NodeId('remote'),
+              sequence: 1,
+              timestamp: Hlc(2000, 0),
+              payload: Uint8List.fromList([2]),
+            ),
+            LogEntry(
+              author: NodeId('remote'),
+              sequence: 2,
+              timestamp: Hlc(500, 0),
+              payload: Uint8List.fromList([3]),
+            ),
+          ],
+        );
+
+        await h.engine.handleDeltaResponse(response);
+
+        expect(h.mergedEntries, hasLength(1));
+        expect(h.mergedEntries.first.containsOutOfOrderEntries, isTrue);
+      });
+    });
   });
 }

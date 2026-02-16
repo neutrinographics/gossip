@@ -189,9 +189,14 @@ typedef ErrorCallback = void Function(SyncError error);
 /// Used by [GossipEngine] to notify when entries are received and stored
 /// during anti-entropy synchronization. Applications wire this up to emit
 /// [EntriesMerged] events for UI updates.
+///
+/// [containsOutOfOrderEntries] is true if any entry in the batch was inserted
+/// before the stream's previous tail (by HLC order), indicating materializers
+/// need a full rebuild rather than incremental fold.
 typedef EntriesMergedCallback =
     Future<void> Function(
       ChannelId channelId,
       StreamId streamId,
       List<LogEntry> entries,
+      bool containsOutOfOrderEntries,
     );

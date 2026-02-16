@@ -748,16 +748,28 @@ class GossipEngine {
 
     _updateHlcFromEntries(response.entries);
 
+    // Snapshot the current tail HLC before appending to detect out-of-order
+    final previousTailHlc = await entryRepository.getTailTimestamp(
+      response.channelId,
+      response.streamId,
+    );
+
     await entryRepository.appendAll(
       response.channelId,
       response.streamId,
       response.entries,
     );
 
+    // Out-of-order: any merged entry sorts before the previous tail
+    final containsOutOfOrderEntries =
+        previousTailHlc != null &&
+        response.entries.any((e) => e.timestamp < previousTailHlc);
+
     await onEntriesMerged?.call(
       response.channelId,
       response.streamId,
       response.entries,
+      containsOutOfOrderEntries,
     );
   }
 
