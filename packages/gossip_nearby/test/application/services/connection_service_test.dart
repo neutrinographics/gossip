@@ -857,6 +857,303 @@ void main() {
         await svc.dispose();
       });
     });
+
+    group('connection limit', () {
+      late MockNearbyPort limitMockPort;
+      late ConnectionRegistry limitRegistry;
+      late StreamController<NearbyEvent> limitController;
+      late InMemoryTimePort timePort;
+
+      setUp(() {
+        limitMockPort = MockNearbyPort();
+        limitRegistry = ConnectionRegistry();
+        limitController = StreamController<NearbyEvent>.broadcast();
+        timePort = InMemoryTimePort();
+
+        when(
+          () => limitMockPort.events,
+        ).thenAnswer((_) => limitController.stream);
+        when(
+          () => limitMockPort.requestConnection(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => limitMockPort.sendPayload(any(), any()),
+        ).thenAnswer((_) async {});
+        when(() => limitMockPort.disconnect(any())).thenAnswer((_) async {});
+      });
+
+      tearDown(() async {
+        await limitController.close();
+      });
+
+      ConnectionService createLimitedService({
+        required NodeId localNodeId,
+        int? maxConnections,
+      }) {
+        return ConnectionService(
+          localNodeId: localNodeId,
+          nearbyPort: limitMockPort,
+          registry: limitRegistry,
+          timePort: timePort,
+          maxConnections: maxConnections,
+          random: Random(42),
+        );
+      }
+
+      /// Completes a full connection lifecycle for a peer.
+      Future<void> connectPeer(
+        StreamController<NearbyEvent> controller,
+        EndpointId endpointId,
+        NodeId remoteNodeId,
+      ) async {
+        controller.add(ConnectionEstablished(id: endpointId));
+        await Future.delayed(Duration.zero);
+        controller.add(
+          PayloadReceived(
+            id: endpointId,
+            bytes: _encodeHandshake(remoteNodeId),
+          ),
+        );
+        await Future.delayed(Duration.zero);
+      }
+
+      test(
+        'does not initiate outbound connection when at connection limit',
+        () async {
+          // Active side (smaller nodeId initiates)
+          final svc = createLimitedService(
+            localNodeId: NodeId('aaa'),
+            maxConnections: 1,
+          );
+
+          // Fill up the connection limit
+          await connectPeer(
+            limitController,
+            EndpointId('ep1'),
+            NodeId('peer-1'),
+          );
+          expect(limitRegistry.connectionCount, equals(1));
+
+          clearInteractions(limitMockPort);
+
+          // Discover another peer — should NOT initiate connection
+          limitController.add(
+            EndpointDiscovered(
+              id: EndpointId('ep2'),
+              displayName: 'zzz|Device',
+            ),
+          );
+          await Future.delayed(Duration.zero);
+
+          verifyNever(() => limitMockPort.requestConnection(EndpointId('ep2')));
+
+          await svc.dispose();
+        },
+      );
+
+      test(
+        'immediately disconnects inbound connection when at limit',
+        () async {
+          final svc = createLimitedService(
+            localNodeId: NodeId('aaa'),
+            maxConnections: 1,
+          );
+
+          // Fill up the connection limit
+          await connectPeer(
+            limitController,
+            EndpointId('ep1'),
+            NodeId('peer-1'),
+          );
+
+          clearInteractions(limitMockPort);
+
+          // Inbound connection established (platform auto-accepted)
+          limitController.add(ConnectionEstablished(id: EndpointId('ep2')));
+          await Future.delayed(Duration.zero);
+
+          // Should disconnect immediately without sending handshake
+          verify(() => limitMockPort.disconnect(EndpointId('ep2'))).called(1);
+          verifyNever(
+            () => limitMockPort.sendPayload(EndpointId('ep2'), any()),
+          );
+          expect(limitRegistry.hasPendingHandshake(EndpointId('ep2')), isFalse);
+
+          await svc.dispose();
+        },
+      );
+
+      test(
+        'emits ConnectionLimitReachedError when rejecting inbound connection',
+        () async {
+          final svc = createLimitedService(
+            localNodeId: NodeId('aaa'),
+            maxConnections: 1,
+          );
+
+          await connectPeer(
+            limitController,
+            EndpointId('ep1'),
+            NodeId('peer-1'),
+          );
+
+          final errors = <ConnectionError>[];
+          svc.errors.listen(errors.add);
+
+          limitController.add(ConnectionEstablished(id: EndpointId('ep2')));
+          await Future.delayed(Duration.zero);
+
+          expect(errors, hasLength(1));
+          expect(errors.first, isA<ConnectionLimitReachedError>());
+          final error = errors.first as ConnectionLimitReachedError;
+          expect(error.endpointId, equals(EndpointId('ep2')));
+          expect(
+            error.type,
+            equals(ConnectionErrorType.connectionLimitReached),
+          );
+
+          await svc.dispose();
+        },
+      );
+
+      test(
+        'resumes initiating connections after dropping below limit',
+        () async {
+          final svc = createLimitedService(
+            localNodeId: NodeId('aaa'),
+            maxConnections: 1,
+          );
+
+          // Fill up the connection limit
+          await connectPeer(
+            limitController,
+            EndpointId('ep1'),
+            NodeId('peer-1'),
+          );
+
+          // Discover another peer while at limit — tracked but not initiated
+          limitController.add(
+            EndpointDiscovered(
+              id: EndpointId('ep2'),
+              displayName: 'zzz|Device',
+            ),
+          );
+          await Future.delayed(Duration.zero);
+
+          clearInteractions(limitMockPort);
+
+          // Disconnect the existing peer — now below limit
+          limitController.add(Disconnected(id: EndpointId('ep1')));
+          await Future.delayed(Duration.zero);
+
+          // Advance past retry timeout — should now initiate connection
+          await timePort.advance(const Duration(seconds: 7));
+
+          verify(
+            () => limitMockPort.requestConnection(EndpointId('ep2')),
+          ).called(1);
+
+          await svc.dispose();
+        },
+      );
+
+      test('pending handshakes count toward connection limit', () async {
+        final svc = createLimitedService(
+          localNodeId: NodeId('aaa'),
+          maxConnections: 1,
+        );
+
+        // Connection established but handshake not yet completed
+        limitController.add(ConnectionEstablished(id: EndpointId('ep1')));
+        await Future.delayed(Duration.zero);
+        expect(limitRegistry.pendingHandshakeCount, equals(1));
+
+        clearInteractions(limitMockPort);
+
+        // Another inbound connection — should be rejected
+        limitController.add(ConnectionEstablished(id: EndpointId('ep2')));
+        await Future.delayed(Duration.zero);
+
+        verify(() => limitMockPort.disconnect(EndpointId('ep2'))).called(1);
+
+        await svc.dispose();
+      });
+
+      test('no limit when maxConnections is null', () async {
+        final svc = createLimitedService(
+          localNodeId: NodeId('aaa'),
+          maxConnections: null,
+        );
+
+        // Connect several peers
+        await connectPeer(limitController, EndpointId('ep1'), NodeId('peer-1'));
+        await connectPeer(limitController, EndpointId('ep2'), NodeId('peer-2'));
+        await connectPeer(limitController, EndpointId('ep3'), NodeId('peer-3'));
+
+        expect(limitRegistry.connectionCount, equals(3));
+
+        // Another inbound connection — should be accepted (handshake sent)
+        limitController.add(ConnectionEstablished(id: EndpointId('ep4')));
+        await Future.delayed(Duration.zero);
+
+        verify(
+          () => limitMockPort.sendPayload(EndpointId('ep4'), any()),
+        ).called(1);
+        verifyNever(() => limitMockPort.disconnect(EndpointId('ep4')));
+
+        await svc.dispose();
+      });
+
+      test('does not skip retries when below limit', () async {
+        final svc = createLimitedService(
+          localNodeId: NodeId('zzz'),
+          maxConnections: 2,
+        );
+
+        // One connection active, limit is 2
+        await connectPeer(limitController, EndpointId('ep1'), NodeId('peer-1'));
+
+        // Discover another peer (passive side)
+        limitController.add(
+          EndpointDiscovered(id: EndpointId('ep2'), displayName: 'aaa|Device'),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Advance past retry timeout — should retry since below limit
+        await timePort.advance(const Duration(seconds: 7));
+
+        verify(
+          () => limitMockPort.requestConnection(EndpointId('ep2')),
+        ).called(1);
+
+        await svc.dispose();
+      });
+
+      test('skips retries when at connection limit', () async {
+        final svc = createLimitedService(
+          localNodeId: NodeId('zzz'),
+          maxConnections: 1,
+        );
+
+        // Fill up the connection limit
+        await connectPeer(limitController, EndpointId('ep1'), NodeId('peer-1'));
+
+        // Discover another peer (passive side)
+        limitController.add(
+          EndpointDiscovered(id: EndpointId('ep2'), displayName: 'aaa|Device'),
+        );
+        await Future.delayed(Duration.zero);
+
+        clearInteractions(limitMockPort);
+
+        // Advance past retry timeout — should NOT retry
+        await timePort.advance(const Duration(seconds: 7));
+
+        verifyNever(() => limitMockPort.requestConnection(EndpointId('ep2')));
+
+        await svc.dispose();
+      });
+    });
   });
 }
 

@@ -117,6 +117,24 @@ final class ConnectionLostError extends ConnectionError {
       'ConnectionLostError(nodeId: $nodeId, message: $message)';
 }
 
+/// Error when a connection was rejected because the maximum connection limit
+/// has been reached.
+final class ConnectionLimitReachedError extends ConnectionError {
+  /// The endpoint that was rejected.
+  final EndpointId endpointId;
+
+  const ConnectionLimitReachedError(
+    this.endpointId,
+    super.message, {
+    required super.occurredAt,
+    super.cause,
+  }) : super(type: ConnectionErrorType.connectionLimitReached);
+
+  @override
+  String toString() =>
+      'ConnectionLimitReachedError(endpointId: $endpointId, message: $message)';
+}
+
 /// Categories of connection errors.
 ///
 /// Classifies the root cause of connection failures to enable appropriate
@@ -136,6 +154,9 @@ enum ConnectionErrorType {
 
   /// Failed to send bytes over the transport.
   sendFailed,
+
+  /// Connection rejected because maximum connection limit was reached.
+  connectionLimitReached,
 }
 
 /// Callback type for receiving connection errors.

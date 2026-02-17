@@ -263,6 +263,48 @@ void main() {
     });
   });
 
+  group('ConnectionLimitReachedError', () {
+    test('can be created with endpointId, message, and occurredAt', () {
+      final endpointId = EndpointId('endpoint-123');
+      final now = DateTime.now();
+      final error = ConnectionLimitReachedError(
+        endpointId,
+        'Connection limit reached',
+        occurredAt: now,
+      );
+
+      expect(error.endpointId, equals(endpointId));
+      expect(error.message, equals('Connection limit reached'));
+      expect(error.occurredAt, equals(now));
+      expect(error.type, equals(ConnectionErrorType.connectionLimitReached));
+    });
+
+    test('is a ConnectionError', () {
+      final error = ConnectionLimitReachedError(
+        EndpointId('endpoint'),
+        'message',
+        occurredAt: DateTime.now(),
+      );
+      expect(error, isA<ConnectionError>());
+    });
+
+    test('toString includes endpointId and message', () {
+      final error = ConnectionLimitReachedError(
+        EndpointId('endpoint-123'),
+        'Limit reached',
+        occurredAt: DateTime.now(),
+      );
+      expect(error.toString(), contains('endpoint-123'));
+      expect(error.toString(), contains('Limit reached'));
+    });
+  });
+
+  group('ConnectionErrorType', () {
+    test('has connectionLimitReached type', () {
+      expect(ConnectionErrorType.connectionLimitReached, isNotNull);
+    });
+  });
+
   group('ConnectionErrorCallback', () {
     test('can be used as a function type', () {
       ConnectionError? receivedError;

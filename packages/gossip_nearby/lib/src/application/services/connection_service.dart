@@ -64,6 +64,7 @@ class ConnectionService {
   final TimePort _timePort;
   final Random _random;
 
+  final int? maxConnections;
   final Duration _connectionTimeout;
   final _eventController = StreamController<ConnectionEvent>.broadcast();
   final _errorController = StreamController<ConnectionError>.broadcast();
@@ -82,6 +83,15 @@ class ConnectionService {
   /// Whether the queue processor is currently running.
   bool _isProcessingQueue = false;
 
+  /// Whether the connection limit has been reached.
+  ///
+  /// Counts both completed connections and pending handshakes to avoid
+  /// overshooting the limit during concurrent handshakes.
+  bool get _atConnectionLimit =>
+      maxConnections != null &&
+      (_registry.connectionCount + _registry.pendingHandshakeCount) >=
+          maxConnections!;
+
   /// Callback invoked when a gossip message is received from a connected peer.
   GossipMessageCallback? onGossipMessage;
 
@@ -96,6 +106,7 @@ class ConnectionService {
     TimePort? timePort,
     Duration connectionTimeout = const Duration(seconds: 5),
     Random? random,
+    this.maxConnections,
   }) : _localNodeId = localNodeId,
        _displayName = displayName,
        _nearbyPort = nearbyPort,
@@ -284,6 +295,14 @@ class ConnectionService {
       discoveredAtMs: _timePort.nowMs,
     );
 
+    if (_atConnectionLimit) {
+      _log(
+        LogLevel.debug,
+        'At connection limit ($maxConnections), deferring connection to $id',
+      );
+      return;
+    }
+
     if (_shouldInitiateConnection(advertisedName)) {
       _log(LogLevel.debug, 'Initiating connection (we have smaller nodeId)');
       _requestConnectionSafely(id);
@@ -319,6 +338,32 @@ class ConnectionService {
     _log(LogLevel.info, 'Connection established: $id');
     _metrics.recordConnectionEstablished();
     _pendingDiscoveries.remove(id);
+
+    if (_atConnectionLimit) {
+      _log(
+        LogLevel.info,
+        'Connection limit reached ($maxConnections), '
+        'disconnecting $id before handshake',
+      );
+      _errorController.add(
+        ConnectionLimitReachedError(
+          id,
+          'Connection limit of $maxConnections reached',
+          occurredAt: DateTime.now(),
+        ),
+      );
+      unawaited(
+        _nearbyPort.disconnect(id).catchError((Object e, StackTrace stack) {
+          _log(
+            LogLevel.warning,
+            'Failed to disconnect limit-rejected endpoint $id',
+            e,
+            stack,
+          );
+        }),
+      );
+      return;
+    }
 
     // Register pending handshake and send our NodeId
     _registry.registerPendingHandshake(id);
@@ -529,6 +574,7 @@ class ConnectionService {
 
   void _retryPendingConnections() {
     if (_pendingDiscoveries.isEmpty) return;
+    if (_atConnectionLimit) return;
 
     final nowMs = _timePort.nowMs;
     final timeoutMs = _connectionTimeout.inMilliseconds;

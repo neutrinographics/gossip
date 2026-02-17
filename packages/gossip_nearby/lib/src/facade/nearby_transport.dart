@@ -127,6 +127,7 @@ class NearbyTransport {
     required LocalNodeRepository localNodeRepository,
     required ServiceId serviceId,
     required String displayName,
+    int? maxConnections,
     LogCallback? onLog,
   }) async {
     final nodeId = await localNodeRepository.resolveNodeId();
@@ -134,6 +135,7 @@ class NearbyTransport {
       localNodeId: nodeId,
       serviceId: serviceId,
       displayName: displayName,
+      maxConnections: maxConnections,
       onLog: onLog,
     );
   }
@@ -147,12 +149,14 @@ class NearbyTransport {
     required NodeId localNodeId,
     required ServiceId serviceId,
     required String displayName,
+    int? maxConnections,
     LogCallback? onLog,
   }) {
     return NearbyTransport.withPort(
       localNodeId: localNodeId,
       serviceId: serviceId,
       displayName: displayName,
+      maxConnections: maxConnections,
       nearbyPort: NearbyAdapter(onLog: onLog),
       onLog: onLog,
     );
@@ -164,6 +168,7 @@ class NearbyTransport {
     required ServiceId serviceId,
     required String displayName,
     required NearbyPort nearbyPort,
+    int? maxConnections,
     LogCallback? onLog,
   }) {
     final registry = ConnectionRegistry();
@@ -174,6 +179,7 @@ class NearbyTransport {
       nearbyPort: nearbyPort,
       registry: registry,
       metrics: metrics,
+      maxConnections: maxConnections,
       onLog: onLog,
     );
     final messagePort = NearbyMessagePort(connectionService);
