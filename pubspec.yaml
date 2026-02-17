@@ -24,13 +24,11 @@ dependency_overrides:
 melos:
   scripts:
     analyze:
-      run: melos exec -- dart analyze .
-      description: Run dart analyze in all packages
+      run: melos exec --no-depends-on=flutter -- dart analyze . && melos exec --depends-on=flutter -- flutter analyze .
+      description: Run static analysis in all packages
 
     test:
-      run: melos exec -- dart test
-      packageFilters:
-        dirExists: test
+      run: melos exec --no-depends-on=flutter --dir-exists=test -- dart test && melos exec --depends-on=flutter --dir-exists=test -- flutter test
       description: Run tests in all packages
 
     format:
