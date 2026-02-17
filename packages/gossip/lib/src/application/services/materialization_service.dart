@@ -17,51 +17,52 @@ import 'materializer_state.dart';
 class MaterializationService {
   final EntryRepository _entryRepository;
 
-  final Map<(ChannelId, StreamId), MaterializerState<dynamic>> _states = {};
+  final Map<(ChannelId, StreamId, Type), MaterializerState<dynamic>> _states =
+      {};
 
   MaterializationService({required EntryRepository entryRepository})
     : _entryRepository = entryRepository;
 
-  /// Registers a materializer for a (channel, stream) pair.
+  /// Registers a materializer for a (channel, stream, type) triple.
   ///
-  /// Disposes any previously registered materializer for the same pair.
+  /// Multiple materializers with different state types can coexist on the
+  /// same stream. Registering a materializer with the same state type
+  /// replaces (and disposes) the previous one.
   void register<T>(
     ChannelId channelId,
     StreamId streamId,
     StateMaterializer<T> materializer,
   ) {
-    final key = (channelId, streamId);
+    final key = (channelId, streamId, T);
     _states[key]?.dispose();
     _states[key] = MaterializerState<T>(materializer);
   }
 
   /// Returns the materialized state, initializing on first call.
   ///
-  /// Returns null if no materializer is registered.
-  /// Throws [TypeError] if [T] doesn't match the registered materializer.
+  /// Returns null if no materializer of type [T] is registered.
   Future<T?> getState<T>(ChannelId channelId, StreamId streamId) async {
-    final matState = _states[(channelId, streamId)];
+    final matState = _states[(channelId, streamId, T)];
     if (matState == null) return null;
-    if (matState is! MaterializerState<T>) throw TypeError();
+    final typed = matState as MaterializerState<T>;
 
-    if (!matState.isInitialized) {
-      await _initialize<T>(matState, channelId, streamId);
+    if (!typed.isInitialized) {
+      await _initialize<T>(typed, channelId, streamId);
     }
 
-    return matState.cachedState;
+    return typed.cachedState;
   }
 
   /// Returns the broadcast stream of state updates.
   ///
-  /// Returns null if no materializer is registered.
+  /// Returns null if no materializer of type [T] is registered.
   Stream<T>? getStateStream<T>(ChannelId channelId, StreamId streamId) {
-    final matState = _states[(channelId, streamId)];
+    final matState = _states[(channelId, streamId, T)];
     if (matState == null) return null;
-    if (matState is! MaterializerState<T>) return null;
-    return matState.stateStream;
+    return (matState as MaterializerState<T>).stateStream;
   }
 
-  /// Folds new entries into the materialized state.
+  /// Folds new entries into all materializers registered for the stream.
   ///
   /// If [containsOutOfOrderEntries] is true, performs a full rebuild.
   /// Otherwise performs an incremental fold of only the new entries.
@@ -71,22 +72,22 @@ class MaterializationService {
     List<LogEntry> entries, {
     bool containsOutOfOrderEntries = false,
   }) async {
-    final matState = _states[(channelId, streamId)];
-    if (matState == null) return;
-    await _foldForState(
-      matState,
-      channelId,
-      streamId,
-      entries,
-      containsOutOfOrderEntries: containsOutOfOrderEntries,
-    );
+    for (final matState in _statesForStream(channelId, streamId)) {
+      await _foldForState(
+        matState,
+        channelId,
+        streamId,
+        entries,
+        containsOutOfOrderEntries: containsOutOfOrderEntries,
+      );
+    }
   }
 
-  /// Forces a full rebuild of the materialized state.
+  /// Forces a full rebuild of all materializers for the stream.
   Future<void> reset(ChannelId channelId, StreamId streamId) async {
-    final matState = _states[(channelId, streamId)];
-    if (matState == null) return;
-    await _fullRebuild(matState, channelId, streamId);
+    for (final matState in _statesForStream(channelId, streamId)) {
+      await _fullRebuild(matState, channelId, streamId);
+    }
   }
 
   /// Disposes all materializer state for a channel.
@@ -109,7 +110,21 @@ class MaterializationService {
   }
 
   // ---------------------------------------------------------------------------
-  // Private fold engine
+  // Private helpers
+  // ---------------------------------------------------------------------------
+
+  /// Returns all materializer states registered for a (channel, stream) pair.
+  Iterable<MaterializerState<dynamic>> _statesForStream(
+    ChannelId channelId,
+    StreamId streamId,
+  ) {
+    return _states.entries
+        .where((e) => e.key.$1 == channelId && e.key.$2 == streamId)
+        .map((e) => e.value);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Fold engine
   // ---------------------------------------------------------------------------
 
   /// Type-safe dispatch: initializes if needed, then rebuilds or folds.

@@ -35,6 +35,15 @@ class SumMaterializer extends StateMaterializer<int> {
   }
 }
 
+/// Returns the last entry's author as a string.
+class LastAuthorMaterializer extends StateMaterializer<String> {
+  @override
+  (String, String?) initial({required bool isReset}) => ('', null);
+
+  @override
+  String fold(String state, LogEntry entry) => entry.author.value;
+}
+
 /// Materializer that returns a cursor from initial(), enabling cursor tests.
 class CursorAwareMaterializer extends StateMaterializer<int> {
   final String? _storedCursor;
@@ -125,10 +134,12 @@ void main() {
         expect(state, equals(35));
       });
 
-      test('register replaces previous materializer', () async {
+      test('register replaces previous materializer of same type', () async {
         await entryRepo.append(channelId, streamId, _entry(1, payloadByte: 10));
         await entryRepo.append(channelId, streamId, _entry(2, payloadByte: 20));
 
+        // Both CountMaterializer and SumMaterializer are StateMaterializer<int>,
+        // so registering SumMaterializer replaces CountMaterializer.
         service.register(channelId, streamId, CountMaterializer());
         var state = await service.getState<int>(channelId, streamId);
         expect(state, equals(2));
@@ -138,12 +149,10 @@ void main() {
         expect(state, equals(30));
       });
 
-      test('getState throws TypeError when type does not match', () async {
+      test('getState returns null for unregistered type', () async {
         service.register(channelId, streamId, CountMaterializer());
-        expect(
-          () => service.getState<String>(channelId, streamId),
-          throwsA(isA<TypeError>()),
-        );
+        final state = await service.getState<String>(channelId, streamId);
+        expect(state, isNull);
       });
     });
 
@@ -334,6 +343,124 @@ void main() {
         final state = await service.getState<int>(channelId, streamId);
         // Reset: initial returns 0, folds 2 entries = 2
         expect(state, equals(2));
+      });
+    });
+
+    group('multiple materializers per stream', () {
+      test('two materializers with different types coexist', () async {
+        await entryRepo.append(channelId, streamId, _entry(1, payloadByte: 10));
+        await entryRepo.append(channelId, streamId, _entry(2, payloadByte: 20));
+
+        service.register(channelId, streamId, CountMaterializer());
+        service.register(channelId, streamId, LastAuthorMaterializer());
+
+        final count = await service.getState<int>(channelId, streamId);
+        final author = await service.getState<String>(channelId, streamId);
+
+        expect(count, equals(2));
+        expect(author, equals('node'));
+      });
+
+      test('registering different type does not dispose existing', () async {
+        service.register(channelId, streamId, CountMaterializer());
+        final intStream = service.getStateStream<int>(channelId, streamId)!;
+
+        // Register a different type — int materializer should survive
+        service.register(channelId, streamId, LastAuthorMaterializer());
+
+        // int stream should still be open
+        final emissions = <int>[];
+        final sub = intStream.listen(emissions.add);
+
+        await service.getState<int>(channelId, streamId);
+        await Future.delayed(Duration.zero);
+        expect(emissions, equals([0]));
+
+        await sub.cancel();
+      });
+
+      test('foldEntries fans out to all registered materializers', () async {
+        service.register(channelId, streamId, CountMaterializer());
+        service.register(channelId, streamId, LastAuthorMaterializer());
+
+        // Initialize both
+        await service.getState<int>(channelId, streamId);
+        await service.getState<String>(channelId, streamId);
+
+        final e1 = _entry(1);
+        await entryRepo.append(channelId, streamId, e1);
+        await service.foldEntries(channelId, streamId, [e1]);
+
+        expect(await service.getState<int>(channelId, streamId), equals(1));
+        expect(
+          await service.getState<String>(channelId, streamId),
+          equals('node'),
+        );
+      });
+
+      test('each type has independent state stream', () async {
+        service.register(channelId, streamId, CountMaterializer());
+        service.register(channelId, streamId, LastAuthorMaterializer());
+
+        final intEmissions = <int>[];
+        final strEmissions = <String>[];
+
+        final intSub = service
+            .getStateStream<int>(channelId, streamId)!
+            .listen(intEmissions.add);
+        final strSub = service
+            .getStateStream<String>(channelId, streamId)!
+            .listen(strEmissions.add);
+
+        // Initialize both
+        await service.getState<int>(channelId, streamId);
+        await service.getState<String>(channelId, streamId);
+        await Future.delayed(Duration.zero);
+
+        expect(intEmissions, equals([0]));
+        expect(strEmissions, equals(['']));
+
+        // Fold an entry
+        final e1 = _entry(1);
+        await entryRepo.append(channelId, streamId, e1);
+        await service.foldEntries(channelId, streamId, [e1]);
+        await Future.delayed(Duration.zero);
+
+        expect(intEmissions, equals([0, 1]));
+        expect(strEmissions, equals(['', 'node']));
+
+        await intSub.cancel();
+        await strSub.cancel();
+      });
+
+      test('reset rebuilds all materializers for the stream', () async {
+        await entryRepo.append(channelId, streamId, _entry(1));
+        await entryRepo.append(channelId, streamId, _entry(2));
+
+        service.register(channelId, streamId, CountMaterializer());
+        service.register(channelId, streamId, LastAuthorMaterializer());
+
+        // Initialize both
+        await service.getState<int>(channelId, streamId);
+        await service.getState<String>(channelId, streamId);
+
+        await service.reset(channelId, streamId);
+
+        final count = await service.getState<int>(channelId, streamId);
+        final author = await service.getState<String>(channelId, streamId);
+
+        expect(count, equals(2));
+        expect(author, equals('node'));
+      });
+
+      test('disposeChannel disposes all types for the channel', () async {
+        service.register(channelId, streamId, CountMaterializer());
+        service.register(channelId, streamId, LastAuthorMaterializer());
+
+        await service.disposeChannel(channelId);
+
+        expect(service.getStateStream<int>(channelId, streamId), isNull);
+        expect(service.getStateStream<String>(channelId, streamId), isNull);
       });
     });
 
