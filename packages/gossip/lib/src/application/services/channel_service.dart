@@ -13,6 +13,7 @@ import '../../domain/interfaces/entry_repository.dart';
 import '../../domain/interfaces/local_node_repository.dart';
 import '../../domain/interfaces/state_materializer.dart';
 import '../../domain/services/hlc_clock.dart';
+import 'materialization_service.dart';
 
 /// Application service orchestrating channel and stream operations.
 ///
@@ -78,18 +79,23 @@ class ChannelService {
   /// Repository for persisting local node state (HLC clock).
   final LocalNodeRepository _localNodeRepository;
 
+  /// Dedicated service for materializer orchestration.
+  final MaterializationService? _materializationService;
+
   ChannelService({
     required this.localNode,
     required LocalNodeRepository localNodeRepository,
     HlcClock? hlcClock,
     ChannelRepository? channelRepository,
     EntryRepository? entryRepository,
+    MaterializationService? materializationService,
     this.onError,
     this.onEvent,
   }) : _hlcClock = hlcClock,
        _channelRepository = channelRepository,
        _entryRepository = entryRepository,
-       _localNodeRepository = localNodeRepository;
+       _localNodeRepository = localNodeRepository,
+       _materializationService = materializationService;
 
   /// Emits an error through the callback if one is registered.
   void _emitError(SyncError error) {
@@ -158,6 +164,9 @@ class ChannelService {
     if (_entryRepository != null) {
       await _entryRepository.clearChannel(channelId);
     }
+
+    // Clean up materializer state
+    await _materializationService?.disposeChannel(channelId);
 
     // Delete the channel aggregate
     await _channelRepository.delete(channelId);
@@ -348,6 +357,9 @@ class ChannelService {
       occurredAt: DateTime.now(),
     );
     _emitEvents([appendEvent]);
+
+    // Trigger incremental fold for registered materializers
+    await _materializationService?.foldEntries(channelId, streamId, [entry]);
   }
 
   /// Retrieves all entries for a stream, ordered by HLC timestamp.
@@ -421,42 +433,60 @@ class ChannelService {
   /// Used when: Application wants to compute derived state (e.g., current
   /// document state from edit operations).
   ///
-  /// Transaction: Load → register → save.
-  ///
-  /// Returns: List of domain events (typically empty for materializer registration).
+  /// Returns: Empty list (no domain events emitted for registration).
   Future<List<DomainEvent>> registerMaterializer<T>(
     ChannelId channelId,
     StreamId streamId,
     StateMaterializer<T> materializer,
   ) async {
-    return await _withChannel(channelId, (channel) {
-      channel.registerMaterializer(streamId, materializer);
-    });
+    _materializationService?.register(channelId, streamId, materializer);
+    return [];
   }
 
   /// Computes the materialized state for a stream.
   ///
-  /// Retrieves all entries from the stream and applies the registered
-  /// materializer to fold them into state.
-  ///
-  /// Returns null if:
-  /// - No materializer is registered for this stream
-  /// - The stream doesn't exist
-  /// - Repository or entry store is null
+  /// Returns null if no materializer is registered or the stream doesn't exist.
   ///
   /// Used when: Application needs to read the current derived state.
-  ///
-  /// Transaction: Read-only (no save).
   Future<T?> getState<T>(ChannelId channelId, StreamId streamId) async {
-    if (_channelRepository == null || _entryRepository == null) {
-      return null;
-    }
+    if (_materializationService == null) return null;
 
-    final channel = await _channelRepository.findById(channelId);
-    if (channel == null) {
-      return null;
-    }
+    // Verify stream exists before returning state
+    final streamExists = await hasStream(channelId, streamId);
+    if (!streamExists) return null;
 
-    return await channel.getState<T>(streamId, _entryRepository);
+    return await _materializationService.getState<T>(channelId, streamId);
+  }
+
+  /// Folds merged entries into the materializer for a stream.
+  ///
+  /// Called by Coordinator after entries are merged from a peer.
+  Future<void> foldMergedEntries(
+    ChannelId channelId,
+    StreamId streamId,
+    List<LogEntry> entries, {
+    bool containsOutOfOrderEntries = false,
+  }) async {
+    await _materializationService?.foldEntries(
+      channelId,
+      streamId,
+      entries,
+      containsOutOfOrderEntries: containsOutOfOrderEntries,
+    );
+  }
+
+  /// Returns the state stream for a registered materializer.
+  ///
+  /// The stream emits materialized state after each fold batch.
+  /// Returns null if no materializer is registered.
+  Stream<T>? getStateStream<T>(ChannelId channelId, StreamId streamId) {
+    return _materializationService?.getStateStream<T>(channelId, streamId);
+  }
+
+  /// Forces a full rebuild of the materialized state for a stream.
+  ///
+  /// Useful for developer settings or corruption recovery.
+  Future<void> resetState(ChannelId channelId, StreamId streamId) async {
+    await _materializationService?.reset(channelId, streamId);
   }
 }

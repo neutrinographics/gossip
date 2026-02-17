@@ -1,6 +1,7 @@
 import 'dart:async'
     show Completer, StreamController, StreamSubscription, unawaited;
 import 'dart:collection' show Queue;
+import 'dart:math' show Random;
 import 'dart:typed_data';
 
 import 'package:gossip/gossip.dart';
@@ -61,6 +62,7 @@ class ConnectionService {
   final NearbyMetrics _metrics;
   final LogCallback? _onLog;
   final TimePort _timePort;
+  final Random _random;
 
   final Duration _connectionTimeout;
   final _eventController = StreamController<ConnectionEvent>.broadcast();
@@ -69,7 +71,7 @@ class ConnectionService {
 
   final Map<EndpointId, DateTime> _handshakeStartTimes = {};
   final Map<EndpointId, _PendingDiscovery> _pendingDiscoveries = {};
-  TimerHandle? _retryTimer;
+  bool _disposed = false;
 
   /// High-priority message queue (SWIM pings/acks).
   final Queue<_QueuedMessage> _highPriorityQueue = Queue<_QueuedMessage>();
@@ -93,6 +95,7 @@ class ConnectionService {
     LogCallback? onLog,
     TimePort? timePort,
     Duration connectionTimeout = const Duration(seconds: 5),
+    Random? random,
   }) : _localNodeId = localNodeId,
        _displayName = displayName,
        _nearbyPort = nearbyPort,
@@ -101,12 +104,10 @@ class ConnectionService {
        _metrics = metrics ?? NearbyMetrics(),
        _onLog = onLog,
        _timePort = timePort ?? RealTimePort(),
-       _connectionTimeout = connectionTimeout {
+       _connectionTimeout = connectionTimeout,
+       _random = random ?? Random() {
     _nearbySubscription = _nearbyPort.events.listen(_handleNearbyEvent);
-    _retryTimer = _timePort.schedulePeriodic(
-      _connectionTimeout,
-      _retryPendingConnections,
-    );
+    _scheduleNextRetry();
   }
 
   /// Stream of connection events (HandshakeCompleted, ConnectionClosed, etc.)
@@ -130,7 +131,6 @@ class ConnectionService {
   }) async {
     final endpointId = _registry.getEndpointIdForNodeId(destination);
     if (endpointId == null) {
-      _log(LogLevel.warning, 'Cannot send: no connection for $destination');
       _errorController.add(
         ConnectionNotFoundError(
           destination,
@@ -211,7 +211,6 @@ class ConnectionService {
       );
       message.completer.complete();
     } catch (e, stack) {
-      _log(LogLevel.error, 'Send failed to ${message.destination}', e, stack);
       _errorController.add(
         SendFailedError(
           message.destination,
@@ -226,26 +225,30 @@ class ConnectionService {
 
   /// Disposes resources.
   Future<void> dispose() async {
-    _retryTimer?.cancel();
+    _disposed = true;
     await _nearbySubscription?.cancel();
     await _eventController.close();
     await _errorController.close();
   }
 
   void _handleNearbyEvent(NearbyEvent event) {
-    switch (event) {
-      case EndpointDiscovered(:final id, :final displayName):
-        _onEndpointDiscovered(id, displayName);
-      case ConnectionEstablished(:final id):
-        _onConnectionEstablished(id);
-      case PayloadReceived(:final id, :final bytes):
-        _onPayloadReceived(id, bytes);
-      case EndpointLost(:final id):
-        _onEndpointLost(id);
-      case ConnectionFailed(:final id):
-        _onConnectionFailed(id);
-      case Disconnected(:final id):
-        _onDisconnected(id);
+    try {
+      switch (event) {
+        case EndpointDiscovered(:final id, :final displayName):
+          _onEndpointDiscovered(id, displayName);
+        case ConnectionEstablished(:final id):
+          _onConnectionEstablished(id);
+        case PayloadReceived(:final id, :final bytes):
+          _onPayloadReceived(id, bytes);
+        case EndpointLost(:final id):
+          _onEndpointLost(id);
+        case ConnectionFailed(:final id, :final reason):
+          _onConnectionFailed(id, reason);
+        case Disconnected(:final id):
+          _onDisconnected(id);
+      }
+    } catch (e, stack) {
+      _log(LogLevel.error, 'Error handling nearby event: $event', e, stack);
     }
   }
 
@@ -326,7 +329,23 @@ class ConnectionService {
       _localNodeId,
       displayName: _displayName,
     );
-    unawaited(_nearbyPort.sendPayload(id, handshakeBytes));
+    unawaited(
+      _nearbyPort.sendPayload(id, handshakeBytes).catchError((
+        Object e,
+        StackTrace stack,
+      ) {
+        _metrics.recordHandshakeFailed();
+        _handshakeStartTimes.remove(id);
+        _errorController.add(
+          HandshakeTimeoutError(
+            id,
+            'Handshake send failed: $e',
+            occurredAt: DateTime.now(),
+            cause: e,
+          ),
+        );
+      }),
+    );
     _log(LogLevel.debug, 'Sent handshake to $id');
   }
 
@@ -379,7 +398,6 @@ class ConnectionService {
   void _handleHandshakeMessage(EndpointId id, Uint8List bytes) {
     final handshakeData = _codec.decode(bytes);
     if (handshakeData == null) {
-      _log(LogLevel.error, 'Invalid handshake from $id');
       _metrics.recordHandshakeFailed();
       _handshakeStartTimes.remove(id);
       _errorController.add(
@@ -415,7 +433,19 @@ class ConnectionService {
       );
       _handshakeStartTimes.remove(replaced.endpointId);
       _pendingDiscoveries.remove(replaced.endpointId);
-      unawaited(_nearbyPort.disconnect(replaced.endpointId));
+      unawaited(
+        _nearbyPort.disconnect(replaced.endpointId).catchError((
+          Object e,
+          StackTrace stack,
+        ) {
+          _log(
+            LogLevel.warning,
+            'Failed to disconnect replaced endpoint ${replaced.endpointId}',
+            e,
+            stack,
+          );
+        }),
+      );
     }
 
     final event = HandshakeCompleted(
@@ -454,10 +484,45 @@ class ConnectionService {
     onGossipMessage?.call(nodeId, payload);
   }
 
+  /// Schedules the next retry check with a jittered interval.
+  ///
+  /// Uses self-scheduling via [TimePort.delay] (not periodic timer) so each
+  /// tick gets a freshly randomized interval. This decorrelates retry timers
+  /// across devices, preventing synchronized `requestConnection()` collisions
+  /// that cause both sides to fail indefinitely.
+  void _scheduleNextRetry() {
+    if (_disposed) return;
+    _timePort
+        .delay(_jitteredTimeout())
+        .then((_) {
+          if (!_disposed) {
+            _retryPendingConnections();
+            _scheduleNextRetry();
+          }
+        })
+        .catchError((Object e, StackTrace stack) {
+          if (!_disposed) {
+            _log(LogLevel.error, 'Retry timer failed, rescheduling', e, stack);
+            _scheduleNextRetry();
+          }
+        });
+  }
+
+  /// Returns the connection timeout with ±30% random jitter.
+  ///
+  /// With a 5s base timeout, this produces intervals between 3.5s and 6.5s.
+  Duration _jitteredTimeout() {
+    // nextDouble() returns [0.0, 1.0) → scale to [0.7, 1.3)
+    final multiplier = 0.7 + _random.nextDouble() * 0.6;
+    final jitteredMs = (_connectionTimeout.inMilliseconds * multiplier).round();
+    return Duration(milliseconds: jitteredMs);
+  }
+
   void _requestConnectionSafely(EndpointId id) {
     unawaited(
       _nearbyPort.requestConnection(id).catchError((e, stack) {
         _log(LogLevel.warning, 'requestConnection failed for $id', e, stack);
+        _metrics.recordConnectionFailed();
       }),
     );
   }
@@ -485,9 +550,15 @@ class ConnectionService {
     _pendingDiscoveries.remove(id);
   }
 
-  void _onConnectionFailed(EndpointId id) {
-    _log(LogLevel.info, 'Connection failed for endpoint: $id');
+  void _onConnectionFailed(EndpointId id, String? reason) {
+    _log(
+      LogLevel.info,
+      'Connection failed for endpoint: $id (reason: $reason)',
+    );
     _metrics.recordConnectionFailed();
+    if (_handshakeStartTimes.remove(id) != null) {
+      _metrics.recordHandshakeFailed();
+    }
   }
 
   void _onDisconnected(EndpointId id) {

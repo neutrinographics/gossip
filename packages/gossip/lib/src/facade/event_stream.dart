@@ -46,7 +46,7 @@ import '../domain/value_objects/stream_id.dart';
 /// // Define a materializer (counter example)
 /// class CounterMaterializer implements StateMaterializer<int> {
 ///   @override
-///   int initial() => 0;
+///   (int, String?) initial({required bool isReset}) => (0, null);
 ///
 ///   @override
 ///   int fold(int state, LogEntry entry) => state + 1;
@@ -145,5 +145,30 @@ class EventStream {
   /// ```
   Future<T?> getState<T>() async {
     return await channelService.getState<T>(channelId, id);
+  }
+
+  /// Returns a broadcast stream of materialized state updates.
+  ///
+  /// The stream emits the new state after each fold batch (local append
+  /// or merged entries from peers). Returns null if no materializer is
+  /// registered.
+  ///
+  /// Example:
+  /// ```dart
+  /// final stream = channel.getStream(streamId);
+  /// final updates = await stream.stateStream<int>();
+  /// updates?.listen((count) => print('Count: $count'));
+  /// ```
+  Stream<T>? stateStream<T>() {
+    return channelService.getStateStream<T>(channelId, id);
+  }
+
+  /// Forces a full rebuild of the materialized state.
+  ///
+  /// Calls `initial(isReset: true)` on the materializer, then folds all
+  /// entries from the beginning. Useful for developer tools or corruption
+  /// recovery.
+  Future<void> resetState() async {
+    await channelService.resetState(channelId, id);
   }
 }

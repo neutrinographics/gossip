@@ -1,5 +1,6 @@
 import '../../domain/interfaces/entry_repository.dart';
 import '../../domain/value_objects/channel_id.dart';
+import '../../domain/value_objects/hlc.dart';
 import '../../domain/value_objects/log_entry.dart';
 import '../../domain/value_objects/log_entry_id.dart';
 import '../../domain/value_objects/node_id.dart';
@@ -203,6 +204,14 @@ class InMemoryEntryRepository implements EntryRepository {
       return VersionVector.empty;
     }
     return VersionVector(Map<NodeId, int>.from(streamCache));
+  }
+
+  @override
+  Future<Hlc?> getTailTimestamp(ChannelId channel, StreamId stream) async {
+    final entries = _storage[channel]?[stream];
+    return (entries != null && entries.isNotEmpty)
+        ? entries.last.timestamp
+        : null;
   }
 
   /// Rebuilds the latest sequence cache for a stream after entries are removed.

@@ -183,11 +183,17 @@ final class EntriesMerged extends DomainEvent {
   final List<LogEntry> entries;
   final VersionVector newVersion;
 
+  /// True if any entry in this batch was inserted before the stream's
+  /// previous tail entry (by HLC order). When true, materializers must
+  /// rebuild from scratch rather than incrementally folding.
+  final bool containsOutOfOrderEntries;
+
   const EntriesMerged(
     this.channelId,
     this.streamId,
     this.entries,
     this.newVersion, {
+    this.containsOutOfOrderEntries = false,
     required super.occurredAt,
   });
 }

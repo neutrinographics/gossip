@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' show Random;
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -603,6 +604,7 @@ void main() {
           registry: retryRegistry,
           timePort: timePort,
           connectionTimeout: const Duration(seconds: 5),
+          random: Random(42),
         );
       }
 
@@ -618,8 +620,8 @@ void main() {
         // Passive side should NOT initiate immediately
         verifyNever(() => retryMockPort.requestConnection(EndpointId('ep1')));
 
-        // Advance past timeout → retry should fire
-        await timePort.advance(const Duration(seconds: 5));
+        // Advance past max jittered timeout (6.5s) → retry should fire
+        await timePort.advance(const Duration(seconds: 7));
 
         verify(
           () => retryMockPort.requestConnection(EndpointId('ep1')),
@@ -642,8 +644,8 @@ void main() {
           () => retryMockPort.requestConnection(EndpointId('ep1')),
         ).called(1);
 
-        // Advance past timeout → retry fires again
-        await timePort.advance(const Duration(seconds: 5));
+        // Advance past max jittered timeout (6.5s) → retry fires again
+        await timePort.advance(const Duration(seconds: 7));
 
         verify(
           () => retryMockPort.requestConnection(EndpointId('ep1')),
@@ -711,8 +713,8 @@ void main() {
         retryController.add(ConnectionFailed(id: EndpointId('ep1')));
         await Future.delayed(Duration.zero);
 
-        // Advance past timeout → retry fires
-        await timePort.advance(const Duration(seconds: 5));
+        // Advance past max jittered timeout → retry fires
+        await timePort.advance(const Duration(seconds: 7));
 
         verify(
           () => retryMockPort.requestConnection(EndpointId('ep1')),
@@ -739,8 +741,8 @@ void main() {
           () => retryMockPort.requestConnection(EndpointId('ep1')),
         ).called(1);
 
-        // Retry after timeout also throws — still no crash
-        await timePort.advance(const Duration(seconds: 5));
+        // Retry after jittered timeout also throws — still no crash
+        await timePort.advance(const Duration(seconds: 7));
 
         verify(
           () => retryMockPort.requestConnection(EndpointId('ep1')),
@@ -796,6 +798,27 @@ void main() {
         await timePort.advance(const Duration(seconds: 10));
 
         verifyNever(() => retryMockPort.requestConnection(any()));
+
+        await svc.dispose();
+      });
+
+      test('retry intervals are jittered (not fixed)', () async {
+        final svc = createRetryService(localNodeId: NodeId('zzz'));
+
+        retryController.add(
+          EndpointDiscovered(id: EndpointId('ep1'), displayName: 'aaa|Device'),
+        );
+        await Future.delayed(Duration.zero);
+
+        // Advance to just before minimum jitter (3.5s) — no retry yet
+        await timePort.advance(const Duration(milliseconds: 3400));
+        verifyNever(() => retryMockPort.requestConnection(EndpointId('ep1')));
+
+        // Advance past maximum jitter (6.5s total) — retry must have fired
+        await timePort.advance(const Duration(milliseconds: 3200));
+        verify(
+          () => retryMockPort.requestConnection(EndpointId('ep1')),
+        ).called(1);
 
         await svc.dispose();
       });

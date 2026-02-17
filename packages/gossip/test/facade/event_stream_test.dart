@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:gossip/src/application/services/channel_service.dart';
+import 'package:gossip/src/application/services/materialization_service.dart';
 import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/domain/interfaces/retention_policy.dart';
 import 'package:gossip/src/domain/interfaces/state_materializer.dart';
@@ -15,18 +16,18 @@ import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart
 import 'package:test/test.dart';
 
 // Test materializer that counts entries
-class CountMaterializer implements StateMaterializer<int> {
+class CountMaterializer extends StateMaterializer<int> {
   @override
-  int initial() => 0;
+  (int, String?) initial({required bool isReset}) => (0, null);
 
   @override
   int fold(int state, LogEntry entry) => state + 1;
 }
 
 // Test materializer that sums payload values
-class SumMaterializer implements StateMaterializer<int> {
+class SumMaterializer extends StateMaterializer<int> {
   @override
-  int initial() => 0;
+  (int, String?) initial({required bool isReset}) => (0, null);
 
   @override
   int fold(int state, LogEntry entry) {
@@ -34,6 +35,15 @@ class SumMaterializer implements StateMaterializer<int> {
     final value = entry.payload.isNotEmpty ? entry.payload[0] : 0;
     return state + value;
   }
+}
+
+// Test materializer that tracks the last entry's author
+class LastAuthorMaterializer extends StateMaterializer<String> {
+  @override
+  (String, String?) initial({required bool isReset}) => ('', null);
+
+  @override
+  String fold(String state, LogEntry entry) => entry.author.value;
 }
 
 void main() {
@@ -57,6 +67,9 @@ void main() {
         localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: channelRepo,
         entryRepository: entryRepo,
+        materializationService: MaterializationService(
+          entryRepository: entryRepo,
+        ),
       );
 
       // Create channel and stream
@@ -200,6 +213,26 @@ void main() {
       // Should now sum values (30)
       result = await facade.getState<int>();
       expect(result, equals(30)); // 10 + 20
+    });
+
+    test('multiple materializers with different types coexist', () async {
+      final facade = EventStream(
+        id: streamId,
+        channelId: channelId,
+        channelService: channelService,
+      );
+
+      await facade.registerMaterializer(CountMaterializer());
+      await facade.registerMaterializer(LastAuthorMaterializer());
+
+      await facade.append(Uint8List.fromList([1]));
+      await facade.append(Uint8List.fromList([2]));
+
+      final count = await facade.getState<int>();
+      final author = await facade.getState<String>();
+
+      expect(count, equals(2));
+      expect(author, equals('node1'));
     });
 
     group('stream existence checks', () {

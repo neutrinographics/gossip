@@ -16,6 +16,7 @@ An ADR captures an important architectural decision along with its context and c
 | [004](004-type-prefixed-wire-protocol.md) | Type-Prefixed Wire Protocol | Accepted |
 | [005](005-dependency-inversion-nearby-port.md) | Dependency Inversion via NearbyPort Interface | Accepted |
 | [006](006-deterministic-connection-initiation.md) | Deterministic Connection Initiation via NodeId Comparison | Accepted |
+| [007](007-log-or-emit-observability-rule.md) | Log-or-Emit Observability Rule | Accepted |
 
 ## Additional Design Decisions
 

@@ -84,11 +84,12 @@ class EndpointLost extends NearbyEvent {
 /// A connection attempt to an endpoint failed at the platform level.
 class ConnectionFailed extends NearbyEvent {
   final EndpointId id;
+  final String? reason;
 
-  const ConnectionFailed({required this.id});
+  const ConnectionFailed({required this.id, this.reason});
 
   @override
-  String toString() => 'ConnectionFailed(id: $id)';
+  String toString() => 'ConnectionFailed(id: $id, reason: $reason)';
 }
 
 /// An endpoint disconnected.
