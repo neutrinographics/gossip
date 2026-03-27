@@ -4,7 +4,27 @@
       "mcp__acp__Bash",
       "mcp__acp__Write",
       "mcp__acp__Edit",
-      "WebFetch(domain:pub.dev)"
+      "WebFetch(domain:pub.dev)",
+      "Bash(gradle:*)",
+      "Bash(./gradlew build:*)",
+      "Bash(./gradlew test:*)",
+      "Bash(./gradlew clean:*)",
+      "Bash(./gradlew cleanTest:*)",
+      "Bash(grep:*)",
+      "Bash(find src/test -name \"*.kt\" -exec grep -c \"@Test\" {} +)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git:*)",
+      "Bash(./gradlew compileKotlin:*)",
+      "Bash(./gradlew:*)",
+      "Bash(find .:*)",
+      "Bash(for f in shared/DomainEvent.kt shared/SyncError.kt shared/DomainException.kt shared/Callbacks.kt shared/RetentionPolicy.kt shared/EntryEvents.kt)",
+      "Bash(do echo \"=== $f ===\")",
+      "Read(//Users/joel/git/neutrinographics/gossip-kt/src/main/kotlin/com/neutrinographics/gossip/**)",
+      "Bash(done)",
+      "Bash(for pkg in shared node clock entries channels peers transport detection sync coordinator)",
+      "Bash(do echo \"=== $pkg ===\")",
+      "Bash(ls:*)"
     ]
   }
 }

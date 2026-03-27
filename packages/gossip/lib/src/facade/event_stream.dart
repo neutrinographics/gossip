@@ -226,6 +226,12 @@ class EventStream {
       await this.resetState();
     }
 
+    // TODO(compaction): Emit a StreamCompacted domain event here once the
+    // event emission infrastructure is extended to support it from the facade.
+    // Currently, domain events are emitted via ChannelService._emitEvents()
+    // which is private. Compaction would need to be moved into ChannelService
+    // (or a new public emit hook added) to wire this up cleanly.
+
     return result;
   }
 }
