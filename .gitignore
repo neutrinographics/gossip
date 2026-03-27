@@ -20,3 +20,4 @@ coverage/
 .DS_Store
 Thumbs.db
 /logs
+.claude/settings.local.json
