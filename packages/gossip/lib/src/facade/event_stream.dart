@@ -1,9 +1,13 @@
 import 'dart:typed_data';
 
 import '../application/services/channel_service.dart';
+import '../domain/interfaces/retention_policy.dart';
 import '../domain/interfaces/state_materializer.dart';
+import '../domain/results/compaction_result.dart';
 import '../domain/value_objects/channel_id.dart';
+import '../domain/value_objects/log_entry.dart';
 import '../domain/value_objects/stream_id.dart';
+import '../domain/value_objects/version_vector.dart';
 
 /// Public API for stream-level read/write operations.
 ///
@@ -170,5 +174,58 @@ class EventStream {
   /// recovery.
   Future<void> resetState() async {
     await channelService.resetState(channelId, id);
+  }
+
+  /// The retention policy for this stream, or `null` if the stream
+  /// does not exist in the channel.
+  Future<RetentionPolicy?> get retentionPolicy =>
+      channelService.getRetentionPolicy(channelId, id);
+
+  /// Compacts the stream by applying the retention policy.
+  ///
+  /// Removes entries that do not survive the stream's retention policy.
+  /// Returns a [CompactionResult] describing what was removed, or `null`
+  /// if there was nothing to prune (no retention policy, empty stream,
+  /// or all entries survive).
+  ///
+  /// If [resetState] is `true` (the default), forces a full rebuild of
+  /// the materialized state after compaction so it reflects only the
+  /// surviving entries.
+  Future<CompactionResult?> compact({bool resetState = true}) async {
+    final retention = await retentionPolicy;
+    if (retention == null) return null;
+
+    final entries = await getAll();
+    if (entries.isEmpty) return null;
+
+    final now = channelService.currentTimestamp;
+    final survivors = retention.compact(entries.cast<LogEntry>(), now);
+    final survivorIds = survivors.map((e) => e.id).toSet();
+    final toPrune = entries
+        .cast<LogEntry>()
+        .where((e) => !survivorIds.contains(e.id))
+        .toList();
+
+    if (toPrune.isEmpty) return null;
+
+    await channelService.removeEntries(
+      channelId,
+      id,
+      toPrune.map((e) => e.id).toList(),
+    );
+
+    final result = CompactionResult(
+      entriesRemoved: toPrune.length,
+      entriesRetained: survivors.length,
+      bytesFreed: toPrune.fold(0, (sum, e) => sum + e.payload.length),
+      oldBaseVersion: VersionVector({}),
+      newBaseVersion: VersionVector({}),
+    );
+
+    if (resetState) {
+      await this.resetState();
+    }
+
+    return result;
   }
 }
