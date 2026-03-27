@@ -670,6 +670,9 @@ class GossipEngine {
       }
 
       for (final streamDigest in channelDigest.streams) {
+        // Skip streams we don't have locally
+        if (!channel.hasStream(streamDigest.streamId)) continue;
+
         final key = (channelDigest.channelId, streamDigest.streamId);
 
         // Skip if we already have a non-expired pending request for this stream

@@ -809,7 +809,7 @@ void main() {
     );
 
     test(
-      'handleDigestResponse generates delta request for unknown stream from peer',
+      'handleDigestResponse skips streams not present in local channel',
       () async {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
@@ -845,7 +845,7 @@ void main() {
         );
         engine.setChannels({channelId: channel});
 
-        // Peer has entries in both streams
+        // Peer has entries in both streams, but we only have knownStream
         final response = DigestResponse(
           sender: peerNode,
           digests: [
@@ -867,11 +867,8 @@ void main() {
 
         final deltaRequests = await engine.handleDigestResponse(response);
 
-        // Should generate a delta request for the unknown stream
-        // (our version is empty, which doesn't dominate peer's {author1:3})
-        expect(deltaRequests, hasLength(1));
-        expect(deltaRequests[0].streamId, equals(unknownStream));
-        expect(deltaRequests[0].since[author1], equals(0));
+        // Should NOT generate a delta request for the unknown stream
+        expect(deltaRequests, isEmpty);
       },
     );
   });
