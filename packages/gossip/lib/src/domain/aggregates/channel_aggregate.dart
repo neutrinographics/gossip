@@ -105,6 +105,10 @@ class ChannelAggregate {
   /// Returns the total number of streams in this channel.
   int get streamCount => _streams.length;
 
+  /// Returns the [RetentionPolicy] for the given stream, or `null` if
+  /// the stream does not exist.
+  RetentionPolicy? getRetentionPolicy(StreamId streamId) => _streams[streamId];
+
   /// Returns domain events emitted since last clearing.
   ///
   /// Applications can observe these events for logging, metrics, or

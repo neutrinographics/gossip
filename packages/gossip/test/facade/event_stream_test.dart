@@ -6,6 +6,7 @@ import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/domain/interfaces/retention_policy.dart';
 import 'package:gossip/src/domain/interfaces/state_materializer.dart';
 import 'package:gossip/src/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/domain/value_objects/hlc.dart';
 import 'package:gossip/src/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/value_objects/stream_id.dart';
@@ -303,6 +304,159 @@ void main() {
           expect(state, isNull);
         },
       );
+    });
+
+    group('retentionPolicy', () {
+      late EventStream facade;
+
+      setUp(() {
+        facade = EventStream(
+          id: streamId,
+          channelId: channelId,
+          channelService: channelService,
+        );
+      });
+
+      test('returns the retention policy for the stream', () async {
+        final policy = await facade.retentionPolicy;
+        expect(policy, isNotNull);
+      });
+
+      test('returns TimeBasedRetention when set', () async {
+        final timedStreamId = StreamId('timed');
+        await channelService.createStream(
+          channelId,
+          timedStreamId,
+          TimeBasedRetention(const Duration(seconds: 10)),
+        );
+        final timedFacade = EventStream(
+          id: timedStreamId,
+          channelId: channelId,
+          channelService: channelService,
+        );
+        expect(await timedFacade.retentionPolicy, isA<TimeBasedRetention>());
+      });
+    });
+
+    group('compact', () {
+      late EventStream timedFacade;
+      final timedStreamId = StreamId('timed');
+
+      setUp(() async {
+        await channelService.createStream(
+          channelId,
+          timedStreamId,
+          TimeBasedRetention(const Duration(seconds: 5)),
+        );
+        timedFacade = EventStream(
+          id: timedStreamId,
+          channelId: channelId,
+          channelService: channelService,
+        );
+      });
+
+      test('removes entries older than retention window', () async {
+        final oldEntry = LogEntry(
+          author: localNode,
+          sequence: 1,
+          timestamp: Hlc(1000, 0),
+          payload: Uint8List.fromList([1]),
+        );
+        final recentEntry = LogEntry(
+          author: localNode,
+          sequence: 2,
+          timestamp: Hlc(DateTime.now().millisecondsSinceEpoch, 0),
+          payload: Uint8List.fromList([2]),
+        );
+        await entryRepo.append(channelId, timedStreamId, oldEntry);
+        await entryRepo.append(channelId, timedStreamId, recentEntry);
+
+        final result = await timedFacade.compact();
+
+        expect(result, isNotNull);
+        expect(result!.entriesRemoved, equals(1));
+        expect(result.entriesRetained, equals(1));
+
+        final remaining = await timedFacade.getAll();
+        expect(remaining.length, equals(1));
+        expect(remaining.first.sequence, equals(2));
+      });
+
+      test('returns null when nothing to prune', () async {
+        await timedFacade.append(Uint8List.fromList([1]));
+        final result = await timedFacade.compact();
+        expect(result, isNull);
+      });
+
+      test('returns null when stream has no entries', () async {
+        final result = await timedFacade.compact();
+        expect(result, isNull);
+      });
+
+      test('resets materializer state after compaction by default', () async {
+        final materializer = CountMaterializer();
+        await timedFacade.registerMaterializer(materializer);
+
+        final oldEntry = LogEntry(
+          author: localNode,
+          sequence: 1,
+          timestamp: Hlc(1000, 0),
+          payload: Uint8List.fromList([1]),
+        );
+        final recentEntry = LogEntry(
+          author: localNode,
+          sequence: 2,
+          timestamp: Hlc(DateTime.now().millisecondsSinceEpoch, 0),
+          payload: Uint8List.fromList([2]),
+        );
+        await entryRepo.append(channelId, timedStreamId, oldEntry);
+        await entryRepo.append(channelId, timedStreamId, recentEntry);
+
+        // Fold entries so materializer state includes both
+        await channelService.foldMergedEntries(channelId, timedStreamId, [
+          oldEntry,
+          recentEntry,
+        ]);
+        final beforeCount = await timedFacade.getState<int>();
+        expect(beforeCount, equals(2));
+
+        await timedFacade.compact();
+
+        final afterCount = await timedFacade.getState<int>();
+        expect(afterCount, equals(1));
+      });
+
+      test('preserves materializer state when resetState is false', () async {
+        final materializer = CountMaterializer();
+        await timedFacade.registerMaterializer(materializer);
+
+        final oldEntry = LogEntry(
+          author: localNode,
+          sequence: 1,
+          timestamp: Hlc(1000, 0),
+          payload: Uint8List.fromList([1]),
+        );
+        final recentEntry = LogEntry(
+          author: localNode,
+          sequence: 2,
+          timestamp: Hlc(DateTime.now().millisecondsSinceEpoch, 0),
+          payload: Uint8List.fromList([2]),
+        );
+        await entryRepo.append(channelId, timedStreamId, oldEntry);
+        await entryRepo.append(channelId, timedStreamId, recentEntry);
+
+        await channelService.foldMergedEntries(channelId, timedStreamId, [
+          oldEntry,
+          recentEntry,
+        ]);
+        final beforeCount = await timedFacade.getState<int>();
+        expect(beforeCount, equals(2));
+
+        await timedFacade.compact(resetState: false);
+
+        final afterCount = await timedFacade.getState<int>();
+        expect(afterCount, equals(2));
+      });
     });
   });
 }

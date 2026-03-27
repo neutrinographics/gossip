@@ -5,6 +5,7 @@ import '../../domain/value_objects/channel_id.dart';
 import '../../domain/value_objects/node_id.dart';
 import '../../domain/value_objects/stream_id.dart';
 import '../../domain/value_objects/log_entry.dart';
+import '../../domain/value_objects/log_entry_id.dart';
 import '../../domain/value_objects/hlc.dart';
 import '../../domain/aggregates/channel_aggregate.dart';
 import '../../domain/interfaces/channel_repository.dart';
@@ -413,6 +414,24 @@ class ChannelService {
     return channel?.streamIds ?? [];
   }
 
+  /// Returns the [RetentionPolicy] for the given stream, or `null` if
+  /// the channel or stream does not exist.
+  Future<RetentionPolicy?> getRetentionPolicy(
+    ChannelId channelId,
+    StreamId streamId,
+  ) async {
+    if (_channelRepository == null) {
+      return null;
+    }
+    final channel = await _channelRepository.findById(channelId);
+    return channel?.getRetentionPolicy(streamId);
+  }
+
+  /// Returns the current HLC timestamp from the clock, or a wall-clock
+  /// fallback if no clock is configured.
+  Hlc get currentTimestamp =>
+      _hlcClock?.now() ?? Hlc(DateTime.now().millisecondsSinceEpoch, 0);
+
   /// Checks if a stream exists in a channel.
   ///
   /// Returns false if repository is null or channel/stream not found.
@@ -488,5 +507,19 @@ class ChannelService {
   /// Useful for developer settings or corruption recovery.
   Future<void> resetState(ChannelId channelId, StreamId streamId) async {
     await _materializationService?.reset(channelId, streamId);
+  }
+
+  /// Removes specific entries from a stream during compaction.
+  ///
+  /// Deletes entries identified by their IDs from the entry repository.
+  /// Does nothing if no entry repository is configured.
+  ///
+  /// Used when: Applying retention policies to reclaim storage.
+  Future<void> removeEntries(
+    ChannelId channelId,
+    StreamId streamId,
+    List<LogEntryId> ids,
+  ) async {
+    await _entryRepository?.removeEntries(channelId, streamId, ids);
   }
 }

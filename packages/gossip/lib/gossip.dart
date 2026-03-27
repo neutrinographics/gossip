@@ -117,6 +117,9 @@ export 'src/domain/events/domain_event.dart';
 export 'src/domain/errors/sync_error.dart';
 export 'src/domain/errors/domain_exception.dart';
 
+// Domain results
+export 'src/domain/results/compaction_result.dart';
+
 // Domain interfaces (for custom implementations)
 export 'src/domain/interfaces/retention_policy.dart';
 export 'src/domain/interfaces/state_materializer.dart';
