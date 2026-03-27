@@ -334,10 +334,7 @@ void main() {
           channelId: channelId,
           channelService: channelService,
         );
-        expect(
-          await timedFacade.retentionPolicy,
-          isA<TimeBasedRetention>(),
-        );
+        expect(await timedFacade.retentionPolicy, isA<TimeBasedRetention>());
       });
     });
 
@@ -416,11 +413,10 @@ void main() {
         await entryRepo.append(channelId, timedStreamId, recentEntry);
 
         // Fold entries so materializer state includes both
-        await channelService.foldMergedEntries(
-          channelId,
-          timedStreamId,
-          [oldEntry, recentEntry],
-        );
+        await channelService.foldMergedEntries(channelId, timedStreamId, [
+          oldEntry,
+          recentEntry,
+        ]);
         final beforeCount = await timedFacade.getState<int>();
         expect(beforeCount, equals(2));
 
@@ -449,11 +445,10 @@ void main() {
         await entryRepo.append(channelId, timedStreamId, oldEntry);
         await entryRepo.append(channelId, timedStreamId, recentEntry);
 
-        await channelService.foldMergedEntries(
-          channelId,
-          timedStreamId,
-          [oldEntry, recentEntry],
-        );
+        await channelService.foldMergedEntries(channelId, timedStreamId, [
+          oldEntry,
+          recentEntry,
+        ]);
         final beforeCount = await timedFacade.getState<int>();
         expect(beforeCount, equals(2));
 
