@@ -413,6 +413,24 @@ class ChannelService {
     return channel?.streamIds ?? [];
   }
 
+  /// Returns the [RetentionPolicy] for the given stream, or `null` if
+  /// the channel or stream does not exist.
+  Future<RetentionPolicy?> getRetentionPolicy(
+    ChannelId channelId,
+    StreamId streamId,
+  ) async {
+    if (_channelRepository == null) {
+      return null;
+    }
+    final channel = await _channelRepository.findById(channelId);
+    return channel?.getRetentionPolicy(streamId);
+  }
+
+  /// Returns the current HLC timestamp from the clock, or a wall-clock
+  /// fallback if no clock is configured.
+  Hlc get currentTimestamp =>
+      _hlcClock?.now() ?? Hlc(DateTime.now().millisecondsSinceEpoch, 0);
+
   /// Checks if a stream exists in a channel.
   ///
   /// Returns false if repository is null or channel/stream not found.
