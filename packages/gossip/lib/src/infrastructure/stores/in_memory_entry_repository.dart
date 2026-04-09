@@ -207,6 +207,12 @@ class InMemoryEntryRepository implements EntryRepository {
   }
 
   @override
+  Future<void> clearAll() async {
+    _storage.clear();
+    _latestSequenceCache.clear();
+  }
+
+  @override
   Future<Hlc?> getTailTimestamp(ChannelId channel, StreamId stream) async {
     final entries = _storage[channel]?[stream];
     return (entries != null && entries.isNotEmpty)

@@ -63,5 +63,22 @@ void main() {
       expect(reachable.map((p) => p.id), contains(peer3.id));
       expect(reachable.map((p) => p.id), isNot(contains(peer2.id)));
     });
+
+    test('clearAll removes all peers', () async {
+      final repository = InMemoryPeerRepository();
+
+      final peer1 = Peer(id: NodeId('peer1'), status: PeerStatus.reachable);
+      final peer2 = Peer(id: NodeId('peer2'), status: PeerStatus.reachable);
+
+      await repository.save(peer1);
+      await repository.save(peer2);
+      expect(await repository.count, equals(2));
+
+      await repository.clearAll();
+
+      expect(await repository.count, equals(0));
+      expect(await repository.findAll(), isEmpty);
+      expect(await repository.findById(peer1.id), isNull);
+    });
   });
 }

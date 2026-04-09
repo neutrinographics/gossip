@@ -40,6 +40,11 @@ class FakeChannelRepository implements ChannelRepository {
 
   @override
   Future<int> get count async => _channels.length;
+
+  @override
+  Future<void> clearAll() async {
+    _channels.clear();
+  }
 }
 
 // Fake entry store for testing
@@ -157,6 +162,11 @@ class FakeEntryRepository implements EntryRepository {
   Future<Hlc?> getTailTimestamp(ChannelId channel, StreamId stream) async {
     final entries = _getAllSync(channel, stream);
     return entries.isNotEmpty ? entries.last.timestamp : null;
+  }
+
+  @override
+  Future<void> clearAll() async {
+    _storage.clear();
   }
 }
 

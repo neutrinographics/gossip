@@ -47,4 +47,9 @@ class InMemoryPeerRepository implements PeerRepository {
 
   @override
   Future<int> get count async => _peers.length;
+
+  @override
+  Future<void> clearAll() async {
+    _peers.clear();
+  }
 }

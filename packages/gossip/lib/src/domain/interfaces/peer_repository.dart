@@ -50,4 +50,9 @@ abstract interface class PeerRepository {
 
   /// Returns the total number of persisted peers.
   Future<int> get count;
+
+  /// Removes all persisted peers.
+  ///
+  /// Used when resetting all sync state (e.g., user logout).
+  Future<void> clearAll();
 }

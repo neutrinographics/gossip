@@ -378,5 +378,46 @@ void main() {
         expect(vv[author], equals(2));
       });
     });
+
+    group('clearAll', () {
+      test('removes all entries across all channels and streams', () async {
+        final store = InMemoryEntryRepository();
+        final channel1 = ChannelId('ch1');
+        final channel2 = ChannelId('ch2');
+        final stream = StreamId('stream');
+        final author = NodeId('author');
+
+        await store.append(
+          channel1,
+          stream,
+          LogEntry(
+            author: author,
+            sequence: 1,
+            timestamp: Hlc(1000, 0),
+            payload: Uint8List.fromList([1]),
+          ),
+        );
+        await store.append(
+          channel2,
+          stream,
+          LogEntry(
+            author: author,
+            sequence: 1,
+            timestamp: Hlc(2000, 0),
+            payload: Uint8List.fromList([2]),
+          ),
+        );
+
+        expect(await store.entryCount(channel1, stream), equals(1));
+        expect(await store.entryCount(channel2, stream), equals(1));
+
+        await store.clearAll();
+
+        expect(await store.entryCount(channel1, stream), equals(0));
+        expect(await store.entryCount(channel2, stream), equals(0));
+        expect(await store.latestSequence(channel1, stream, author), equals(0));
+        expect(await store.latestSequence(channel2, stream, author), equals(0));
+      });
+    });
   });
 }
