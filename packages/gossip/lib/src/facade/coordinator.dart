@@ -10,6 +10,7 @@ import '../domain/entities/peer.dart';
 import '../domain/entities/peer_metrics.dart';
 import '../domain/interfaces/channel_repository.dart';
 import '../infrastructure/repositories/caching_channel_repository.dart';
+import '../infrastructure/repositories/in_memory_peer_repository.dart';
 import '../domain/interfaces/entry_repository.dart';
 import '../domain/interfaces/local_node_repository.dart';
 import '../domain/interfaces/peer_repository.dart';
@@ -48,14 +49,12 @@ import 'sync_state.dart';
 /// ```dart
 /// // Create repositories (in-memory for testing, or your own implementations)
 /// final channelRepo = InMemoryChannelRepository();
-/// final peerRepo = InMemoryPeerRepository();
 /// final entryRepo = InMemoryEntryRepository();
 ///
 /// // Create coordinator
 /// final coordinator = await Coordinator.create(
 ///   localNodeRepository: InMemoryLocalNodeRepository(),
 ///   channelRepository: channelRepo,
-///   peerRepository: peerRepo,
 ///   entryRepository: entryRepo,
 /// );
 ///
@@ -85,7 +84,6 @@ import 'sync_state.dart';
 /// final coordinator = await Coordinator.create(
 ///   localNodeRepository: InMemoryLocalNodeRepository(),
 ///   channelRepository: channelRepo,
-///   peerRepository: peerRepo,
 ///   entryRepository: entryRepo,
 ///   messagePort: MyBluetoothMessagePort(),  // Your transport implementation
 ///   timerPort: RealTimePort(),               // Or InMemoryTimePort for testing
@@ -204,19 +202,26 @@ class Coordinator {
   /// synchronization. If null, the coordinator operates in local-only mode
   /// without network sync.
   ///
+  /// [peerRepository] is optional and defaults to [InMemoryPeerRepository].
+  /// Peers are transient — they are discovered at runtime and added/removed
+  /// as devices connect and disconnect. Persisting peers across restarts is
+  /// unnecessary because a loaded peer has no meaning if the device isn't
+  /// present, and the failure detector would immediately begin suspecting it.
+  ///
   /// [config] allows tuning of gossip and failure detection parameters.
   /// If null, default values are used.
   static Future<Coordinator> create({
     required LocalNodeRepository localNodeRepository,
     required ChannelRepository channelRepository,
-    required PeerRepository peerRepository,
     required EntryRepository entryRepository,
+    PeerRepository? peerRepository,
     MessagePort? messagePort,
     TimePort? timerPort,
     Random? random,
     CoordinatorConfig? config,
     LogCallback? onLog,
   }) async {
+    peerRepository ??= InMemoryPeerRepository();
     final cfg = config ?? CoordinatorConfig.defaults;
 
     // Resolve localNode from repository — single source of truth
@@ -937,7 +942,6 @@ class Coordinator {
   /// coordinator = await Coordinator.create(
   ///   localNodeRepository: localNodeRepo, // generates new nodeId
   ///   channelRepository: channelRepo,
-  ///   peerRepository: peerRepo,
   ///   entryRepository: entryRepo,
   ///   messagePort: messagePort,
   ///   timerPort: timerPort,

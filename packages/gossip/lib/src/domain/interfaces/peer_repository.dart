@@ -1,27 +1,25 @@
 import '../value_objects/node_id.dart';
 import '../entities/peer.dart';
 
-/// Repository for persisting peer state and metrics.
+/// Repository for peer state.
 ///
 /// [PeerRepository] stores the state of known peers, including their
 /// reachability status, incarnation numbers, and communication metrics.
-/// The [PeerRegistry] aggregate uses this repository to persist peer
-/// state across application restarts.
 ///
-/// ## Persistence Scope
-/// Each [Peer] entity includes:
-/// - Node ID (identity)
-/// - Reachability status (reachable/suspected/unreachable)
-/// - Incarnation number (for refuting suspicions)
-/// - Last contact timestamps
-/// - Failed probe count
-/// - Communication metrics
+/// ## Persistence is not required
 ///
-/// ## Implementation Guidance
-/// - Use key-value storage for simple cases
-/// - Use relational storage (SQLite) if querying by status is frequent
-/// - Serialize peers to JSON for persistence
-/// - Consider time-to-live for unreachable peers to limit storage growth
+/// Peers are transient — they are discovered at runtime and added/removed
+/// as devices connect and disconnect. Persisting peers across app restarts
+/// is unnecessary because:
+/// - A loaded peer has no meaning if the device isn't present
+/// - The failure detector would immediately begin suspecting stale peers
+/// - Peers must be re-added when they reconnect anyway
+///
+/// [Coordinator.create] defaults to [InMemoryPeerRepository] when no
+/// repository is provided, which is the recommended choice for most apps.
+///
+/// A persistent implementation is only useful if your application needs
+/// its own features around peer history (e.g., "recently seen devices").
 abstract interface class PeerRepository {
   /// Retrieves a peer by node ID, or null if not found.
   Future<Peer?> findById(NodeId id);

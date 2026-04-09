@@ -833,18 +833,18 @@ void main() {
       );
     });
 
-    test('create throws when peerRepository is null', () async {
-      expect(
-        () => Coordinator.create(
-          localNodeRepository: InMemoryLocalNodeRepository(
-            nodeId: NodeId('local'),
-          ),
-          channelRepository: InMemoryChannelRepository(),
-          peerRepository: null as dynamic,
-          entryRepository: InMemoryEntryRepository(),
+    test('create uses InMemoryPeerRepository by default', () async {
+      final coordinator = await Coordinator.create(
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
         ),
-        throwsA(isA<TypeError>()),
+        channelRepository: InMemoryChannelRepository(),
+        entryRepository: InMemoryEntryRepository(),
       );
+
+      // Should work without providing peerRepository
+      await coordinator.addPeer(NodeId('peer1'));
+      expect(coordinator.peers.length, equals(1));
     });
 
     test('create throws when entryRepository is null', () async {
