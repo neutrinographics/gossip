@@ -141,7 +141,7 @@ void main() {
       expect(coordinator.state, equals(SyncState.running));
     });
 
-    test('start throws when already running', () async {
+    test('start is idempotent when already running', () async {
       final coordinator = await Coordinator.create(
         localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
@@ -150,8 +150,9 @@ void main() {
       );
 
       await coordinator.start();
+      await coordinator.start(); // Should not throw
 
-      expect(() => coordinator.start(), throwsStateError);
+      expect(coordinator.state, equals(SyncState.running));
     });
 
     test('stop transitions from running to stopped', () async {
@@ -168,7 +169,7 @@ void main() {
       expect(coordinator.state, equals(SyncState.stopped));
     });
 
-    test('stop throws when already stopped', () async {
+    test('stop is idempotent when already stopped', () async {
       final coordinator = await Coordinator.create(
         localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),
@@ -176,7 +177,9 @@ void main() {
         entryRepository: InMemoryEntryRepository(),
       );
 
-      expect(() => coordinator.stop(), throwsStateError);
+      await coordinator.stop(); // Should not throw
+
+      expect(coordinator.state, equals(SyncState.stopped));
     });
 
     test('pause transitions from running to paused', () async {
@@ -283,6 +286,252 @@ void main() {
       await coordinator.dispose();
 
       expect(() => coordinator.start(), throwsStateError);
+    });
+
+    test('hasNetworkSync is false in local-only mode', () async {
+      final coordinator = await Coordinator.create(
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+        channelRepository: InMemoryChannelRepository(),
+        peerRepository: InMemoryPeerRepository(),
+        entryRepository: InMemoryEntryRepository(),
+      );
+
+      expect(coordinator.hasNetworkSync, isFalse);
+    });
+
+    test('hasNetworkSync is true when ports are provided', () async {
+      final bus = InMemoryMessageBus();
+      final coordinator = await Coordinator.create(
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+        channelRepository: InMemoryChannelRepository(),
+        peerRepository: InMemoryPeerRepository(),
+        entryRepository: InMemoryEntryRepository(),
+        messagePort: InMemoryMessagePort(localNode, bus),
+        timerPort: InMemoryTimePort(),
+      );
+
+      expect(coordinator.hasNetworkSync, isTrue);
+    });
+
+    group('stateChanges', () {
+      test('emits running when started', () async {
+        final coordinator = await Coordinator.create(
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          channelRepository: InMemoryChannelRepository(),
+          peerRepository: InMemoryPeerRepository(),
+          entryRepository: InMemoryEntryRepository(),
+        );
+
+        final states = <SyncState>[];
+        coordinator.stateChanges.listen(states.add);
+
+        await coordinator.start();
+        await Future.delayed(Duration.zero);
+
+        expect(states, equals([SyncState.running]));
+      });
+
+      test('emits stopped when stopped', () async {
+        final coordinator = await Coordinator.create(
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          channelRepository: InMemoryChannelRepository(),
+          peerRepository: InMemoryPeerRepository(),
+          entryRepository: InMemoryEntryRepository(),
+        );
+
+        final states = <SyncState>[];
+        await coordinator.start();
+        coordinator.stateChanges.listen(states.add);
+
+        await coordinator.stop();
+        await Future.delayed(Duration.zero);
+
+        expect(states, equals([SyncState.stopped]));
+      });
+
+      test('emits paused and running for pause/resume', () async {
+        final coordinator = await Coordinator.create(
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          channelRepository: InMemoryChannelRepository(),
+          peerRepository: InMemoryPeerRepository(),
+          entryRepository: InMemoryEntryRepository(),
+        );
+
+        final states = <SyncState>[];
+        coordinator.stateChanges.listen(states.add);
+
+        await coordinator.start();
+        await coordinator.pause();
+        await coordinator.resume();
+        await Future.delayed(Duration.zero);
+
+        expect(
+          states,
+          equals([SyncState.running, SyncState.paused, SyncState.running]),
+        );
+      });
+
+      test('emits disposed on dispose', () async {
+        final coordinator = await Coordinator.create(
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          channelRepository: InMemoryChannelRepository(),
+          peerRepository: InMemoryPeerRepository(),
+          entryRepository: InMemoryEntryRepository(),
+        );
+
+        final states = <SyncState>[];
+        coordinator.stateChanges.listen(states.add);
+
+        await coordinator.dispose();
+        await Future.delayed(Duration.zero);
+
+        expect(states, equals([SyncState.disposed]));
+      });
+
+      test('does not emit on idempotent start/stop', () async {
+        final coordinator = await Coordinator.create(
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          channelRepository: InMemoryChannelRepository(),
+          peerRepository: InMemoryPeerRepository(),
+          entryRepository: InMemoryEntryRepository(),
+        );
+
+        final states = <SyncState>[];
+        coordinator.stateChanges.listen(states.add);
+
+        await coordinator.stop(); // Already stopped — no emit
+        await coordinator.start();
+        await coordinator.start(); // Already running — no emit
+        await Future.delayed(Duration.zero);
+
+        expect(states, equals([SyncState.running]));
+      });
+    });
+
+    group('destroy', () {
+      test('transitions to disposed state', () async {
+        final coordinator = await Coordinator.create(
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          channelRepository: InMemoryChannelRepository(),
+          peerRepository: InMemoryPeerRepository(),
+          entryRepository: InMemoryEntryRepository(),
+        );
+
+        await coordinator.start();
+        await coordinator.destroy();
+
+        expect(coordinator.state, equals(SyncState.disposed));
+      });
+
+      test('clears all repositories', () async {
+        final channelRepo = InMemoryChannelRepository();
+        final peerRepo = InMemoryPeerRepository();
+        final entryRepo = InMemoryEntryRepository();
+        final localNodeRepo = InMemoryLocalNodeRepository(nodeId: localNode);
+
+        final coordinator = await Coordinator.create(
+          localNodeRepository: localNodeRepo,
+          channelRepository: channelRepo,
+          peerRepository: peerRepo,
+          entryRepository: entryRepo,
+        );
+
+        // Set up state
+        final channelId = ChannelId('ch');
+        final streamId = StreamId('s');
+        final channel = await coordinator.createChannel(channelId);
+        final stream = await channel.getOrCreateStream(streamId);
+        await stream.append(Uint8List.fromList([1, 2, 3]));
+        await coordinator.addPeer(NodeId('peer1'));
+
+        // Verify state exists
+        expect(await channelRepo.count, equals(1));
+        expect(await peerRepo.count, equals(1));
+        expect(await entryRepo.entryCount(channelId, streamId), equals(1));
+
+        await coordinator.destroy();
+
+        // All repos should be empty
+        expect(await channelRepo.count, equals(0));
+        expect(await peerRepo.count, equals(0));
+        expect(await entryRepo.entryCount(channelId, streamId), equals(0));
+      });
+
+      test('resets local node identity', () async {
+        final localNodeRepo = InMemoryLocalNodeRepository(nodeId: localNode);
+
+        final coordinator = await Coordinator.create(
+          localNodeRepository: localNodeRepo,
+          channelRepository: InMemoryChannelRepository(),
+          peerRepository: InMemoryPeerRepository(),
+          entryRepository: InMemoryEntryRepository(),
+        );
+
+        await coordinator.destroy();
+
+        // Node ID should be cleared so next create generates a new one
+        expect(await localNodeRepo.getNodeId(), isNull);
+        expect(await localNodeRepo.getClockState(), equals(Hlc.zero));
+        expect(await localNodeRepo.getIncarnation(), equals(0));
+      });
+
+      test('is idempotent', () async {
+        final coordinator = await Coordinator.create(
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          channelRepository: InMemoryChannelRepository(),
+          peerRepository: InMemoryPeerRepository(),
+          entryRepository: InMemoryEntryRepository(),
+        );
+
+        await coordinator.destroy();
+        await coordinator.destroy(); // Should not throw
+
+        expect(coordinator.state, equals(SyncState.disposed));
+      });
+
+      test('emits disposed on stateChanges', () async {
+        final coordinator = await Coordinator.create(
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          channelRepository: InMemoryChannelRepository(),
+          peerRepository: InMemoryPeerRepository(),
+          entryRepository: InMemoryEntryRepository(),
+        );
+
+        final states = <SyncState>[];
+        coordinator.stateChanges.listen(states.add);
+
+        await coordinator.destroy();
+        await Future.delayed(Duration.zero);
+
+        expect(states, equals([SyncState.disposed]));
+      });
+
+      test('new coordinator after destroy gets fresh identity', () async {
+        final channelRepo = InMemoryChannelRepository();
+        final entryRepo = InMemoryEntryRepository();
+        final localNodeRepo = InMemoryLocalNodeRepository(nodeId: localNode);
+
+        final coord1 = await Coordinator.create(
+          localNodeRepository: localNodeRepo,
+          channelRepository: channelRepo,
+          peerRepository: InMemoryPeerRepository(),
+          entryRepository: entryRepo,
+        );
+
+        await coord1.createChannel(ChannelId('ch'));
+        await coord1.destroy();
+
+        // Create new coordinator — should get fresh identity
+        final coord2 = await Coordinator.create(
+          localNodeRepository: localNodeRepo,
+          channelRepository: channelRepo,
+          peerRepository: InMemoryPeerRepository(),
+          entryRepository: entryRepo,
+        );
+
+        expect(coord2.localNode, isNot(equals(localNode)));
+        expect(coord2.channelIds, isEmpty);
+      });
     });
 
     test('events stream is available', () async {
@@ -584,18 +833,18 @@ void main() {
       );
     });
 
-    test('create throws when peerRepository is null', () async {
-      expect(
-        () => Coordinator.create(
-          localNodeRepository: InMemoryLocalNodeRepository(
-            nodeId: NodeId('local'),
-          ),
-          channelRepository: InMemoryChannelRepository(),
-          peerRepository: null as dynamic,
-          entryRepository: InMemoryEntryRepository(),
+    test('create uses InMemoryPeerRepository by default', () async {
+      final coordinator = await Coordinator.create(
+        localNodeRepository: InMemoryLocalNodeRepository(
+          nodeId: NodeId('local'),
         ),
-        throwsA(isA<TypeError>()),
+        channelRepository: InMemoryChannelRepository(),
+        entryRepository: InMemoryEntryRepository(),
       );
+
+      // Should work without providing peerRepository
+      await coordinator.addPeer(NodeId('peer1'));
+      expect(coordinator.peers.length, equals(1));
     });
 
     test('create throws when entryRepository is null', () async {

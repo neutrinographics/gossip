@@ -171,6 +171,11 @@ abstract interface class EntryRepository {
   /// Used when: Computing stream digests for anti-entropy gossip protocol.
   Future<VersionVector> getVersionVector(ChannelId channel, StreamId stream);
 
+  /// Removes all entries from all channels and streams.
+  ///
+  /// Used when resetting all sync state (e.g., user logout).
+  Future<void> clearAll();
+
   /// Returns the HLC timestamp of the last (tail) entry in the stream,
   /// or null if the stream has no entries.
   ///

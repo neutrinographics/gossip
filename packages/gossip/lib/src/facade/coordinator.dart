@@ -10,6 +10,7 @@ import '../domain/entities/peer.dart';
 import '../domain/entities/peer_metrics.dart';
 import '../domain/interfaces/channel_repository.dart';
 import '../infrastructure/repositories/caching_channel_repository.dart';
+import '../infrastructure/repositories/in_memory_peer_repository.dart';
 import '../domain/interfaces/entry_repository.dart';
 import '../domain/interfaces/local_node_repository.dart';
 import '../domain/interfaces/peer_repository.dart';
@@ -48,14 +49,12 @@ import 'sync_state.dart';
 /// ```dart
 /// // Create repositories (in-memory for testing, or your own implementations)
 /// final channelRepo = InMemoryChannelRepository();
-/// final peerRepo = InMemoryPeerRepository();
 /// final entryRepo = InMemoryEntryRepository();
 ///
 /// // Create coordinator
 /// final coordinator = await Coordinator.create(
 ///   localNodeRepository: InMemoryLocalNodeRepository(),
 ///   channelRepository: channelRepo,
-///   peerRepository: peerRepo,
 ///   entryRepository: entryRepo,
 /// );
 ///
@@ -85,7 +84,6 @@ import 'sync_state.dart';
 /// final coordinator = await Coordinator.create(
 ///   localNodeRepository: InMemoryLocalNodeRepository(),
 ///   channelRepository: channelRepo,
-///   peerRepository: peerRepo,
 ///   entryRepository: entryRepo,
 ///   messagePort: MyBluetoothMessagePort(),  // Your transport implementation
 ///   timerPort: RealTimePort(),               // Or InMemoryTimePort for testing
@@ -126,6 +124,12 @@ class Coordinator {
   /// Peer service for peer operations.
   final PeerService _peerService;
 
+  /// Peer repository for persistence.
+  final PeerRepository _peerRepository;
+
+  /// Local node repository for identity and clock persistence.
+  final LocalNodeRepository _localNodeRepository;
+
   /// Channel repository for loading channels.
   final ChannelRepository _channelRepository;
 
@@ -157,12 +161,18 @@ class Coordinator {
   final StreamController<SyncError> _errorsController =
       StreamController<SyncError>.broadcast();
 
+  /// Stream controller for state changes.
+  final StreamController<SyncState> _stateController =
+      StreamController<SyncState>.broadcast();
+
   /// Private constructor. Use [create] factory method.
   Coordinator._({
     required this.localNode,
     required PeerRegistry peerRegistry,
     required ChannelService channelService,
     required PeerService peerService,
+    required PeerRepository peerRepository,
+    required LocalNodeRepository localNodeRepository,
     required ChannelRepository channelRepository,
     required EntryRepository entryRepository,
     required CoordinatorConfig config,
@@ -173,6 +183,8 @@ class Coordinator {
   }) : _peerRegistry = peerRegistry,
        _channelService = channelService,
        _peerService = peerService,
+       _peerRepository = peerRepository,
+       _localNodeRepository = localNodeRepository,
        _channelRepository = channelRepository,
        _entryRepository = entryRepository,
        _config = config,
@@ -190,19 +202,26 @@ class Coordinator {
   /// synchronization. If null, the coordinator operates in local-only mode
   /// without network sync.
   ///
+  /// [peerRepository] is optional and defaults to [InMemoryPeerRepository].
+  /// Peers are transient — they are discovered at runtime and added/removed
+  /// as devices connect and disconnect. Persisting peers across restarts is
+  /// unnecessary because a loaded peer has no meaning if the device isn't
+  /// present, and the failure detector would immediately begin suspecting it.
+  ///
   /// [config] allows tuning of gossip and failure detection parameters.
   /// If null, default values are used.
   static Future<Coordinator> create({
     required LocalNodeRepository localNodeRepository,
     required ChannelRepository channelRepository,
-    required PeerRepository peerRepository,
     required EntryRepository entryRepository,
+    PeerRepository? peerRepository,
     MessagePort? messagePort,
     TimePort? timerPort,
     Random? random,
     CoordinatorConfig? config,
     LogCallback? onLog,
   }) async {
+    peerRepository ??= InMemoryPeerRepository();
     final cfg = config ?? CoordinatorConfig.defaults;
 
     // Resolve localNode from repository — single source of truth
@@ -267,6 +286,8 @@ class Coordinator {
       peerRegistry: peerRegistry,
       channelService: channelService,
       peerService: peerService,
+      peerRepository: peerRepository,
+      localNodeRepository: localNodeRepository,
       channelRepository: cachedChannelRepo,
       entryRepository: entryRepository,
       config: cfg,
@@ -326,6 +347,14 @@ class Coordinator {
     final channelIds = await _channelRepository.listIds();
     for (final id in channelIds) {
       _channelFacades[id] = Channel(id: id, channelService: _channelService);
+    }
+  }
+
+  /// Transitions to a new state and emits on the state changes stream.
+  void _transitionTo(SyncState newState) {
+    _state = newState;
+    if (!_stateController.isClosed) {
+      _stateController.add(newState);
     }
   }
 
@@ -706,8 +735,23 @@ class Coordinator {
   /// Returns the current state of the coordinator.
   SyncState get state => _state;
 
+  /// Stream of state changes emitted when the coordinator transitions
+  /// between [SyncState] values.
+  ///
+  /// Useful for binding UI to sync status or logging lifecycle transitions.
+  /// Does not emit when an idempotent call (e.g., [start] when already
+  /// running) results in no actual state change.
+  Stream<SyncState> get stateChanges => _stateController.stream;
+
   /// Returns true if the coordinator has been disposed.
   bool get isDisposed => _state == SyncState.disposed;
+
+  /// Returns true if network synchronization is enabled.
+  ///
+  /// This is true when both [MessagePort] and [TimePort] were provided
+  /// to [create], enabling gossip protocol and failure detection.
+  /// When false, the coordinator operates in local-only mode.
+  bool get hasNetworkSync => _gossipEngine != null;
 
   /// Stream of domain events emitted by the system.
   ///
@@ -737,16 +781,15 @@ class Coordinator {
   /// - Start failure detection (once integrated)
   /// - Begin processing events
   ///
-  /// Throws [StateError] if already running or disposed.
+  /// Returns immediately if already running (idempotent).
+  /// Throws [StateError] if disposed.
   Future<void> start() async {
-    if (_state == SyncState.running) {
-      throw StateError('Coordinator is already running');
-    }
+    if (_state == SyncState.running) return;
     if (_state == SyncState.disposed) {
       throw StateError('Cannot start a disposed coordinator');
     }
 
-    _state = SyncState.running;
+    _transitionTo(SyncState.running);
 
     // Start GossipEngine if available
     if (_gossipEngine != null) {
@@ -768,11 +811,10 @@ class Coordinator {
   /// When stopped, all protocol services are halted but the coordinator
   /// can be restarted with [start].
   ///
-  /// Throws [StateError] if already stopped or disposed.
+  /// Returns immediately if already stopped (idempotent).
+  /// Throws [StateError] if disposed.
   Future<void> stop() async {
-    if (_state == SyncState.stopped) {
-      throw StateError('Coordinator is already stopped');
-    }
+    if (_state == SyncState.stopped) return;
     if (_state == SyncState.disposed) {
       throw StateError('Cannot stop a disposed coordinator');
     }
@@ -789,7 +831,7 @@ class Coordinator {
       _failureDetector!.stopListening();
     }
 
-    _state = SyncState.stopped;
+    _transitionTo(SyncState.stopped);
   }
 
   /// Pauses synchronization without fully stopping.
@@ -816,7 +858,7 @@ class Coordinator {
       // Keep listening to handle incoming messages
     }
 
-    _state = SyncState.paused;
+    _transitionTo(SyncState.paused);
   }
 
   /// Resumes synchronization from a paused state.
@@ -829,7 +871,7 @@ class Coordinator {
       throw StateError('Can only resume a paused coordinator');
     }
 
-    _state = SyncState.running;
+    _transitionTo(SyncState.running);
 
     // Resume GossipEngine if available
     if (_gossipEngine != null) {
@@ -868,10 +910,50 @@ class Coordinator {
       }
     }
 
-    _state = SyncState.disposed;
+    _transitionTo(SyncState.disposed);
 
     // Close stream controllers
     await _eventsController.close();
     await _errorsController.close();
+    await _stateController.close();
+  }
+
+  /// Destroys the coordinator and wipes all persisted sync state.
+  ///
+  /// This method:
+  /// 1. Disposes the coordinator (stops protocols, closes streams)
+  /// 2. Clears all channels, entries, and peers from their repositories
+  /// 3. Resets the local node identity (node ID, clock, incarnation)
+  ///
+  /// After destruction, the coordinator cannot be reused. Call
+  /// [Coordinator.create] with the same repositories to start fresh
+  /// with a new node identity.
+  ///
+  /// **Important:** A new node ID is generated on the next [create] call
+  /// because peers track version vectors keyed by node ID. Reusing the
+  /// old ID after clearing entries would cause peers to silently skip
+  /// new entries.
+  ///
+  /// This method is idempotent — calling it multiple times is safe.
+  ///
+  /// Example (logout/login flow):
+  /// ```dart
+  /// await coordinator.destroy();
+  /// coordinator = await Coordinator.create(
+  ///   localNodeRepository: localNodeRepo, // generates new nodeId
+  ///   channelRepository: channelRepo,
+  ///   entryRepository: entryRepo,
+  ///   messagePort: messagePort,
+  ///   timerPort: timerPort,
+  /// );
+  /// await coordinator.start();
+  /// ```
+  Future<void> destroy() async {
+    await dispose();
+
+    await _channelRepository.clearAll();
+    await _entryRepository.clearAll();
+    await _peerRepository.clearAll();
+    await _localNodeRepository.reset();
   }
 }

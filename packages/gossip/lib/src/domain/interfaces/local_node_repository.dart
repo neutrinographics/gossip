@@ -74,6 +74,18 @@ abstract interface class LocalNodeRepository {
 
   /// Persists the current incarnation number.
   Future<void> saveIncarnation(int incarnation);
+
+  /// Resets all local node state: node ID, clock state, and incarnation.
+  ///
+  /// After reset, [getNodeId] returns null, [getClockState] returns
+  /// [Hlc.zero], and [getIncarnation] returns 0. The next call to
+  /// [resolveNodeId] will generate a fresh identity.
+  ///
+  /// Used when resetting all sync state (e.g., user logout). A new node
+  /// ID is required because peers track version vectors keyed by node ID.
+  /// Reusing the old ID after clearing entries would cause peers to
+  /// silently skip the new entries.
+  Future<void> reset();
 }
 
 /// Convenience extension on [LocalNodeRepository].

@@ -41,4 +41,9 @@ class InMemoryChannelRepository implements ChannelRepository {
 
   @override
   Future<int> get count async => _channels.length;
+
+  @override
+  Future<void> clearAll() async {
+    _channels.clear();
+  }
 }

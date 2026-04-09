@@ -59,5 +59,29 @@ void main() {
         expect(await repository.count, equals(2));
       },
     );
+
+    test('clearAll removes all channels', () async {
+      final repository = InMemoryChannelRepository();
+      final localNode = NodeId('local');
+
+      final channel1 = ChannelAggregate(
+        id: ChannelId('ch1'),
+        localNode: localNode,
+      );
+      final channel2 = ChannelAggregate(
+        id: ChannelId('ch2'),
+        localNode: localNode,
+      );
+
+      await repository.save(channel1);
+      await repository.save(channel2);
+      expect(await repository.count, equals(2));
+
+      await repository.clearAll();
+
+      expect(await repository.count, equals(0));
+      expect(await repository.listIds(), isEmpty);
+      expect(await repository.findById(channel1.id), isNull);
+    });
   });
 }

@@ -60,4 +60,11 @@ class InMemoryLocalNodeRepository implements LocalNodeRepository {
   Future<void> saveIncarnation(int incarnation) async {
     _incarnation = incarnation;
   }
+
+  @override
+  Future<void> reset() async {
+    _nodeId = null;
+    _clockState = Hlc.zero;
+    _incarnation = 0;
+  }
 }

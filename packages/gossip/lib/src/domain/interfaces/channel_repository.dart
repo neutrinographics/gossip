@@ -60,4 +60,9 @@ abstract interface class ChannelRepository {
 
   /// Returns the total number of persisted channels.
   Future<int> get count;
+
+  /// Removes all persisted channels.
+  ///
+  /// Used when resetting all sync state (e.g., user logout).
+  Future<void> clearAll();
 }

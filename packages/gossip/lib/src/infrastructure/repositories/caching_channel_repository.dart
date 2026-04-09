@@ -59,4 +59,10 @@ class CachingChannelRepository implements ChannelRepository {
 
   @override
   Future<int> get count => _inner.count;
+
+  @override
+  Future<void> clearAll() async {
+    _cache.clear();
+    await _inner.clearAll();
+  }
 }
