@@ -929,8 +929,7 @@ class Coordinator {
   /// old ID after clearing entries would cause peers to silently skip
   /// new entries.
   ///
-  /// This method is idempotent — calling it multiple times is safe,
-  /// though repositories are only cleared on the first call.
+  /// This method is idempotent — calling it multiple times is safe.
   ///
   /// Example (logout/login flow):
   /// ```dart
@@ -946,15 +945,11 @@ class Coordinator {
   /// await coordinator.start();
   /// ```
   Future<void> destroy() async {
-    final alreadyDisposed = _state == SyncState.disposed;
-
     await dispose();
 
-    if (!alreadyDisposed) {
-      await _channelRepository.clearAll();
-      await _entryRepository.clearAll();
-      await _peerRepository.clearAll();
-      await _localNodeRepository.reset();
-    }
+    await _channelRepository.clearAll();
+    await _entryRepository.clearAll();
+    await _peerRepository.clearAll();
+    await _localNodeRepository.reset();
   }
 }
