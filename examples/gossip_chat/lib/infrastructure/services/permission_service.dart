@@ -13,7 +13,7 @@ class PermissionService {
     // Note: On Android 12+ with BLUETOOTH_SCAN declared with neverForLocation,
     // location permission is not required for BLE scanning.
     final permissions = Platform.isIOS
-        ? [Permission.bluetooth, Permission.locationWhenInUse]
+        ? [Permission.bluetooth]
         : [
             Permission.bluetoothAdvertise,
             Permission.bluetoothConnect,
@@ -41,9 +41,7 @@ class PermissionService {
   Future<bool> hasBluetoothPermissions() async {
     if (Platform.isIOS) {
       final bluetooth = await Permission.bluetooth.status;
-      final location = await Permission.locationWhenInUse.status;
-      return (bluetooth.isGranted || bluetooth.isLimited) &&
-          (location.isGranted || location.isLimited);
+      return bluetooth.isGranted || bluetooth.isLimited;
     } else {
       final bluetoothAdvertise = await Permission.bluetoothAdvertise.status;
       final bluetoothConnect = await Permission.bluetoothConnect.status;
