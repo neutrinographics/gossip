@@ -16,7 +16,6 @@ Migrate `examples/gossip_chat` from `gossip_nearby` to `gossip_bluey`. The app's
 ## Non-goals
 
 - Removing or modifying the `gossip_nearby` package.
-- Re-introducing MTU negotiation in the transport (rolled back from main; can be re-added later).
 - Real-device CI for the example app.
 - New transport-specific UI affordances (topology toggle, hub/spoke mode picker).
 - Cleanup of pre-existing analyzer warnings in `gossip_nearby`.
@@ -132,7 +131,7 @@ Note the use of `Bluey.shared` (not the transport's internal Bluey instance). `e
 
 - **Dual roles on real chips.** The app advertises and discovers simultaneously. Some Android chipsets misbehave under that load — symptoms include scan results dropping, advertising silently failing, or burst-y connection failures. Watch `transport.errors` for a string of `ConnectFailedError`.
 - **iOS GATT cache staleness.** Cold-launched peripherals may not surface their gossip service immediately to a central that already finished discovery. `BlueyPortImpl.connect` throws "gossip service missing" in that case. The transport's per-NodeId backoff retries automatically; visible on the metrics dashboard as elevated `totalConnectionsFailed`.
-- **20-byte MTU.** Until the MTU negotiation work returns to main, every gossip message gets chunked into 20-byte writes. Throughput will be visibly slow on real hardware, especially during first sync. Symptom: chat messages take noticeable seconds to deliver. Not a correctness issue.
+- **MTU negotiation timing.** `BlueyPortImpl` requests the platform-max MTU on central-role connect, but the negotiation is async and the first few writes after connect may use the BLE-default 20-byte chunk size before the request completes. Symptom: a brief slow window at the start of each new connection, then full throughput. Not a correctness issue.
 - **iOS background.** Out of scope per gossip_bluey's spec — the example app discovery only works while the app is foregrounded.
 
 ## Verification
