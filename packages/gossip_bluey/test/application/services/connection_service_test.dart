@@ -168,5 +168,83 @@ void main() {
       await remoteSvc.dispose();
       await remotePort.dispose();
     });
+
+    test('discovery initiates connect to peers with greater NodeId', () async {
+      final network = FakeBlueyNetwork();
+      // localId < remoteId, so local should initiate.
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
+      await remotePort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Remote',
+        localNodeId: remoteId,
+      );
+      await localPort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Local',
+        localNodeId: localId,
+      );
+
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: ConnectionRegistry(),
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+      );
+      final events = <ConnectionEvent>[];
+      final sub = svc.events.listen(events.add);
+
+      await svc.startDiscovery();
+      await svc.runDiscoveryRoundForTest();
+      await Future<void>.delayed(Duration.zero);
+
+      final opened = events.whereType<PeerOpened>().toList();
+      expect(opened.map((e) => e.nodeId), contains(remoteId));
+
+      await sub.cancel();
+      await svc.dispose();
+      await remotePort.dispose();
+    });
+
+    test('tie-break: peer with greater NodeId does not initiate', () async {
+      final network = FakeBlueyNetwork();
+      // remote will be local-side; we run service for remoteId (higher)
+      final remoteAsLocal =
+          FakeBlueyPort(localNodeId: remoteId, network: network);
+      final localAsRemote =
+          FakeBlueyPort(localNodeId: localId, network: network);
+      await localAsRemote.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Local',
+        localNodeId: localId,
+      );
+      await remoteAsLocal.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Remote',
+        localNodeId: remoteId,
+      );
+
+      final svc = ConnectionService(
+        localNodeId: remoteId,
+        port: remoteAsLocal,
+        registry: ConnectionRegistry(),
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+      );
+      final events = <ConnectionEvent>[];
+      final sub = svc.events.listen(events.add);
+
+      await svc.startDiscovery();
+      await svc.runDiscoveryRoundForTest();
+      await Future<void>.delayed(Duration.zero);
+
+      final opened = events.whereType<PeerOpened>().toList();
+      expect(opened, isEmpty);
+
+      await sub.cancel();
+      await svc.dispose();
+      await localAsRemote.dispose();
+    });
   });
 }

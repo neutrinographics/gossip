@@ -8,6 +8,7 @@ import '../../domain/entities/connection_handle.dart';
 import '../../domain/errors/connection_error.dart';
 import '../../domain/events/connection_event.dart';
 import '../../domain/interfaces/bluey_port.dart';
+import '../../domain/value_objects/discovered_peer.dart';
 import '../../domain/value_objects/service_uuid.dart';
 import '../../infrastructure/codec/frame_codec.dart';
 import '../../infrastructure/ports/bluey_message_port.dart';
@@ -47,11 +48,12 @@ class ConnectionService implements MessageDispatcher {
   final int? maxConnections;
   final int? targetConnections;
   final LogCallback? onLog;
-  // ignore: unused_field, prefer_final_fields
+  // ignore: prefer_final_fields
   bool Function(NodeId)? _discoveryFilter;
   final Clock _clock;
-  // ignore: unused_field
   final Duration _discoveryInterval;
+  bool _discoveryEnabled = false;
+  Timer? _discoveryTimer;
 
   late final StreamSubscription<BlueyPortEvent> _portSub;
   final StreamController<ConnectionEvent> _events =
@@ -171,7 +173,59 @@ class ConnectionService implements MessageDispatcher {
   @override
   Future<void> close() async => dispose();
 
+  Future<void> startDiscovery({bool Function(NodeId)? filter}) async {
+    if (filter != null) {
+      _discoveryFilter = filter;
+    }
+    _discoveryEnabled = true;
+    _scheduleDiscovery();
+  }
+
+  Future<void> stopDiscovery() async {
+    _discoveryEnabled = false;
+    _discoveryTimer?.cancel();
+    _discoveryTimer = null;
+  }
+
+  void _scheduleDiscovery() {
+    _discoveryTimer?.cancel();
+    if (!_discoveryEnabled) return;
+    _discoveryTimer = Timer(_discoveryInterval, () {
+      unawaited(_runDiscoveryRound());
+      _scheduleDiscovery();
+    });
+  }
+
+  /// Synchronously triggers one discovery round. Test-only.
+  Future<void> runDiscoveryRoundForTest() => _runDiscoveryRound();
+
+  Future<void> _runDiscoveryRound() async {
+    if (!_discoveryEnabled) return;
+    final List<DiscoveredPeer> peers;
+    try {
+      peers = await port.discoverPeers(serviceUuid: serviceUuid);
+    } catch (e, st) {
+      onLog?.call(LogLevel.warning, 'discoverPeers failed', e, st);
+      return;
+    }
+    for (final p in peers) {
+      if (registry.contains(p.nodeId)) continue;
+      if (_discoveryFilter != null && !_discoveryFilter!(p.nodeId)) continue;
+      // Tie-break: only initiate if our nodeId < remote.
+      if (localNodeId.value.compareTo(p.nodeId.value) >= 0) continue;
+      try {
+        await port.connect(p.nodeId);
+      } catch (e, st) {
+        onLog?.call(LogLevel.info, 'connect failed', e, st);
+        // Backoff is added in Task 24.
+      }
+    }
+  }
+
   Future<void> dispose() async {
+    _discoveryTimer?.cancel();
+    _discoveryTimer = null;
+    _discoveryEnabled = false;
     await _portSub.cancel();
     await _events.close();
     await _errors.close();
