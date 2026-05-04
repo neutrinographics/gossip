@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:gossip/gossip.dart' show ChannelId;
+import 'package:permission_handler/permission_handler.dart';
 
 import '../../infrastructure/services/permission_service.dart';
 import '../controllers/chat_controller.dart';
@@ -164,9 +165,21 @@ class ChannelListScreen extends StatelessWidget {
     final permissionService = PermissionService();
     final hasPermission = await permissionService.requestCameraPermission();
     if (!hasPermission) {
+      // If iOS/Android already denied the permission once, request()
+      // returns immediately without prompting. The user has to go to
+      // Settings to flip it back on — surface that path.
+      final permanentlyDenied = await Permission.camera.isPermanentlyDenied;
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Camera permission is required')),
+          SnackBar(
+            content: const Text('Camera permission is required'),
+            action: permanentlyDenied
+                ? SnackBarAction(
+                    label: 'Open Settings',
+                    onPressed: permissionService.openSettings,
+                  )
+                : null,
+          ),
         );
       }
       return;
