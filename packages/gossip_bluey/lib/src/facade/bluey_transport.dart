@@ -62,6 +62,7 @@ class BlueyTransport {
     required String displayName,
     int? maxConnections,
     int? targetConnections,
+    Duration discoveryInterval = const Duration(seconds: 30),
     LogCallback? onLog,
   }) async {
     final nodeId = await localNodeRepository.resolveNodeId();
@@ -83,6 +84,7 @@ class BlueyTransport {
       serviceUuid: serviceUuid,
       maxConnections: maxConnections,
       targetConnections: targetConnections,
+      discoveryInterval: discoveryInterval,
       onLog: onLog,
     );
     return BlueyTransport._(
@@ -104,6 +106,7 @@ class BlueyTransport {
     required BlueyPort port,
     int? maxConnections,
     int? targetConnections,
+    Duration discoveryInterval = const Duration(seconds: 5),
     LogCallback? onLog,
   }) {
     final registry = ConnectionRegistry();
@@ -116,6 +119,7 @@ class BlueyTransport {
       serviceUuid: serviceUuid,
       maxConnections: maxConnections,
       targetConnections: targetConnections,
+      discoveryInterval: discoveryInterval,
       onLog: onLog,
     );
     final mp = BlueyMessagePort(service);
