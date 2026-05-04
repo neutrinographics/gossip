@@ -12,6 +12,8 @@ Add a new `gossip_bluey` package — a BLE transport for `gossip` built on top o
 
 - Public-API parity with `gossip_nearby`: facade, peer events, lifecycle methods, observability hooks.
 - Replace the broken `gossip_ble` (known `ambiguous_import` errors, built on the dual `bluetooth_low_energy_*` packages) with a transport that uses `bluey`'s peer-aware primitives directly.
+- Support both mesh and star topologies through composable primitives — the transport stays topology-agnostic; the application chooses by enabling subsets of `startAdvertising` / `startDiscovery` and configuring peer sets accordingly.
+- Survive an 8-device fully connected mesh on real BLE hardware: adaptive discovery (pause at capacity), per-`NodeId` connection backoff, soft connection target distinct from hard cap.
 - DDD layered architecture matching the rest of the monorepo (facade → application → domain → infrastructure).
 
 ## Non-goals (v1)
@@ -31,7 +33,8 @@ class BlueyTransport {
     required LocalNodeRepository localNodeRepository,
     required ServiceUuid serviceUuid,
     required String displayName,
-    int? maxConnections,
+    int? maxConnections,            // hard cap; reject incoming/outgoing past this
+    int? targetConnections,         // soft cap; stop initiating past this. Defaults to maxConnections.
     LogCallback? onLog,
   });
 
@@ -47,7 +50,7 @@ class BlueyTransport {
 
   Future<void> startAdvertising();
   Future<void> stopAdvertising();
-  Future<void> startDiscovery();
+  Future<void> startDiscovery({bool Function(NodeId)? filter});
   Future<void> stopDiscovery();
   Future<void> disconnectAll();
   Future<void> dispose();
@@ -162,12 +165,38 @@ Two paths:
 - **Silent peer detection.** bluey's lifecycle heartbeat (already running on every `PeerConnection`) detects silent peers in ~30s and triggers a local disconnect. `ConnectionService` listens to connection state changes and emits `PeerDisconnected`.
 - **Explicit `disconnectAll()`.** Calls `peerConnection.disconnect()` for each connection — bluey's peer-protocol disconnect (courtesy write to control characteristic + platform disconnect).
 
-### `maxConnections`
+### Connection caps: `maxConnections` and `targetConnections`
 
-Enforced in two places:
+Two caps with distinct semantics:
 
-- **Initiator side:** before calling `peer.connect()`, check `registry.connectionCount`; skip if at capacity.
-- **Responder side:** when `server.peerConnections` fires past capacity, immediately call `peerClient.disconnect()` — does not enter the registry, no `PeerConnected` emission.
+- **`maxConnections` (hard cap).** Enforced in two places:
+  - **Initiator side:** before calling `peer.connect()`, check `registry.connectionCount`; skip if at capacity.
+  - **Responder side:** when `server.peerConnections` fires past capacity, immediately call `peerClient.disconnect()` — does not enter the registry, no `PeerConnected` emission.
+- **`targetConnections` (soft cap, defaults to `maxConnections`).** Once we reach `targetConnections`, we stop *initiating* new connections (still accept inbound up to `maxConnections`). Lets a star-spoke pin to one server with `targetConnections: 1` while still allowing a mesh to fill up to `maxConnections`.
+
+### Adaptive discovery
+
+The discovery loop pauses scanning when `connectedPeerCount >= targetConnections` and resumes on any `PeerDisconnected`. Reasons:
+- Scanning concurrent with multiple active connections degrades both on most BLE chipsets.
+- Once we have enough peers, scanning is pure power and bandwidth waste.
+
+`startDiscovery()` flips an "enabled" flag; the actual `bluey.discoverPeers()` call is gated by `connectedPeerCount < targetConnections`. `stopDiscovery()` clears the flag entirely.
+
+### Discovery filter
+
+`startDiscovery({bool Function(NodeId)? filter})` accepts an optional predicate. When provided, peers found by `bluey.discoverPeers()` are passed through `filter(NodeId(serverId.value))` before any connect attempt; rejected peers are silently dropped from this round of discovery. Used by star-spokes to pin to a known server `NodeId`. When `filter` is `null` (the default), all gossip-speaking peers are considered (current mesh behavior).
+
+### Connection backoff
+
+Per-`NodeId` exponential backoff for failed connect attempts. State lives in `ConnectionService`:
+
+```dart
+Map<NodeId, BackoffState> _backoff;  // delay, nextAttempt
+```
+
+On `peer.connect()` failure, set `delay = min(delay * 2, 30s)` (initial 1s) and `nextAttempt = now + delay`. The discovery loop skips peers whose `nextAttempt` is in the future. On successful connect, the entry is cleared. On explicit `disconnectAll()` or peer-initiated disconnect, the entry stays cleared (no penalty for a clean session).
+
+Entries for peers we've never seen consume no memory; the map is populated lazily on first failure and pruned on `dispose()`.
 
 ## Wire format
 
@@ -222,19 +251,80 @@ Both feed the per-connection `FrameDecoder`. Decoded payloads flow up to `BlueyM
 
 All errors are typed (`ConnectionError` hierarchy) and emitted on the `errors` stream — no silent catches. Decode errors (oversize frame, unexpected EOF if connection drops mid-frame) tear the connection down; gossip resyncs via anti-entropy when the peer reconnects.
 
+## Topologies
+
+`gossip_bluey` does not own a topology concept. The application chooses by enabling subsets of the primitives. Two patterns are explicitly supported and tested.
+
+### Mesh (every device peers with every other)
+
+Every device runs both roles. Tie-breaking ensures one initiator per pair.
+
+```dart
+final transport = await BlueyTransport.create(
+  localNodeRepository: repo,
+  serviceUuid: ServiceUuid('f0000000-...'),
+  displayName: 'Phone-A',
+  maxConnections: 7,    // 8-device fully connected mesh
+);
+await transport.startAdvertising();
+await transport.startDiscovery();
+```
+
+Every other device added to the channel via `coordinator.addPeer(...)` becomes a direct gossip peer; the mesh is fully connected at the gossip layer.
+
+### Star (one server, many spokes)
+
+One device acts as the server (advertise only). Spokes only discover and pin to that server.
+
+**Server:**
+```dart
+final server = await BlueyTransport.create(
+  localNodeRepository: serverRepo,
+  serviceUuid: ServiceUuid('f0000000-...'),
+  displayName: 'Hub',
+  maxConnections: 7,    // accept up to 7 spokes
+);
+await server.startAdvertising();
+// no startDiscovery — server doesn't initiate
+```
+
+**Spoke:**
+```dart
+final serverNodeId = NodeId('<known-server-uuid>');
+final spoke = await BlueyTransport.create(
+  localNodeRepository: spokeRepo,
+  serviceUuid: ServiceUuid('f0000000-...'),
+  displayName: 'Phone-1',
+  maxConnections: 1,
+  targetConnections: 1,
+);
+// no startAdvertising — spoke doesn't accept incoming
+await spoke.startDiscovery(filter: (id) => id == serverNodeId);
+```
+
+The application configures peer sets accordingly: each spoke adds *only* the server as a gossip peer; the server adds *all* spokes. Anti-entropy converges transitively through the server — no relay logic needed in the transport.
+
+### Hybrid topologies
+
+The same primitives compose into other shapes (tree of stars, redundant pair of servers, sparse mesh with `targetConnections < maxConnections`). The transport stays out of the way; the application decides.
+
 ## Testing strategy
 
 ### Unit tests (bulk of suite)
 
 - **`FrameCodec`** — round-trips, MTU-sized chunking, partial-frame buffering, oversize-frame rejection (>32KB), boundary cases (1-byte payload, exactly-MTU payload, length-prefix split across chunks).
 - **`ConnectionRegistry`** — NodeId-uniqueness invariants, capacity limits, lookup, removal.
-- **`ConnectionService`** — full lifecycle against a fake `BlueyPort` (in-memory): discovery, tie-break logic, connect, notifications, write requests, disconnect, capacity rejection, error paths.
+- **`ConnectionService`** — full lifecycle against a fake `BlueyPort` (in-memory): discovery, tie-break logic, connect, notifications, write requests, disconnect, capacity rejection (`maxConnections`), soft-cap halt of new initiations (`targetConnections`), adaptive discovery pause/resume on capacity changes, discovery-filter rejection, per-NodeId backoff progression and clearing, error paths.
 - **`BlueyMessagePort`** — adapter logic between `ConnectionService` and gossip's `MessagePort`.
 - **`BlueyTransport`** — facade wiring, `startAdvertising`/`startDiscovery` state machine, `dispose` cleanup.
 
 ### Integration tests
 
-One or two end-to-end tests: two `BlueyTransport` instances wired through a single in-memory `FakeBlueyPort` (one fake, two views) → verify two-node gossip sync end-to-end without real BLE. Smoke test for the full package.
+End-to-end tests through an in-memory `FakeBlueyPort` (single fake, multiple views) verifying gossip sync without real BLE:
+
+- **Two-node mesh** — baseline smoke test: two `BlueyTransport` instances converge on a shared channel.
+- **Three-node star** — one server, two spokes pinned via `discoveryFilter`; entries originating on either spoke must converge to the other through the server.
+- **Capacity behavior** — at `maxConnections` the responder rejects extra incoming; at `targetConnections` the initiator stops scanning and resumes after a disconnect.
 
 ### TDD discipline
 
