@@ -67,7 +67,7 @@ packages:
     description:
       path: bluey
       ref: HEAD
-      resolved-ref: "20be5a7dcb6159673564c077664ccba1283c7155"
+      resolved-ref: "7a83846663a859dbacddf2dff7c8693d927b58fc"
       url: "https://github.com/neutrinographics/bluey.git"
     source: git
     version: "0.3.0"
@@ -75,8 +75,8 @@ packages:
     dependency: transitive
     description:
       path: bluey_android
-      ref: "20be5a7dcb6159673564c077664ccba1283c7155"
-      resolved-ref: "20be5a7dcb6159673564c077664ccba1283c7155"
+      ref: "7a83846663a859dbacddf2dff7c8693d927b58fc"
+      resolved-ref: "7a83846663a859dbacddf2dff7c8693d927b58fc"
       url: "https://github.com/neutrinographics/bluey.git"
     source: git
     version: "0.3.0"
@@ -84,8 +84,8 @@ packages:
     dependency: transitive
     description:
       path: bluey_ios
-      ref: "20be5a7dcb6159673564c077664ccba1283c7155"
-      resolved-ref: "20be5a7dcb6159673564c077664ccba1283c7155"
+      ref: "7a83846663a859dbacddf2dff7c8693d927b58fc"
+      resolved-ref: "7a83846663a859dbacddf2dff7c8693d927b58fc"
       url: "https://github.com/neutrinographics/bluey.git"
     source: git
     version: "0.3.0"
@@ -93,8 +93,8 @@ packages:
     dependency: transitive
     description:
       path: bluey_platform_interface
-      ref: "20be5a7dcb6159673564c077664ccba1283c7155"
-      resolved-ref: "20be5a7dcb6159673564c077664ccba1283c7155"
+      ref: "7a83846663a859dbacddf2dff7c8693d927b58fc"
+      resolved-ref: "7a83846663a859dbacddf2dff7c8693d927b58fc"
       url: "https://github.com/neutrinographics/bluey.git"
     source: git
     version: "0.3.0"

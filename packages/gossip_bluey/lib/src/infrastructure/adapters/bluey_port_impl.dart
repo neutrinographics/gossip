@@ -13,27 +13,22 @@ import 'gossip_gatt_service.dart';
 /// Real adapter that wraps bluey's `Bluey` instance, satisfying
 /// [BlueyPort].
 ///
-/// ## Caveat: peripheral-side NodeId identification
-///
-/// When a remote central connects to our GATT server, bluey's
-/// [bluey.PeerClient] only exposes a transient platform [bluey.UUID] via
-/// `client.id` — there is no API to learn the central's `ServerId`
-/// (which is what we'd want to map to a [NodeId]). As a pragmatic
-/// workaround, this adapter uses `client.id.toString()` as the NodeId
-/// for peripheral-role connections. This means a single peer that
-/// connects to us as a central will appear under a synthetic NodeId
-/// rather than its real one. For full mesh correctness, an in-band
-/// handshake (sending the central's NodeId on first write) would be
-/// needed — see future plan tasks. Central-role connections (we
-/// initiated; we know the target NodeId) are unaffected.
+/// Constructs a fresh `Bluey` instance with the local `ServerId` baked
+/// in (via `Bluey(localIdentity: ...)`). bluey threads that identity
+/// into both the GATT server (so other peers learn it via the lifecycle
+/// control characteristic) and the lifecycle heartbeat (so the
+/// peripheral side learns the central's `ServerId` from `PeerClient`).
 class BlueyPortImpl implements BlueyPort {
-  BlueyPortImpl({bluey.Bluey? blueyInstance})
-    : _bluey = blueyInstance ?? bluey.Bluey.shared;
+  BlueyPortImpl({required NodeId localNodeId, bluey.Bluey? blueyInstance})
+    : _localNodeIdValue = localNodeId.value,
+      _bluey =
+          blueyInstance ??
+          bluey.Bluey(localIdentity: bluey.ServerId(localNodeId.value));
 
   final bluey.Bluey _bluey;
   bluey.Server? _server;
   ServiceUuid? _serviceUuid;
-  String? _localNodeIdValue;
+  final String _localNodeIdValue;
 
   /// Central-role connections — we initiated, peer is the GATT server.
   final Map<NodeId, bluey.PeerConnection> _centralConnections = {};
@@ -41,9 +36,15 @@ class BlueyPortImpl implements BlueyPort {
   final Map<NodeId, StreamSubscription<bluey.ConnectionState>>
   _centralStateSubs = {};
 
-  /// Peripheral-role clients — they initiated, we are the GATT server.
-  /// Keyed by the synthetic NodeId derived from `client.id`.
+  /// Peripheral-role peer clients — they initiated, we are the GATT
+  /// server. Keyed by the central's real `ServerId` (now exposed by
+  /// [bluey.PeerClient]).
   final Map<NodeId, bluey.PeerClient> _peripheralClients = {};
+
+  /// Reverse lookup: platform client id → NodeId. Populated when
+  /// `peerConnections` fires; used to resolve `disconnections` events
+  /// and `writeRequests` (which carry [bluey.Client], not [bluey.PeerClient]).
+  final Map<String, NodeId> _clientIdToNodeId = {};
 
   final StreamController<BlueyPortEvent> _events =
       StreamController<BlueyPortEvent>.broadcast();
@@ -58,9 +59,16 @@ class BlueyPortImpl implements BlueyPort {
     required String displayName,
     required NodeId localNodeId,
   }) async {
+    if (localNodeId.value != _localNodeIdValue) {
+      throw ArgumentError.value(
+        localNodeId,
+        'localNodeId',
+        'must match the NodeId passed to BlueyPortImpl constructor '
+            '(got ${localNodeId.value}, expected $_localNodeIdValue)',
+      );
+    }
     _serviceUuid = serviceUuid;
-    _localNodeIdValue = localNodeId.value;
-    final server = _bluey.server(identity: bluey.ServerId(localNodeId.value));
+    final server = _bluey.server();
     if (server == null) {
       throw StateError(
         'peripheral role not supported on this platform — '
@@ -76,11 +84,11 @@ class BlueyPortImpl implements BlueyPort {
 
     _serverSubs.add(
       server.peerConnections.listen((peerClient) {
-        // bluey.PeerClient does not expose the central's ServerId.
-        // Best we can do: derive a synthetic NodeId from the
-        // platform-level client id.
-        final nodeId = NodeId(peerClient.client.id.toString());
+        // bluey now exposes the central's real ServerId via
+        // PeerClient.serverId — no synthesis needed.
+        final nodeId = NodeId(peerClient.serverId.value);
         _peripheralClients[nodeId] = peerClient;
+        _clientIdToNodeId[peerClient.client.id.toString()] = nodeId;
         _events.add(
           PortPeerConnected(nodeId: nodeId, role: ConnectionRole.peripheral),
         );
@@ -89,22 +97,11 @@ class BlueyPortImpl implements BlueyPort {
 
     _serverSubs.add(
       server.disconnections.listen((clientId) {
-        // server.disconnections emits the platform client id (string).
-        // Match against our synthetic NodeIds.
-        NodeId? matchedNodeId;
-        for (final entry in _peripheralClients.entries) {
-          if (entry.value.client.id.toString() == clientId) {
-            matchedNodeId = entry.key;
-            break;
-          }
-        }
-        if (matchedNodeId != null) {
-          _peripheralClients.remove(matchedNodeId);
+        final nodeId = _clientIdToNodeId.remove(clientId);
+        if (nodeId != null) {
+          _peripheralClients.remove(nodeId);
           _events.add(
-            PortPeerDisconnected(
-              nodeId: matchedNodeId,
-              reason: 'peer disconnected',
-            ),
+            PortPeerDisconnected(nodeId: nodeId, reason: 'peer disconnected'),
           );
         }
       }),
@@ -116,7 +113,13 @@ class BlueyPortImpl implements BlueyPort {
             charUuid.toLowerCase()) {
           return;
         }
-        final senderNodeId = NodeId(req.client.id.toString());
+        final senderNodeId = _clientIdToNodeId[req.client.id.toString()];
+        if (senderNodeId == null) {
+          // Write arrived before the client identified itself via the
+          // lifecycle heartbeat. Drop — gossip will resync once the
+          // peer is properly registered.
+          return;
+        }
         _events.add(PortPeerData(nodeId: senderNodeId, data: req.value));
         if (req.responseNeeded) {
           unawaited(
@@ -226,6 +229,7 @@ class BlueyPortImpl implements BlueyPort {
     }
     final peripheral = _peripheralClients.remove(nodeId);
     if (peripheral != null) {
+      _clientIdToNodeId.remove(peripheral.client.id.toString());
       // bluey.Server has no per-client disconnect API. Drop our local
       // reference and emit the disconnect event; the actual link will
       // be torn down by the lifecycle heartbeat protocol or by the
@@ -305,6 +309,7 @@ class BlueyPortImpl implements BlueyPort {
     }
     _centralConnections.clear();
     _peripheralClients.clear();
+    _clientIdToNodeId.clear();
     await _server?.dispose();
     _server = null;
     await _events.close();
