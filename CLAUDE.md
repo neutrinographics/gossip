@@ -46,7 +46,8 @@ melos exec --scope="gossip_nearby" -- flutter test
 | Package | Type | Description |
 |---------|------|-------------|
 | `packages/gossip` | Pure Dart | Core gossip protocol - sync engine, SWIM failure detection, HLC |
-| `packages/gossip_nearby` | Flutter | Nearby Connections transport - peer discovery and message delivery |
+| `packages/gossip_nearby` | Flutter | Nearby Connections transport (Android) - peer discovery and message delivery |
+| `packages/gossip_bluey` | Flutter | BLE transport (Android + iOS) on top of the bluey library - supports mesh and star topologies |
 
 ## Architecture Overview
 
@@ -98,6 +99,23 @@ Device A                     Device B
     │◄── Handshake(NodeId-B) ─────│
     │   [Ready for gossip]        │
 ```
+
+## Bluey Package (gossip_bluey)
+
+Implements `MessagePort` using BLE via the [bluey](https://github.com/neutrinographics/bluey) library.
+
+**Key components:**
+- `BlueyTransport` (facade): Lifecycle, advertising/discovery toggles, peer events
+- `ConnectionService` (application): Discovery + tie-break, soft/hard caps, adaptive scan, per-NodeId backoff, send/receive paths
+- `ConnectionRegistry` (domain aggregate): One handle per NodeId
+- `BlueyPort` (domain interface): Adapter abstraction; `BlueyPortImpl` wraps the real `Bluey` instance
+- `FrameEncoder`/`FrameDecoder` (infrastructure): 4-byte length-prefix framing for chunked BLE writes
+
+**Identity model:** `NodeId.value` is fed directly into bluey's `ServerId` — no handshake required for the initiator's view of the responder. (See spec for the known peripheral-side limitation when running on real hardware.)
+
+**Topologies supported via composable primitives:**
+- **Mesh:** every device calls both `startAdvertising()` and `startDiscovery()`. Tie-break by `NodeId.value` ensures one initiator per pair.
+- **Star:** hub calls `startAdvertising()` only; spokes call `startDiscovery(filter: hubId)` only.
 
 ## Key Design Decisions (ADRs)
 

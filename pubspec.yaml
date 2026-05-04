@@ -8,7 +8,7 @@ environment:
 workspace:
   - packages/gossip
   - packages/gossip_nearby
-  - packages/gossip_ble
+  - packages/gossip_bluey
 
 dev_dependencies:
   melos: ^7.4.0

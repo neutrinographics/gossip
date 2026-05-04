@@ -44,7 +44,7 @@ class PeerDisconnected extends PeerEvent {
 ///
 /// **Note:** This package uses Google Nearby Connections which is
 /// Android-only. For iOS or cross-platform BLE support, use the
-/// `gossip_ble` package instead.
+/// `gossip_bluey` package instead.
 ///
 /// ## Usage
 ///

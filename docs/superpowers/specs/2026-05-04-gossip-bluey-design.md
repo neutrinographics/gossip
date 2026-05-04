@@ -342,6 +342,8 @@ The two transports can coexist on `main` between steps 1 and 4 — different nam
 
 ## Risks and open questions
 
+- **Peripheral-side NodeId identification (RESOLVED).** Earlier in development, bluey's `PeerClient` did not expose the central's `ServerId`, forcing a synthetic NodeId derived from a transient platform UUID — which would have broken symmetric mesh identity on real hardware. Bluey was then updated to thread the local `ServerId` through the lifecycle heartbeat write, so `PeerClient.serverId` now carries the central's stable identity. `BlueyPortImpl` consumes that field directly: `BlueyPortImpl({required NodeId localNodeId, ...})` constructs a `Bluey(localIdentity: ServerId(localNodeId.value))` instance, so both sides of any connection identify each other under their real `NodeId`s. The synthetic-from-`Client.id` fallback has been removed.
+
 - **`bluey` is unpublished.** It's not on pub.dev yet. v1 will depend on it via a path or git dependency. The `pubspec.yaml` will need `bluey: { git: https://github.com/neutrinographics/bluey.git, path: bluey }` (or similar). The dependency model can be revisited once `bluey` publishes.
 - **MTU negotiation.** `bluey` exposes per-connection MTU. We use it as-is. If MTU negotiation fails or is delayed, we use the default 23-byte MTU (effective payload 20 bytes) — slow but functional. Acceptable for v1.
 - **Service UUID collisions.** The user picks the gossip service UUID; `gossip_bluey` does not own one. If two unrelated apps using `gossip_bluey` pick the same UUID, they will discover each other; the gossip layer's channel/peer logic should still keep them isolated, but the BLE-level connection cost is real. Document clearly in the README.
