@@ -5,6 +5,7 @@ import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/src/application/observability/bluey_metrics.dart';
 import 'package:gossip_bluey/src/application/services/connection_service.dart';
 import 'package:gossip_bluey/src/domain/aggregates/connection_registry.dart';
+import 'package:gossip_bluey/src/domain/errors/connection_error.dart';
 import 'package:gossip_bluey/src/domain/events/connection_event.dart';
 // ignore: unused_import
 import 'package:gossip_bluey/src/domain/interfaces/bluey_port.dart';
@@ -245,6 +246,93 @@ void main() {
       await sub.cancel();
       await svc.dispose();
       await localAsRemote.dispose();
+    });
+
+    test('initiator skips connect when at maxConnections', () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final remoteId2 = NodeId('33333333-3333-3333-3333-333333333333');
+      final remoteId3 = NodeId('44444444-4444-4444-4444-444444444444');
+      final r2 = FakeBlueyPort(localNodeId: remoteId2, network: network);
+      final r3 = FakeBlueyPort(localNodeId: remoteId3, network: network);
+      await r2.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'r2',
+        localNodeId: remoteId2,
+      );
+      await r3.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'r3',
+        localNodeId: remoteId3,
+      );
+      await localPort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Local',
+        localNodeId: localId,
+      );
+
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: ConnectionRegistry(),
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+        maxConnections: 1,
+      );
+      await svc.startDiscovery();
+      await svc.runDiscoveryRoundForTest();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(svc.registry.connectionCount, equals(1));
+
+      await svc.dispose();
+      await r2.dispose();
+      await r3.dispose();
+    });
+
+    test('responder disconnects extra inbound past maxConnections', () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final r2 = FakeBlueyPort(
+        localNodeId: NodeId('33333333-3333-3333-3333-333333333333'),
+        network: network,
+      );
+      final r3 = FakeBlueyPort(
+        localNodeId: NodeId('44444444-4444-4444-4444-444444444444'),
+        network: network,
+      );
+
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: ConnectionRegistry(),
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+        maxConnections: 1,
+      );
+      final errs = <ConnectionError>[];
+      final sub = svc.errors.listen(errs.add);
+      await localPort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Local',
+        localNodeId: localId,
+      );
+
+      await r2.connect(localId);
+      await Future<void>.delayed(Duration.zero);
+      await r3.connect(localId);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(svc.registry.connectionCount, equals(1));
+      expect(
+        errs.whereType<ConnectionLimitReachedError>(),
+        isNotEmpty,
+      );
+
+      await sub.cancel();
+      await svc.dispose();
+      await r2.dispose();
+      await r3.dispose();
     });
   });
 }

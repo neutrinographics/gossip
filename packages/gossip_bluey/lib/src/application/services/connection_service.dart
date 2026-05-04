@@ -73,6 +73,16 @@ class ConnectionService implements MessageDispatcher {
   void _onPortEvent(BlueyPortEvent event) {
     switch (event) {
       case PortPeerConnected(:final nodeId, :final role, :final displayName):
+        if (maxConnections != null &&
+            registry.connectionCount >= maxConnections!) {
+          _errors.add(ConnectionLimitReachedError(
+            message: 'rejected $nodeId: at maxConnections',
+            occurredAt: _clock.now(),
+            nodeId: nodeId,
+          ));
+          unawaited(port.disconnect(nodeId));
+          return;
+        }
         final handle = ConnectionHandle(
           nodeId: nodeId,
           role: role,
@@ -213,6 +223,10 @@ class ConnectionService implements MessageDispatcher {
       if (_discoveryFilter != null && !_discoveryFilter!(p.nodeId)) continue;
       // Tie-break: only initiate if our nodeId < remote.
       if (localNodeId.value.compareTo(p.nodeId.value) >= 0) continue;
+      if (maxConnections != null &&
+          registry.connectionCount >= maxConnections!) {
+        return;
+      }
       try {
         await port.connect(p.nodeId);
       } catch (e, st) {
