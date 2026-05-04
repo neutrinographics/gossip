@@ -46,6 +46,19 @@ class BlueyPortImpl implements BlueyPort {
   /// and `writeRequests` (which carry [bluey.Client], not [bluey.PeerClient]).
   final Map<String, NodeId> _clientIdToNodeId = {};
 
+  /// Negotiated MTU per peer. Populated in [connect] (central role,
+  /// after `requestMtu`) and in `peerConnections` (peripheral role,
+  /// from `client.mtu`). Used by [chunkSizeFor].
+  final Map<NodeId, int> _mtuByNode = {};
+
+  /// Default ATT payload when MTU is unknown (BLE 4.0 default MTU 23
+  /// minus 3-byte ATT header).
+  static const int _defaultChunkSize = 20;
+
+  /// Safety margin subtracted from the ATT payload to leave room for
+  /// transient platform overhead (e.g. opcode encoding edge cases).
+  static const int _safetyMargin = 1;
+
   final StreamController<BlueyPortEvent> _events =
       StreamController<BlueyPortEvent>.broadcast();
   final List<StreamSubscription<dynamic>> _serverSubs = [];
@@ -89,6 +102,7 @@ class BlueyPortImpl implements BlueyPort {
         final nodeId = NodeId(peerClient.serverId.value);
         _peripheralClients[nodeId] = peerClient;
         _clientIdToNodeId[peerClient.client.id.toString()] = nodeId;
+        _mtuByNode[nodeId] = peerClient.client.mtu;
         _events.add(
           PortPeerConnected(nodeId: nodeId, role: ConnectionRole.peripheral),
         );
@@ -100,6 +114,7 @@ class BlueyPortImpl implements BlueyPort {
         final nodeId = _clientIdToNodeId.remove(clientId);
         if (nodeId != null) {
           _peripheralClients.remove(nodeId);
+          _mtuByNode.remove(nodeId);
           _events.add(
             PortPeerDisconnected(nodeId: nodeId, reason: 'peer disconnected'),
           );
@@ -171,6 +186,19 @@ class BlueyPortImpl implements BlueyPort {
     final peerConnection = await blueyPeer.connect();
     _centralConnections[target] = peerConnection;
 
+    // Negotiate the largest MTU the platform allows. Best-effort —
+    // failure leaves us at the BLE-default 23 (chunkSizeFor falls back
+    // to 20 in that case).
+    final caps = _bluey.capabilities;
+    try {
+      final desired = bluey.Mtu(caps.maxMtu, capabilities: caps);
+      final negotiated = await peerConnection.connection.requestMtu(desired);
+      _mtuByNode[target] = negotiated.value;
+    } catch (_) {
+      // requestMtu failed — read whatever the connection has now.
+      _mtuByNode[target] = peerConnection.connection.mtu.value;
+    }
+
     final charUuid = GossipCharacteristicUuids.derive(
       serviceUuid,
     ).dataCharacteristic;
@@ -209,11 +237,21 @@ class BlueyPortImpl implements BlueyPort {
 
   void _cleanupCentral(NodeId target, {required String reason}) {
     _centralConnections.remove(target);
+    _mtuByNode.remove(target);
     final notifSub = _centralNotifSubs.remove(target);
     if (notifSub != null) unawaited(notifSub.cancel());
     final stateSub = _centralStateSubs.remove(target);
     if (stateSub != null) unawaited(stateSub.cancel());
     _events.add(PortPeerDisconnected(nodeId: target, reason: reason));
+  }
+
+  @override
+  int chunkSizeFor(NodeId nodeId) {
+    final mtu = _mtuByNode[nodeId];
+    if (mtu == null) return _defaultChunkSize;
+    // ATT payload = MTU - 3 (ATT header). Subtract a safety margin.
+    final size = mtu - 3 - _safetyMargin;
+    return size < _defaultChunkSize ? _defaultChunkSize : size;
   }
 
   @override
@@ -230,6 +268,7 @@ class BlueyPortImpl implements BlueyPort {
     final peripheral = _peripheralClients.remove(nodeId);
     if (peripheral != null) {
       _clientIdToNodeId.remove(peripheral.client.id.toString());
+      _mtuByNode.remove(nodeId);
       // bluey.Server has no per-client disconnect API. Drop our local
       // reference and emit the disconnect event; the actual link will
       // be torn down by the lifecycle heartbeat protocol or by the
@@ -310,6 +349,7 @@ class BlueyPortImpl implements BlueyPort {
     _centralConnections.clear();
     _peripheralClients.clear();
     _clientIdToNodeId.clear();
+    _mtuByNode.clear();
     await _server?.dispose();
     _server = null;
     await _events.close();

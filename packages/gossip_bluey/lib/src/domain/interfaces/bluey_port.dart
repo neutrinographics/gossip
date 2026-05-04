@@ -46,6 +46,12 @@ abstract interface class BlueyPort {
   /// failure (transient or permanent).
   Future<void> sendData(NodeId nodeId, Uint8List data);
 
+  /// Effective per-chunk payload size for [nodeId]: the negotiated ATT
+  /// payload (MTU - 3) minus a small safety margin. Falls back to 20
+  /// (the BLE default with no negotiation) if the peer is unknown or
+  /// MTU has not yet been read.
+  int chunkSizeFor(NodeId nodeId);
+
   /// Stream of role-agnostic transport events.
   Stream<BlueyPortEvent> get events;
 

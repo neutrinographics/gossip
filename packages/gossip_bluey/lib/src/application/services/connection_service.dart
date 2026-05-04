@@ -153,7 +153,10 @@ class ConnectionService implements MessageDispatcher {
       ));
       return;
     }
-    final chunks = FrameEncoder.encode(bytes, mtuPayloadSize: _effectiveMtu);
+    final chunks = FrameEncoder.encode(
+      bytes,
+      mtuPayloadSize: port.chunkSizeFor(destination),
+    );
     for (final chunk in chunks) {
       try {
         await port.sendData(destination, chunk);
@@ -173,11 +176,6 @@ class ConnectionService implements MessageDispatcher {
     }
     metrics.recordMessageSent();
   }
-
-  /// Effective per-chunk MTU. Conservative default of 20 bytes (default
-  /// BLE MTU 23 minus 3-byte ATT header). Real port impl can override
-  /// in a follow-up.
-  int get _effectiveMtu => 20;
 
   @override
   int pendingSendCount(NodeId peer) => 0;

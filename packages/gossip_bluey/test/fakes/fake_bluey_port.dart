@@ -133,6 +133,13 @@ class FakeBlueyPort implements BlueyPort {
     }
   }
 
+  /// Test hook: per-call chunk size returned by [chunkSizeFor]. Defaults
+  /// to 200 (large enough that small payloads fit in one chunk).
+  int chunkSize = 200;
+
+  @override
+  int chunkSizeFor(NodeId nodeId) => chunkSize;
+
   @override
   Future<void> sendData(NodeId nodeId, Uint8List data) async {
     final remote = network.lookup(nodeId);
