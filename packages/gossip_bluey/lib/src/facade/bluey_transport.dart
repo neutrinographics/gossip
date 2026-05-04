@@ -10,6 +10,7 @@ import '../domain/errors/connection_error.dart';
 import '../domain/events/connection_event.dart';
 import '../domain/interfaces/bluey_port.dart';
 import '../domain/value_objects/service_uuid.dart';
+import '../infrastructure/adapters/bluey_port_impl.dart';
 import '../infrastructure/ports/bluey_message_port.dart';
 
 /// Sealed event hierarchy emitted by [BlueyTransport.peerEvents].
@@ -71,9 +72,27 @@ class BlueyTransport {
         'gossip_bluey requires NodeId to be a well-formed UUID',
       );
     }
-    // Real adapter binding is added in Task 28.
-    throw UnimplementedError(
-      'BlueyTransport.create() requires BlueyPortImpl, added in Task 28',
+    final port = BlueyPortImpl();
+    final registry = ConnectionRegistry();
+    final metrics = BlueyMetrics();
+    final service = ConnectionService(
+      localNodeId: nodeId,
+      port: port,
+      registry: registry,
+      metrics: metrics,
+      serviceUuid: serviceUuid,
+      maxConnections: maxConnections,
+      targetConnections: targetConnections,
+      onLog: onLog,
+    );
+    return BlueyTransport._(
+      localNodeId: nodeId,
+      serviceUuid: serviceUuid,
+      displayName: displayName,
+      port: port,
+      service: service,
+      messagePort: BlueyMessagePort(service),
+      onLog: onLog,
     );
   }
 
