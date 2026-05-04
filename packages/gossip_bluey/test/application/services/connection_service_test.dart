@@ -426,5 +426,43 @@ void main() {
       await r2.dispose();
       await r3.dispose();
     });
+
+    test('discovery filter rejects peers that do not match', () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final r2id = NodeId('33333333-3333-3333-3333-333333333333');
+      final r3id = NodeId('44444444-4444-4444-4444-444444444444');
+      final r2 = FakeBlueyPort(localNodeId: r2id, network: network);
+      final r3 = FakeBlueyPort(localNodeId: r3id, network: network);
+      await r2.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'r2',
+        localNodeId: r2id,
+      );
+      await r3.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'r3',
+        localNodeId: r3id,
+      );
+
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: ConnectionRegistry(),
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+      );
+      await svc.startDiscovery(filter: (id) => id == r3id);
+      await svc.runDiscoveryRoundForTest();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(svc.registry.connectionCount, equals(1));
+      expect(svc.registry.contains(r3id), isTrue);
+      expect(svc.registry.contains(r2id), isFalse);
+
+      await svc.dispose();
+      await r2.dispose();
+      await r3.dispose();
+    });
   });
 }
