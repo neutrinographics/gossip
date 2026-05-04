@@ -53,3 +53,53 @@ abstract final class FrameEncoder {
     return chunks;
   }
 }
+
+/// Reassembles framed bytes (4-byte BE length prefix + payload) arriving
+/// in arbitrary chunk sizes.
+///
+/// Stateful: keep one decoder per connection. Surplus bytes from one frame
+/// remain buffered for the next.
+class FrameDecoder {
+  final BytesBuilder _buffer = BytesBuilder(copy: false);
+  int? _expectedLength;
+
+  /// Feeds [chunk] into the decoder and returns any complete payloads
+  /// available now. Throws [FormatException] if the length prefix
+  /// exceeds [kMaxFramePayload].
+  List<Uint8List> feed(Uint8List chunk) {
+    _buffer.add(chunk);
+    final out = <Uint8List>[];
+
+    while (true) {
+      if (_expectedLength == null) {
+        if (_buffer.length < kLengthPrefixSize) break;
+        final all = _buffer.takeBytes();
+        final view = ByteData.view(all.buffer, all.offsetInBytes);
+        final len = view.getUint32(0, Endian.big);
+        if (len > kMaxFramePayload) {
+          throw FormatException(
+            'frame length $len exceeds max $kMaxFramePayload',
+          );
+        }
+        _expectedLength = len;
+        // Re-add bytes after the prefix.
+        if (all.length > kLengthPrefixSize) {
+          _buffer.add(all.sublist(kLengthPrefixSize));
+        }
+        continue;
+      }
+
+      if (_buffer.length < _expectedLength!) break;
+      final all = _buffer.takeBytes();
+      final payload = Uint8List.sublistView(all, 0, _expectedLength!);
+      out.add(Uint8List.fromList(payload));
+      final remainder = all.sublist(_expectedLength!);
+      _expectedLength = null;
+      if (remainder.isNotEmpty) {
+        _buffer.add(remainder);
+      }
+    }
+
+    return out;
+  }
+}

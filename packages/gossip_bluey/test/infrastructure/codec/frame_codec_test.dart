@@ -57,4 +57,68 @@ void main() {
       );
     });
   });
+
+  group('FrameDecoder', () {
+    test('round-trips a small payload through encode → decode', () {
+      final payload = Uint8List.fromList([1, 2, 3, 4, 5]);
+      final chunks = FrameEncoder.encode(payload, mtuPayloadSize: 100);
+      final decoder = FrameDecoder();
+      final decoded = <Uint8List>[];
+      for (final chunk in chunks) {
+        decoded.addAll(decoder.feed(chunk));
+      }
+      expect(decoded, hasLength(1));
+      expect(decoded.first, equals(payload));
+    });
+
+    test('round-trips a chunked payload', () {
+      final payload = Uint8List.fromList(List.generate(20, (i) => i));
+      final chunks = FrameEncoder.encode(payload, mtuPayloadSize: 8);
+      final decoder = FrameDecoder();
+      final decoded = <Uint8List>[];
+      for (final chunk in chunks) {
+        decoded.addAll(decoder.feed(chunk));
+      }
+      expect(decoded, hasLength(1));
+      expect(decoded.first, equals(payload));
+    });
+
+    test('emits multiple complete frames when bytes arrive together', () {
+      final p1 = Uint8List.fromList([1, 2, 3]);
+      final p2 = Uint8List.fromList([10, 20, 30, 40]);
+      final chunks1 = FrameEncoder.encode(p1, mtuPayloadSize: 100);
+      final chunks2 = FrameEncoder.encode(p2, mtuPayloadSize: 100);
+      final combined = Uint8List.fromList(
+        chunks1.expand((c) => c).followedBy(chunks2.expand((c) => c)).toList(),
+      );
+
+      final decoder = FrameDecoder();
+      final decoded = decoder.feed(combined);
+      expect(decoded, hasLength(2));
+      expect(decoded[0], equals(p1));
+      expect(decoded[1], equals(p2));
+    });
+
+    test('emits no frame until the length prefix is complete', () {
+      final decoder = FrameDecoder();
+      // Only 2 bytes of the 4-byte length prefix.
+      final partial = decoder.feed(Uint8List.fromList([0, 0]));
+      expect(partial, isEmpty);
+      // Two more length bytes + payload.
+      final rest = decoder.feed(Uint8List.fromList([0, 3, 1, 2, 3]));
+      expect(rest, hasLength(1));
+      expect(rest.first, equals([1, 2, 3]));
+    });
+
+    test('rejects an oversize length prefix', () {
+      final decoder = FrameDecoder();
+      // 33 KB
+      const tooBig = (32 * 1024) + 1;
+      final view = ByteData(4)..setUint32(0, tooBig, Endian.big);
+      expect(
+        () => decoder.feed(view.buffer.asUint8List()),
+        throwsA(isA<FormatException>()),
+      );
+    });
+  });
 }
