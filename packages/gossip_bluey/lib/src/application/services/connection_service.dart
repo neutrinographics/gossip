@@ -55,6 +55,10 @@ class ConnectionService implements MessageDispatcher {
   bool _discoveryEnabled = false;
   Timer? _discoveryTimer;
 
+  static const _initialBackoff = Duration(seconds: 1);
+  static const _maxBackoff = Duration(seconds: 30);
+  final Map<NodeId, ({Duration delay, DateTime nextAttempt})> _backoff = {};
+
   late final StreamSubscription<BlueyPortEvent> _portSub;
   final StreamController<ConnectionEvent> _events =
       StreamController<ConnectionEvent>.broadcast();
@@ -91,6 +95,7 @@ class ConnectionService implements MessageDispatcher {
         );
         registry.add(handle);
         _decoders[nodeId] = FrameDecoder();
+        _backoff.remove(nodeId);
         metrics.recordConnectionEstablished();
         metrics.setConnectedPeerCount(registry.connectionCount);
         _events.add(PeerOpened(nodeId: nodeId, displayName: displayName));
@@ -232,11 +237,34 @@ class ConnectionService implements MessageDispatcher {
           registry.connectionCount >= targetConnections!) {
         return;
       }
+      final entry = _backoff[p.nodeId];
+      if (entry != null && _clock.now().isBefore(entry.nextAttempt)) {
+        continue;
+      }
       try {
         await port.connect(p.nodeId);
       } catch (e, st) {
+        final prev = _backoff[p.nodeId]?.delay ?? Duration.zero;
+        final nextDelay = prev == Duration.zero
+            ? _initialBackoff
+            : Duration(
+                milliseconds: (prev.inMilliseconds * 2).clamp(
+                  _initialBackoff.inMilliseconds,
+                  _maxBackoff.inMilliseconds,
+                ),
+              );
+        _backoff[p.nodeId] = (
+          delay: nextDelay,
+          nextAttempt: _clock.now().add(nextDelay),
+        );
+        metrics.recordConnectionFailed();
+        _errors.add(ConnectFailedError(
+          message: 'connect to ${p.nodeId} failed',
+          occurredAt: _clock.now(),
+          nodeId: p.nodeId,
+          cause: e,
+        ));
         onLog?.call(LogLevel.info, 'connect failed', e, st);
-        // Backoff is added in Task 24.
       }
     }
   }
@@ -245,6 +273,7 @@ class ConnectionService implements MessageDispatcher {
     _discoveryTimer?.cancel();
     _discoveryTimer = null;
     _discoveryEnabled = false;
+    _backoff.clear();
     await _portSub.cancel();
     await _events.close();
     await _errors.close();

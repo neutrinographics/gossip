@@ -13,6 +13,14 @@ import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
 import 'package:gossip_bluey/src/infrastructure/codec/frame_codec.dart';
 import '../../fakes/fake_bluey_port.dart';
 
+class _ManualClock extends Clock {
+  _ManualClock(this._now);
+  DateTime _now;
+  @override
+  DateTime now() => _now;
+  void advance(Duration d) => _now = _now.add(d);
+}
+
 void main() {
   group('ConnectionService', () {
     final localId = NodeId('11111111-1111-1111-1111-111111111111');
@@ -463,6 +471,59 @@ void main() {
       await svc.dispose();
       await r2.dispose();
       await r3.dispose();
+    });
+
+    test('skips reconnect within backoff window after a connect failure', () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final r2id = NodeId('33333333-3333-3333-3333-333333333333');
+      final r2 = FakeBlueyPort(localNodeId: r2id, network: network);
+      await r2.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'r2',
+        localNodeId: r2id,
+      );
+      // Inject failure for r2id.
+      localPort.connectFailureInjector = (_) => true;
+
+      final fakeClock = _ManualClock(DateTime(2026, 5, 4));
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: ConnectionRegistry(),
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+        clock: fakeClock,
+      );
+      await svc.startDiscovery();
+      await svc.runDiscoveryRoundForTest();   // fails, sets backoff
+      await Future<void>.delayed(Duration.zero);
+      expect(svc.registry.connectionCount, equals(0));
+
+      // Within backoff window (1s) — discovery should skip the peer.
+      // The fake's onDiscoverPeers hook lets us count discoverPeers calls.
+      // Connect attempts are detected via FakeBlueyPort.connectFailureInjector
+      // being called: track that.
+      var connectAttempts = 0;
+      localPort.connectFailureInjector = (_) {
+        connectAttempts++;
+        return true;
+      };
+      fakeClock.advance(const Duration(milliseconds: 500));
+      await svc.runDiscoveryRoundForTest();
+      expect(connectAttempts, equals(0));
+      expect(svc.registry.connectionCount, equals(0));
+
+      // After backoff expires (1s elapsed), discovery retries.
+      // (Total elapsed: 500ms + 600ms = 1100ms.)
+      localPort.connectFailureInjector = null;   // allow connect to succeed
+      fakeClock.advance(const Duration(milliseconds: 600));
+      await svc.runDiscoveryRoundForTest();
+      await Future<void>.delayed(Duration.zero);
+      expect(svc.registry.connectionCount, equals(1));
+
+      await svc.dispose();
+      await r2.dispose();
     });
   });
 }
