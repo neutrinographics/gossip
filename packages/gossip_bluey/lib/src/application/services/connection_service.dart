@@ -59,6 +59,12 @@ class ConnectionService implements MessageDispatcher {
   static const _maxBackoff = Duration(seconds: 30);
   final Map<NodeId, ({Duration delay, DateTime nextAttempt})> _backoff = {};
 
+  /// Per-peer send queue. Each peer's chunked sends are serialized so
+  /// concurrent `sendGossipMessage` calls to the same peer don't
+  /// interleave their chunks on the wire (which would corrupt the
+  /// receiver's FrameDecoder byte-stream alignment).
+  final Map<NodeId, Future<void>> _sendQueue = {};
+
   late final StreamSubscription<BlueyPortEvent> _portSub;
   final StreamController<ConnectionEvent> _events =
       StreamController<ConnectionEvent>.broadcast();
@@ -102,6 +108,11 @@ class ConnectionService implements MessageDispatcher {
       case PortPeerDisconnected(:final nodeId, :final reason):
         final removed = registry.remove(nodeId);
         _decoders.remove(nodeId);
+        // Drop any in-flight send chain. The chain's Future will
+        // resolve on its own; we just stop tracking it for new sends.
+        // sendGossipMessage will see registry.contains(...) == false
+        // on its next dispatch and fail cleanly.
+        unawaited(_sendQueue.remove(nodeId) ?? Future<void>.value());
         metrics.setConnectedPeerCount(registry.connectionCount);
         if (removed != null) {
           _events.add(PeerClosed(nodeId: nodeId, reason: reason));
@@ -146,6 +157,36 @@ class ConnectionService implements MessageDispatcher {
     MessagePriority priority = MessagePriority.normal,
   }) async {
     if (!registry.contains(destination)) {
+      _errors.add(ConnectionNotFoundError(
+        message: 'no active connection to $destination',
+        occurredAt: _clock.now(),
+        nodeId: destination,
+      ));
+      return;
+    }
+    // Chain this send behind the previous send to the same peer so
+    // chunked frames don't interleave on the wire. Without this,
+    // concurrent calls each get their own for-loop and the receiver's
+    // FrameDecoder loses byte-stream alignment.
+    final previous = _sendQueue[destination] ?? Future<void>.value();
+    final task = previous
+        .catchError((_) {})
+        .then((_) => _sendChunked(destination, bytes));
+    _sendQueue[destination] = task;
+    try {
+      await task;
+    } finally {
+      // Drop the entry only if we're still the tail. A later send may
+      // have chained behind us; that one becomes the new tail.
+      if (identical(_sendQueue[destination], task)) {
+        _sendQueue.remove(destination);
+      }
+    }
+  }
+
+  Future<void> _sendChunked(NodeId destination, Uint8List bytes) async {
+    if (!registry.contains(destination)) {
+      // Connection dropped while we were queued behind a previous send.
       _errors.add(ConnectionNotFoundError(
         message: 'no active connection to $destination',
         occurredAt: _clock.now(),
@@ -320,6 +361,7 @@ class ConnectionService implements MessageDispatcher {
     _discoveryTimer = null;
     _discoveryEnabled = false;
     _backoff.clear();
+    _sendQueue.clear();
     await _portSub.cancel();
     await _events.close();
     await _errors.close();
