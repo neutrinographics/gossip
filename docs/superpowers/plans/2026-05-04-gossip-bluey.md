@@ -103,7 +103,7 @@ Phases are gated by working software at the end of each phase.
 - Create: `packages/gossip_bluey/analysis_options.yaml`
 - Create: `packages/gossip_bluey/lib/gossip_bluey.dart`
 - Create: `packages/gossip_bluey/test/.gitkeep`
-- Modify: `melos.yaml` (root)
+- Modify: root `pubspec.yaml` (the workspace `workspace:` list lives here in this repo)
 
 - [ ] **Step 1: Create `pubspec.yaml`**
 
@@ -140,7 +140,7 @@ dev_dependencies:
 
 - [ ] **Step 2: Create `analysis_options.yaml`**
 
-Copy from `packages/gossip_nearby/analysis_options.yaml` verbatim. Same lint rules; same project conventions.
+Copy from `packages/gossip_nearby/analysis_options.yaml`. If the analyzer flags any rules in that file as deprecated/unrecognized for the current SDK, drop those lines (e.g. `avoid_returning_null_for_future` is deprecated under sound null safety) — note the deviation in the commit message.
 
 - [ ] **Step 3: Create `lib/gossip_bluey.dart` with placeholder library directive**
 
@@ -153,9 +153,9 @@ Copy from `packages/gossip_nearby/analysis_options.yaml` verbatim. Same lint rul
 library;
 ```
 
-- [ ] **Step 4: Add `packages/gossip_bluey` to root `melos.yaml`**
+- [ ] **Step 4: Add `packages/gossip_bluey` to the root `pubspec.yaml` `workspace:` list**
 
-In the `workspace:` list, add `- packages/gossip_bluey` (keep `- packages/gossip_ble` for now; it gets removed in Phase 6).
+This repo uses Dart 3 native workspaces — the workspace member list lives in the root `pubspec.yaml`, not a separate `melos.yaml`. Add `- packages/gossip_bluey` to that list (keep `- packages/gossip_ble` for now; it gets removed in Phase 6).
 
 - [ ] **Step 5: Verify the workspace bootstraps**
 
