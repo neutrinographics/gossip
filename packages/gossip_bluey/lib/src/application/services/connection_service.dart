@@ -211,6 +211,11 @@ class ConnectionService implements MessageDispatcher {
 
   Future<void> _runDiscoveryRound() async {
     if (!_discoveryEnabled) return;
+    // Adaptive discovery: skip the scan entirely while at target.
+    if (targetConnections != null &&
+        registry.connectionCount >= targetConnections!) {
+      return;
+    }
     final List<DiscoveredPeer> peers;
     try {
       peers = await port.discoverPeers(serviceUuid: serviceUuid);

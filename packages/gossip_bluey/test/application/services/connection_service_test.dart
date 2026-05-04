@@ -335,6 +335,45 @@ void main() {
       await r3.dispose();
     });
 
+    test('does not run discovery rounds while at targetConnections', () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final r2id = NodeId('33333333-3333-3333-3333-333333333333');
+      final r2 = FakeBlueyPort(localNodeId: r2id, network: network);
+      await r2.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'r2',
+        localNodeId: r2id,
+      );
+      await localPort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Local',
+        localNodeId: localId,
+      );
+
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: ConnectionRegistry(),
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+        maxConnections: 1,
+      );
+      await svc.startDiscovery();
+      await svc.runDiscoveryRoundForTest();   // round 1: connects to r2
+      await Future<void>.delayed(Duration.zero);
+      expect(svc.registry.connectionCount, equals(1));
+
+      // Now hook the fake — count any further discoverPeers calls.
+      var calls = 0;
+      localPort.onDiscoverPeers = (_) => calls++;
+      await svc.runDiscoveryRoundForTest();
+      expect(calls, equals(0));
+
+      await svc.dispose();
+      await r2.dispose();
+    });
+
     test('initiator stops at targetConnections but accepts more inbound', () async {
       final network = FakeBlueyNetwork();
       final localPort = FakeBlueyPort(localNodeId: localId, network: network);
