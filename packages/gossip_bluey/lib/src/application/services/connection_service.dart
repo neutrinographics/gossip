@@ -223,8 +223,8 @@ class ConnectionService implements MessageDispatcher {
       if (_discoveryFilter != null && !_discoveryFilter!(p.nodeId)) continue;
       // Tie-break: only initiate if our nodeId < remote.
       if (localNodeId.value.compareTo(p.nodeId.value) >= 0) continue;
-      if (maxConnections != null &&
-          registry.connectionCount >= maxConnections!) {
+      if (targetConnections != null &&
+          registry.connectionCount >= targetConnections!) {
         return;
       }
       try {
