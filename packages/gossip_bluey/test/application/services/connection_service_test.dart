@@ -48,5 +48,39 @@ void main() {
       await svc.dispose();
       await remotePort.dispose();
     });
+
+    test('emits PeerClosed on PortPeerDisconnected', () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: ConnectionRegistry(),
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+      );
+      await localPort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Local',
+        localNodeId: localId,
+      );
+      await remotePort.connect(localId);
+      await Future<void>.delayed(Duration.zero);
+      final events = <ConnectionEvent>[];
+      final sub = svc.events.listen(events.add);
+
+      await remotePort.disconnect(localId);
+      await Future<void>.delayed(Duration.zero);
+
+      final closed = events.whereType<PeerClosed>().toList();
+      expect(closed, hasLength(1));
+      expect(closed.first.nodeId, equals(remoteId));
+      expect(svc.registry.connectionCount, equals(0));
+
+      await sub.cancel();
+      await svc.dispose();
+      await remotePort.dispose();
+    });
   });
 }

@@ -62,7 +62,6 @@ class ConnectionService implements MessageDispatcher {
       StreamController<ConnectionError>.broadcast();
   final StreamController<IncomingMessage> _incoming =
       StreamController<IncomingMessage>.broadcast();
-  // ignore: unused_field
   final Map<NodeId, FrameDecoder> _decoders = {};
 
   Stream<ConnectionEvent> get events => _events.stream;
@@ -85,9 +84,13 @@ class ConnectionService implements MessageDispatcher {
         metrics.recordConnectionEstablished();
         metrics.setConnectedPeerCount(registry.connectionCount);
         _events.add(PeerOpened(nodeId: nodeId, displayName: displayName));
-      case PortPeerDisconnected():
-        // handled in Task 16
-        break;
+      case PortPeerDisconnected(:final nodeId, :final reason):
+        final removed = registry.remove(nodeId);
+        _decoders.remove(nodeId);
+        metrics.setConnectedPeerCount(registry.connectionCount);
+        if (removed != null) {
+          _events.add(PeerClosed(nodeId: nodeId, reason: reason));
+        }
       case PortPeerData():
         // handled in Task 17
         break;
