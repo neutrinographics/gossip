@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:gossip/gossip.dart' as gossip;
-import 'package:gossip_nearby/gossip_nearby.dart';
+import 'package:gossip_bluey/gossip_bluey.dart';
 
 import '../../application/services/services.dart';
 import '../../domain/entities/entities.dart';
