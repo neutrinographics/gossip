@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bluey/bluey.dart';
 import 'package:flutter/foundation.dart';
 import 'package:gossip/gossip.dart' as gossip;
 import 'package:gossip_bluey/gossip_bluey.dart';
@@ -558,9 +559,20 @@ class ChatController extends ChangeNotifier {
   }
 
   Future<bool> startNetworking() async {
-    // Request permissions first
-    final hasPermissions = await _permissionService.requestNearbyPermissions();
+    // Request OS-level permissions first.
+    final hasPermissions = await _permissionService.requestBluetoothPermissions();
     if (!hasPermissions) {
+      return false;
+    }
+
+    // Verify BT is on / supported / authorized at the OS layer. We use
+    // `Bluey.shared` because `ensureReady` only checks platform state
+    // and doesn't need our per-instance local identity. This catches the
+    // case where the user grants permissions but Bluetooth itself is off.
+    try {
+      await Bluey.shared.ensureReady();
+    } catch (e) {
+      _onError?.call('startNetworking.ensureReady', e);
       return false;
     }
 
