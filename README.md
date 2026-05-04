@@ -5,7 +5,8 @@ A Dart monorepo for gossip-based data synchronization.
 ## Packages
 
 - **gossip** - Core gossip protocol implementation
-- **gossip_nearby** - Nearby Connections transport for peer discovery and messaging
+- **gossip_nearby** - Nearby Connections transport (Android) for peer discovery and messaging
+- **gossip_bluey** - BLE transport (Android + iOS) built on the bluey library, supporting mesh and star topologies
 
 ## Development
 
