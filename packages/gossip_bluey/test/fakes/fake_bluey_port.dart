@@ -141,6 +141,12 @@ class FakeBlueyPort implements BlueyPort {
   int chunkSizeFor(NodeId nodeId) => chunkSize;
 
   @override
+  Stream<String> get diagnosticLog => const Stream.empty();
+
+  @override
+  Stream<String> get diagnosticEvents => const Stream.empty();
+
+  @override
   Future<void> sendData(NodeId nodeId, Uint8List data) async {
     final remote = network.lookup(nodeId);
     if (remote == null ||

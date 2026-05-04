@@ -72,6 +72,14 @@ class ConnectionService {
   /// Stream of connection errors for observability.
   Stream<ConnectionError> get errors => _transport.errors;
 
+  /// Diagnostic log lines from bluey itself (scan results, GATT
+  /// operations, lifecycle heartbeats, platform errors).
+  Stream<String> get diagnosticLog => _transport.diagnosticLog;
+
+  /// Diagnostic events from bluey itself (scan started/stopped,
+  /// device discovered, connecting, connected, etc.).
+  Stream<String> get diagnosticEvents => _transport.diagnosticEvents;
+
   /// Metrics for monitoring transport health and performance.
   BlueyMetrics get metrics => _transport.metrics;
 

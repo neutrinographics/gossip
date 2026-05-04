@@ -67,6 +67,20 @@ class BlueyPortImpl implements BlueyPort {
   Stream<BlueyPortEvent> get events => _events.stream;
 
   @override
+  Stream<String> get diagnosticLog => _bluey.logEvents.map((e) {
+    final levelStr = e.level.name.toUpperCase().padRight(5);
+    final dataStr = e.data.isEmpty
+        ? ''
+        : ' ${e.data.entries.map((kv) => '${kv.key}=${kv.value}').join(' ')}';
+    final codeStr = e.errorCode != null ? ' (${e.errorCode})' : '';
+    return '[$levelStr] ${e.context}: ${e.message}$dataStr$codeStr';
+  });
+
+  @override
+  Stream<String> get diagnosticEvents =>
+      _bluey.events.map((e) => e.toString());
+
+  @override
   Future<void> startAdvertising({
     required ServiceUuid serviceUuid,
     required String displayName,

@@ -226,19 +226,51 @@ class ConnectionService implements MessageDispatcher {
       onLog?.call(LogLevel.warning, 'discoverPeers failed', e, st);
       return;
     }
+    onLog?.call(
+      LogLevel.debug,
+      'discovery round: found ${peers.length} peer(s)'
+      '${peers.isEmpty ? '' : ' [${peers.map((p) => p.nodeId.value).join(', ')}]'}',
+    );
     for (final p in peers) {
-      if (registry.contains(p.nodeId)) continue;
-      if (_discoveryFilter != null && !_discoveryFilter!(p.nodeId)) continue;
+      if (registry.contains(p.nodeId)) {
+        onLog?.call(
+          LogLevel.debug,
+          'discovery: skipping ${p.nodeId} (already connected)',
+        );
+        continue;
+      }
+      if (_discoveryFilter != null && !_discoveryFilter!(p.nodeId)) {
+        onLog?.call(
+          LogLevel.debug,
+          'discovery: skipping ${p.nodeId} (filtered out)',
+        );
+        continue;
+      }
       // Tie-break: only initiate if our nodeId < remote.
-      if (localNodeId.value.compareTo(p.nodeId.value) >= 0) continue;
+      if (localNodeId.value.compareTo(p.nodeId.value) >= 0) {
+        onLog?.call(
+          LogLevel.debug,
+          'discovery: skipping ${p.nodeId} (tie-break: peer initiates)',
+        );
+        continue;
+      }
       if (targetConnections != null &&
           registry.connectionCount >= targetConnections!) {
+        onLog?.call(
+          LogLevel.debug,
+          'discovery: stopping further initiations (at targetConnections)',
+        );
         return;
       }
       final entry = _backoff[p.nodeId];
       if (entry != null && _clock.now().isBefore(entry.nextAttempt)) {
+        onLog?.call(
+          LogLevel.debug,
+          'discovery: skipping ${p.nodeId} (in backoff window, retry at ${entry.nextAttempt})',
+        );
         continue;
       }
+      onLog?.call(LogLevel.info, 'discovery: initiating connect to ${p.nodeId}');
       try {
         await port.connect(p.nodeId);
       } catch (e, st) {

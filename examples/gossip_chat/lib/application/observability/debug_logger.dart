@@ -65,6 +65,8 @@ class DebugLogger {
   StreamSubscription<SyncError>? _syncErrorSubscription;
   StreamSubscription<ConnectionError>? _connectionErrorSubscription;
   StreamSubscription<PeerEvent>? _peerEventSubscription;
+  StreamSubscription<String>? _blueyDiagnosticLogSubscription;
+  StreamSubscription<String>? _blueyDiagnosticEventSubscription;
   Timer? _metricsTimer;
 
   DebugLogger({
@@ -89,6 +91,11 @@ class DebugLogger {
       _onConnectionError,
     );
     _peerEventSubscription = _connectionService.peerEvents.listen(_onPeerEvent);
+    _blueyDiagnosticLogSubscription = _connectionService.diagnosticLog.listen(
+      (line) => _logInfo('BLUEY-LIB', line),
+    );
+    _blueyDiagnosticEventSubscription = _connectionService.diagnosticEvents
+        .listen((line) => _logInfo('BLUEY-EV', line));
 
     _metricsTimer = Timer.periodic(_metricsInterval, (_) {
       _logMetrics();
@@ -103,6 +110,8 @@ class DebugLogger {
     _syncErrorSubscription?.cancel();
     _connectionErrorSubscription?.cancel();
     _peerEventSubscription?.cancel();
+    _blueyDiagnosticLogSubscription?.cancel();
+    _blueyDiagnosticEventSubscription?.cancel();
     _metricsTimer?.cancel();
     _logInfo('DEBUG', 'DebugLogger stopped');
   }

@@ -55,6 +55,17 @@ abstract interface class BlueyPort {
   /// Stream of role-agnostic transport events.
   Stream<BlueyPortEvent> get events;
 
+  /// Diagnostic log lines from the underlying BLE library, formatted as
+  /// human-readable strings. Useful for debugging discovery and
+  /// connection issues. Emits the empty stream for adapter implementations
+  /// that have no underlying library to surface (e.g. the in-memory fake).
+  Stream<String> get diagnosticLog;
+
+  /// Diagnostic event lines from the underlying BLE library (scan
+  /// started/stopped, device discovered, connecting, connected, etc.).
+  /// Same caveat as [diagnosticLog] for adapters with nothing to surface.
+  Stream<String> get diagnosticEvents;
+
   Future<void> dispose();
 }
 

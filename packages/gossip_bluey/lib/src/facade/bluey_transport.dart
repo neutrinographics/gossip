@@ -151,6 +151,16 @@ class BlueyTransport {
   MessagePort get messagePort => _messagePort;
   Stream<PeerEvent> get peerEvents => _peers.stream;
   Stream<ConnectionError> get errors => _service.errors;
+
+  /// Diagnostic log lines from the underlying BLE library. Useful for
+  /// debugging discovery and connection issues. Emits the empty stream
+  /// when the transport is wired with a port that has nothing to surface
+  /// (e.g. a test fake).
+  Stream<String> get diagnosticLog => _port.diagnosticLog;
+
+  /// Diagnostic event lines from the underlying BLE library (scan
+  /// started/stopped, device discovered, connecting, connected, etc.).
+  Stream<String> get diagnosticEvents => _port.diagnosticEvents;
   Set<NodeId> get connectedPeers =>
       _service.registry.connections.map((h) => h.nodeId).toSet();
   int get connectedPeerCount => _service.registry.connectionCount;
