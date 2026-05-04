@@ -1,35 +1,53 @@
 PODS:
-  - bluetooth_low_energy_darwin (0.0.1):
+  - bluey_ios (0.1.0):
     - Flutter
-    - FlutterMacOS
   - device_info_plus (0.0.1):
     - Flutter
   - Flutter (1.0.0)
+  - mobile_scanner (7.0.0):
+    - Flutter
+    - FlutterMacOS
+  - package_info_plus (0.4.5):
+    - Flutter
   - permission_handler_apple (9.3.0):
+    - Flutter
+  - share_plus (0.0.1):
     - Flutter
 
 DEPENDENCIES:
-  - bluetooth_low_energy_darwin (from `.symlinks/plugins/bluetooth_low_energy_darwin/darwin`)
+  - bluey_ios (from `.symlinks/plugins/bluey_ios/ios`)
   - device_info_plus (from `.symlinks/plugins/device_info_plus/ios`)
   - Flutter (from `Flutter`)
+  - mobile_scanner (from `.symlinks/plugins/mobile_scanner/darwin`)
+  - package_info_plus (from `.symlinks/plugins/package_info_plus/ios`)
   - permission_handler_apple (from `.symlinks/plugins/permission_handler_apple/ios`)
+  - share_plus (from `.symlinks/plugins/share_plus/ios`)
 
 EXTERNAL SOURCES:
-  bluetooth_low_energy_darwin:
-    :path: ".symlinks/plugins/bluetooth_low_energy_darwin/darwin"
+  bluey_ios:
+    :path: ".symlinks/plugins/bluey_ios/ios"
   device_info_plus:
     :path: ".symlinks/plugins/device_info_plus/ios"
   Flutter:
     :path: Flutter
+  mobile_scanner:
+    :path: ".symlinks/plugins/mobile_scanner/darwin"
+  package_info_plus:
+    :path: ".symlinks/plugins/package_info_plus/ios"
   permission_handler_apple:
     :path: ".symlinks/plugins/permission_handler_apple/ios"
+  share_plus:
+    :path: ".symlinks/plugins/share_plus/ios"
 
 SPEC CHECKSUMS:
-  bluetooth_low_energy_darwin: 764d8d1ae5abefbcdb839e812b4b25c0061fcf8b
+  bluey_ios: 97ac2b48a234c4851581bd1f1786e96e3052ab3e
   device_info_plus: bf2e3232933866d73fe290f2942f2156cdd10342
   Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  mobile_scanner: 77265f3dc8d580810e91849d4a0811a90467ed5e
+  package_info_plus: c0502532a26c7662a62a356cebe2692ec5fe4ec4
   permission_handler_apple: 9878588469a2b0d0fc1e048d9f43605f92e6cec2
+  share_plus: 8b6f8b3447e494cca5317c8c3073de39b3600d1f
 
-PODFILE CHECKSUM: ca365476e5257f3ebbb72fb3585bb8d445dc87e7
+PODFILE CHECKSUM: cee11eb875b7b0b77daccd45141e6e5f1cf6a4a3
 
 COCOAPODS: 1.16.2
