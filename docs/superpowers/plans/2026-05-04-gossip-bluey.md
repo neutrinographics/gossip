@@ -14,6 +14,8 @@
 
 **TDD discipline:** Every task that produces production code is a Red-Green-Refactor cycle: write the failing test first, run it, write the minimum code to pass, run again, refactor if needed, then commit. Do not skip the "run the failing test" step — confirming the test fails for the *right reason* is part of the cycle. After every task, `dart analyze` must pass with zero issues in the package.
 
+**Test runner:** `gossip_bluey` is a Flutter package. Use `flutter test` (not `dart test`) for all test commands. If a step in this plan says `dart test`, treat that as a typo and run `flutter test` instead. The package's flutter_test dependency triggers an internal switch-pattern compilation error under plain `dart test` on recent SDKs.
+
 ---
 
 ## File structure
