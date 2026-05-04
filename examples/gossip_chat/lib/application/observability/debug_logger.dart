@@ -5,7 +5,7 @@ import 'dart:io';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/foundation.dart';
 import 'package:gossip/gossip.dart';
-import 'package:gossip_nearby/gossip_nearby.dart';
+import 'package:gossip_bluey/gossip_bluey.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 import '../services/connection_service.dart';
@@ -28,7 +28,7 @@ enum DebugLogLevel {
   verbose,
 }
 
-/// Service for logging metrics, events, and errors from gossip and gossip_nearby.
+/// Service for logging metrics, events, and errors from gossip and gossip_bluey.
 ///
 /// Use [logLevel] to control verbosity:
 /// - [DebugLogLevel.error]: Only errors
@@ -387,27 +387,32 @@ class DebugLogger {
     switch (error) {
       case ConnectionNotFoundError(:final nodeId):
         _logError(
-          'NEARBY',
+          'BLUEY',
           '[$timestamp] Connection not found: $nodeId - ${error.message}',
         );
-      case HandshakeTimeoutError(:final endpointId):
+      case ConnectFailedError(:final nodeId):
         _logError(
-          'NEARBY',
-          '[$timestamp] Handshake timeout: $endpointId - ${error.message}',
+          'BLUEY',
+          '[$timestamp] Connect failed: $nodeId - ${error.message}',
         );
-      case HandshakeInvalidError(:final endpointId):
+      case ConnectionLimitReachedError(:final nodeId):
         _logError(
-          'NEARBY',
-          '[$timestamp] Handshake invalid: $endpointId - ${error.message}',
+          'BLUEY',
+          '[$timestamp] Connection limit reached: $nodeId - ${error.message}',
+        );
+      case FrameDecodeError(:final nodeId):
+        _logError(
+          'BLUEY',
+          '[$timestamp] Frame decode error: $nodeId - ${error.message}',
         );
       case SendFailedError(:final nodeId):
         _logError(
-          'NEARBY',
+          'BLUEY',
           '[$timestamp] Send failed: $nodeId - ${error.message}',
         );
       case ConnectionLostError(:final nodeId):
         _logError(
-          'NEARBY',
+          'BLUEY',
           '[$timestamp] Connection lost: $nodeId - ${error.message}',
         );
     }
@@ -420,9 +425,9 @@ class DebugLogger {
   void _onPeerEvent(PeerEvent event) {
     switch (event) {
       case PeerConnected(:final nodeId):
-        _logInfo('NEARBY', 'Peer connected: ${_shortId(nodeId.value)}');
+        _logInfo('BLUEY', 'Peer connected: ${_shortId(nodeId.value)}');
       case PeerDisconnected(:final nodeId):
-        _logInfo('NEARBY', 'Peer disconnected: ${_shortId(nodeId.value)}');
+        _logInfo('BLUEY', 'Peer disconnected: ${_shortId(nodeId.value)}');
     }
   }
 
@@ -526,10 +531,6 @@ class DebugLogger {
     _logVerbose('METRICS', '  Connected peers: ${metrics.connectedPeerCount}');
     _logVerbose(
       'METRICS',
-      '  Pending handshakes: ${metrics.pendingHandshakeCount}',
-    );
-    _logVerbose(
-      'METRICS',
       '  Connections established: ${metrics.totalConnectionsEstablished}',
     );
     _logVerbose(
@@ -541,6 +542,11 @@ class DebugLogger {
       'METRICS',
       '  Messages received: ${metrics.totalMessagesReceived}',
     );
+    _logVerbose('METRICS', '  Frames sent: ${metrics.totalFramesSent}');
+    _logVerbose(
+      'METRICS',
+      '  Frames received: ${metrics.totalFramesReceived}',
+    );
     _logVerbose(
       'METRICS',
       '  Bytes sent: ${_formatBytes(metrics.totalBytesSent)}',
@@ -548,10 +554,6 @@ class DebugLogger {
     _logVerbose(
       'METRICS',
       '  Bytes received: ${_formatBytes(metrics.totalBytesReceived)}',
-    );
-    _logVerbose(
-      'METRICS',
-      '  Avg handshake duration: ${metrics.averageHandshakeDuration.inMilliseconds}ms',
     );
     _logVerbose(
       'METRICS',
@@ -656,29 +658,29 @@ class DebugLogger {
   String _formatBytes(int bytes) => LogFormat.bytes(bytes);
 }
 
-/// Minimum log level for [nearbyLogCallback].
+/// Minimum log level for [blueyLogCallback].
 ///
 /// Set this before starting the transport to control verbosity.
-LogLevel nearbyMinLogLevel = LogLevel.info;
+LogLevel blueyMinLogLevel = LogLevel.info;
 
 /// Global log storage for capturing logs from callbacks.
 ///
 /// Set this before starting the transport to enable log capture.
 LogStorage? globalLogStorage;
 
-/// LogCallback implementation for NearbyTransport that prints to console.
+/// LogCallback implementation for BlueyTransport that prints to console.
 ///
-/// Only logs messages at or above [nearbyMinLogLevel].
-void nearbyLogCallback(
+/// Only logs messages at or above [blueyMinLogLevel].
+void blueyLogCallback(
   LogLevel level,
   String message, [
   Object? error,
   StackTrace? stackTrace,
 ]) {
-  if (level.index < nearbyMinLogLevel.index) return;
+  if (level.index < blueyMinLogLevel.index) return;
 
   final levelStr = level.name.toUpperCase().padRight(7);
-  final category = 'NEARBY][$levelStr';
+  final category = 'BLUEY][$levelStr';
   var fullMessage = message;
 
   if (error != null) {
@@ -695,7 +697,7 @@ void nearbyLogCallback(
 
   developer.log(
     message,
-    name: 'gossip.nearby.${level.name}',
+    name: 'gossip.bluey.${level.name}',
     error: error,
     stackTrace: stackTrace,
   );
