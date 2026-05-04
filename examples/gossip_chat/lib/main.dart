@@ -1,7 +1,7 @@
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:gossip/gossip.dart';
-import 'package:gossip_nearby/gossip_nearby.dart';
+import 'package:gossip_bluey/gossip_bluey.dart';
 
 import 'app.dart';
 import 'application/application.dart';
@@ -13,22 +13,28 @@ const _verboseLogging = true;
 /// Global debug logger instance for access from callbacks and UI.
 late final DebugLogger debugLogger;
 
+/// gossip service UUID for the chat demo. Pick your own UUID for your
+/// app — collisions across unrelated apps would have all instances
+/// visible to each other at the BLE layer. The trailing 8 hex bytes
+/// are arbitrary; the prefix is fixed across all gossip_chat installs.
+final _serviceUuid = ServiceUuid('f0000000-0000-0000-0000-67c155b1ea7c');
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Configure log levels
-  nearbyMinLogLevel = _verboseLogging ? LogLevel.trace : LogLevel.warning;
+  blueyMinLogLevel = _verboseLogging ? LogLevel.trace : LogLevel.warning;
 
   // Generate or load device identity
   final localNodeRepo = InMemoryLocalNodeRepository();
   final deviceName = await _getDeviceName();
 
-  // Create NearbyTransport for Android Nearby Connections
-  final transport = await NearbyTransport.create(
+  // Create BlueyTransport for cross-platform BLE.
+  final transport = await BlueyTransport.create(
     localNodeRepository: localNodeRepo,
-    serviceId: ServiceId('gossipchat'),
+    serviceUuid: _serviceUuid,
     displayName: deviceName,
-    onLog: nearbyLogCallback,
+    onLog: blueyLogCallback,
   );
   final nodeId = transport.localNodeId;
 
