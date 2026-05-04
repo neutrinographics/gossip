@@ -174,6 +174,9 @@ class BlueyPortImpl implements BlueyPort {
   }
 
   @override
+  Future<void> ensureReady() => _bluey.ensureReady();
+
+  @override
   Future<List<DiscoveredPeer>> discoverPeers({
     required ServiceUuid serviceUuid,
     Duration timeout = const Duration(seconds: 5),

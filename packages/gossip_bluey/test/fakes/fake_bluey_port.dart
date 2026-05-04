@@ -75,6 +75,9 @@ class FakeBlueyPort implements BlueyPort {
   }
 
   @override
+  Future<void> ensureReady() async {}
+
+  @override
   Future<List<DiscoveredPeer>> discoverPeers({
     required ServiceUuid serviceUuid,
     Duration timeout = const Duration(seconds: 5),

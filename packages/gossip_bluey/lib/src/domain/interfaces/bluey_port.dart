@@ -26,6 +26,13 @@ abstract interface class BlueyPort {
 
   Future<void> stopAdvertising();
 
+  /// Verify Bluetooth is on / supported / authorized at the OS layer.
+  /// Throws a platform-specific exception if not. Routed through the
+  /// port (rather than `Bluey.shared.ensureReady()`) so apps don't have
+  /// to instantiate a second Bluey instance — that creates duplicate
+  /// Dart-side platform listeners and observably breaks discovery on iOS.
+  Future<void> ensureReady();
+
   /// Run a single discovery round. Returns peers that advertised our
   /// gossip service, deduplicated by `NodeId`.
   Future<List<DiscoveredPeer>> discoverPeers({

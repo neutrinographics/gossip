@@ -57,6 +57,9 @@ class ConnectionService {
     await _transport.disconnectAll();
   }
 
+  /// Verify Bluetooth is on / supported / authorized at the OS layer.
+  Future<void> ensureReady() => _transport.ensureReady();
+
   /// Whether advertising is currently active.
   bool get isAdvertising => _transport.isAdvertising;
 

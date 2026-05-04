@@ -175,6 +175,17 @@ class BlueyTransport {
   @visibleForTesting
   ConnectionService get serviceForTest => _service;
 
+  /// Verify Bluetooth is on / supported / authorized at the OS layer.
+  /// Throws a platform-specific exception if not. Use this between
+  /// the app's permission grant and [startAdvertising] to catch the
+  /// case where the user grants permissions but Bluetooth itself is off.
+  ///
+  /// This routes through the same Bluey instance that backs the
+  /// transport — call this instead of `Bluey.shared.ensureReady()` so
+  /// the app doesn't end up holding two Bluey instances (which causes
+  /// duplicate platform listeners and observable issues on iOS).
+  Future<void> ensureReady() => _port.ensureReady();
+
   Future<void> startAdvertising() async {
     if (_isAdvertising) return;
     await _port.startAdvertising(
