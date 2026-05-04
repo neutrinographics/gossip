@@ -5,12 +5,10 @@ import 'package:gossip/gossip.dart';
 
 import '../../domain/aggregates/connection_registry.dart';
 import '../../domain/entities/connection_handle.dart';
-// ignore: unused_import
 import '../../domain/errors/connection_error.dart';
 import '../../domain/events/connection_event.dart';
 import '../../domain/interfaces/bluey_port.dart';
 import '../../domain/value_objects/service_uuid.dart';
-// ignore: unused_import
 import '../../infrastructure/codec/frame_codec.dart';
 import '../../infrastructure/ports/bluey_message_port.dart';
 import '../observability/bluey_metrics.dart';
@@ -91,9 +89,33 @@ class ConnectionService implements MessageDispatcher {
         if (removed != null) {
           _events.add(PeerClosed(nodeId: nodeId, reason: reason));
         }
-      case PortPeerData():
-        // handled in Task 17
-        break;
+      case PortPeerData(:final nodeId, :final data):
+        final decoder = _decoders[nodeId];
+        if (decoder == null) {
+          // Data from a peer we don't know about — ignore.
+          return;
+        }
+        metrics.recordFrameReceived();
+        metrics.recordBytesReceived(data.length);
+        try {
+          final messages = decoder.feed(data);
+          for (final m in messages) {
+            metrics.recordMessageReceived();
+            _incoming.add(IncomingMessage(
+              sender: nodeId,
+              bytes: m,
+              receivedAt: _clock.now(),
+            ));
+          }
+        } on FormatException catch (e) {
+          _errors.add(FrameDecodeError(
+            message: e.message,
+            occurredAt: _clock.now(),
+            nodeId: nodeId,
+          ));
+          // Tear down the connection on decode failure.
+          unawaited(port.disconnect(nodeId));
+        }
       case PortConnectFailed():
         // handled in Task 24
         break;
