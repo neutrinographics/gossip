@@ -269,6 +269,17 @@ class ConnectionService implements MessageDispatcher {
     }
   }
 
+  Future<void> disconnectAll() async {
+    final ids = registry.connections.map((h) => h.nodeId).toList();
+    for (final id in ids) {
+      try {
+        await port.disconnect(id);
+      } catch (e, st) {
+        onLog?.call(LogLevel.warning, 'disconnect failed for $id', e, st);
+      }
+    }
+  }
+
   Future<void> dispose() async {
     _discoveryTimer?.cancel();
     _discoveryTimer = null;

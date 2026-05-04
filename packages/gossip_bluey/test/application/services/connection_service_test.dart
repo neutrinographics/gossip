@@ -525,5 +525,35 @@ void main() {
       await svc.dispose();
       await r2.dispose();
     });
+
+    test('disconnectAll calls port.disconnect for every active peer', () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final r2id = NodeId('33333333-3333-3333-3333-333333333333');
+      final r2 = FakeBlueyPort(localNodeId: r2id, network: network);
+      await localPort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'L',
+        localNodeId: localId,
+      );
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: ConnectionRegistry(),
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+      );
+      await r2.connect(localId);
+      await Future<void>.delayed(Duration.zero);
+      expect(svc.registry.connectionCount, equals(1));
+
+      await svc.disconnectAll();
+      await Future<void>.delayed(Duration.zero);
+
+      expect(svc.registry.connectionCount, equals(0));
+
+      await svc.dispose();
+      await r2.dispose();
+    });
   });
 }
