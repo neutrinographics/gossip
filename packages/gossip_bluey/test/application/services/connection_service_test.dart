@@ -121,5 +121,52 @@ void main() {
       await svc.dispose();
       await remotePort.dispose();
     });
+
+    test('sendGossipMessage encodes and writes chunks to the port', () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
+
+      // Create both services BEFORE the connect call so neither subscribes
+      // to its port's broadcast stream after the PortPeerConnected event
+      // has already fired.
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: ConnectionRegistry(),
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+      );
+      final remoteSvc = ConnectionService(
+        localNodeId: remoteId,
+        port: remotePort,
+        registry: ConnectionRegistry(),
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+      );
+
+      await localPort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Local',
+        localNodeId: localId,
+      );
+      await remotePort.connect(localId);
+      await Future<void>.delayed(Duration.zero);
+
+      final received = <IncomingMessage>[];
+      final sub = remoteSvc.incomingMessages.listen(received.add);
+
+      final payload = Uint8List.fromList(List.generate(50, (i) => i));
+      await svc.sendGossipMessage(remoteId, payload);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(received, hasLength(1));
+      expect(received.first.bytes, equals(payload));
+
+      await sub.cancel();
+      await svc.dispose();
+      await remoteSvc.dispose();
+      await remotePort.dispose();
+    });
   });
 }

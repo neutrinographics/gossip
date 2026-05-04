@@ -128,9 +128,39 @@ class ConnectionService implements MessageDispatcher {
     Uint8List bytes, {
     MessagePriority priority = MessagePriority.normal,
   }) async {
-    // Filled in Task 18.
-    throw UnimplementedError();
+    if (!registry.contains(destination)) {
+      _errors.add(ConnectionNotFoundError(
+        message: 'no active connection to $destination',
+        occurredAt: _clock.now(),
+        nodeId: destination,
+      ));
+      return;
+    }
+    final chunks = FrameEncoder.encode(bytes, mtuPayloadSize: _effectiveMtu);
+    for (final chunk in chunks) {
+      try {
+        await port.sendData(destination, chunk);
+        metrics.recordFrameSent();
+        metrics.recordBytesSent(chunk.length);
+      } catch (e, st) {
+        _errors.add(SendFailedError(
+          message: 'send failed to $destination',
+          occurredAt: _clock.now(),
+          nodeId: destination,
+          cause: e,
+        ));
+        onLog?.call(LogLevel.warning, 'send failed', e, st);
+        unawaited(port.disconnect(destination));
+        return;
+      }
+    }
+    metrics.recordMessageSent();
   }
+
+  /// Effective per-chunk MTU. Conservative default of 20 bytes (default
+  /// BLE MTU 23 minus 3-byte ATT header). Real port impl can override
+  /// in a follow-up.
+  int get _effectiveMtu => 20;
 
   @override
   int pendingSendCount(NodeId peer) => 0;
