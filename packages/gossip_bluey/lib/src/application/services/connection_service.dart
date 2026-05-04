@@ -203,8 +203,13 @@ class ConnectionService implements MessageDispatcher {
   void _scheduleDiscovery() {
     _discoveryTimer?.cancel();
     if (!_discoveryEnabled) return;
-    _discoveryTimer = Timer(_discoveryInterval, () {
-      unawaited(_runDiscoveryRound());
+    _discoveryTimer = Timer(_discoveryInterval, () async {
+      // Await the round before scheduling the next one. Otherwise a hung
+      // discoverPeers (e.g. when bluey's iOS scan never returns) lets
+      // subsequent rounds pile up and stack scan-starts on the BLE
+      // adapter, which on Android trips "scanning too frequently"
+      // throttling.
+      await _runDiscoveryRound();
       _scheduleDiscovery();
     });
   }
