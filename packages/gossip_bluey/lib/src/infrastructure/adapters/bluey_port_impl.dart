@@ -413,7 +413,17 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Future<NodeId> connectAndIdentify(ScanCandidate candidate) async {
-    throw UnimplementedError('implemented in task 7');
+    final device = _devicesByAddress[candidate.address];
+    if (device == null) {
+      throw StateError(
+        'no scan-emitted device for ${candidate.address} — '
+        "did the candidate come from this port's scanForCandidates stream?",
+      );
+    }
+    final peerConn = await _bluey.connectAsPeer(device);
+    final nodeId = NodeId(peerConn.serverId.value);
+    await _registerCentralConnection(nodeId, peerConn);
+    return nodeId;
   }
 
   @override
