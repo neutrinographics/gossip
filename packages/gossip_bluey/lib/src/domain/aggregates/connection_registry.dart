@@ -27,4 +27,32 @@ class ConnectionRegistry {
 
   /// Removes the handle for [nodeId]. Returns it, or null if absent.
   ConnectionHandle? remove(NodeId nodeId) => _byNodeId.remove(nodeId);
+
+  /// First-write-wins registration. Returns [Registered] if [handle] was
+  /// stored, or [DuplicateRejected] if a handle for this NodeId already
+  /// exists (existing handle is left in place; caller should tear down
+  /// the rejected handle's underlying connection).
+  RegistrationResult tryRegister(ConnectionHandle handle) {
+    final existing = _byNodeId[handle.nodeId];
+    if (existing != null) {
+      return DuplicateRejected(existing: existing, attempted: handle);
+    }
+    _byNodeId[handle.nodeId] = handle;
+    return Registered(handle);
+  }
+}
+
+sealed class RegistrationResult {
+  const RegistrationResult();
+}
+
+final class Registered extends RegistrationResult {
+  final ConnectionHandle handle;
+  const Registered(this.handle);
+}
+
+final class DuplicateRejected extends RegistrationResult {
+  final ConnectionHandle existing;
+  final ConnectionHandle attempted;
+  const DuplicateRejected({required this.existing, required this.attempted});
 }

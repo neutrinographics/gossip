@@ -4,9 +4,12 @@ import 'dart:typed_data';
 import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 
+import '../../domain/errors/not_a_bluey_peer_exception.dart' as domain;
 import '../../domain/interfaces/bluey_port.dart';
+import '../../domain/value_objects/ble_address.dart';
 import '../../domain/value_objects/discovered_peer.dart';
 import '../../domain/value_objects/gossip_characteristic_uuids.dart';
+import '../../domain/value_objects/scan_candidate.dart';
 import '../../domain/value_objects/service_uuid.dart';
 import 'gossip_gatt_service.dart';
 
@@ -46,12 +49,64 @@ class BlueyPortImpl implements BlueyPort {
   /// and `writeRequests` (which carry [bluey.Client], not [bluey.PeerClient]).
   final Map<String, NodeId> _clientIdToNodeId = {};
 
+  /// Negotiated MTU per peer. Populated in [connect] (central role,
+  /// after `requestMtu`) and in `peerConnections` (peripheral role,
+  /// from `client.mtu`). Used by [chunkSizeFor].
+  final Map<NodeId, int> _mtuByNode = {};
+
+  /// Cached bluey.Device handles for scan emissions, keyed by address.
+  /// Looked up by [connectAndIdentify].
+  final Map<BleAddress, bluey.Device> _devicesByAddress = {};
+
+  // Cancelled in [stopScan] and [dispose].
+  // ignore: cancel_subscriptions
+  StreamSubscription<bluey.ScanResult>? _scanSubscription;
+  // Closed in [stopScan] and [dispose].
+  // ignore: close_sinks
+  StreamController<ScanCandidate>? _scanController;
+
+  /// Default ATT payload when MTU is unknown (BLE 4.0 default MTU 23
+  /// minus 3-byte ATT header).
+  static const int _defaultChunkSize = 20;
+
+  /// Safety margin subtracted from the ATT payload to leave room for
+  /// transient platform overhead (e.g. opcode encoding edge cases).
+  static const int _safetyMargin = 1;
+
+  /// BLE-default ATT MTU. iOS reports this from Connection.mtu even
+  /// after auto-negotiating higher; we use it as a sentinel for "MTU
+  /// unknown on iOS" and fall back to [_iosFallbackChunkSize].
+  static const int _bleDefaultMtu = 23;
+
+  /// Conservative fallback chunk size on iOS when the platform-
+  /// negotiated MTU isn't surfaced through bluey's Connection.mtu
+  /// (always 23 on iOS — see bluey backlog I325). 100 bytes is well
+  /// below the typical iOS maximumWriteValueLength minimum (158+ on
+  /// iOS 13+) and is safe on all known hardware.
+  ///
+  /// TODO(I325): once bluey exposes Connection.maxWritePayload, drop
+  /// this branch and use the new API directly.
+  static const int _iosFallbackChunkSize = 100;
+
   final StreamController<BlueyPortEvent> _events =
       StreamController<BlueyPortEvent>.broadcast();
   final List<StreamSubscription<dynamic>> _serverSubs = [];
 
   @override
   Stream<BlueyPortEvent> get events => _events.stream;
+
+  @override
+  Stream<String> get diagnosticLog => _bluey.logEvents.map((e) {
+    final levelStr = e.level.name.toUpperCase().padRight(5);
+    final dataStr = e.data.isEmpty
+        ? ''
+        : ' ${e.data.entries.map((kv) => '${kv.key}=${kv.value}').join(' ')}';
+    final codeStr = e.errorCode != null ? ' (${e.errorCode})' : '';
+    return '[$levelStr] ${e.context}: ${e.message}$dataStr$codeStr';
+  });
+
+  @override
+  Stream<String> get diagnosticEvents => _bluey.events.map((e) => e.toString());
 
   @override
   Future<void> startAdvertising({
@@ -87,10 +142,17 @@ class BlueyPortImpl implements BlueyPort {
         // bluey now exposes the central's real ServerId via
         // PeerClient.serverId — no synthesis needed.
         final nodeId = NodeId(peerClient.serverId.value);
+        final clientIdString = peerClient.client.id.toString();
+        final address = BleAddress(clientIdString);
         _peripheralClients[nodeId] = peerClient;
-        _clientIdToNodeId[peerClient.client.id.toString()] = nodeId;
+        _clientIdToNodeId[clientIdString] = nodeId;
+        _mtuByNode[nodeId] = peerClient.client.mtu;
         _events.add(
-          PortPeerConnected(nodeId: nodeId, role: ConnectionRole.peripheral),
+          PortPeerConnected(
+            nodeId: nodeId,
+            role: ConnectionRole.peripheral,
+            address: address,
+          ),
         );
       }),
     );
@@ -100,8 +162,13 @@ class BlueyPortImpl implements BlueyPort {
         final nodeId = _clientIdToNodeId.remove(clientId);
         if (nodeId != null) {
           _peripheralClients.remove(nodeId);
+          _mtuByNode.remove(nodeId);
           _events.add(
-            PortPeerDisconnected(nodeId: nodeId, reason: 'peer disconnected'),
+            PortPeerDisconnected(
+              nodeId: nodeId,
+              role: ConnectionRole.peripheral,
+              reason: 'peer disconnected',
+            ),
           );
         }
       }),
@@ -145,6 +212,9 @@ class BlueyPortImpl implements BlueyPort {
   }
 
   @override
+  Future<void> ensureReady() => _bluey.ensureReady();
+
+  @override
   Future<List<DiscoveredPeer>> discoverPeers({
     required ServiceUuid serviceUuid,
     Duration timeout = const Duration(seconds: 5),
@@ -169,7 +239,47 @@ class BlueyPortImpl implements BlueyPort {
     }
     final blueyPeer = _bluey.peer(bluey.ServerId(target.value));
     final peerConnection = await blueyPeer.connect();
+    // connect(NodeId) is the legacy/test-only path. The platform
+    // Device.address for a NodeId-initiated connection is not accessible
+    // here; fall back to using the NodeId as the address. Production
+    // code goes through connectAndIdentify, which always has the real
+    // address from the originating ScanCandidate.
+    await _registerCentralConnection(
+      target,
+      BleAddress(target.value),
+      peerConnection,
+    );
+  }
+
+  /// Wire the central-role bookkeeping for [target] given an already-
+  /// connected [peerConnection]. Negotiates MTU, subscribes to the
+  /// gossip data characteristic for incoming notifications, watches for
+  /// state-change disconnects, and emits PortPeerConnected.
+  Future<void> _registerCentralConnection(
+    NodeId target,
+    BleAddress address,
+    bluey.PeerConnection peerConnection,
+  ) async {
+    final serviceUuid = _serviceUuid;
+    if (serviceUuid == null) {
+      throw StateError(
+        '_registerCentralConnection requires startAdvertising first',
+      );
+    }
     _centralConnections[target] = peerConnection;
+
+    // Negotiate the largest MTU the platform allows. Best-effort —
+    // failure leaves us at the BLE-default 23 (chunkSizeFor falls back
+    // to 20 in that case).
+    final caps = _bluey.capabilities;
+    try {
+      final desired = bluey.Mtu(caps.maxMtu, capabilities: caps);
+      final negotiated = await peerConnection.connection.requestMtu(desired);
+      _mtuByNode[target] = negotiated.value;
+    } catch (_) {
+      // requestMtu failed — read whatever the connection has now.
+      _mtuByNode[target] = peerConnection.connection.mtu.value;
+    }
 
     final charUuid = GossipCharacteristicUuids.derive(
       serviceUuid,
@@ -203,17 +313,45 @@ class BlueyPortImpl implements BlueyPort {
     });
 
     _events.add(
-      PortPeerConnected(nodeId: target, role: ConnectionRole.central),
+      PortPeerConnected(
+        nodeId: target,
+        role: ConnectionRole.central,
+        address: address,
+      ),
     );
   }
 
   void _cleanupCentral(NodeId target, {required String reason}) {
     _centralConnections.remove(target);
+    _mtuByNode.remove(target);
     final notifSub = _centralNotifSubs.remove(target);
     if (notifSub != null) unawaited(notifSub.cancel());
     final stateSub = _centralStateSubs.remove(target);
     if (stateSub != null) unawaited(stateSub.cancel());
-    _events.add(PortPeerDisconnected(nodeId: target, reason: reason));
+    _events.add(
+      PortPeerDisconnected(
+        nodeId: target,
+        role: ConnectionRole.central,
+        reason: reason,
+      ),
+    );
+  }
+
+  @override
+  int chunkSizeFor(NodeId nodeId) {
+    final mtu = _mtuByNode[nodeId];
+    if (mtu == null) return _defaultChunkSize;
+    // Compare by name because bluey only re-exports `Capabilities`,
+    // not the `PlatformKind` enum. Easy to switch to a typed compare
+    // once bluey exports the enum (or once I325 lands and we drop this
+    // branch entirely).
+    if (mtu == _bleDefaultMtu &&
+        _bluey.capabilities.platformKind.name == 'ios') {
+      return _iosFallbackChunkSize;
+    }
+    // ATT payload = MTU - 3 (ATT header). Subtract a safety margin.
+    final size = mtu - 3 - _safetyMargin;
+    return size < _defaultChunkSize ? _defaultChunkSize : size;
   }
 
   @override
@@ -230,12 +368,17 @@ class BlueyPortImpl implements BlueyPort {
     final peripheral = _peripheralClients.remove(nodeId);
     if (peripheral != null) {
       _clientIdToNodeId.remove(peripheral.client.id.toString());
+      _mtuByNode.remove(nodeId);
       // bluey.Server has no per-client disconnect API. Drop our local
       // reference and emit the disconnect event; the actual link will
       // be torn down by the lifecycle heartbeat protocol or by the
       // central side.
       _events.add(
-        PortPeerDisconnected(nodeId: nodeId, reason: 'local request'),
+        PortPeerDisconnected(
+          nodeId: nodeId,
+          role: ConnectionRole.peripheral,
+          reason: 'local request',
+        ),
       );
     }
   }
@@ -287,6 +430,99 @@ class BlueyPortImpl implements BlueyPort {
   }
 
   @override
+  Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid}) {
+    // If a previous scan is still open, tear it down first.
+    final previous = _scanController;
+    if (previous != null) {
+      unawaited(stopScan());
+    }
+    // Closed in [stopScan] and [dispose] (also via onCancel below).
+    // ignore: close_sinks
+    final controller = StreamController<ScanCandidate>.broadcast(
+      onCancel: () => unawaited(stopScan()),
+    );
+    _scanController = controller;
+    final scanner = _bluey.scanner();
+    _scanSubscription = scanner
+        .scan(services: [bluey.UUID(serviceUuid.value)])
+        .listen(
+          (result) {
+            final address = BleAddress(result.device.address);
+            _devicesByAddress[address] = result.device;
+            if (!controller.isClosed) {
+              controller.add(
+                ScanCandidate(
+                  address: address,
+                  displayName: result.device.name,
+                ),
+              );
+            }
+          },
+          onError: controller.addError,
+          onDone: () => unawaited(stopScan()),
+        );
+    return controller.stream;
+  }
+
+  @override
+  Future<void> stopScan() async {
+    final sub = _scanSubscription;
+    _scanSubscription = null;
+    final controller = _scanController;
+    _scanController = null;
+    await sub?.cancel();
+    if (controller != null && !controller.isClosed) {
+      await controller.close();
+    }
+  }
+
+  @override
+  Future<NodeId> connectAndIdentify(ScanCandidate candidate) async {
+    final device = _devicesByAddress[candidate.address];
+    if (device == null) {
+      throw StateError(
+        'no scan-emitted device for ${candidate.address} — '
+        "did the candidate come from this port's scanForCandidates stream?",
+      );
+    }
+    final bluey.PeerConnection peerConn;
+    try {
+      peerConn = await _bluey.connectAsPeer(device);
+    } on bluey.NotABlueyPeerException {
+      throw domain.NotABlueyPeerException(candidate.address);
+    }
+    final nodeId = NodeId(peerConn.serverId.value);
+    await _registerCentralConnection(nodeId, candidate.address, peerConn);
+    return nodeId;
+  }
+
+  @override
+  Future<void> disconnectRole(NodeId nodeId, ConnectionRole role) async {
+    switch (role) {
+      case ConnectionRole.central:
+        final central = _centralConnections[nodeId];
+        if (central == null) return;
+        try {
+          await central.disconnect();
+        } finally {
+          _cleanupCentral(nodeId, reason: 'local request (role)');
+        }
+      case ConnectionRole.peripheral:
+        final peripheral = _peripheralClients.remove(nodeId);
+        if (peripheral == null) return;
+        _clientIdToNodeId.remove(peripheral.client.id.toString());
+        _mtuByNode.remove(nodeId);
+        _events.add(
+          PortPeerDisconnected(
+            nodeId: nodeId,
+            role: ConnectionRole.peripheral,
+            reason: 'local request (role)',
+          ),
+        );
+    }
+  }
+
+  @override
   Future<void> dispose() async {
     for (final s in _serverSubs) {
       await s.cancel();
@@ -310,6 +546,9 @@ class BlueyPortImpl implements BlueyPort {
     _centralConnections.clear();
     _peripheralClients.clear();
     _clientIdToNodeId.clear();
+    _mtuByNode.clear();
+    await stopScan();
+    _devicesByAddress.clear();
     await _server?.dispose();
     _server = null;
     await _events.close();

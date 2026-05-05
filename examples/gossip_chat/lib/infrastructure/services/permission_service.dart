@@ -3,25 +3,24 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-/// Service for handling runtime permissions for Nearby Connections.
+/// Service for handling runtime permissions for Bluetooth Low Energy.
 class PermissionService {
-  /// Requests all permissions needed for Nearby Connections.
+  /// Requests all permissions needed for Bluetooth Low Energy.
   ///
   /// Returns true if all permissions are granted, false otherwise.
-  Future<bool> requestNearbyPermissions() async {
+  Future<bool> requestBluetoothPermissions() async {
     // iOS and Android have different permission requirements
     // Note: On Android 12+ with BLUETOOTH_SCAN declared with neverForLocation,
     // location permission is not required for BLE scanning.
     final permissions = Platform.isIOS
-        ? [Permission.bluetooth, Permission.locationWhenInUse]
+        ? [Permission.bluetooth]
         : [
             Permission.bluetoothAdvertise,
             Permission.bluetoothConnect,
             Permission.bluetoothScan,
-            Permission.nearbyWifiDevices,
           ];
 
-    // Request all required permissions for Nearby Connections
+    // Request all required permissions for BLE.
     final statuses = await permissions.request();
 
     // Log each permission status for debugging
@@ -39,22 +38,18 @@ class PermissionService {
   }
 
   /// Checks if all necessary permissions are already granted.
-  Future<bool> hasNearbyPermissions() async {
+  Future<bool> hasBluetoothPermissions() async {
     if (Platform.isIOS) {
       final bluetooth = await Permission.bluetooth.status;
-      final location = await Permission.locationWhenInUse.status;
-      return (bluetooth.isGranted || bluetooth.isLimited) &&
-          (location.isGranted || location.isLimited);
+      return bluetooth.isGranted || bluetooth.isLimited;
     } else {
       final bluetoothAdvertise = await Permission.bluetoothAdvertise.status;
       final bluetoothConnect = await Permission.bluetoothConnect.status;
       final bluetoothScan = await Permission.bluetoothScan.status;
-      final nearbyWifi = await Permission.nearbyWifiDevices.status;
 
       return (bluetoothAdvertise.isGranted || bluetoothAdvertise.isLimited) &&
           (bluetoothConnect.isGranted || bluetoothConnect.isLimited) &&
-          (bluetoothScan.isGranted || bluetoothScan.isLimited) &&
-          (nearbyWifi.isGranted || nearbyWifi.isLimited);
+          (bluetoothScan.isGranted || bluetoothScan.isLimited);
     }
   }
 

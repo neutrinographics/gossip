@@ -38,5 +38,17 @@ void main() {
       expect(m.totalFramesReceived, equals(1));
       expect(m.connectedPeerCount, equals(3));
     });
+
+    test('recordFrameRecovery accumulates count and discarded byte total', () {
+      final m = BlueyMetrics();
+      expect(m.frameRecoveries, equals(0));
+      expect(m.bytesDiscarded, equals(0));
+
+      m.recordFrameRecovery(7);
+      m.recordFrameRecovery(13);
+
+      expect(m.frameRecoveries, equals(2));
+      expect(m.bytesDiscarded, equals(20));
+    });
   });
 }

@@ -28,5 +28,6 @@ export 'src/domain/errors/connection_error.dart'
         FrameDecodeError;
 
 // Observability
-export 'src/application/observability/log_level.dart' show LogLevel, LogCallback;
+export 'src/application/observability/log_level.dart'
+    show LogLevel, LogCallback;
 export 'src/application/observability/bluey_metrics.dart' show BlueyMetrics;

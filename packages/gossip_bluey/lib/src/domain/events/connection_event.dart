@@ -34,9 +34,7 @@ final class PeerClosed extends ConnectionEvent {
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
-      (other is PeerClosed &&
-          other.nodeId == nodeId &&
-          other.reason == reason);
+      (other is PeerClosed && other.nodeId == nodeId && other.reason == reason);
 
   @override
   int get hashCode => Object.hash(nodeId, reason);

@@ -12,9 +12,7 @@ void main() {
     final network = FakeBlueyNetwork();
     final idA = NodeId('11111111-1111-1111-1111-111111111111');
     final idB = NodeId('22222222-2222-2222-2222-222222222222');
-    final serviceUuid = ServiceUuid(
-      'f0000000-0000-0000-0000-000000000000',
-    );
+    final serviceUuid = ServiceUuid('f0000000-0000-0000-0000-000000000000');
 
     final portA = FakeBlueyPort(localNodeId: idA, network: network);
     final portB = FakeBlueyPort(localNodeId: idB, network: network);
@@ -47,7 +45,7 @@ void main() {
     await transportB.startDiscovery();
 
     // Trigger discovery on A (the lower NodeId, so it initiates).
-    await transportA.serviceForTest.runDiscoveryRoundForTest();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
     // Allow the connection event to propagate to both sides.
     await Future<void>.delayed(const Duration(milliseconds: 50));
 

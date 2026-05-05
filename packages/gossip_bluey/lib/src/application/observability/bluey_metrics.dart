@@ -9,6 +9,8 @@ class BlueyMetrics {
   int _totalMessagesReceived = 0;
   int _totalFramesSent = 0;
   int _totalFramesReceived = 0;
+  int _frameRecoveries = 0;
+  int _bytesDiscarded = 0;
 
   int get connectedPeerCount => _connectedPeerCount;
   int get totalConnectionsEstablished => _totalConnectionsEstablished;
@@ -19,6 +21,8 @@ class BlueyMetrics {
   int get totalMessagesReceived => _totalMessagesReceived;
   int get totalFramesSent => _totalFramesSent;
   int get totalFramesReceived => _totalFramesReceived;
+  int get frameRecoveries => _frameRecoveries;
+  int get bytesDiscarded => _bytesDiscarded;
 
   void setConnectedPeerCount(int n) => _connectedPeerCount = n;
   void recordConnectionEstablished() => _totalConnectionsEstablished++;
@@ -29,4 +33,12 @@ class BlueyMetrics {
   void recordMessageReceived() => _totalMessagesReceived++;
   void recordFrameSent() => _totalFramesSent++;
   void recordFrameReceived() => _totalFramesReceived++;
+
+  /// Records a frame-decoder corruption recovery event. [bytesDiscarded]
+  /// is the number of bytes the decoder skipped while scanning for the
+  /// next valid frame magic; non-zero indicates a probable lost write.
+  void recordFrameRecovery(int bytesDiscarded) {
+    _frameRecoveries++;
+    _bytesDiscarded += bytesDiscarded;
+  }
 }

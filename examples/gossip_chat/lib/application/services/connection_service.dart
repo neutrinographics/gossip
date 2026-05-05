@@ -1,20 +1,20 @@
 import 'dart:async';
 
 import 'package:gossip/gossip.dart';
-import 'package:gossip_nearby/gossip_nearby.dart';
+import 'package:gossip_bluey/gossip_bluey.dart';
 
 /// Service for managing Nearby Connections peer connections.
 ///
-/// This is an application layer service that bridges the NearbyTransport
+/// This is an application layer service that bridges the BlueyTransport
 /// (infrastructure) with the Coordinator (domain).
 class ConnectionService {
-  final NearbyTransport _transport;
+  final BlueyTransport _transport;
   final Coordinator _coordinator;
 
   StreamSubscription<PeerEvent>? _peerSubscription;
 
   ConnectionService({
-    required NearbyTransport transport,
+    required BlueyTransport transport,
     required Coordinator coordinator,
   }) : _transport = transport,
        _coordinator = coordinator {
@@ -57,6 +57,9 @@ class ConnectionService {
     await _transport.disconnectAll();
   }
 
+  /// Verify Bluetooth is on / supported / authorized at the OS layer.
+  Future<void> ensureReady() => _transport.ensureReady();
+
   /// Whether advertising is currently active.
   bool get isAdvertising => _transport.isAdvertising;
 
@@ -72,8 +75,16 @@ class ConnectionService {
   /// Stream of connection errors for observability.
   Stream<ConnectionError> get errors => _transport.errors;
 
+  /// Diagnostic log lines from bluey itself (scan results, GATT
+  /// operations, lifecycle heartbeats, platform errors).
+  Stream<String> get diagnosticLog => _transport.diagnosticLog;
+
+  /// Diagnostic events from bluey itself (scan started/stopped,
+  /// device discovered, connecting, connected, etc.).
+  Stream<String> get diagnosticEvents => _transport.diagnosticEvents;
+
   /// Metrics for monitoring transport health and performance.
-  NearbyMetrics get metrics => _transport.metrics;
+  BlueyMetrics get metrics => _transport.metrics;
 
   /// Disposes resources.
   Future<void> dispose() async {

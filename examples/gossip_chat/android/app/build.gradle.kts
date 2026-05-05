@@ -41,7 +41,7 @@ android {
     packagingOptions {
         jniLibs {
             // Use compressed native libraries to avoid 16KB page size alignment issues
-            // with third-party dependencies (nearby_connections, mobile_scanner)
+            // with third-party dependencies (bluey, mobile_scanner)
             useLegacyPackaging = true
         }
     }

@@ -1,5 +1,5 @@
 name: gossip_chat
-description: "Demo app for gossip and gossip_nearby packages"
+description: "Demo app for gossip and gossip_bluey packages"
 publish_to: "none"
 version: 1.0.0+1
 
@@ -13,8 +13,12 @@ dependencies:
   # Gossip packages (path dependencies)
   gossip:
     path: ../../packages/gossip
-  gossip_nearby:
-    path: ../../packages/gossip_nearby
+  gossip_bluey:
+    path: ../../packages/gossip_bluey
+  bluey:
+    git:
+      url: https://github.com/neutrinographics/bluey.git
+      path: bluey
 
   # Utilities
   uuid: ^4.0.0
@@ -27,9 +31,6 @@ dependencies:
   # QR codes
   mobile_scanner: ^7.1.4
   qr_flutter: ^4.1.0
-
-  # Nearby Connections
-  nearby_connections: ^4.0.0
 
 dev_dependencies:
   flutter_test:

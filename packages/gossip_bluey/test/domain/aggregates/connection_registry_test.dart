@@ -9,8 +9,10 @@ void main() {
   final nodeIdB = NodeId('22222222-2222-2222-2222-222222222222');
   final t0 = DateTime(2026, 5, 4);
 
-  ConnectionHandle handle(NodeId id, [ConnectionRole role = ConnectionRole.central]) =>
-      ConnectionHandle(nodeId: id, role: role, connectedAt: t0);
+  ConnectionHandle handle(
+    NodeId id, [
+    ConnectionRole role = ConnectionRole.central,
+  ]) => ConnectionHandle(nodeId: id, role: role, connectedAt: t0);
 
   group('ConnectionRegistry', () {
     test('starts empty', () {
@@ -57,7 +59,42 @@ void main() {
       final r = ConnectionRegistry()
         ..add(handle(nodeIdA))
         ..add(handle(nodeIdB));
-      expect(r.connections.map((h) => h.nodeId), containsAll([nodeIdA, nodeIdB]));
+      expect(
+        r.connections.map((h) => h.nodeId),
+        containsAll([nodeIdA, nodeIdB]),
+      );
+    });
+
+    group('tryRegister', () {
+      test('fresh NodeId returns Registered', () {
+        final r = ConnectionRegistry();
+        final h = handle(nodeIdA, ConnectionRole.central);
+        final result = r.tryRegister(h);
+        expect(result, isA<Registered>());
+        expect((result as Registered).handle, same(h));
+        expect(r.contains(nodeIdA), isTrue);
+      });
+
+      test('duplicate NodeId returns DuplicateRejected with both handles', () {
+        final r = ConnectionRegistry();
+        final first = handle(nodeIdA, ConnectionRole.central);
+        final second = handle(nodeIdA, ConnectionRole.peripheral);
+        r.tryRegister(first);
+        final result = r.tryRegister(second);
+        expect(result, isA<DuplicateRejected>());
+        final rejected = result as DuplicateRejected;
+        expect(rejected.existing, same(first));
+        expect(rejected.attempted, same(second));
+      });
+
+      test('duplicate does not overwrite existing handle', () {
+        final r = ConnectionRegistry();
+        final first = handle(nodeIdA, ConnectionRole.central);
+        final second = handle(nodeIdA, ConnectionRole.peripheral);
+        r.tryRegister(first);
+        r.tryRegister(second);
+        expect(r.get(nodeIdA), same(first));
+      });
     });
   });
 }

@@ -40,13 +40,13 @@ class BlueyTransport {
     required ConnectionService service,
     required BlueyMessagePort messagePort,
     LogCallback? onLog,
-  })  : _serviceUuid = serviceUuid,
-        _displayName = displayName,
-        _port = port,
-        _service = service,
-        _messagePort = messagePort,
-        // ignore: unused_field
-        _onLog = onLog {
+  }) : _serviceUuid = serviceUuid,
+       _displayName = displayName,
+       _port = port,
+       _service = service,
+       _messagePort = messagePort,
+       // ignore: unused_field
+       _onLog = onLog {
     _eventSub = service.events.listen(_onEvent);
   }
 
@@ -62,6 +62,11 @@ class BlueyTransport {
     required String displayName,
     int? maxConnections,
     int? targetConnections,
+    @Deprecated(
+      'No-op since the scan-upgrade migration; scan is now '
+      'long-lived and does not run on a fixed interval.',
+    )
+    Duration discoveryInterval = const Duration(seconds: 30),
     LogCallback? onLog,
   }) async {
     final nodeId = await localNodeRepository.resolveNodeId();
@@ -104,6 +109,11 @@ class BlueyTransport {
     required BlueyPort port,
     int? maxConnections,
     int? targetConnections,
+    @Deprecated(
+      'No-op since the scan-upgrade migration; scan is now '
+      'long-lived and does not run on a fixed interval.',
+    )
+    Duration discoveryInterval = const Duration(seconds: 5),
     LogCallback? onLog,
   }) {
     final registry = ConnectionRegistry();
@@ -151,6 +161,16 @@ class BlueyTransport {
   MessagePort get messagePort => _messagePort;
   Stream<PeerEvent> get peerEvents => _peers.stream;
   Stream<ConnectionError> get errors => _service.errors;
+
+  /// Diagnostic log lines from the underlying BLE library. Useful for
+  /// debugging discovery and connection issues. Emits the empty stream
+  /// when the transport is wired with a port that has nothing to surface
+  /// (e.g. a test fake).
+  Stream<String> get diagnosticLog => _port.diagnosticLog;
+
+  /// Diagnostic event lines from the underlying BLE library (scan
+  /// started/stopped, device discovered, connecting, connected, etc.).
+  Stream<String> get diagnosticEvents => _port.diagnosticEvents;
   Set<NodeId> get connectedPeers =>
       _service.registry.connections.map((h) => h.nodeId).toSet();
   int get connectedPeerCount => _service.registry.connectionCount;
@@ -160,6 +180,17 @@ class BlueyTransport {
   /// discovery rounds synchronously in integration tests.
   @visibleForTesting
   ConnectionService get serviceForTest => _service;
+
+  /// Verify Bluetooth is on / supported / authorized at the OS layer.
+  /// Throws a platform-specific exception if not. Use this between
+  /// the app's permission grant and [startAdvertising] to catch the
+  /// case where the user grants permissions but Bluetooth itself is off.
+  ///
+  /// This routes through the same Bluey instance that backs the
+  /// transport — call this instead of `Bluey.shared.ensureReady()` so
+  /// the app doesn't end up holding two Bluey instances (which causes
+  /// duplicate platform listeners and observable issues on iOS).
+  Future<void> ensureReady() => _port.ensureReady();
 
   Future<void> startAdvertising() async {
     if (_isAdvertising) return;
