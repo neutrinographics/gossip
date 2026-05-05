@@ -127,11 +127,17 @@ class BlueyPortImpl implements BlueyPort {
         // bluey now exposes the central's real ServerId via
         // PeerClient.serverId — no synthesis needed.
         final nodeId = NodeId(peerClient.serverId.value);
+        final clientIdString = peerClient.client.id.toString();
+        final address = BleAddress(clientIdString);
         _peripheralClients[nodeId] = peerClient;
-        _clientIdToNodeId[peerClient.client.id.toString()] = nodeId;
+        _clientIdToNodeId[clientIdString] = nodeId;
         _mtuByNode[nodeId] = peerClient.client.mtu;
         _events.add(
-          PortPeerConnected(nodeId: nodeId, role: ConnectionRole.peripheral),
+          PortPeerConnected(
+            nodeId: nodeId,
+            role: ConnectionRole.peripheral,
+            address: address,
+          ),
         );
       }),
     );
@@ -218,7 +224,16 @@ class BlueyPortImpl implements BlueyPort {
     }
     final blueyPeer = _bluey.peer(bluey.ServerId(target.value));
     final peerConnection = await blueyPeer.connect();
-    await _registerCentralConnection(target, peerConnection);
+    // connect(NodeId) is the legacy/test-only path. The platform
+    // Device.address for a NodeId-initiated connection is not accessible
+    // here; fall back to using the NodeId as the address. Production
+    // code goes through connectAndIdentify, which always has the real
+    // address from the originating ScanCandidate.
+    await _registerCentralConnection(
+      target,
+      BleAddress(target.value),
+      peerConnection,
+    );
   }
 
   /// Wire the central-role bookkeeping for [target] given an already-
@@ -227,6 +242,7 @@ class BlueyPortImpl implements BlueyPort {
   /// state-change disconnects, and emits PortPeerConnected.
   Future<void> _registerCentralConnection(
     NodeId target,
+    BleAddress address,
     bluey.PeerConnection peerConnection,
   ) async {
     final serviceUuid = _serviceUuid;
@@ -282,7 +298,11 @@ class BlueyPortImpl implements BlueyPort {
     });
 
     _events.add(
-      PortPeerConnected(nodeId: target, role: ConnectionRole.central),
+      PortPeerConnected(
+        nodeId: target,
+        role: ConnectionRole.central,
+        address: address,
+      ),
     );
   }
 
@@ -449,7 +469,7 @@ class BlueyPortImpl implements BlueyPort {
       throw domain.NotABlueyPeerException(candidate.address);
     }
     final nodeId = NodeId(peerConn.serverId.value);
-    await _registerCentralConnection(nodeId, peerConn);
+    await _registerCentralConnection(nodeId, candidate.address, peerConn);
     return nodeId;
   }
 

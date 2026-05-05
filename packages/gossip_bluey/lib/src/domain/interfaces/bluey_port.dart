@@ -2,6 +2,7 @@ import 'dart:typed_data';
 
 import 'package:gossip/gossip.dart';
 
+import '../value_objects/ble_address.dart';
 import '../value_objects/discovered_peer.dart';
 import '../value_objects/scan_candidate.dart';
 import '../value_objects/service_uuid.dart';
@@ -104,14 +105,21 @@ sealed class BlueyPortEvent {
 
 /// A bluey-confirmed peer is now connected (either we initiated or they
 /// did). [role] tells the consumer which API to use for sends — but
-/// BlueyPort.sendData hides that detail anyway.
+/// BlueyPort.sendData hides that detail anyway. [address] is the BLE
+/// address (or platform-equivalent stable peer identifier on iOS) for
+/// the remote, populated from `peerClient.client.id` on the peripheral
+/// side and from the originating `ScanCandidate.address` on the central
+/// side. Used by ConnectionService to dedup scan candidates against
+/// existing connections.
 final class PortPeerConnected extends BlueyPortEvent {
   final NodeId nodeId;
   final ConnectionRole role;
+  final BleAddress address;
   final String? displayName;
   const PortPeerConnected({
     required this.nodeId,
     required this.role,
+    required this.address,
     this.displayName,
   });
 }

@@ -93,7 +93,12 @@ class ConnectionService implements MessageDispatcher {
 
   void _onPortEvent(BlueyPortEvent event) {
     switch (event) {
-      case PortPeerConnected(:final nodeId, :final role, :final displayName):
+      case PortPeerConnected(
+        :final nodeId,
+        :final role,
+        :final address,
+        :final displayName,
+      ):
         if (maxConnections != null &&
             registry.connectionCount >= maxConnections!) {
           _errors.add(
@@ -121,6 +126,12 @@ class ConnectionService implements MessageDispatcher {
             unawaited(port.disconnectRole(nodeId, role));
             return;
           case Registered():
+            // Populate the address cache so subsequent scan emissions
+            // for this peer (in the inverse role) are silenced
+            // pre-connect. Critical on iOS where calling connectAsPeer
+            // for a device already held in the inverse role triggers
+            // CoreBluetooth's peer-merge tear-down.
+            _addressToNodeId[address] = nodeId;
             _decoders[nodeId] = FrameDecoder();
             metrics.recordConnectionEstablished();
             metrics.setConnectedPeerCount(registry.connectionCount);

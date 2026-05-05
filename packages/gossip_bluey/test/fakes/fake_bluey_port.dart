@@ -161,10 +161,15 @@ class FakeBlueyPort implements BlueyPort {
     }
     _connectedAsCentral.add(target);
     remote._connectedAsPeripheral.add(localNodeId);
+    // The fake uses each port's NodeId as its BLE address (as a string)
+    // since there's no real address space — this matches
+    // FakeBlueyNetwork.scanCandidatesFor and honours the real-bluey
+    // invariant that clientId equals device.address per platform.
     _events.add(
       PortPeerConnected(
         nodeId: target,
         role: ConnectionRole.central,
+        address: BleAddress(target.value),
         displayName: remote._advertisedDisplayName,
       ),
     );
@@ -172,6 +177,7 @@ class FakeBlueyPort implements BlueyPort {
       PortPeerConnected(
         nodeId: localNodeId,
         role: ConnectionRole.peripheral,
+        address: BleAddress(localNodeId.value),
         displayName: _advertisedDisplayName,
       ),
     );
