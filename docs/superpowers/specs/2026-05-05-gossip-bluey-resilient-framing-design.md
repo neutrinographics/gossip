@@ -102,14 +102,7 @@ FrameFeedResult feed(Uint8List chunk);
 
 ### Backwards compatibility
 
-This is a wire format change. Both peers in a gossip_bluey connection must speak the new format. Since:
-
-- gossip_bluey is a single-app library (no separately versioned clients/servers).
-- We're not in production yet (gossip_chat is in dogfood).
-
-…we make the change atomically: any device on the new build only talks to other devices on the new build. Mixed-version pairs would fail to find magic and silently discard everything — acceptable for the rollout window.
-
-If we wanted graceful version coexistence later, we could try the old format on magic-not-found, but YAGNI for now.
+Not needed. Wire format change is atomic — both peers must run the new build. No coexistence layer, no fallback to the old format.
 
 ## Chunk-size policy
 
