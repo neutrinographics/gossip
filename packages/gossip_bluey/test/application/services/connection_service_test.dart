@@ -270,6 +270,79 @@ void main() {
     );
 
     test(
+      'bidirectional discovery converges to one handle per pair '
+      '(no reconnect loop)',
+      () async {
+        final network = FakeBlueyNetwork();
+        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        final remotePort = FakeBlueyPort(
+          localNodeId: remoteId,
+          network: network,
+        );
+        final localRegistry = ConnectionRegistry();
+        final remoteRegistry = ConnectionRegistry();
+
+        final localSvc = ConnectionService(
+          localNodeId: localId,
+          port: localPort,
+          registry: localRegistry,
+          metrics: BlueyMetrics(),
+          serviceUuid: serviceUuid,
+        );
+        final remoteSvc = ConnectionService(
+          localNodeId: remoteId,
+          port: remotePort,
+          registry: remoteRegistry,
+          metrics: BlueyMetrics(),
+          serviceUuid: serviceUuid,
+        );
+
+        var localConnectCalls = 0;
+        var remoteConnectCalls = 0;
+        localPort.onConnectAndIdentify = (_) => localConnectCalls++;
+        remotePort.onConnectAndIdentify = (_) => remoteConnectCalls++;
+
+        await localPort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Local',
+          localNodeId: localId,
+        );
+        await remotePort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Remote',
+          localNodeId: remoteId,
+        );
+
+        // Both sides start discovery simultaneously.
+        await localSvc.startDiscovery();
+        await remoteSvc.startDiscovery();
+
+        // Wait several rebroadcast cycles. With the dedup fix, the
+        // system should settle quickly: one side wins the connect race,
+        // the other side dedups subsequent scan emissions.
+        await Future<void>.delayed(const Duration(milliseconds: 300));
+
+        expect(localRegistry.contains(remoteId), isTrue);
+        expect(remoteRegistry.contains(localId), isTrue);
+        expect(localRegistry.connectionCount, equals(1));
+        expect(remoteRegistry.connectionCount, equals(1));
+
+        // Without dedup, we'd see double-digit counts as both sides
+        // racy-reconnect. With dedup, expect at most a handful (one per
+        // side worst case if both attempt simultaneously before either
+        // has registered).
+        expect(
+          localConnectCalls + remoteConnectCalls,
+          lessThan(5),
+          reason: 'no infinite reconnect loop',
+        );
+
+        await localSvc.dispose();
+        await remoteSvc.dispose();
+      },
+    );
+
+    test(
       'scan emission → connectAndIdentify → peer registered (happy path)',
       () async {
         final network = FakeBlueyNetwork();
