@@ -70,6 +70,21 @@ abstract final class FrameEncoder {
   }
 }
 
+/// Result of a single [FrameDecoder.feed] call.
+///
+/// [messages] is the list of complete payloads decoded from the
+/// accumulated buffer (possibly empty). [bytesDiscarded] is the total
+/// number of bytes the decoder skipped during corruption-recovery
+/// scanning in this call (zero in the steady state).
+final class FrameFeedResult {
+  final List<Uint8List> messages;
+  final int bytesDiscarded;
+  const FrameFeedResult(this.messages, this.bytesDiscarded);
+
+  /// Convenience: result with no recovery and no messages.
+  static const empty = FrameFeedResult(<Uint8List>[], 0);
+}
+
 /// Reassembles framed bytes (4-byte BE length prefix + payload) arriving
 /// in arbitrary chunk sizes.
 ///
