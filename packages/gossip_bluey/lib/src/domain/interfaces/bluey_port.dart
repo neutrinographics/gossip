@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:gossip/gossip.dart';
 
 import '../value_objects/discovered_peer.dart';
+import '../value_objects/scan_candidate.dart';
 import '../value_objects/service_uuid.dart';
 
 /// Domain abstraction over the bluey library. Speaks only in domain types
@@ -35,10 +36,30 @@ abstract interface class BlueyPort {
 
   /// Run a single discovery round. Returns peers that advertised our
   /// gossip service, deduplicated by `NodeId`.
+  @Deprecated('Use scanForCandidates + connectAndIdentify instead')
   Future<List<DiscoveredPeer>> discoverPeers({
     required ServiceUuid serviceUuid,
     Duration timeout = const Duration(seconds: 5),
   });
+
+  /// Long-lived scan filtered by the gossip service UUID. Emits a
+  /// [ScanCandidate] per advertisement seen — the same device may be
+  /// emitted repeatedly (BLE scans stream continuously). Caller is
+  /// responsible for dedup.
+  Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid});
+
+  /// Stop the active scan started by [scanForCandidates], if any.
+  /// Idempotent.
+  Future<void> stopScan();
+
+  /// Connect to [candidate] and read the remote NodeId from the bluey
+  /// control characteristic. Returns the NodeId on success; throws on
+  /// connection failure or if the device is not a bluey peer.
+  Future<NodeId> connectAndIdentify(ScanCandidate candidate);
+
+  /// Disconnect a specific role's link to [nodeId]. Used by race-loser
+  /// cleanup, where [disconnect] (which prefers central) is too coarse.
+  Future<void> disconnectRole(NodeId nodeId, ConnectionRole role);
 
   /// Initiate a central-role connection to [target]. Completes when the
   /// connection has been established and the gossip characteristic

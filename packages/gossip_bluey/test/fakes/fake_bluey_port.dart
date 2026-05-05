@@ -3,7 +3,9 @@ import 'dart:typed_data';
 
 import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/src/domain/interfaces/bluey_port.dart';
+import 'package:gossip_bluey/src/domain/value_objects/ble_address.dart';
 import 'package:gossip_bluey/src/domain/value_objects/discovered_peer.dart';
+import 'package:gossip_bluey/src/domain/value_objects/scan_candidate.dart';
 import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
 
 /// In-memory shared bus that lets multiple [FakeBlueyPort]s find,
@@ -28,6 +30,24 @@ class FakeBlueyNetwork {
   }
 
   FakeBlueyPort? lookup(NodeId nodeId) => _ports[nodeId];
+
+  /// Yield ScanCandidates for every advertising peer except [self].
+  /// The fake uses each port's NodeId as its BLE address (as a string)
+  /// since there's no real address space — this keeps tests simple.
+  Iterable<ScanCandidate> scanCandidatesFor(
+    ServiceUuid serviceUuid,
+    NodeId self,
+  ) sync* {
+    for (final p in _ports.values) {
+      if (p.localNodeId == self) continue;
+      if (!p._isAdvertising) continue;
+      if (p._advertisedServiceUuid != serviceUuid) continue;
+      yield ScanCandidate(
+        address: BleAddress(p.localNodeId.value),
+        displayName: p._advertisedDisplayName,
+      );
+    }
+  }
 }
 
 class FakeBlueyPort implements BlueyPort {
@@ -54,6 +74,33 @@ class FakeBlueyPort implements BlueyPort {
 
   /// Test hook: invoked at the start of every discoverPeers call.
   void Function(BlueyPort port)? onDiscoverPeers;
+
+  /// Test hook: invoked at the start of every connectAndIdentify call.
+  void Function(ScanCandidate candidate)? onConnectAndIdentify;
+
+  /// Test hook: latency added to connectAndIdentify.
+  Duration connectAndIdentifyDelay = Duration.zero;
+
+  /// Test hook: when the predicate returns true for an address, the
+  /// next connectAndIdentify call for that address throws a generic
+  /// failure (transient).
+  bool Function(BleAddress address)? connectAndIdentifyFailureInjector;
+
+  StreamController<ScanCandidate>? _scanController;
+
+  /// Drive a scan emission for the open scan stream (test-only). Used
+  /// to deliver candidates synchronously in tests without depending on
+  /// network advertise state.
+  void emitScanCandidate(ScanCandidate candidate) {
+    _scanController?.add(candidate);
+  }
+
+  /// Read-only view of central-role connections held by this fake.
+  Set<NodeId> get connectedAsCentral => Set.unmodifiable(_connectedAsCentral);
+
+  /// Read-only view of peripheral-role connections held by this fake.
+  Set<NodeId> get connectedAsPeripheral =>
+      Set.unmodifiable(_connectedAsPeripheral);
 
   @override
   Stream<BlueyPortEvent> get events => _events.stream;
@@ -163,8 +210,53 @@ class FakeBlueyPort implements BlueyPort {
   }
 
   @override
+  Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid}) {
+    final controller = StreamController<ScanCandidate>.broadcast();
+    _scanController = controller;
+    // Seed the stream with currently-advertising peers, microtask-deferred
+    // so listeners attach first.
+    Future<void>.microtask(() {
+      for (final c in network.scanCandidatesFor(serviceUuid, localNodeId)) {
+        if (!controller.isClosed) controller.add(c);
+      }
+    });
+    return controller.stream;
+  }
+
+  @override
+  Future<void> stopScan() async {
+    final c = _scanController;
+    _scanController = null;
+    if (c != null && !c.isClosed) await c.close();
+  }
+
+  @override
+  Future<NodeId> connectAndIdentify(ScanCandidate candidate) async {
+    onConnectAndIdentify?.call(candidate);
+    if (connectAndIdentifyDelay > Duration.zero) {
+      await Future<void>.delayed(connectAndIdentifyDelay);
+    }
+    if (connectAndIdentifyFailureInjector?.call(candidate.address) ?? false) {
+      throw StateError('test injected connectAndIdentify failure');
+    }
+    final target = NodeId(candidate.address.value);
+    await connect(target);
+    return target;
+  }
+
+  @override
+  Future<void> disconnectRole(NodeId nodeId, ConnectionRole role) async {
+    // The fake's connection state is role-symmetric; route through the
+    // existing disconnect for simplicity.
+    await disconnect(nodeId);
+  }
+
+  @override
   Future<void> dispose() async {
     network.unregister(localNodeId);
+    final c = _scanController;
+    _scanController = null;
+    if (c != null && !c.isClosed) await c.close();
     if (!_events.isClosed) {
       await _events.close();
     }

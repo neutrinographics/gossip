@@ -5,8 +5,11 @@ import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 
 import '../../domain/interfaces/bluey_port.dart';
+// ignore: unused_import
+import '../../domain/value_objects/ble_address.dart';
 import '../../domain/value_objects/discovered_peer.dart';
 import '../../domain/value_objects/gossip_characteristic_uuids.dart';
+import '../../domain/value_objects/scan_candidate.dart';
 import '../../domain/value_objects/service_uuid.dart';
 import 'gossip_gatt_service.dart';
 
@@ -340,6 +343,26 @@ class BlueyPortImpl implements BlueyPort {
     }
 
     throw StateError('no connection to $nodeId');
+  }
+
+  @override
+  Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid}) {
+    throw UnimplementedError('implemented in task 6');
+  }
+
+  @override
+  Future<void> stopScan() async {
+    throw UnimplementedError('implemented in task 6');
+  }
+
+  @override
+  Future<NodeId> connectAndIdentify(ScanCandidate candidate) async {
+    throw UnimplementedError('implemented in task 7');
+  }
+
+  @override
+  Future<void> disconnectRole(NodeId nodeId, ConnectionRole role) async {
+    throw UnimplementedError('implemented in task 8');
   }
 
   @override
