@@ -5,7 +5,6 @@ import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 
 import '../../domain/interfaces/bluey_port.dart';
-// ignore: unused_import
 import '../../domain/value_objects/ble_address.dart';
 import '../../domain/value_objects/discovered_peer.dart';
 import '../../domain/value_objects/gossip_characteristic_uuids.dart';
@@ -53,6 +52,13 @@ class BlueyPortImpl implements BlueyPort {
   /// after `requestMtu`) and in `peerConnections` (peripheral role,
   /// from `client.mtu`). Used by [chunkSizeFor].
   final Map<NodeId, int> _mtuByNode = {};
+
+  /// Cached bluey.Device handles for scan emissions, keyed by address.
+  /// Looked up by [connectAndIdentify].
+  final Map<BleAddress, bluey.Device> _devicesByAddress = {};
+
+  StreamSubscription<bluey.ScanResult>? _scanSubscription;
+  StreamController<ScanCandidate>? _scanController;
 
   /// Default ATT payload when MTU is unknown (BLE 4.0 default MTU 23
   /// minus 3-byte ATT header).
@@ -364,12 +370,45 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid}) {
-    throw UnimplementedError('implemented in task 6');
+    // If a previous scan is still open, tear it down first.
+    final previous = _scanController;
+    if (previous != null) {
+      unawaited(stopScan());
+    }
+    final controller = StreamController<ScanCandidate>.broadcast(
+      onCancel: () => unawaited(stopScan()),
+    );
+    _scanController = controller;
+    final scanner = _bluey.scanner();
+    _scanSubscription = scanner
+        .scan(services: [bluey.UUID(serviceUuid.value)])
+        .listen(
+      (result) {
+        final address = BleAddress(result.device.address);
+        _devicesByAddress[address] = result.device;
+        if (!controller.isClosed) {
+          controller.add(ScanCandidate(
+            address: address,
+            displayName: result.device.name,
+          ));
+        }
+      },
+      onError: controller.addError,
+      onDone: () => unawaited(stopScan()),
+    );
+    return controller.stream;
   }
 
   @override
   Future<void> stopScan() async {
-    throw UnimplementedError('implemented in task 6');
+    final sub = _scanSubscription;
+    _scanSubscription = null;
+    final controller = _scanController;
+    _scanController = null;
+    await sub?.cancel();
+    if (controller != null && !controller.isClosed) {
+      await controller.close();
+    }
   }
 
   @override
@@ -407,6 +446,8 @@ class BlueyPortImpl implements BlueyPort {
     _peripheralClients.clear();
     _clientIdToNodeId.clear();
     _mtuByNode.clear();
+    await stopScan();
+    _devicesByAddress.clear();
     await _server?.dispose();
     _server = null;
     await _events.close();
