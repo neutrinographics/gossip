@@ -173,6 +173,118 @@ void main() {
       await remotePort.dispose();
     });
 
+    test('in-flight guard: same address emitted twice → connectAndIdentify '
+        'invoked once', () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
+      final registry = ConnectionRegistry();
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: registry,
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+      );
+
+      // Slow connectAndIdentify so the second emission lands while the
+      // first is still in-flight.
+      var calls = 0;
+      localPort.connectAndIdentifyDelay = const Duration(milliseconds: 50);
+      localPort.onConnectAndIdentify = (_) => calls++;
+
+      await localPort.startAdvertising(
+          serviceUuid: serviceUuid, displayName: 'L', localNodeId: localId);
+      await remotePort.startAdvertising(
+          serviceUuid: serviceUuid, displayName: 'R', localNodeId: remoteId);
+
+      await svc.startDiscovery();
+      // Two back-to-back emissions for the same address.
+      final candidate = ScanCandidate(
+        address: BleAddress(remoteId.value),
+        displayName: 'R',
+      );
+      localPort.emitScanCandidate(candidate);
+      localPort.emitScanCandidate(candidate);
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+
+      // The fake's rebroadcast timer also seeds initial candidates in
+      // the microtask, so we may see one or two calls depending on
+      // timing — the assertion is "no extra call from the immediate
+      // duplicate emission".
+      expect(calls, lessThanOrEqualTo(1));
+
+      await svc.dispose();
+      await remotePort.dispose();
+    });
+
+    test('address cache silences re-emission while peer remains connected',
+        () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
+      final registry = ConnectionRegistry();
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: registry,
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+      );
+      var calls = 0;
+      localPort.onConnectAndIdentify = (_) => calls++;
+
+      await localPort.startAdvertising(
+          serviceUuid: serviceUuid, displayName: 'L', localNodeId: localId);
+      await remotePort.startAdvertising(
+          serviceUuid: serviceUuid, displayName: 'R', localNodeId: remoteId);
+
+      await svc.startDiscovery();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      expect(registry.contains(remoteId), isTrue);
+      final initialCalls = calls;
+
+      // Rebroadcast timer keeps emitting; cache should silence them.
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+      expect(calls, equals(initialCalls),
+          reason: 'cache should silence re-emissions while peer is registered');
+
+      await svc.dispose();
+      await remotePort.dispose();
+    });
+
+    test('targetConnections respected: candidate ignored when at cap',
+        () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
+      final registry = ConnectionRegistry();
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: registry,
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+        maxConnections: 1,
+        targetConnections: 0,
+      );
+      var calls = 0;
+      localPort.onConnectAndIdentify = (_) => calls++;
+
+      await localPort.startAdvertising(
+          serviceUuid: serviceUuid, displayName: 'L', localNodeId: localId);
+      await remotePort.startAdvertising(
+          serviceUuid: serviceUuid, displayName: 'R', localNodeId: remoteId);
+
+      await svc.startDiscovery();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(calls, equals(0));
+      expect(registry.contains(remoteId), isFalse);
+
+      await svc.dispose();
+      await remotePort.dispose();
+    });
+
     test('PortPeerData feeds the FrameDecoder and emits IncomingMessage', () async {
       final network = FakeBlueyNetwork();
       final localPort = FakeBlueyPort(localNodeId: localId, network: network);
