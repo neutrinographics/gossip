@@ -150,197 +150,179 @@ void main() {
       },
     );
 
-    test(
-      'inbound peripheral registration writes address cache; '
-      'subsequent scan emission for that address is silenced',
-      () async {
-        final network = FakeBlueyNetwork();
-        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
-        final remotePort = FakeBlueyPort(
-          localNodeId: remoteId,
-          network: network,
-        );
-        final registry = ConnectionRegistry();
-        final svc = ConnectionService(
-          localNodeId: localId,
-          port: localPort,
-          registry: registry,
-          metrics: BlueyMetrics(),
-          serviceUuid: serviceUuid,
-        );
+    test('inbound peripheral registration writes address cache; '
+        'subsequent scan emission for that address is silenced', () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
+      final registry = ConnectionRegistry();
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: registry,
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+      );
 
-        var connectAndIdentifyCalls = 0;
-        localPort.onConnectAndIdentify = (_) => connectAndIdentifyCalls++;
+      var connectAndIdentifyCalls = 0;
+      localPort.onConnectAndIdentify = (_) => connectAndIdentifyCalls++;
 
-        await localPort.startAdvertising(
-          serviceUuid: serviceUuid,
-          displayName: 'Local',
-          localNodeId: localId,
-        );
+      await localPort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Local',
+        localNodeId: localId,
+      );
 
-        // Remote connects to us as central — we are peripheral.
-        await remotePort.connect(localId);
-        await Future<void>.delayed(Duration.zero);
-        expect(registry.contains(remoteId), isTrue);
+      // Remote connects to us as central — we are peripheral.
+      await remotePort.connect(localId);
+      await Future<void>.delayed(Duration.zero);
+      expect(registry.contains(remoteId), isTrue);
 
-        // Now we start discovery. The fake's scanForCandidates emits
-        // candidates for advertising peers; remote is advertising too.
-        // Without the dedup fix, _onCandidate would call
-        // connectAndIdentify (driving the iOS CoreBluetooth peer-merge
-        // bug in production). With the fix, the address cache silences
-        // it because the inbound peripheral event populated the cache.
-        await remotePort.startAdvertising(
-          serviceUuid: serviceUuid,
-          displayName: 'Remote',
-          localNodeId: remoteId,
-        );
-        await svc.startDiscovery();
-        await Future<void>.delayed(const Duration(milliseconds: 30));
+      // Now we start discovery. The fake's scanForCandidates emits
+      // candidates for advertising peers; remote is advertising too.
+      // Without the dedup fix, _onCandidate would call
+      // connectAndIdentify (driving the iOS CoreBluetooth peer-merge
+      // bug in production). With the fix, the address cache silences
+      // it because the inbound peripheral event populated the cache.
+      await remotePort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Remote',
+        localNodeId: remoteId,
+      );
+      await svc.startDiscovery();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
 
-        expect(
-          connectAndIdentifyCalls,
-          equals(0),
-          reason:
-              'inbound peripheral should populate address cache so the '
-              'subsequent scan emission for the same address is silenced',
-        );
+      expect(
+        connectAndIdentifyCalls,
+        equals(0),
+        reason:
+            'inbound peripheral should populate address cache so the '
+            'subsequent scan emission for the same address is silenced',
+      );
 
-        await svc.dispose();
-        await remotePort.dispose();
-      },
-    );
+      await svc.dispose();
+      await remotePort.dispose();
+    });
 
-    test(
-      'after peripheral disconnect, scan emission re-enables connect '
-      '(cache is stale but registry gate opens)',
-      () async {
-        final network = FakeBlueyNetwork();
-        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
-        final remotePort = FakeBlueyPort(
-          localNodeId: remoteId,
-          network: network,
-        );
-        final registry = ConnectionRegistry();
-        final svc = ConnectionService(
-          localNodeId: localId,
-          port: localPort,
-          registry: registry,
-          metrics: BlueyMetrics(),
-          serviceUuid: serviceUuid,
-        );
+    test('after peripheral disconnect, scan emission re-enables connect '
+        '(cache is stale but registry gate opens)', () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
+      final registry = ConnectionRegistry();
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: registry,
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+      );
 
-        var connectAndIdentifyCalls = 0;
-        localPort.onConnectAndIdentify = (_) => connectAndIdentifyCalls++;
+      var connectAndIdentifyCalls = 0;
+      localPort.onConnectAndIdentify = (_) => connectAndIdentifyCalls++;
 
-        await localPort.startAdvertising(
-          serviceUuid: serviceUuid,
-          displayName: 'Local',
-          localNodeId: localId,
-        );
+      await localPort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Local',
+        localNodeId: localId,
+      );
 
-        // Inbound peripheral registration populates the cache.
-        await remotePort.connect(localId);
-        await Future<void>.delayed(Duration.zero);
-        expect(registry.contains(remoteId), isTrue);
+      // Inbound peripheral registration populates the cache.
+      await remotePort.connect(localId);
+      await Future<void>.delayed(Duration.zero);
+      expect(registry.contains(remoteId), isTrue);
 
-        // Remote disconnects — registry empties.
-        await remotePort.disconnect(localId);
-        await Future<void>.delayed(Duration.zero);
-        expect(registry.contains(remoteId), isFalse);
+      // Remote disconnects — registry empties.
+      await remotePort.disconnect(localId);
+      await Future<void>.delayed(Duration.zero);
+      expect(registry.contains(remoteId), isFalse);
 
-        // The cache still has remote's address, but registry no longer
-        // contains the NodeId — _onCandidate's gate
-        // (`knownNode != null && registry.contains(knownNode)`) opens
-        // because the registry side is false. connectAndIdentify must
-        // fire on the next scan emission.
-        await remotePort.startAdvertising(
-          serviceUuid: serviceUuid,
-          displayName: 'Remote',
-          localNodeId: remoteId,
-        );
-        await svc.startDiscovery();
-        await Future<void>.delayed(const Duration(milliseconds: 30));
+      // The cache still has remote's address, but registry no longer
+      // contains the NodeId — _onCandidate's gate
+      // (`knownNode != null && registry.contains(knownNode)`) opens
+      // because the registry side is false. connectAndIdentify must
+      // fire on the next scan emission.
+      await remotePort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Remote',
+        localNodeId: remoteId,
+      );
+      await svc.startDiscovery();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
 
-        expect(connectAndIdentifyCalls, greaterThanOrEqualTo(1));
-        expect(registry.contains(remoteId), isTrue);
+      expect(connectAndIdentifyCalls, greaterThanOrEqualTo(1));
+      expect(registry.contains(remoteId), isTrue);
 
-        await svc.dispose();
-        await remotePort.dispose();
-      },
-    );
+      await svc.dispose();
+      await remotePort.dispose();
+    });
 
-    test(
-      'bidirectional discovery converges to one handle per pair '
-      '(no reconnect loop)',
-      () async {
-        final network = FakeBlueyNetwork();
-        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
-        final remotePort = FakeBlueyPort(
-          localNodeId: remoteId,
-          network: network,
-        );
-        final localRegistry = ConnectionRegistry();
-        final remoteRegistry = ConnectionRegistry();
+    test('bidirectional discovery converges to one handle per pair '
+        '(no reconnect loop)', () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
+      final localRegistry = ConnectionRegistry();
+      final remoteRegistry = ConnectionRegistry();
 
-        final localSvc = ConnectionService(
-          localNodeId: localId,
-          port: localPort,
-          registry: localRegistry,
-          metrics: BlueyMetrics(),
-          serviceUuid: serviceUuid,
-        );
-        final remoteSvc = ConnectionService(
-          localNodeId: remoteId,
-          port: remotePort,
-          registry: remoteRegistry,
-          metrics: BlueyMetrics(),
-          serviceUuid: serviceUuid,
-        );
+      final localSvc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: localRegistry,
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+      );
+      final remoteSvc = ConnectionService(
+        localNodeId: remoteId,
+        port: remotePort,
+        registry: remoteRegistry,
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+      );
 
-        var localConnectCalls = 0;
-        var remoteConnectCalls = 0;
-        localPort.onConnectAndIdentify = (_) => localConnectCalls++;
-        remotePort.onConnectAndIdentify = (_) => remoteConnectCalls++;
+      var localConnectCalls = 0;
+      var remoteConnectCalls = 0;
+      localPort.onConnectAndIdentify = (_) => localConnectCalls++;
+      remotePort.onConnectAndIdentify = (_) => remoteConnectCalls++;
 
-        await localPort.startAdvertising(
-          serviceUuid: serviceUuid,
-          displayName: 'Local',
-          localNodeId: localId,
-        );
-        await remotePort.startAdvertising(
-          serviceUuid: serviceUuid,
-          displayName: 'Remote',
-          localNodeId: remoteId,
-        );
+      await localPort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Local',
+        localNodeId: localId,
+      );
+      await remotePort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Remote',
+        localNodeId: remoteId,
+      );
 
-        // Both sides start discovery simultaneously.
-        await localSvc.startDiscovery();
-        await remoteSvc.startDiscovery();
+      // Both sides start discovery simultaneously.
+      await localSvc.startDiscovery();
+      await remoteSvc.startDiscovery();
 
-        // Wait several rebroadcast cycles. With the dedup fix, the
-        // system should settle quickly: one side wins the connect race,
-        // the other side dedups subsequent scan emissions.
-        await Future<void>.delayed(const Duration(milliseconds: 300));
+      // Wait several rebroadcast cycles. With the dedup fix, the
+      // system should settle quickly: one side wins the connect race,
+      // the other side dedups subsequent scan emissions.
+      await Future<void>.delayed(const Duration(milliseconds: 300));
 
-        expect(localRegistry.contains(remoteId), isTrue);
-        expect(remoteRegistry.contains(localId), isTrue);
-        expect(localRegistry.connectionCount, equals(1));
-        expect(remoteRegistry.connectionCount, equals(1));
+      expect(localRegistry.contains(remoteId), isTrue);
+      expect(remoteRegistry.contains(localId), isTrue);
+      expect(localRegistry.connectionCount, equals(1));
+      expect(remoteRegistry.connectionCount, equals(1));
 
-        // Without dedup, we'd see double-digit counts as both sides
-        // racy-reconnect. With dedup, expect at most a handful (one per
-        // side worst case if both attempt simultaneously before either
-        // has registered).
-        expect(
-          localConnectCalls + remoteConnectCalls,
-          lessThan(5),
-          reason: 'no infinite reconnect loop',
-        );
+      // Without dedup, we'd see double-digit counts as both sides
+      // racy-reconnect. With dedup, expect at most a handful (one per
+      // side worst case if both attempt simultaneously before either
+      // has registered).
+      expect(
+        localConnectCalls + remoteConnectCalls,
+        lessThan(5),
+        reason: 'no infinite reconnect loop',
+      );
 
-        await localSvc.dispose();
-        await remoteSvc.dispose();
-      },
-    );
+      await localSvc.dispose();
+      await remoteSvc.dispose();
+    });
 
     test(
       'scan emission → connectAndIdentify → peer registered (happy path)',
