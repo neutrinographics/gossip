@@ -178,11 +178,7 @@ class ConnectionService implements MessageDispatcher {
         for (final m in result.messages) {
           metrics.recordMessageReceived();
           _incoming.add(
-            IncomingMessage(
-              sender: nodeId,
-              bytes: m,
-              receivedAt: _clock.now(),
-            ),
+            IncomingMessage(sender: nodeId, bytes: m, receivedAt: _clock.now()),
           );
         }
       case PortConnectFailed():

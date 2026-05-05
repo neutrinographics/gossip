@@ -137,7 +137,18 @@ void main() {
         // recovery is "connection survives, future frames decode."
         final dec = FrameDecoder();
         // A: 12-byte frame, truncated by 5 bytes of its payload.
-        final a = frame([0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA]);
+        final a = frame([
+          0xAA,
+          0xAA,
+          0xAA,
+          0xAA,
+          0xAA,
+          0xAA,
+          0xAA,
+          0xAA,
+          0xAA,
+          0xAA,
+        ]);
         final aTruncated = a.sublist(0, a.length - 5);
         final b = frame([0xBB, 0xBB, 0xBB]);
         final c = frame([1, 2, 3]);
@@ -159,10 +170,7 @@ void main() {
       final dec = FrameDecoder();
       // A frame whose length field claims 0xFFFFFFFF bytes — impossible,
       // exceeds kMaxFramePayload. Decoder must reject and re-scan.
-      final bogus = Uint8List.fromList([
-        ...magic,
-        0xFF, 0xFF, 0xFF, 0xFF,
-      ]);
+      final bogus = Uint8List.fromList([...magic, 0xFF, 0xFF, 0xFF, 0xFF]);
       final good = frame([42]);
       final combined = BytesBuilder()
         ..add(bogus)
@@ -178,11 +186,19 @@ void main() {
       // First chunk: only the first two bytes of the magic.
       final r1 = dec.feed(Uint8List.fromList([0x47, 0x53]));
       // Second chunk: the rest of the magic + length + payload.
-      final r2 = dec.feed(Uint8List.fromList([
-        0x50, 0x31,
-        0x00, 0x00, 0x00, 0x03,
-        0x77, 0x88, 0x99,
-      ]));
+      final r2 = dec.feed(
+        Uint8List.fromList([
+          0x50,
+          0x31,
+          0x00,
+          0x00,
+          0x00,
+          0x03,
+          0x77,
+          0x88,
+          0x99,
+        ]),
+      );
       expect(r1.messages, isEmpty);
       expect(r1.bytesDiscarded, equals(0));
       expect(r2.messages, hasLength(1));
