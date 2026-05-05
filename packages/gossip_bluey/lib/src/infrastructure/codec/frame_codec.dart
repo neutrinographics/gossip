@@ -3,16 +3,31 @@ import 'dart:typed_data';
 /// Maximum gossip message payload. Anything larger is rejected.
 const int kMaxFramePayload = 32 * 1024;
 
+/// Magic prefix at the start of every frame, ASCII "GSP1" (Gossip Sync
+/// Protocol v1). Lets the decoder re-align after a byte-stream
+/// corruption by scanning forward for the next valid prefix.
+const List<int> kMagicBytes = [0x47, 0x53, 0x50, 0x31];
+
+/// Length of the magic prefix in bytes.
+const int kMagicSize = 4;
+
 /// Length prefix size in bytes (big-endian uint32).
 const int kLengthPrefixSize = 4;
+
+/// Total framing overhead per frame: magic + length prefix.
+const int kFrameHeaderSize = kMagicSize + kLengthPrefixSize;
 
 /// Encodes a gossip payload into MTU-sized chunks for sequential writes.
 abstract final class FrameEncoder {
   /// Returns the chunks to write, in order.
   ///
-  /// [mtuPayloadSize] is the per-chunk byte budget — i.e. the negotiated
-  /// MTU minus 3 for the ATT header (and any safety margin the caller wants
-  /// to subtract). Must be at least [kLengthPrefixSize] + 1.
+  /// Wire format: `[magic 4 bytes][length 4 bytes BE][payload N bytes]`,
+  /// then chunked at [mtuPayloadSize] bytes per chunk.
+  ///
+  /// [mtuPayloadSize] is the per-chunk byte budget — the negotiated MTU
+  /// minus 3 for the ATT header (and any safety margin the caller wants
+  /// to subtract). Must exceed [kFrameHeaderSize] (8 bytes); a chunk
+  /// smaller than the header would be useless.
   ///
   /// Throws [ArgumentError] if [payload] is empty, larger than
   /// [kMaxFramePayload], or [mtuPayloadSize] is too small.
@@ -30,18 +45,19 @@ abstract final class FrameEncoder {
         'exceeds 32KB max',
       );
     }
-    if (mtuPayloadSize <= kLengthPrefixSize) {
+    if (mtuPayloadSize <= kFrameHeaderSize) {
       throw ArgumentError.value(
         mtuPayloadSize,
         'mtuPayloadSize',
-        'must exceed length prefix size ($kLengthPrefixSize)',
+        'must exceed frame header size ($kFrameHeaderSize)',
       );
     }
 
-    final framed = Uint8List(kLengthPrefixSize + payload.length);
-    final view = ByteData.view(framed.buffer);
-    view.setUint32(0, payload.length, Endian.big);
-    framed.setRange(kLengthPrefixSize, framed.length, payload);
+    final framed = Uint8List(kFrameHeaderSize + payload.length);
+    framed.setRange(0, kMagicSize, kMagicBytes);
+    final view = ByteData.view(framed.buffer, framed.offsetInBytes);
+    view.setUint32(kMagicSize, payload.length, Endian.big);
+    framed.setRange(kFrameHeaderSize, framed.length, payload);
 
     final chunks = <Uint8List>[];
     var offset = 0;

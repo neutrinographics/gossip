@@ -4,30 +4,38 @@ import 'package:gossip_bluey/src/infrastructure/codec/frame_codec.dart';
 
 void main() {
   group('FrameEncoder', () {
-    test('emits a single chunk when payload + length prefix fits the MTU', () {
+    // Magic 0x47535031 == ASCII "GSP1"
+    const magic = [0x47, 0x53, 0x50, 0x31];
+
+    test('emits a single chunk when payload + magic + length fits the MTU', () {
       final payload = Uint8List.fromList([1, 2, 3, 4, 5]);
       final chunks = FrameEncoder.encode(payload, mtuPayloadSize: 100);
       expect(chunks, hasLength(1));
-      expect(chunks.first, hasLength(4 + 5));
+      expect(chunks.first, hasLength(8 + 5));
+      // magic
+      expect(chunks.first.sublist(0, 4), equals(magic));
       // length prefix: big-endian 5
-      expect(chunks.first.sublist(0, 4), equals([0, 0, 0, 5]));
-      expect(chunks.first.sublist(4), equals([1, 2, 3, 4, 5]));
+      expect(chunks.first.sublist(4, 8), equals([0, 0, 0, 5]));
+      // payload
+      expect(chunks.first.sublist(8), equals([1, 2, 3, 4, 5]));
     });
 
     test('splits across multiple chunks when payload exceeds MTU', () {
-      // mtuPayloadSize = 8. Length prefix takes 4 bytes of the first chunk.
-      // Payload = 20 bytes. First chunk carries 4 prefix bytes + 4 payload bytes;
-      // remaining 16 payload bytes need ceil(16/8) = 2 chunks.
+      // mtuPayloadSize = 12. Magic + length prefix take 8 bytes of the
+      // first chunk. Payload = 20 bytes. First chunk carries 8 header
+      // bytes + 4 payload bytes; remaining 16 payload bytes need
+      // ceil(16/12) = 2 chunks.
       final payload = Uint8List.fromList(List.generate(20, (i) => i));
-      final chunks = FrameEncoder.encode(payload, mtuPayloadSize: 8);
+      final chunks = FrameEncoder.encode(payload, mtuPayloadSize: 12);
       expect(chunks, hasLength(3));
-      expect(chunks[0], hasLength(8));
-      expect(chunks[0].sublist(0, 4), equals([0, 0, 0, 20]));
-      expect(chunks[0].sublist(4), equals([0, 1, 2, 3]));
-      expect(chunks[1], hasLength(8));
-      expect(chunks[1], equals([4, 5, 6, 7, 8, 9, 10, 11]));
-      expect(chunks[2], hasLength(8));
-      expect(chunks[2], equals([12, 13, 14, 15, 16, 17, 18, 19]));
+      expect(chunks[0], hasLength(12));
+      expect(chunks[0].sublist(0, 4), equals(magic));
+      expect(chunks[0].sublist(4, 8), equals([0, 0, 0, 20]));
+      expect(chunks[0].sublist(8), equals([0, 1, 2, 3]));
+      expect(chunks[1], hasLength(12));
+      expect(chunks[1], equals([4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]));
+      expect(chunks[2], hasLength(4));
+      expect(chunks[2], equals([16, 17, 18, 19]));
     });
 
     test('throws on empty payload', () {
@@ -37,11 +45,11 @@ void main() {
       );
     });
 
-    test('throws when mtuPayloadSize is too small to hold the prefix', () {
-      // length prefix is 4 bytes; if the chunk can't hold even that, encoding
-      // is impossible.
+    test('throws when mtuPayloadSize is too small to hold magic + length', () {
+      // magic + length = 8 bytes; need at least one byte of payload room
+      // in the first chunk.
       expect(
-        () => FrameEncoder.encode(Uint8List.fromList([1]), mtuPayloadSize: 3),
+        () => FrameEncoder.encode(Uint8List.fromList([1]), mtuPayloadSize: 8),
         throwsArgumentError,
       );
     });
