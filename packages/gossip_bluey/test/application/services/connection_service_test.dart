@@ -151,6 +151,66 @@ void main() {
     );
 
     test(
+      'inbound peripheral registration writes address cache; '
+      'subsequent scan emission for that address is silenced',
+      () async {
+        final network = FakeBlueyNetwork();
+        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        final remotePort = FakeBlueyPort(
+          localNodeId: remoteId,
+          network: network,
+        );
+        final registry = ConnectionRegistry();
+        final svc = ConnectionService(
+          localNodeId: localId,
+          port: localPort,
+          registry: registry,
+          metrics: BlueyMetrics(),
+          serviceUuid: serviceUuid,
+        );
+
+        var connectAndIdentifyCalls = 0;
+        localPort.onConnectAndIdentify = (_) => connectAndIdentifyCalls++;
+
+        await localPort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Local',
+          localNodeId: localId,
+        );
+
+        // Remote connects to us as central — we are peripheral.
+        await remotePort.connect(localId);
+        await Future<void>.delayed(Duration.zero);
+        expect(registry.contains(remoteId), isTrue);
+
+        // Now we start discovery. The fake's scanForCandidates emits
+        // candidates for advertising peers; remote is advertising too.
+        // Without the dedup fix, _onCandidate would call
+        // connectAndIdentify (driving the iOS CoreBluetooth peer-merge
+        // bug in production). With the fix, the address cache silences
+        // it because the inbound peripheral event populated the cache.
+        await remotePort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Remote',
+          localNodeId: remoteId,
+        );
+        await svc.startDiscovery();
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+
+        expect(
+          connectAndIdentifyCalls,
+          equals(0),
+          reason:
+              'inbound peripheral should populate address cache so the '
+              'subsequent scan emission for the same address is silenced',
+        );
+
+        await svc.dispose();
+        await remotePort.dispose();
+      },
+    );
+
+    test(
       'scan emission → connectAndIdentify → peer registered (happy path)',
       () async {
         final network = FakeBlueyNetwork();
