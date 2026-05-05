@@ -37,6 +37,20 @@ With pure scan, the advertisement contains the gossip service UUID and a display
 
 We accept the brief two-link race as the cost of skipping `discoverPeers`.
 
+## DDD layering
+
+Each addition lives in the layer where its responsibility belongs:
+
+| Concern | Layer | Component |
+|---|---|---|
+| Pre-connect identity (BLE address, advertised name) | Domain | `BleAddress`, `ScanCandidate` |
+| Post-connect identity uniqueness invariant | Domain (aggregate) | `ConnectionRegistry.tryRegister` + `RegistrationResult` |
+| Discovery loop orchestration (scan → connect → dedup → backoff) | Application | `ConnectionService` |
+| Resolving `BleAddress` to a `bluey.Device` and driving the BLE library | Infrastructure | `BlueyPortImpl` |
+| Public lifecycle API | Facade | `BlueyTransport` |
+
+No domain or application file gains a `package:bluey/` import. The `bluey.Device` handle never escapes `BlueyPortImpl` — the address-to-device map is infrastructure-private. The aggregate enforces its own first-write-wins invariant via `tryRegister` rather than the application layer reading `contains(nodeId)` and choosing what to do.
+
 ## Tie-break is gone
 
 Tie-break existed solely to prevent the wasted concurrent connect. Once we're connecting to learn the NodeId, enforcing tie-break post-connect would be pure waste — we'd be tearing down a perfectly functional connection just to satisfy a rule whose purpose no longer applies. The race-loser branch in the registry handles deduplication; that's enough.
@@ -45,22 +59,33 @@ Tie-break existed solely to prevent the wasted concurrent connect. Once we're co
 
 A single BLE connection carries data in both directions: central writes to the peripheral's characteristics, peripheral notifies subscribed centrals. `BlueyPort.sendData` already abstracts this — it picks `write` or `notifyTo` based on which role we hold for that NodeId. Two connections per pair is pure waste; one is sufficient and full-duplex. This is why the registry only needs one handle per NodeId regardless of role.
 
-## Interface diff: `BlueyPort`
-
-Add:
+## New domain value objects
 
 ```dart
-/// A device surfaced by the BLE scanner — pre-connect, NodeId not yet
-/// known. Wraps the bluey Device opaquely so the domain stays free of
-/// bluey types.
-final class ScanCandidate {
-  final String address;       // BLE address (Android MAC) — used as dedup key
-  final String? displayName;  // advertised name, if any
-  // Infrastructure-only: the underlying bluey.Device. Domain code never reads.
-  final Object _device;
-  ScanCandidate({required this.address, this.displayName, required Object device})
-      : _device = device;
+// domain/value_objects/ble_address.dart
+class BleAddress {
+  final String value;
+  const BleAddress(this.value);
+  @override bool operator ==(Object other) =>
+      other is BleAddress && other.value == value;
+  @override int get hashCode => value.hashCode;
+  @override String toString() => 'BleAddress($value)';
 }
+```
+
+```dart
+// domain/value_objects/scan_candidate.dart
+//
+// A device surfaced by the BLE scanner — pre-connect, NodeId not yet
+// known. Pure domain: only primitive/domain types. The infrastructure
+// adapter resolves [address] to its internal device handle when
+// connect-and-identify is invoked.
+class ScanCandidate {
+  final BleAddress address;
+  final String? displayName;
+  const ScanCandidate({required this.address, this.displayName});
+}
+```
 
 /// Long-lived scan filtered by the gossip service UUID. Emits a
 /// [ScanCandidate] per advertisement seen — the same device may be
@@ -93,32 +118,44 @@ Future<List<DiscoveredPeer>> discoverPeers({...});
 
 ## `BlueyPortImpl` implementation
 
+The infrastructure adapter holds the bluey-typed device handles. A scan-emission cache maps `BleAddress → bluey.Device` so the domain `ScanCandidate` stays free of infrastructure types.
+
 ```dart
+// Infrastructure-only: pre-resolved handles for connect-and-identify.
+final Map<BleAddress, bluey.Device> _devicesByAddress = {};
+
 @override
 Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid}) {
   final scanner = _bluey.scanner();
   return scanner.scan(services: [bluey.UUID(serviceUuid.value)]).map(
-    (result) => ScanCandidate(
-      address: result.device.address,
-      displayName: result.device.name,
-      device: result.device,
-    ),
+    (result) {
+      final address = BleAddress(result.device.address);
+      _devicesByAddress[address] = result.device;
+      return ScanCandidate(
+        address: address,
+        displayName: result.device.name,
+      );
+    },
   );
 }
 
 @override
 Future<NodeId> connectAndIdentify(ScanCandidate candidate) async {
-  final device = candidate._device as bluey.Device;
+  final device = _devicesByAddress[candidate.address];
+  if (device == null) {
+    throw StateError(
+      'no scan-emitted device for ${candidate.address} — '
+      'did the candidate come from this port\'s scanForCandidates stream?',
+    );
+  }
   final peerConn = await _bluey.connectAsPeer(device);
   final nodeId = NodeId(peerConn.peer.serverId.value);
-
-  // Wire the same notifications + state subs we wire in connect(NodeId).
-  _centralConnections[nodeId] = peerConn;
-  // ... MTU negotiation, gossip data char subscription, state-change sub ...
-  _events.add(PortPeerConnected(nodeId: nodeId, role: ConnectionRole.central));
+  _registerCentralConnection(nodeId, peerConn);  // shared with connect(NodeId)
   return nodeId;
 }
 ```
+
+`_registerCentralConnection` is the private helper extracted from the existing `connect(NodeId)` body — wires MTU negotiation, gossip data characteristic subscription, state-change sub, and emits `PortPeerConnected(nodeId, ConnectionRole.central)`. Both code paths share it.
 
 The shared bookkeeping (MTU, notification sub, state sub, PortPeerConnected event) is extracted from the existing `connect(NodeId)` into a private helper `_registerCentralConnection(NodeId, bluey.PeerConnection)` and called from both paths.
 
@@ -128,9 +165,9 @@ Replace the timer-driven `_runDiscoveryRound` with a long-lived stream subscript
 
 ```dart
 StreamSubscription<ScanCandidate>? _scanSub;
-final Set<String> _connectingAddresses = {};
-final Map<String, NodeId> _addressToNodeId = {};
-final Map<String, ({Duration delay, DateTime nextAttempt})> _addressBackoff = {};
+final Set<BleAddress> _connectingAddresses = {};
+final Map<BleAddress, NodeId> _addressToNodeId = {};
+final Map<BleAddress, ({Duration delay, DateTime nextAttempt})> _addressBackoff = {};
 ```
 
 Lifecycle:
@@ -191,23 +228,68 @@ Future<void> _onCandidate(ScanCandidate c) async {
 
 Backoff is keyed by address (we don't know NodeId until success). Initial 1s, exponential to 30s for transient failures; long (5 min) for `NotABlueyPeerException` since that's a stable property of the device.
 
-## Race-loser detection in `_onPortEvent`
+## Race-loser detection: encapsulate in `ConnectionRegistry`
 
-Registry uniqueness is enforced in a single place: the `PortPeerConnected` handler. When the event fires for a NodeId already in the registry, we have a duplicate — disconnect the **just-arrived** role and leave the existing handle alone:
+Today `ConnectionRegistry.add(handle)` returns "the previous handle if one existed, caller is responsible for tearing it down" — this is **last-write-wins** semantics. Our race-loser scenario wants **first-write-wins**: keep the established connection, reject the duplicate.
+
+Rather than have `_onPortEvent` reach into the aggregate's state externally (`registry.contains(nodeId)`), encapsulate the new invariant in the aggregate itself:
+
+```dart
+// domain/aggregates/connection_registry.dart
+
+sealed class RegistrationResult {
+  const RegistrationResult();
+}
+final class Registered extends RegistrationResult {
+  final ConnectionHandle handle;
+  const Registered(this.handle);
+}
+final class DuplicateRejected extends RegistrationResult {
+  final ConnectionHandle existing;
+  final ConnectionHandle attempted;
+  const DuplicateRejected({required this.existing, required this.attempted});
+}
+
+class ConnectionRegistry {
+  // ... existing fields and add() unchanged ...
+
+  /// First-write-wins registration. Returns [Registered] if [handle] was
+  /// stored, or [DuplicateRejected] if a handle for this NodeId already
+  /// exists (the existing handle is left in place; the caller should
+  /// tear down [attempted]).
+  RegistrationResult tryRegister(ConnectionHandle handle) {
+    final existing = _byNodeId[handle.nodeId];
+    if (existing != null) {
+      return DuplicateRejected(existing: existing, attempted: handle);
+    }
+    _byNodeId[handle.nodeId] = handle;
+    return Registered(handle);
+  }
+}
+```
+
+`_onPortEvent` becomes:
 
 ```dart
 case PortPeerConnected(:final nodeId, :final role, :final displayName):
   // ... existing maxConnections check ...
-  if (registry.contains(nodeId)) {
-    onLog?.call(LogLevel.info,
-      'duplicate connection for $nodeId arrived as $role; dropping');
-    unawaited(port.disconnectRole(nodeId, role));  // see below
-    return;
+  final handle = ConnectionHandle(nodeId: nodeId, role: role, ...);
+  switch (registry.tryRegister(handle)) {
+    case DuplicateRejected():
+      onLog?.call(LogLevel.info,
+        'duplicate connection for $nodeId arrived as $role; dropping');
+      unawaited(port.disconnectRole(nodeId, role));
+      return;
+    case Registered():
+      _events.add(PeerConnected(...));  // existing emit
   }
-  // ... existing registry add + ConnectionEvent emit ...
 ```
 
-This requires a small `BlueyPort` API addition: `disconnectRole(NodeId, ConnectionRole)` — `disconnect(NodeId)` is too coarse because it picks central first, but the duplicate may be the central or the peripheral depending on which side won the race. `BlueyPortImpl.disconnectRole` reads from `_centralConnections` or `_peripheralClients` based on the role argument and tears down only that side.
+The aggregate now owns its uniqueness invariant; the application layer just acts on the result.
+
+This requires a small `BlueyPort` API addition: `disconnectRole(NodeId, ConnectionRole)` — `disconnect(NodeId)` is too coarse because it picks central first, but the duplicate may be central or peripheral depending on which side won the race. `BlueyPortImpl.disconnectRole` reads from `_centralConnections` or `_peripheralClients` based on the role argument and tears down only that side.
+
+`add()` stays for backwards compatibility with any existing callers, but the new path uses `tryRegister`.
 
 ## Existing per-NodeId backoff (`_backoff`) is retired
 
@@ -235,6 +317,8 @@ Unit tests (new, in `connection_service_test.dart` or a new file):
 6. **address cache silences re-emissions.** After first successful connect, repeat scan emissions of the same address are silently dropped while the NodeId remains in the registry.
 7. **stopDiscovery cancels scan and clears in-flight tracking.** Re-starting works.
 8. **targetConnections respected.** Once at target, candidates ignored.
+9. **`ConnectionRegistry.tryRegister` — fresh NodeId returns `Registered`; duplicate returns `DuplicateRejected` carrying both `existing` and `attempted` handles; existing handle untouched.**
+10. **`_onPortEvent` race-loser path — when `tryRegister` returns `DuplicateRejected`, `port.disconnectRole(nodeId, role)` is called with the just-arrived role; existing handle remains in the registry.**
 
 Existing `discoverPeers`-based tests stay green (the deprecated method still works for backwards-compatible callers — `discoverPeers` itself is unchanged in `BlueyPortImpl` for now).
 
@@ -252,7 +336,9 @@ Integration / hardware (manual):
 ## Files touched
 
 - `packages/gossip_bluey/lib/src/domain/interfaces/bluey_port.dart` — interface additions, deprecations.
-- `packages/gossip_bluey/lib/src/domain/value_objects/scan_candidate.dart` — new value object.
+- `packages/gossip_bluey/lib/src/domain/value_objects/ble_address.dart` — new value object wrapping the BLE-address string (parallels `NodeId`, `ServiceUuid`).
+- `packages/gossip_bluey/lib/src/domain/value_objects/scan_candidate.dart` — new value object (pure domain; no infrastructure handle).
+- `packages/gossip_bluey/lib/src/domain/aggregates/connection_registry.dart` — add `tryRegister` + `RegistrationResult` sealed hierarchy.
 - `packages/gossip_bluey/lib/src/infrastructure/adapters/bluey_port_impl.dart` — `scanForCandidates`, `connectAndIdentify`, `stopScan`, refactor `_registerCentralConnection`.
 - `packages/gossip_bluey/lib/src/application/services/connection_service.dart` — replace discovery loop, add address cache + address-keyed backoff.
 - `packages/gossip_bluey/test/...` — new unit tests for the candidate handler; update existing tests using `BlueyPort` fakes to add the new methods.
