@@ -204,6 +204,23 @@ class BlueyPortImpl implements BlueyPort {
     }
     final blueyPeer = _bluey.peer(bluey.ServerId(target.value));
     final peerConnection = await blueyPeer.connect();
+    await _registerCentralConnection(target, peerConnection);
+  }
+
+  /// Wire the central-role bookkeeping for [target] given an already-
+  /// connected [peerConnection]. Negotiates MTU, subscribes to the
+  /// gossip data characteristic for incoming notifications, watches for
+  /// state-change disconnects, and emits PortPeerConnected.
+  Future<void> _registerCentralConnection(
+    NodeId target,
+    bluey.PeerConnection peerConnection,
+  ) async {
+    final serviceUuid = _serviceUuid;
+    if (serviceUuid == null) {
+      throw StateError(
+        '_registerCentralConnection requires startAdvertising first',
+      );
+    }
     _centralConnections[target] = peerConnection;
 
     // Negotiate the largest MTU the platform allows. Best-effort —
