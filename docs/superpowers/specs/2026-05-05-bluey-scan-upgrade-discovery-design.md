@@ -87,6 +87,11 @@ class ScanCandidate {
 }
 ```
 
+## Interface diff: `BlueyPort`
+
+Add four methods to the domain interface:
+
+```dart
 /// Long-lived scan filtered by the gossip service UUID. Emits a
 /// [ScanCandidate] per advertisement seen — the same device may be
 /// emitted repeatedly (BLE scans stream continuously). Caller is
@@ -155,9 +160,7 @@ Future<NodeId> connectAndIdentify(ScanCandidate candidate) async {
 }
 ```
 
-`_registerCentralConnection` is the private helper extracted from the existing `connect(NodeId)` body — wires MTU negotiation, gossip data characteristic subscription, state-change sub, and emits `PortPeerConnected(nodeId, ConnectionRole.central)`. Both code paths share it.
-
-The shared bookkeeping (MTU, notification sub, state sub, PortPeerConnected event) is extracted from the existing `connect(NodeId)` into a private helper `_registerCentralConnection(NodeId, bluey.PeerConnection)` and called from both paths.
+`_registerCentralConnection(NodeId, bluey.PeerConnection)` is the private helper extracted from the existing `connect(NodeId)` body — wires MTU negotiation, gossip data characteristic subscription, state-change sub, and emits `PortPeerConnected(nodeId, ConnectionRole.central)`. Both code paths share it.
 
 ## `ConnectionService` discovery loop
 
@@ -309,16 +312,15 @@ Today `_backoff` is keyed by NodeId because `discoverPeers` returns NodeIds. In 
 
 Unit tests (new, in `connection_service_test.dart` or a new file):
 
-1. **scan emits candidate → connectAndIdentify called once.** Even if the same address is emitted multiple times in quick succession, only one in-flight connect per address.
-2. **registry race-loser disconnects.** Stub `connectAndIdentify` to return a NodeId already in the registry → port.disconnect called, registry not duplicated.
-3. **filter rejects → disconnect.** Filter returns false → port.disconnect called.
-4. **NotABlueyPeerException → long backoff.** Throws → address goes into long backoff; subsequent emissions ignored within the window.
-5. **transient failure → exponential backoff.** Generic exception → short backoff, doubles on retry, caps at 30s.
-6. **address cache silences re-emissions.** After first successful connect, repeat scan emissions of the same address are silently dropped while the NodeId remains in the registry.
-7. **stopDiscovery cancels scan and clears in-flight tracking.** Re-starting works.
-8. **targetConnections respected.** Once at target, candidates ignored.
-9. **`ConnectionRegistry.tryRegister` — fresh NodeId returns `Registered`; duplicate returns `DuplicateRejected` carrying both `existing` and `attempted` handles; existing handle untouched.**
-10. **`_onPortEvent` race-loser path — when `tryRegister` returns `DuplicateRejected`, `port.disconnectRole(nodeId, role)` is called with the just-arrived role; existing handle remains in the registry.**
+1. **In-flight guard.** Even if the same address is emitted multiple times in quick succession, only one `connectAndIdentify` is in-flight per address.
+2. **Filter rejects → disconnect.** Filter returns false → `port.disconnect(nodeId)` called for the just-completed central connection.
+3. **`NotABlueyPeerException` → long backoff.** Throws → address goes into long backoff; subsequent emissions ignored within the window.
+4. **Transient failure → exponential backoff.** Generic exception → short backoff, doubles on retry, caps at 30s.
+5. **Address cache silences re-emissions.** After first successful connect, repeat scan emissions of the same address are silently dropped while the NodeId remains in the registry.
+6. **`stopDiscovery` cancels scan and clears in-flight tracking.** Re-starting works.
+7. **`targetConnections` respected.** Once at target, candidates ignored.
+8. **`ConnectionRegistry.tryRegister` API.** Fresh NodeId returns `Registered`; duplicate returns `DuplicateRejected` carrying both `existing` and `attempted` handles; existing handle untouched.
+9. **`_onPortEvent` race-loser path.** When `tryRegister` returns `DuplicateRejected`, `port.disconnectRole(nodeId, role)` is called with the just-arrived role; existing handle remains in the registry.
 
 Existing `discoverPeers`-based tests stay green (the deprecated method still works for backwards-compatible callers — `discoverPeers` itself is unchanged in `BlueyPortImpl` for now).
 
