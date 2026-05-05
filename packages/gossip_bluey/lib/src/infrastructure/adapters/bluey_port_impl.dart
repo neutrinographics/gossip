@@ -428,7 +428,24 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Future<void> disconnectRole(NodeId nodeId, ConnectionRole role) async {
-    throw UnimplementedError('implemented in task 8');
+    switch (role) {
+      case ConnectionRole.central:
+        final central = _centralConnections[nodeId];
+        if (central == null) return;
+        try {
+          await central.disconnect();
+        } finally {
+          _cleanupCentral(nodeId, reason: 'local request (role)');
+        }
+      case ConnectionRole.peripheral:
+        final peripheral = _peripheralClients.remove(nodeId);
+        if (peripheral == null) return;
+        _clientIdToNodeId.remove(peripheral.client.id.toString());
+        _mtuByNode.remove(nodeId);
+        _events.add(
+          PortPeerDisconnected(nodeId: nodeId, reason: 'local request (role)'),
+        );
+    }
   }
 
   @override
