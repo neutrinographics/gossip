@@ -87,6 +87,7 @@ class FakeBlueyPort implements BlueyPort {
   bool Function(BleAddress address)? connectAndIdentifyFailureInjector;
 
   StreamController<ScanCandidate>? _scanController;
+  Timer? _scanRebroadcastTimer;
 
   /// Drive a scan emission for the open scan stream (test-only). Used
   /// to deliver candidates synchronously in tests without depending on
@@ -239,18 +240,28 @@ class FakeBlueyPort implements BlueyPort {
   Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid}) {
     final controller = StreamController<ScanCandidate>.broadcast();
     _scanController = controller;
-    // Seed the stream with currently-advertising peers, microtask-deferred
-    // so listeners attach first.
-    Future<void>.microtask(() {
+    void emitOnce() {
       for (final c in network.scanCandidatesFor(serviceUuid, localNodeId)) {
         if (!controller.isClosed) controller.add(c);
       }
-    });
+    }
+    // Initial seed (microtask-deferred so listeners attach first).
+    Future<void>.microtask(emitOnce);
+    // Mimic real BLE: the scanner continuously surfaces advertisements
+    // for as long as a peer is advertising. Without periodic re-emission
+    // the fake would stop "seeing" peers after the initial seed, which
+    // breaks scenarios that depend on rediscovery (e.g. a peer that was
+    // disconnected but is still advertising).
+    _scanRebroadcastTimer?.cancel();
+    _scanRebroadcastTimer =
+        Timer.periodic(const Duration(milliseconds: 100), (_) => emitOnce());
     return controller.stream;
   }
 
   @override
   Future<void> stopScan() async {
+    _scanRebroadcastTimer?.cancel();
+    _scanRebroadcastTimer = null;
     final c = _scanController;
     _scanController = null;
     if (c != null && !c.isClosed) await c.close();
@@ -312,6 +323,8 @@ class FakeBlueyPort implements BlueyPort {
   @override
   Future<void> dispose() async {
     network.unregister(localNodeId);
+    _scanRebroadcastTimer?.cancel();
+    _scanRebroadcastTimer = null;
     final c = _scanController;
     _scanController = null;
     if (c != null && !c.isClosed) await c.close();

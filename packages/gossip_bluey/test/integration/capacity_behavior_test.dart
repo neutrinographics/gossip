@@ -53,7 +53,7 @@ void main() {
         final errSub = transportA.errors.listen(errors.add);
 
         // 1) Discovery round: A initiates only one connection (targetConnections=1).
-        await transportA.serviceForTest.runDiscoveryRoundForTest();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
         await Future<void>.delayed(const Duration(milliseconds: 50));
         expect(transportA.connectedPeerCount, equals(1));
 
@@ -71,15 +71,14 @@ void main() {
           isNotEmpty,
         );
 
-        // 4) Disconnect everyone — A drops to 0.
+        // 4) Disconnect everyone. Discovery is long-lived now, so A's
+        // scan will keep re-emitting candidates; once the registry
+        // empties, _onCandidate reconnects up to targetConnections=1.
+        // We can't reliably observe an intermediate count=0 because
+        // the continuous-scan rebroadcast may reconnect within the
+        // assertion window.
         await transportA.disconnectAll();
-        await Future<void>.delayed(const Duration(milliseconds: 50));
-        expect(transportA.connectedPeerCount, equals(0));
-
-        // After disconnecting, discovery resumes; A should reach
-        // targetConnections=1 again on the next round.
-        await transportA.serviceForTest.runDiscoveryRoundForTest();
-        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await Future<void>.delayed(const Duration(milliseconds: 200));
         expect(transportA.connectedPeerCount, equals(1));
 
         await errSub.cancel();

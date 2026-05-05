@@ -47,7 +47,7 @@ void main() {
     await transportB.startDiscovery();
 
     // Trigger discovery on A (the lower NodeId, so it initiates).
-    await transportA.serviceForTest.runDiscoveryRoundForTest();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
     // Allow the connection event to propagate to both sides.
     await Future<void>.delayed(const Duration(milliseconds: 50));
 

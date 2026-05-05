@@ -8,7 +8,8 @@ import '../../domain/entities/connection_handle.dart';
 import '../../domain/errors/connection_error.dart';
 import '../../domain/events/connection_event.dart';
 import '../../domain/interfaces/bluey_port.dart';
-import '../../domain/value_objects/discovered_peer.dart';
+import '../../domain/value_objects/ble_address.dart';
+import '../../domain/value_objects/scan_candidate.dart';
 import '../../domain/value_objects/service_uuid.dart';
 import '../../infrastructure/codec/frame_codec.dart';
 import '../../infrastructure/ports/bluey_message_port.dart';
@@ -32,11 +33,12 @@ class ConnectionService implements MessageDispatcher {
     this.onLog,
     bool Function(NodeId)? discoveryFilter,
     Clock? clock,
+    @Deprecated('No-op since the scan-upgrade migration; scan is now '
+        'long-lived and does not run on a fixed interval.')
     Duration discoveryInterval = const Duration(seconds: 5),
   })  : targetConnections = targetConnections ?? maxConnections,
         _discoveryFilter = discoveryFilter,
-        _clock = clock ?? const Clock(),
-        _discoveryInterval = discoveryInterval {
+        _clock = clock ?? const Clock() {
     _portSub = port.events.listen(_onPortEvent);
   }
 
@@ -51,13 +53,17 @@ class ConnectionService implements MessageDispatcher {
   // ignore: prefer_final_fields
   bool Function(NodeId)? _discoveryFilter;
   final Clock _clock;
-  final Duration _discoveryInterval;
   bool _discoveryEnabled = false;
-  Timer? _discoveryTimer;
+
+  StreamSubscription<ScanCandidate>? _scanSub;
+  final Set<BleAddress> _connectingAddresses = {};
+  final Map<BleAddress, NodeId> _addressToNodeId = {};
 
   static const _initialBackoff = Duration(seconds: 1);
   static const _maxBackoff = Duration(seconds: 30);
-  final Map<NodeId, ({Duration delay, DateTime nextAttempt})> _backoff = {};
+  static const _addressLongBackoff = Duration(minutes: 5);
+  final Map<BleAddress, ({Duration delay, DateTime nextAttempt})>
+      _addressBackoff = {};
 
   /// Per-peer send queue. Each peer's chunked sends are serialized so
   /// concurrent `sendGossipMessage` calls to the same peer don't
@@ -109,7 +115,6 @@ class ConnectionService implements MessageDispatcher {
             return;
           case Registered():
             _decoders[nodeId] = FrameDecoder();
-            _backoff.remove(nodeId);
             metrics.recordConnectionEstablished();
             metrics.setConnectedPeerCount(registry.connectionCount);
             _events.add(PeerOpened(nodeId: nodeId, displayName: displayName));
@@ -249,117 +254,74 @@ class ConnectionService implements MessageDispatcher {
     if (filter != null) {
       _discoveryFilter = filter;
     }
+    if (_scanSub != null) return;
     _discoveryEnabled = true;
-    _scheduleDiscovery();
+    _scanSub = port
+        .scanForCandidates(serviceUuid: serviceUuid)
+        .listen(_onCandidate);
   }
 
   Future<void> stopDiscovery() async {
     _discoveryEnabled = false;
-    _discoveryTimer?.cancel();
-    _discoveryTimer = null;
+    final sub = _scanSub;
+    _scanSub = null;
+    await sub?.cancel();
+    await port.stopScan();
   }
 
-  void _scheduleDiscovery() {
-    _discoveryTimer?.cancel();
+  Future<void> _onCandidate(ScanCandidate c) async {
     if (!_discoveryEnabled) return;
-    _discoveryTimer = Timer(_discoveryInterval, () async {
-      // Await the round before scheduling the next one. Otherwise a hung
-      // discoverPeers (e.g. when bluey's iOS scan never returns) lets
-      // subsequent rounds pile up and stack scan-starts on the BLE
-      // adapter, which on Android trips "scanning too frequently"
-      // throttling.
-      await _runDiscoveryRound();
-      _scheduleDiscovery();
-    });
-  }
+    if (_connectingAddresses.contains(c.address)) return;
 
-  /// Synchronously triggers one discovery round. Test-only.
-  Future<void> runDiscoveryRoundForTest() => _runDiscoveryRound();
+    // Pre-connect dedup: if we've already learned this address's NodeId
+    // from a prior connect, and that NodeId is still in the registry,
+    // silence repeated scan emissions.
+    final knownNode = _addressToNodeId[c.address];
+    if (knownNode != null && registry.contains(knownNode)) return;
 
-  Future<void> _runDiscoveryRound() async {
-    if (!_discoveryEnabled) return;
-    // Adaptive discovery: skip the scan entirely while at target.
+    final backoffEntry = _addressBackoff[c.address];
+    if (backoffEntry != null && _clock.now().isBefore(backoffEntry.nextAttempt)) {
+      return;
+    }
     if (targetConnections != null &&
         registry.connectionCount >= targetConnections!) {
       return;
     }
-    final List<DiscoveredPeer> peers;
+
+    _connectingAddresses.add(c.address);
     try {
-      peers = await port.discoverPeers(serviceUuid: serviceUuid);
+      final nodeId = await port.connectAndIdentify(c);
+      _addressToNodeId[c.address] = nodeId;
+      _addressBackoff.remove(c.address);
+
+      if (_discoveryFilter != null && !_discoveryFilter!(nodeId)) {
+        onLog?.call(LogLevel.debug,
+            'candidate $nodeId filtered; disconnecting');
+        unawaited(port.disconnectRole(nodeId, ConnectionRole.central));
+      }
     } catch (e, st) {
-      onLog?.call(LogLevel.warning, 'discoverPeers failed', e, st);
-      return;
-    }
-    onLog?.call(
-      LogLevel.debug,
-      'discovery round: found ${peers.length} peer(s)'
-      '${peers.isEmpty ? '' : ' [${peers.map((p) => p.nodeId.value).join(', ')}]'}',
-    );
-    for (final p in peers) {
-      if (registry.contains(p.nodeId)) {
-        onLog?.call(
-          LogLevel.debug,
-          'discovery: skipping ${p.nodeId} (already connected)',
-        );
-        continue;
-      }
-      if (_discoveryFilter != null && !_discoveryFilter!(p.nodeId)) {
-        onLog?.call(
-          LogLevel.debug,
-          'discovery: skipping ${p.nodeId} (filtered out)',
-        );
-        continue;
-      }
-      // Tie-break: only initiate if our nodeId < remote.
-      if (localNodeId.value.compareTo(p.nodeId.value) >= 0) {
-        onLog?.call(
-          LogLevel.debug,
-          'discovery: skipping ${p.nodeId} (tie-break: peer initiates)',
-        );
-        continue;
-      }
-      if (targetConnections != null &&
-          registry.connectionCount >= targetConnections!) {
-        onLog?.call(
-          LogLevel.debug,
-          'discovery: stopping further initiations (at targetConnections)',
-        );
-        return;
-      }
-      final entry = _backoff[p.nodeId];
-      if (entry != null && _clock.now().isBefore(entry.nextAttempt)) {
-        onLog?.call(
-          LogLevel.debug,
-          'discovery: skipping ${p.nodeId} (in backoff window, retry at ${entry.nextAttempt})',
-        );
-        continue;
-      }
-      onLog?.call(LogLevel.info, 'discovery: initiating connect to ${p.nodeId}');
-      try {
-        await port.connect(p.nodeId);
-      } catch (e, st) {
-        final prev = _backoff[p.nodeId]?.delay ?? Duration.zero;
-        final nextDelay = prev == Duration.zero
-            ? _initialBackoff
-            : Duration(
-                milliseconds: (prev.inMilliseconds * 2).clamp(
-                  _initialBackoff.inMilliseconds,
-                  _maxBackoff.inMilliseconds,
-                ),
-              );
-        _backoff[p.nodeId] = (
-          delay: nextDelay,
-          nextAttempt: _clock.now().add(nextDelay),
-        );
-        metrics.recordConnectionFailed();
-        _errors.add(ConnectFailedError(
-          message: 'connect to ${p.nodeId} failed',
-          occurredAt: _clock.now(),
-          nodeId: p.nodeId,
-          cause: e,
-        ));
-        onLog?.call(LogLevel.info, 'connect failed', e, st);
-      }
+      onLog?.call(
+        LogLevel.warning,
+        'connectAndIdentify failed for ${c.address}',
+        e,
+        st,
+      );
+      final prev = _addressBackoff[c.address]?.delay ?? Duration.zero;
+      final next = prev == Duration.zero
+          ? _initialBackoff
+          : Duration(
+              milliseconds: (prev.inMilliseconds * 2).clamp(
+                _initialBackoff.inMilliseconds,
+                _maxBackoff.inMilliseconds,
+              ),
+            );
+      _addressBackoff[c.address] = (
+        delay: next,
+        nextAttempt: _clock.now().add(next),
+      );
+      metrics.recordConnectionFailed();
+    } finally {
+      _connectingAddresses.remove(c.address);
     }
   }
 
@@ -375,10 +337,13 @@ class ConnectionService implements MessageDispatcher {
   }
 
   Future<void> dispose() async {
-    _discoveryTimer?.cancel();
-    _discoveryTimer = null;
     _discoveryEnabled = false;
-    _backoff.clear();
+    final scanSub = _scanSub;
+    _scanSub = null;
+    await scanSub?.cancel();
+    _addressBackoff.clear();
+    _addressToNodeId.clear();
+    _connectingAddresses.clear();
     _sendQueue.clear();
     await _portSub.cancel();
     await _events.close();

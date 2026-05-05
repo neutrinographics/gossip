@@ -68,8 +68,8 @@ void main() {
     await spokeA.startDiscovery(filter: (id) => id == hubId);
     await spokeB.startDiscovery(filter: (id) => id == hubId);
 
-    await spokeA.serviceForTest.runDiscoveryRoundForTest();
-    await spokeB.serviceForTest.runDiscoveryRoundForTest();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    await Future<void>.delayed(const Duration(milliseconds: 20));
     await Future<void>.delayed(const Duration(milliseconds: 50));
 
     expect(hub.connectedPeerCount, equals(2));
