@@ -389,6 +389,96 @@ void main() {
     );
 
     test(
+      'sustained traffic with one dropped chunk: connection persists, '
+      'metric records the recovery, subsequent messages flow',
+      () async {
+        final network = FakeBlueyNetwork();
+        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        final remotePort = FakeBlueyPort(
+          localNodeId: remoteId,
+          network: network,
+        );
+        final localMetrics = BlueyMetrics();
+        final localSvc = ConnectionService(
+          localNodeId: localId,
+          port: localPort,
+          registry: ConnectionRegistry(),
+          metrics: localMetrics,
+          serviceUuid: serviceUuid,
+        );
+        final remoteSvc = ConnectionService(
+          localNodeId: remoteId,
+          port: remotePort,
+          registry: ConnectionRegistry(),
+          metrics: BlueyMetrics(),
+          serviceUuid: serviceUuid,
+        );
+
+        await localPort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Local',
+          localNodeId: localId,
+        );
+        await remotePort.connect(localId);
+        await Future<void>.delayed(Duration.zero);
+
+        // Set the fake's per-write payload size deliberately small so a
+        // single message gets chunked across multiple writes — and we
+        // can drop one of them mid-message.
+        remotePort.chunkSize = 12; // 8-byte header + 4 bytes payload per chunk
+
+        // Capture incoming messages on the local side.
+        final incoming = <IncomingMessage>[];
+        final sub = localSvc.incomingMessages.listen(incoming.add);
+
+        // Drop the first sendData chunk from remote → local for any
+        // payload we send while the injector is enabled. After one drop,
+        // disable.
+        var dropsRemaining = 1;
+        remotePort.chunkDropInjector = (_, __) {
+          if (dropsRemaining > 0) {
+            dropsRemaining--;
+            return true;
+          }
+          return false;
+        };
+
+        // Send message 1 — its first chunk gets dropped, so the rest of
+        // its bytes will look like garbage (or the next frame's magic
+        // never arrives) to local's decoder.
+        await remoteSvc.sendGossipMessage(
+          localId,
+          Uint8List.fromList(List.generate(20, (i) => i)),
+        );
+        // Send message 2 — chunks are intact; the decoder should
+        // discard the leftover misaligned bytes from message 1, find
+        // message 2's magic, and emit it.
+        await remoteSvc.sendGossipMessage(
+          localId,
+          Uint8List.fromList([0xCA, 0xFE, 0xBA, 0xBE]),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+
+        // Connection still up.
+        expect(localSvc.registry.contains(remoteId), isTrue);
+        // Message 2 was emitted (possibly preceded by a bogus message
+        // synthesized from the corrupted bytes — we accept that as the
+        // cost of length-prefix corruption with plausible-but-wrong
+        // length values; the key property is recovery).
+        expect(incoming, isNotEmpty);
+        expect(incoming.last.bytes, equals([0xCA, 0xFE, 0xBA, 0xBE]));
+        // Recovery was recorded.
+        expect(localMetrics.frameRecoveries, greaterThanOrEqualTo(1));
+        expect(localMetrics.bytesDiscarded, greaterThan(0));
+
+        await sub.cancel();
+        await localSvc.dispose();
+        await remoteSvc.dispose();
+        await remotePort.dispose();
+      },
+    );
+
+    test(
       'scan emission → connectAndIdentify → peer registered (happy path)',
       () async {
         final network = FakeBlueyNetwork();

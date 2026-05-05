@@ -92,6 +92,11 @@ class FakeBlueyPort implements BlueyPort {
   /// [NotABlueyPeerException].
   bool Function(BleAddress address)? notABlueyPeerInjector;
 
+  /// Test hook: when set and returns true for a payload, the fake
+  /// silently drops it from `sendData`. Used to simulate a single
+  /// dropped chunk on writes-without-response.
+  bool Function(NodeId target, Uint8List data)? chunkDropInjector;
+
   StreamController<ScanCandidate>? _scanController;
   Timer? _scanRebroadcastTimer;
 
@@ -253,6 +258,12 @@ class FakeBlueyPort implements BlueyPort {
         (!_connectedAsCentral.contains(nodeId) &&
             !_connectedAsPeripheral.contains(nodeId))) {
       throw StateError('no connection to $nodeId');
+    }
+    if (chunkDropInjector?.call(nodeId, data) ?? false) {
+      // Silently drop — simulates a write-without-response that was
+      // never delivered. Returns success to the sender (matching real
+      // BLE behaviour: writes-without-response have no ACK).
+      return;
     }
     if (!remote._events.isClosed) {
       remote._events.add(PortPeerData(nodeId: localNodeId, data: data));
