@@ -64,66 +64,143 @@ void main() {
   });
 
   group('FrameDecoder', () {
-    test('round-trips a small payload through encode → decode', () {
-      final payload = Uint8List.fromList([1, 2, 3, 4, 5]);
-      final chunks = FrameEncoder.encode(payload, mtuPayloadSize: 100);
-      final decoder = FrameDecoder();
-      final decoded = <Uint8List>[];
-      for (final chunk in chunks) {
-        decoded.addAll(decoder.feed(chunk));
-      }
-      expect(decoded, hasLength(1));
-      expect(decoded.first, equals(payload));
+    const magic = [0x47, 0x53, 0x50, 0x31];
+
+    /// Helper: build a single complete frame on the wire.
+    Uint8List frame(List<int> payload) {
+      final out = BytesBuilder()
+        ..add(magic)
+        ..add([
+          (payload.length >> 24) & 0xFF,
+          (payload.length >> 16) & 0xFF,
+          (payload.length >> 8) & 0xFF,
+          payload.length & 0xFF,
+        ])
+        ..add(payload);
+      return out.toBytes();
+    }
+
+    test('happy path: a single complete frame is emitted', () {
+      final dec = FrameDecoder();
+      final result = dec.feed(frame([1, 2, 3, 4, 5]));
+      expect(result.messages, hasLength(1));
+      expect(result.messages.first, equals([1, 2, 3, 4, 5]));
+      expect(result.bytesDiscarded, equals(0));
     });
 
-    test('round-trips a chunked payload', () {
-      final payload = Uint8List.fromList(List.generate(20, (i) => i));
-      final chunks = FrameEncoder.encode(payload, mtuPayloadSize: 8);
-      final decoder = FrameDecoder();
-      final decoded = <Uint8List>[];
-      for (final chunk in chunks) {
-        decoded.addAll(decoder.feed(chunk));
-      }
-      expect(decoded, hasLength(1));
-      expect(decoded.first, equals(payload));
+    test('multiple frames in one chunk are all emitted', () {
+      final dec = FrameDecoder();
+      final combined = BytesBuilder()
+        ..add(frame([1, 2, 3]))
+        ..add(frame([4, 5, 6, 7]));
+      final result = dec.feed(combined.toBytes());
+      expect(result.messages, hasLength(2));
+      expect(result.messages[0], equals([1, 2, 3]));
+      expect(result.messages[1], equals([4, 5, 6, 7]));
+      expect(result.bytesDiscarded, equals(0));
     });
 
-    test('emits multiple complete frames when bytes arrive together', () {
-      final p1 = Uint8List.fromList([1, 2, 3]);
-      final p2 = Uint8List.fromList([10, 20, 30, 40]);
-      final chunks1 = FrameEncoder.encode(p1, mtuPayloadSize: 100);
-      final chunks2 = FrameEncoder.encode(p2, mtuPayloadSize: 100);
-      final combined = Uint8List.fromList(
-        chunks1.expand((c) => c).followedBy(chunks2.expand((c) => c)).toList(),
-      );
-
-      final decoder = FrameDecoder();
-      final decoded = decoder.feed(combined);
-      expect(decoded, hasLength(2));
-      expect(decoded[0], equals(p1));
-      expect(decoded[1], equals(p2));
+    test('frame split across chunks emits once both have arrived', () {
+      final dec = FrameDecoder();
+      final whole = frame([10, 20, 30, 40]);
+      // split somewhere in the middle of the payload
+      final r1 = dec.feed(whole.sublist(0, 9));
+      final r2 = dec.feed(whole.sublist(9));
+      expect(r1.messages, isEmpty);
+      expect(r2.messages, hasLength(1));
+      expect(r2.messages.first, equals([10, 20, 30, 40]));
+      expect(r1.bytesDiscarded, equals(0));
+      expect(r2.bytesDiscarded, equals(0));
     });
 
-    test('emits no frame until the length prefix is complete', () {
-      final decoder = FrameDecoder();
-      // Only 2 bytes of the 4-byte length prefix.
-      final partial = decoder.feed(Uint8List.fromList([0, 0]));
-      expect(partial, isEmpty);
-      // Two more length bytes + payload.
-      final rest = decoder.feed(Uint8List.fromList([0, 3, 1, 2, 3]));
-      expect(rest, hasLength(1));
-      expect(rest.first, equals([1, 2, 3]));
+    test('garbage prefix is discarded; subsequent frame is emitted', () {
+      final dec = FrameDecoder();
+      final input = BytesBuilder()
+        ..add([0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11]) // 7 garbage bytes
+        ..add(frame([1, 2, 3]));
+      final result = dec.feed(input.toBytes());
+      expect(result.messages, hasLength(1));
+      expect(result.messages.first, equals([1, 2, 3]));
+      expect(result.bytesDiscarded, equals(7));
     });
 
-    test('rejects an oversize length prefix', () {
-      final decoder = FrameDecoder();
-      // 33 KB
-      const tooBig = (32 * 1024) + 1;
-      final view = ByteData(4)..setUint32(0, tooBig, Endian.big);
-      expect(
-        () => decoder.feed(view.buffer.asUint8List()),
-        throwsA(isA<FormatException>()),
-      );
+    test(
+      'corruption mid-stream eventually re-syncs to the next valid magic',
+      () {
+        // Realistic BLE-drop scenario: a chunk is lost mid-payload, so the
+        // decoder reads frame A's plausible length value, consumes some
+        // bytes from frame B (corrupting both), and may emit a bogus
+        // payload. The decoder must then re-sync on a *subsequent* valid
+        // magic — frame C — and emit C correctly without throwing or
+        // hanging. We accept the in-flight bogus message as the cost of
+        // length-prefix corruption that produces a plausible length;
+        // recovery is "connection survives, future frames decode."
+        final dec = FrameDecoder();
+        // A: 12-byte frame, truncated by 5 bytes of its payload.
+        final a = frame([0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA, 0xAA]);
+        final aTruncated = a.sublist(0, a.length - 5);
+        final b = frame([0xBB, 0xBB, 0xBB]);
+        final c = frame([1, 2, 3]);
+        final input = BytesBuilder()
+          ..add(aTruncated)
+          ..add(b)
+          ..add(c);
+        final result = dec.feed(input.toBytes());
+
+        // C must be emitted correctly.
+        expect(result.messages, isNotEmpty);
+        expect(result.messages.last, equals([1, 2, 3]));
+        // Recovery did some byte-discarding while seeking C's magic.
+        expect(result.bytesDiscarded, greaterThan(0));
+      },
+    );
+
+    test('implausible length triggers re-scan, not exception', () {
+      final dec = FrameDecoder();
+      // A frame whose length field claims 0xFFFFFFFF bytes — impossible,
+      // exceeds kMaxFramePayload. Decoder must reject and re-scan.
+      final bogus = Uint8List.fromList([
+        ...magic,
+        0xFF, 0xFF, 0xFF, 0xFF,
+      ]);
+      final good = frame([42]);
+      final combined = BytesBuilder()
+        ..add(bogus)
+        ..add(good);
+      final result = dec.feed(combined.toBytes());
+      expect(result.messages, hasLength(1));
+      expect(result.messages.first, equals([42]));
+      expect(result.bytesDiscarded, greaterThan(0));
+    });
+
+    test('partial magic across chunks does not falsely match', () {
+      final dec = FrameDecoder();
+      // First chunk: only the first two bytes of the magic.
+      final r1 = dec.feed(Uint8List.fromList([0x47, 0x53]));
+      // Second chunk: the rest of the magic + length + payload.
+      final r2 = dec.feed(Uint8List.fromList([
+        0x50, 0x31,
+        0x00, 0x00, 0x00, 0x03,
+        0x77, 0x88, 0x99,
+      ]));
+      expect(r1.messages, isEmpty);
+      expect(r1.bytesDiscarded, equals(0));
+      expect(r2.messages, hasLength(1));
+      expect(r2.messages.first, equals([0x77, 0x88, 0x99]));
+      expect(r2.bytesDiscarded, equals(0));
+    });
+
+    test('bounded buffer prevents unbounded growth on garbage stream', () {
+      final dec = FrameDecoder();
+      // Feed 100 KB of garbage that doesn't contain the magic anywhere.
+      // Use a byte that isn't part of magic to avoid accidental matches.
+      final garbage = Uint8List(100 * 1024)..fillRange(0, 100 * 1024, 0x55);
+      final result = dec.feed(garbage);
+      expect(result.messages, isEmpty);
+      // bytesDiscarded should reflect that the decoder dropped old bytes
+      // when the buffer cap was hit. We just assert it's non-trivially
+      // large — proving the decoder isn't accumulating the full 100 KB.
+      expect(result.bytesDiscarded, greaterThanOrEqualTo(32 * 1024));
     });
   });
 }
