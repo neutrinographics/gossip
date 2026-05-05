@@ -166,28 +166,24 @@ class ConnectionService implements MessageDispatcher {
         }
         metrics.recordFrameReceived();
         metrics.recordBytesReceived(data.length);
-        try {
-          final messages = decoder.feed(data);
-          for (final m in messages) {
-            metrics.recordMessageReceived();
-            _incoming.add(
-              IncomingMessage(
-                sender: nodeId,
-                bytes: m,
-                receivedAt: _clock.now(),
-              ),
-            );
-          }
-        } on FormatException catch (e) {
-          _errors.add(
-            FrameDecodeError(
-              message: e.message,
-              occurredAt: _clock.now(),
-              nodeId: nodeId,
+        final result = decoder.feed(data);
+        if (result.bytesDiscarded > 0) {
+          metrics.recordFrameRecovery(result.bytesDiscarded);
+          onLog?.call(
+            LogLevel.warning,
+            'frame decoder recovered from corruption on $nodeId; '
+            'discarded ${result.bytesDiscarded} bytes',
+          );
+        }
+        for (final m in result.messages) {
+          metrics.recordMessageReceived();
+          _incoming.add(
+            IncomingMessage(
+              sender: nodeId,
+              bytes: m,
+              receivedAt: _clock.now(),
             ),
           );
-          // Tear down the connection on decode failure.
-          unawaited(port.disconnect(nodeId));
         }
       case PortConnectFailed():
         // handled in Task 24

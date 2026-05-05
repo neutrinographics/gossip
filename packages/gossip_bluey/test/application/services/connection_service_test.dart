@@ -325,6 +325,70 @@ void main() {
     });
 
     test(
+      'frame recovery: PortPeerData with corrupted bytes does not disconnect '
+      'and increments BlueyMetrics.frameRecoveries',
+      () async {
+        final network = FakeBlueyNetwork();
+        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        final remotePort = FakeBlueyPort(
+          localNodeId: remoteId,
+          network: network,
+        );
+        final metrics = BlueyMetrics();
+        final logs = <String>[];
+        final svc = ConnectionService(
+          localNodeId: localId,
+          port: localPort,
+          registry: ConnectionRegistry(),
+          metrics: metrics,
+          serviceUuid: serviceUuid,
+          onLog: (level, msg, [e, st]) {
+            if (level == LogLevel.warning) logs.add(msg);
+          },
+        );
+
+        await localPort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Local',
+          localNodeId: localId,
+        );
+        await remotePort.connect(localId);
+        await Future<void>.delayed(Duration.zero);
+        expect(svc.registry.contains(remoteId), isTrue);
+
+        // Inject 7 bytes of garbage followed by a valid frame for a
+        // 3-byte payload. The decoder should discard the garbage,
+        // emit the message, and the service should record the
+        // recovery.
+        const magic = [0x47, 0x53, 0x50, 0x31];
+        final payload = [0xAA, 0xBB, 0xCC];
+        final corruptedThenValid = Uint8List.fromList([
+          0xDE, 0xAD, 0xBE, 0xEF, 0x12, 0x34, 0x56, // 7 garbage
+          ...magic,
+          0x00, 0x00, 0x00, payload.length,
+          ...payload,
+        ]);
+
+        // Use the fake's sendData to deliver these bytes onto local's
+        // PortPeerData stream.
+        await remotePort.sendData(localId, corruptedThenValid);
+        await Future<void>.delayed(Duration.zero);
+
+        // Connection still up.
+        expect(svc.registry.contains(remoteId), isTrue);
+        // Recovery metric incremented with the right count.
+        expect(metrics.frameRecoveries, equals(1));
+        expect(metrics.bytesDiscarded, equals(7));
+        // A warning was logged.
+        expect(logs, isNotEmpty);
+        expect(logs.first, contains('discarded 7 bytes'));
+
+        await svc.dispose();
+        await remotePort.dispose();
+      },
+    );
+
+    test(
       'scan emission → connectAndIdentify → peer registered (happy path)',
       () async {
         final network = FakeBlueyNetwork();
