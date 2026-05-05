@@ -73,6 +73,21 @@ class BlueyPortImpl implements BlueyPort {
   /// transient platform overhead (e.g. opcode encoding edge cases).
   static const int _safetyMargin = 1;
 
+  /// BLE-default ATT MTU. iOS reports this from Connection.mtu even
+  /// after auto-negotiating higher; we use it as a sentinel for "MTU
+  /// unknown on iOS" and fall back to [_iosFallbackChunkSize].
+  static const int _bleDefaultMtu = 23;
+
+  /// Conservative fallback chunk size on iOS when the platform-
+  /// negotiated MTU isn't surfaced through bluey's Connection.mtu
+  /// (always 23 on iOS — see bluey backlog I325). 100 bytes is well
+  /// below the typical iOS maximumWriteValueLength minimum (158+ on
+  /// iOS 13+) and is safe on all known hardware.
+  ///
+  /// TODO(I325): once bluey exposes Connection.maxWritePayload, drop
+  /// this branch and use the new API directly.
+  static const int _iosFallbackChunkSize = 100;
+
   final StreamController<BlueyPortEvent> _events =
       StreamController<BlueyPortEvent>.broadcast();
   final List<StreamSubscription<dynamic>> _serverSubs = [];
@@ -326,6 +341,14 @@ class BlueyPortImpl implements BlueyPort {
   int chunkSizeFor(NodeId nodeId) {
     final mtu = _mtuByNode[nodeId];
     if (mtu == null) return _defaultChunkSize;
+    // Compare by name because bluey only re-exports `Capabilities`,
+    // not the `PlatformKind` enum. Easy to switch to a typed compare
+    // once bluey exports the enum (or once I325 lands and we drop this
+    // branch entirely).
+    if (mtu == _bleDefaultMtu &&
+        _bluey.capabilities.platformKind.name == 'ios') {
+      return _iosFallbackChunkSize;
+    }
     // ATT payload = MTU - 3 (ATT header). Subtract a safety margin.
     final size = mtu - 3 - _safetyMargin;
     return size < _defaultChunkSize ? _defaultChunkSize : size;
