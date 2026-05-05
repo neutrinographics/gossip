@@ -34,12 +34,14 @@ class ConnectionService implements MessageDispatcher {
     this.onLog,
     bool Function(NodeId)? discoveryFilter,
     Clock? clock,
-    @Deprecated('No-op since the scan-upgrade migration; scan is now '
-        'long-lived and does not run on a fixed interval.')
+    @Deprecated(
+      'No-op since the scan-upgrade migration; scan is now '
+      'long-lived and does not run on a fixed interval.',
+    )
     Duration discoveryInterval = const Duration(seconds: 5),
-  })  : targetConnections = targetConnections ?? maxConnections,
-        _discoveryFilter = discoveryFilter,
-        _clock = clock ?? const Clock() {
+  }) : targetConnections = targetConnections ?? maxConnections,
+       _discoveryFilter = discoveryFilter,
+       _clock = clock ?? const Clock() {
     _portSub = port.events.listen(_onPortEvent);
   }
 
@@ -56,6 +58,8 @@ class ConnectionService implements MessageDispatcher {
   final Clock _clock;
   bool _discoveryEnabled = false;
 
+  // Cancelled in [stopDiscovery] and [dispose].
+  // ignore: cancel_subscriptions
   StreamSubscription<ScanCandidate>? _scanSub;
   final Set<BleAddress> _connectingAddresses = {};
   final Map<BleAddress, NodeId> _addressToNodeId = {};
@@ -64,7 +68,7 @@ class ConnectionService implements MessageDispatcher {
   static const _maxBackoff = Duration(seconds: 30);
   static const _addressLongBackoff = Duration(minutes: 5);
   final Map<BleAddress, ({Duration delay, DateTime nextAttempt})>
-      _addressBackoff = {};
+  _addressBackoff = {};
 
   /// Per-peer send queue. Each peer's chunked sends are serialized so
   /// concurrent `sendGossipMessage` calls to the same peer don't
@@ -92,11 +96,13 @@ class ConnectionService implements MessageDispatcher {
       case PortPeerConnected(:final nodeId, :final role, :final displayName):
         if (maxConnections != null &&
             registry.connectionCount >= maxConnections!) {
-          _errors.add(ConnectionLimitReachedError(
-            message: 'rejected $nodeId: at maxConnections',
-            occurredAt: _clock.now(),
-            nodeId: nodeId,
-          ));
+          _errors.add(
+            ConnectionLimitReachedError(
+              message: 'rejected $nodeId: at maxConnections',
+              occurredAt: _clock.now(),
+              nodeId: nodeId,
+            ),
+          );
           unawaited(port.disconnect(nodeId));
           return;
         }
@@ -153,18 +159,22 @@ class ConnectionService implements MessageDispatcher {
           final messages = decoder.feed(data);
           for (final m in messages) {
             metrics.recordMessageReceived();
-            _incoming.add(IncomingMessage(
-              sender: nodeId,
-              bytes: m,
-              receivedAt: _clock.now(),
-            ));
+            _incoming.add(
+              IncomingMessage(
+                sender: nodeId,
+                bytes: m,
+                receivedAt: _clock.now(),
+              ),
+            );
           }
         } on FormatException catch (e) {
-          _errors.add(FrameDecodeError(
-            message: e.message,
-            occurredAt: _clock.now(),
-            nodeId: nodeId,
-          ));
+          _errors.add(
+            FrameDecodeError(
+              message: e.message,
+              occurredAt: _clock.now(),
+              nodeId: nodeId,
+            ),
+          );
           // Tear down the connection on decode failure.
           unawaited(port.disconnect(nodeId));
         }
@@ -181,11 +191,13 @@ class ConnectionService implements MessageDispatcher {
     MessagePriority priority = MessagePriority.normal,
   }) async {
     if (!registry.contains(destination)) {
-      _errors.add(ConnectionNotFoundError(
-        message: 'no active connection to $destination',
-        occurredAt: _clock.now(),
-        nodeId: destination,
-      ));
+      _errors.add(
+        ConnectionNotFoundError(
+          message: 'no active connection to $destination',
+          occurredAt: _clock.now(),
+          nodeId: destination,
+        ),
+      );
       return;
     }
     // Chain this send behind the previous send to the same peer so
@@ -211,11 +223,13 @@ class ConnectionService implements MessageDispatcher {
   Future<void> _sendChunked(NodeId destination, Uint8List bytes) async {
     if (!registry.contains(destination)) {
       // Connection dropped while we were queued behind a previous send.
-      _errors.add(ConnectionNotFoundError(
-        message: 'no active connection to $destination',
-        occurredAt: _clock.now(),
-        nodeId: destination,
-      ));
+      _errors.add(
+        ConnectionNotFoundError(
+          message: 'no active connection to $destination',
+          occurredAt: _clock.now(),
+          nodeId: destination,
+        ),
+      );
       return;
     }
     final chunks = FrameEncoder.encode(
@@ -228,12 +242,14 @@ class ConnectionService implements MessageDispatcher {
         metrics.recordFrameSent();
         metrics.recordBytesSent(chunk.length);
       } catch (e, st) {
-        _errors.add(SendFailedError(
-          message: 'send failed to $destination',
-          occurredAt: _clock.now(),
-          nodeId: destination,
-          cause: e,
-        ));
+        _errors.add(
+          SendFailedError(
+            message: 'send failed to $destination',
+            occurredAt: _clock.now(),
+            nodeId: destination,
+            cause: e,
+          ),
+        );
         onLog?.call(LogLevel.warning, 'send failed', e, st);
         unawaited(port.disconnect(destination));
         return;
@@ -281,7 +297,8 @@ class ConnectionService implements MessageDispatcher {
     if (knownNode != null && registry.contains(knownNode)) return;
 
     final backoffEntry = _addressBackoff[c.address];
-    if (backoffEntry != null && _clock.now().isBefore(backoffEntry.nextAttempt)) {
+    if (backoffEntry != null &&
+        _clock.now().isBefore(backoffEntry.nextAttempt)) {
       return;
     }
     if (targetConnections != null &&
@@ -296,8 +313,10 @@ class ConnectionService implements MessageDispatcher {
       _addressBackoff.remove(c.address);
 
       if (_discoveryFilter != null && !_discoveryFilter!(nodeId)) {
-        onLog?.call(LogLevel.debug,
-            'candidate $nodeId filtered; disconnecting');
+        onLog?.call(
+          LogLevel.debug,
+          'candidate $nodeId filtered; disconnecting',
+        );
         unawaited(port.disconnectRole(nodeId, ConnectionRole.central));
       }
     } on NotABlueyPeerException {

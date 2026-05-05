@@ -3,8 +3,7 @@ class BleAddress {
   const BleAddress(this.value);
 
   @override
-  bool operator ==(Object other) =>
-      other is BleAddress && other.value == value;
+  bool operator ==(Object other) => other is BleAddress && other.value == value;
 
   @override
   int get hashCode => value.hashCode;

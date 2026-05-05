@@ -40,13 +40,13 @@ class BlueyTransport {
     required ConnectionService service,
     required BlueyMessagePort messagePort,
     LogCallback? onLog,
-  })  : _serviceUuid = serviceUuid,
-        _displayName = displayName,
-        _port = port,
-        _service = service,
-        _messagePort = messagePort,
-        // ignore: unused_field
-        _onLog = onLog {
+  }) : _serviceUuid = serviceUuid,
+       _displayName = displayName,
+       _port = port,
+       _service = service,
+       _messagePort = messagePort,
+       // ignore: unused_field
+       _onLog = onLog {
     _eventSub = service.events.listen(_onEvent);
   }
 
@@ -62,8 +62,10 @@ class BlueyTransport {
     required String displayName,
     int? maxConnections,
     int? targetConnections,
-    @Deprecated('No-op since the scan-upgrade migration; scan is now '
-        'long-lived and does not run on a fixed interval.')
+    @Deprecated(
+      'No-op since the scan-upgrade migration; scan is now '
+      'long-lived and does not run on a fixed interval.',
+    )
     Duration discoveryInterval = const Duration(seconds: 30),
     LogCallback? onLog,
   }) async {
@@ -107,8 +109,10 @@ class BlueyTransport {
     required BlueyPort port,
     int? maxConnections,
     int? targetConnections,
-    @Deprecated('No-op since the scan-upgrade migration; scan is now '
-        'long-lived and does not run on a fixed interval.')
+    @Deprecated(
+      'No-op since the scan-upgrade migration; scan is now '
+      'long-lived and does not run on a fixed interval.',
+    )
     Duration discoveryInterval = const Duration(seconds: 5),
     LogCallback? onLog,
   }) {

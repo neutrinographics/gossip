@@ -65,11 +65,8 @@ void main() {
         // 3) D connects inbound — A is at maxConnections=2 so it's rejected.
         await dPort.connect(aId);
         await Future<void>.delayed(const Duration(milliseconds: 50));
-        expect(transportA.connectedPeerCount, equals(2));   // still 2
-        expect(
-          errors.whereType<ConnectionLimitReachedError>(),
-          isNotEmpty,
-        );
+        expect(transportA.connectedPeerCount, equals(2)); // still 2
+        expect(errors.whereType<ConnectionLimitReachedError>(), isNotEmpty);
 
         // 4) Disconnect everyone. Discovery is long-lived now, so A's
         // scan will keep re-emitting candidates; once the registry

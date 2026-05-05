@@ -41,10 +41,7 @@ void main() {
       // length prefix is 4 bytes; if the chunk can't hold even that, encoding
       // is impossible.
       expect(
-        () => FrameEncoder.encode(
-          Uint8List.fromList([1]),
-          mtuPayloadSize: 3,
-        ),
+        () => FrameEncoder.encode(Uint8List.fromList([1]), mtuPayloadSize: 3),
         throwsArgumentError,
       );
     });

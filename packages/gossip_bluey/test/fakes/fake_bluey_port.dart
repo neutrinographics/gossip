@@ -150,10 +150,9 @@ class FakeBlueyPort implements BlueyPort {
   @override
   Future<void> connect(NodeId target) async {
     if (connectFailureInjector?.call(target) ?? false) {
-      _events.add(PortConnectFailed(
-        nodeId: target,
-        reason: 'test injected failure',
-      ));
+      _events.add(
+        PortConnectFailed(nodeId: target, reason: 'test injected failure'),
+      );
       throw StateError('connect failed for $target');
     }
     final remote = network.lookup(target);
@@ -162,16 +161,20 @@ class FakeBlueyPort implements BlueyPort {
     }
     _connectedAsCentral.add(target);
     remote._connectedAsPeripheral.add(localNodeId);
-    _events.add(PortPeerConnected(
-      nodeId: target,
-      role: ConnectionRole.central,
-      displayName: remote._advertisedDisplayName,
-    ));
-    remote._events.add(PortPeerConnected(
-      nodeId: localNodeId,
-      role: ConnectionRole.peripheral,
-      displayName: _advertisedDisplayName,
-    ));
+    _events.add(
+      PortPeerConnected(
+        nodeId: target,
+        role: ConnectionRole.central,
+        displayName: remote._advertisedDisplayName,
+      ),
+    );
+    remote._events.add(
+      PortPeerConnected(
+        nodeId: localNodeId,
+        role: ConnectionRole.peripheral,
+        displayName: _advertisedDisplayName,
+      ),
+    );
   }
 
   @override
@@ -181,36 +184,44 @@ class FakeBlueyPort implements BlueyPort {
     final wasPeripheral = _connectedAsPeripheral.remove(nodeId);
     if (!wasCentral && !wasPeripheral) return;
     if (wasCentral) {
-      _events.add(PortPeerDisconnected(
-        nodeId: nodeId,
-        role: ConnectionRole.central,
-        reason: 'local request',
-      ));
+      _events.add(
+        PortPeerDisconnected(
+          nodeId: nodeId,
+          role: ConnectionRole.central,
+          reason: 'local request',
+        ),
+      );
       // Our central → remote's peripheral view of us
       if (remote != null && remote._connectedAsPeripheral.remove(localNodeId)) {
         if (!remote._events.isClosed) {
-          remote._events.add(PortPeerDisconnected(
-            nodeId: localNodeId,
-            role: ConnectionRole.peripheral,
-            reason: 'peer disconnected',
-          ));
+          remote._events.add(
+            PortPeerDisconnected(
+              nodeId: localNodeId,
+              role: ConnectionRole.peripheral,
+              reason: 'peer disconnected',
+            ),
+          );
         }
       }
     }
     if (wasPeripheral) {
-      _events.add(PortPeerDisconnected(
-        nodeId: nodeId,
-        role: ConnectionRole.peripheral,
-        reason: 'local request',
-      ));
+      _events.add(
+        PortPeerDisconnected(
+          nodeId: nodeId,
+          role: ConnectionRole.peripheral,
+          reason: 'local request',
+        ),
+      );
       // Our peripheral → remote's central view of us
       if (remote != null && remote._connectedAsCentral.remove(localNodeId)) {
         if (!remote._events.isClosed) {
-          remote._events.add(PortPeerDisconnected(
-            nodeId: localNodeId,
-            role: ConnectionRole.central,
-            reason: 'peer disconnected',
-          ));
+          remote._events.add(
+            PortPeerDisconnected(
+              nodeId: localNodeId,
+              role: ConnectionRole.central,
+              reason: 'peer disconnected',
+            ),
+          );
         }
       }
     }
@@ -244,6 +255,8 @@ class FakeBlueyPort implements BlueyPort {
 
   @override
   Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid}) {
+    // Closed in [stopScan] and [dispose].
+    // ignore: close_sinks
     final controller = StreamController<ScanCandidate>.broadcast();
     _scanController = controller;
     void emitOnce() {
@@ -251,7 +264,9 @@ class FakeBlueyPort implements BlueyPort {
         if (!controller.isClosed) controller.add(c);
       }
     }
+
     // Initial seed (microtask-deferred so listeners attach first).
+    // ignore: discarded_futures
     Future<void>.microtask(emitOnce);
     // Mimic real BLE: the scanner continuously surfaces advertisements
     // for as long as a peer is advertising. Without periodic re-emission
@@ -259,8 +274,10 @@ class FakeBlueyPort implements BlueyPort {
     // breaks scenarios that depend on rediscovery (e.g. a peer that was
     // disconnected but is still advertising).
     _scanRebroadcastTimer?.cancel();
-    _scanRebroadcastTimer =
-        Timer.periodic(const Duration(milliseconds: 100), (_) => emitOnce());
+    _scanRebroadcastTimer = Timer.periodic(
+      const Duration(milliseconds: 100),
+      (_) => emitOnce(),
+    );
     return controller.stream;
   }
 
@@ -299,32 +316,40 @@ class FakeBlueyPort implements BlueyPort {
       case ConnectionRole.central:
         if (!_connectedAsCentral.remove(nodeId)) return;
         remote?._connectedAsPeripheral.remove(localNodeId);
-        _events.add(PortPeerDisconnected(
-          nodeId: nodeId,
-          role: ConnectionRole.central,
-          reason: 'local request (role)',
-        ));
+        _events.add(
+          PortPeerDisconnected(
+            nodeId: nodeId,
+            role: ConnectionRole.central,
+            reason: 'local request (role)',
+          ),
+        );
         if (remote != null && !remote._events.isClosed) {
-          remote._events.add(PortPeerDisconnected(
-            nodeId: localNodeId,
-            role: ConnectionRole.peripheral,
-            reason: 'peer disconnected (role)',
-          ));
+          remote._events.add(
+            PortPeerDisconnected(
+              nodeId: localNodeId,
+              role: ConnectionRole.peripheral,
+              reason: 'peer disconnected (role)',
+            ),
+          );
         }
       case ConnectionRole.peripheral:
         if (!_connectedAsPeripheral.remove(nodeId)) return;
         remote?._connectedAsCentral.remove(localNodeId);
-        _events.add(PortPeerDisconnected(
-          nodeId: nodeId,
-          role: ConnectionRole.peripheral,
-          reason: 'local request (role)',
-        ));
+        _events.add(
+          PortPeerDisconnected(
+            nodeId: nodeId,
+            role: ConnectionRole.peripheral,
+            reason: 'local request (role)',
+          ),
+        );
         if (remote != null && !remote._events.isClosed) {
-          remote._events.add(PortPeerDisconnected(
-            nodeId: localNodeId,
-            role: ConnectionRole.central,
-            reason: 'peer disconnected (role)',
-          ));
+          remote._events.add(
+            PortPeerDisconnected(
+              nodeId: localNodeId,
+              role: ConnectionRole.central,
+              reason: 'peer disconnected (role)',
+            ),
+          );
         }
     }
   }

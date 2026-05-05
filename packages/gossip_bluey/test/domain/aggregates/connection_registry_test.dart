@@ -9,8 +9,10 @@ void main() {
   final nodeIdB = NodeId('22222222-2222-2222-2222-222222222222');
   final t0 = DateTime(2026, 5, 4);
 
-  ConnectionHandle handle(NodeId id, [ConnectionRole role = ConnectionRole.central]) =>
-      ConnectionHandle(nodeId: id, role: role, connectedAt: t0);
+  ConnectionHandle handle(
+    NodeId id, [
+    ConnectionRole role = ConnectionRole.central,
+  ]) => ConnectionHandle(nodeId: id, role: role, connectedAt: t0);
 
   group('ConnectionRegistry', () {
     test('starts empty', () {
@@ -57,7 +59,10 @@ void main() {
       final r = ConnectionRegistry()
         ..add(handle(nodeIdA))
         ..add(handle(nodeIdB));
-      expect(r.connections.map((h) => h.nodeId), containsAll([nodeIdA, nodeIdB]));
+      expect(
+        r.connections.map((h) => h.nodeId),
+        containsAll([nodeIdA, nodeIdB]),
+      );
     });
 
     group('tryRegister', () {

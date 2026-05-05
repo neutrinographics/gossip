@@ -56,11 +56,13 @@ void main() {
       final destination = NodeId('11111111-1111-1111-1111-111111111111');
       final received = <IncomingMessage>[];
       final sub = port.incoming.listen(received.add);
-      svc.incoming.add(IncomingMessage(
-        sender: destination,
-        bytes: Uint8List.fromList([9]),
-        receivedAt: DateTime(2026, 5, 4),
-      ));
+      svc.incoming.add(
+        IncomingMessage(
+          sender: destination,
+          bytes: Uint8List.fromList([9]),
+          receivedAt: DateTime(2026, 5, 4),
+        ),
+      );
       await Future<void>.delayed(Duration.zero);
       await sub.cancel();
       expect(received, hasLength(1));

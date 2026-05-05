@@ -31,7 +31,7 @@ class ConnectionRegistry {
   /// First-write-wins registration. Returns [Registered] if [handle] was
   /// stored, or [DuplicateRejected] if a handle for this NodeId already
   /// exists (existing handle is left in place; caller should tear down
-  /// the [attempted] handle's underlying connection).
+  /// the rejected handle's underlying connection).
   RegistrationResult tryRegister(ConnectionHandle handle) {
     final existing = _byNodeId[handle.nodeId];
     if (existing != null) {

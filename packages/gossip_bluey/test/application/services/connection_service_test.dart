@@ -94,84 +94,101 @@ void main() {
       await remotePort.dispose();
     });
 
-    test('PortPeerConnected for already-registered NodeId triggers '
-        'disconnectRole on the just-arrived role; existing handle untouched',
-        () async {
-      final network = FakeBlueyNetwork();
-      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
-      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
-      final registry = ConnectionRegistry();
-      final svc = ConnectionService(
-        localNodeId: localId,
-        port: localPort,
-        registry: registry,
-        metrics: BlueyMetrics(),
-        serviceUuid: serviceUuid,
-      );
+    test(
+      'PortPeerConnected for already-registered NodeId triggers '
+      'disconnectRole on the just-arrived role; existing handle untouched',
+      () async {
+        final network = FakeBlueyNetwork();
+        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        final remotePort = FakeBlueyPort(
+          localNodeId: remoteId,
+          network: network,
+        );
+        final registry = ConnectionRegistry();
+        final svc = ConnectionService(
+          localNodeId: localId,
+          port: localPort,
+          registry: registry,
+          metrics: BlueyMetrics(),
+          serviceUuid: serviceUuid,
+        );
 
-      await localPort.startAdvertising(
-        serviceUuid: serviceUuid,
-        displayName: 'Local',
-        localNodeId: localId,
-      );
+        await localPort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Local',
+          localNodeId: localId,
+        );
 
-      // First: peer connects to us → registry stores remoteId as peripheral.
-      await remotePort.connect(localId);
-      await Future<void>.delayed(Duration.zero);
-      expect(registry.contains(remoteId), isTrue);
-      expect(registry.get(remoteId)!.role, equals(ConnectionRole.peripheral));
+        // First: peer connects to us → registry stores remoteId as peripheral.
+        await remotePort.connect(localId);
+        await Future<void>.delayed(Duration.zero);
+        expect(registry.contains(remoteId), isTrue);
+        expect(registry.get(remoteId)!.role, equals(ConnectionRole.peripheral));
 
-      // Now we initiate to the same peer → duplicate central connection.
-      // The fake fires PortPeerConnected(remoteId, central) on local; the
-      // service should detect the duplicate via tryRegister and call
-      // disconnectRole(remoteId, central), which (via the fake) tears
-      // down the link. The peripheral handle stays.
-      await localPort.connect(remoteId);
-      await Future<void>.delayed(Duration.zero);
+        // Now we initiate to the same peer → duplicate central connection.
+        // The fake fires PortPeerConnected(remoteId, central) on local; the
+        // service should detect the duplicate via tryRegister and call
+        // disconnectRole(remoteId, central), which (via the fake) tears
+        // down the link. The peripheral handle stays.
+        await localPort.connect(remoteId);
+        await Future<void>.delayed(Duration.zero);
 
-      expect(registry.contains(remoteId), isTrue,
-          reason: 'peripheral handle should remain after duplicate central drop');
-      expect(localPort.connectedAsCentral, isNot(contains(remoteId)),
-          reason: 'duplicate central connection should have been disconnected');
+        expect(
+          registry.contains(remoteId),
+          isTrue,
+          reason:
+              'peripheral handle should remain after duplicate central drop',
+        );
+        expect(
+          localPort.connectedAsCentral,
+          isNot(contains(remoteId)),
+          reason: 'duplicate central connection should have been disconnected',
+        );
 
-      await svc.dispose();
-      await remotePort.dispose();
-    });
+        await svc.dispose();
+        await remotePort.dispose();
+      },
+    );
 
-    test('scan emission → connectAndIdentify → peer registered (happy path)',
-        () async {
-      final network = FakeBlueyNetwork();
-      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
-      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
-      final registry = ConnectionRegistry();
-      final svc = ConnectionService(
-        localNodeId: localId,
-        port: localPort,
-        registry: registry,
-        metrics: BlueyMetrics(),
-        serviceUuid: serviceUuid,
-      );
+    test(
+      'scan emission → connectAndIdentify → peer registered (happy path)',
+      () async {
+        final network = FakeBlueyNetwork();
+        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        final remotePort = FakeBlueyPort(
+          localNodeId: remoteId,
+          network: network,
+        );
+        final registry = ConnectionRegistry();
+        final svc = ConnectionService(
+          localNodeId: localId,
+          port: localPort,
+          registry: registry,
+          metrics: BlueyMetrics(),
+          serviceUuid: serviceUuid,
+        );
 
-      await localPort.startAdvertising(
-        serviceUuid: serviceUuid,
-        displayName: 'Local',
-        localNodeId: localId,
-      );
-      await remotePort.startAdvertising(
-        serviceUuid: serviceUuid,
-        displayName: 'Remote',
-        localNodeId: remoteId,
-      );
+        await localPort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Local',
+          localNodeId: localId,
+        );
+        await remotePort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Remote',
+          localNodeId: remoteId,
+        );
 
-      await svc.startDiscovery();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+        await svc.startDiscovery();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
 
-      expect(registry.contains(remoteId), isTrue);
-      expect(registry.get(remoteId)!.role, equals(ConnectionRole.central));
+        expect(registry.contains(remoteId), isTrue);
+        expect(registry.get(remoteId)!.role, equals(ConnectionRole.central));
 
-      await svc.dispose();
-      await remotePort.dispose();
-    });
+        await svc.dispose();
+        await remotePort.dispose();
+      },
+    );
 
     test('in-flight guard: same address emitted twice → connectAndIdentify '
         'invoked once', () async {
@@ -194,9 +211,15 @@ void main() {
       localPort.onConnectAndIdentify = (_) => calls++;
 
       await localPort.startAdvertising(
-          serviceUuid: serviceUuid, displayName: 'L', localNodeId: localId);
+        serviceUuid: serviceUuid,
+        displayName: 'L',
+        localNodeId: localId,
+      );
       await remotePort.startAdvertising(
-          serviceUuid: serviceUuid, displayName: 'R', localNodeId: remoteId);
+        serviceUuid: serviceUuid,
+        displayName: 'R',
+        localNodeId: remoteId,
+      );
 
       await svc.startDiscovery();
       // Two back-to-back emissions for the same address.
@@ -218,72 +241,97 @@ void main() {
       await remotePort.dispose();
     });
 
-    test('address cache silences re-emission while peer remains connected',
-        () async {
-      final network = FakeBlueyNetwork();
-      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
-      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
-      final registry = ConnectionRegistry();
-      final svc = ConnectionService(
-        localNodeId: localId,
-        port: localPort,
-        registry: registry,
-        metrics: BlueyMetrics(),
-        serviceUuid: serviceUuid,
-      );
-      var calls = 0;
-      localPort.onConnectAndIdentify = (_) => calls++;
+    test(
+      'address cache silences re-emission while peer remains connected',
+      () async {
+        final network = FakeBlueyNetwork();
+        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        final remotePort = FakeBlueyPort(
+          localNodeId: remoteId,
+          network: network,
+        );
+        final registry = ConnectionRegistry();
+        final svc = ConnectionService(
+          localNodeId: localId,
+          port: localPort,
+          registry: registry,
+          metrics: BlueyMetrics(),
+          serviceUuid: serviceUuid,
+        );
+        var calls = 0;
+        localPort.onConnectAndIdentify = (_) => calls++;
 
-      await localPort.startAdvertising(
-          serviceUuid: serviceUuid, displayName: 'L', localNodeId: localId);
-      await remotePort.startAdvertising(
-          serviceUuid: serviceUuid, displayName: 'R', localNodeId: remoteId);
+        await localPort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'L',
+          localNodeId: localId,
+        );
+        await remotePort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'R',
+          localNodeId: remoteId,
+        );
 
-      await svc.startDiscovery();
-      await Future<void>.delayed(const Duration(milliseconds: 30));
-      expect(registry.contains(remoteId), isTrue);
-      final initialCalls = calls;
+        await svc.startDiscovery();
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+        expect(registry.contains(remoteId), isTrue);
+        final initialCalls = calls;
 
-      // Rebroadcast timer keeps emitting; cache should silence them.
-      await Future<void>.delayed(const Duration(milliseconds: 250));
-      expect(calls, equals(initialCalls),
-          reason: 'cache should silence re-emissions while peer is registered');
+        // Rebroadcast timer keeps emitting; cache should silence them.
+        await Future<void>.delayed(const Duration(milliseconds: 250));
+        expect(
+          calls,
+          equals(initialCalls),
+          reason: 'cache should silence re-emissions while peer is registered',
+        );
 
-      await svc.dispose();
-      await remotePort.dispose();
-    });
+        await svc.dispose();
+        await remotePort.dispose();
+      },
+    );
 
-    test('targetConnections respected: candidate ignored when at cap',
-        () async {
-      final network = FakeBlueyNetwork();
-      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
-      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
-      final registry = ConnectionRegistry();
-      final svc = ConnectionService(
-        localNodeId: localId,
-        port: localPort,
-        registry: registry,
-        metrics: BlueyMetrics(),
-        serviceUuid: serviceUuid,
-        maxConnections: 1,
-        targetConnections: 0,
-      );
-      var calls = 0;
-      localPort.onConnectAndIdentify = (_) => calls++;
+    test(
+      'targetConnections respected: candidate ignored when at cap',
+      () async {
+        final network = FakeBlueyNetwork();
+        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        final remotePort = FakeBlueyPort(
+          localNodeId: remoteId,
+          network: network,
+        );
+        final registry = ConnectionRegistry();
+        final svc = ConnectionService(
+          localNodeId: localId,
+          port: localPort,
+          registry: registry,
+          metrics: BlueyMetrics(),
+          serviceUuid: serviceUuid,
+          maxConnections: 1,
+          targetConnections: 0,
+        );
+        var calls = 0;
+        localPort.onConnectAndIdentify = (_) => calls++;
 
-      await localPort.startAdvertising(
-          serviceUuid: serviceUuid, displayName: 'L', localNodeId: localId);
-      await remotePort.startAdvertising(
-          serviceUuid: serviceUuid, displayName: 'R', localNodeId: remoteId);
+        await localPort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'L',
+          localNodeId: localId,
+        );
+        await remotePort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'R',
+          localNodeId: remoteId,
+        );
 
-      await svc.startDiscovery();
-      await Future<void>.delayed(const Duration(milliseconds: 50));
-      expect(calls, equals(0));
-      expect(registry.contains(remoteId), isFalse);
+        await svc.startDiscovery();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        expect(calls, equals(0));
+        expect(registry.contains(remoteId), isFalse);
 
-      await svc.dispose();
-      await remotePort.dispose();
-    });
+        await svc.dispose();
+        await remotePort.dispose();
+      },
+    );
 
     test('NotABlueyPeerException → long backoff', () async {
       final network = FakeBlueyNetwork();
@@ -307,9 +355,15 @@ void main() {
       };
 
       await localPort.startAdvertising(
-          serviceUuid: serviceUuid, displayName: 'L', localNodeId: localId);
+        serviceUuid: serviceUuid,
+        displayName: 'L',
+        localNodeId: localId,
+      );
       await remotePort.startAdvertising(
-          serviceUuid: serviceUuid, displayName: 'R', localNodeId: remoteId);
+        serviceUuid: serviceUuid,
+        displayName: 'R',
+        localNodeId: remoteId,
+      );
       await svc.startDiscovery();
       await Future<void>.delayed(const Duration(milliseconds: 30));
 
@@ -331,44 +385,50 @@ void main() {
       await remotePort.dispose();
     });
 
-    test('PortPeerData feeds the FrameDecoder and emits IncomingMessage', () async {
-      final network = FakeBlueyNetwork();
-      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
-      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
-      final svc = ConnectionService(
-        localNodeId: localId,
-        port: localPort,
-        registry: ConnectionRegistry(),
-        metrics: BlueyMetrics(),
-        serviceUuid: serviceUuid,
-      );
-      await localPort.startAdvertising(
-        serviceUuid: serviceUuid,
-        displayName: 'Local',
-        localNodeId: localId,
-      );
-      await remotePort.connect(localId);
-      await Future<void>.delayed(Duration.zero);
+    test(
+      'PortPeerData feeds the FrameDecoder and emits IncomingMessage',
+      () async {
+        final network = FakeBlueyNetwork();
+        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        final remotePort = FakeBlueyPort(
+          localNodeId: remoteId,
+          network: network,
+        );
+        final svc = ConnectionService(
+          localNodeId: localId,
+          port: localPort,
+          registry: ConnectionRegistry(),
+          metrics: BlueyMetrics(),
+          serviceUuid: serviceUuid,
+        );
+        await localPort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Local',
+          localNodeId: localId,
+        );
+        await remotePort.connect(localId);
+        await Future<void>.delayed(Duration.zero);
 
-      final received = <IncomingMessage>[];
-      final sub = svc.incomingMessages.listen(received.add);
+        final received = <IncomingMessage>[];
+        final sub = svc.incomingMessages.listen(received.add);
 
-      // Encode a payload at the wire layer and inject as if remote sent it.
-      final payload = Uint8List.fromList([10, 20, 30]);
-      final chunks = FrameEncoder.encode(payload, mtuPayloadSize: 100);
-      for (final c in chunks) {
-        await remotePort.sendData(localId, c);
-      }
-      await Future<void>.delayed(Duration.zero);
+        // Encode a payload at the wire layer and inject as if remote sent it.
+        final payload = Uint8List.fromList([10, 20, 30]);
+        final chunks = FrameEncoder.encode(payload, mtuPayloadSize: 100);
+        for (final c in chunks) {
+          await remotePort.sendData(localId, c);
+        }
+        await Future<void>.delayed(Duration.zero);
 
-      expect(received, hasLength(1));
-      expect(received.first.sender, equals(remoteId));
-      expect(received.first.bytes, equals(payload));
+        expect(received, hasLength(1));
+        expect(received.first.sender, equals(remoteId));
+        expect(received.first.bytes, equals(payload));
 
-      await sub.cancel();
-      await svc.dispose();
-      await remotePort.dispose();
-    });
+        await sub.cancel();
+        await svc.dispose();
+        await remotePort.dispose();
+      },
+    );
 
     test('sendGossipMessage encodes and writes chunks to the port', () async {
       final network = FakeBlueyNetwork();
@@ -529,10 +589,7 @@ void main() {
       await Future<void>.delayed(Duration.zero);
 
       expect(svc.registry.connectionCount, equals(1));
-      expect(
-        errs.whereType<ConnectionLimitReachedError>(),
-        isNotEmpty,
-      );
+      expect(errs.whereType<ConnectionLimitReachedError>(), isNotEmpty);
 
       await sub.cancel();
       await svc.dispose();
@@ -583,57 +640,60 @@ void main() {
       await r2.dispose();
     });
 
-    test('initiator stops at targetConnections but accepts more inbound', () async {
-      final network = FakeBlueyNetwork();
-      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
-      final r2id = NodeId('33333333-3333-3333-3333-333333333333');
-      final r3id = NodeId('44444444-4444-4444-4444-444444444444');
-      final r2 = FakeBlueyPort(localNodeId: r2id, network: network);
-      final r3 = FakeBlueyPort(localNodeId: r3id, network: network);
-      await r2.startAdvertising(
-        serviceUuid: serviceUuid,
-        displayName: 'r2',
-        localNodeId: r2id,
-      );
-      await r3.startAdvertising(
-        serviceUuid: serviceUuid,
-        displayName: 'r3',
-        localNodeId: r3id,
-      );
-      await localPort.startAdvertising(
-        serviceUuid: serviceUuid,
-        displayName: 'Local',
-        localNodeId: localId,
-      );
+    test(
+      'initiator stops at targetConnections but accepts more inbound',
+      () async {
+        final network = FakeBlueyNetwork();
+        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        final r2id = NodeId('33333333-3333-3333-3333-333333333333');
+        final r3id = NodeId('44444444-4444-4444-4444-444444444444');
+        final r2 = FakeBlueyPort(localNodeId: r2id, network: network);
+        final r3 = FakeBlueyPort(localNodeId: r3id, network: network);
+        await r2.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'r2',
+          localNodeId: r2id,
+        );
+        await r3.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'r3',
+          localNodeId: r3id,
+        );
+        await localPort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Local',
+          localNodeId: localId,
+        );
 
-      final svc = ConnectionService(
-        localNodeId: localId,
-        port: localPort,
-        registry: ConnectionRegistry(),
-        metrics: BlueyMetrics(),
-        serviceUuid: serviceUuid,
-        maxConnections: 2,
-        targetConnections: 1,
-      );
-      await svc.startDiscovery();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
+        final svc = ConnectionService(
+          localNodeId: localId,
+          port: localPort,
+          registry: ConnectionRegistry(),
+          metrics: BlueyMetrics(),
+          serviceUuid: serviceUuid,
+          maxConnections: 2,
+          targetConnections: 1,
+        );
+        await svc.startDiscovery();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
 
-      // Soft cap: only one initiated.
-      expect(svc.registry.connectionCount, equals(1));
+        // Soft cap: only one initiated.
+        expect(svc.registry.connectionCount, equals(1));
 
-      // Inbound still accepted up to maxConnections.
-      // Find which one we connected to, then have the OTHER initiate inbound.
-      final connectedTo = svc.registry.connections.first.nodeId;
-      final remaining = connectedTo == r2id ? r3 : r2;
-      await remaining.connect(localId);
-      await Future<void>.delayed(Duration.zero);
+        // Inbound still accepted up to maxConnections.
+        // Find which one we connected to, then have the OTHER initiate inbound.
+        final connectedTo = svc.registry.connections.first.nodeId;
+        final remaining = connectedTo == r2id ? r3 : r2;
+        await remaining.connect(localId);
+        await Future<void>.delayed(Duration.zero);
 
-      expect(svc.registry.connectionCount, equals(2));
+        expect(svc.registry.connectionCount, equals(2));
 
-      await svc.dispose();
-      await r2.dispose();
-      await r3.dispose();
-    });
+        await svc.dispose();
+        await r2.dispose();
+        await r3.dispose();
+      },
+    );
 
     test('discovery filter rejects peers that do not match', () async {
       final network = FakeBlueyNetwork();
@@ -676,61 +736,63 @@ void main() {
       await r3.dispose();
     });
 
-    test('skips reconnect within address-backoff window after a connect failure',
-        () async {
-      final network = FakeBlueyNetwork();
-      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
-      final r2id = NodeId('33333333-3333-3333-3333-333333333333');
-      final r2 = FakeBlueyPort(localNodeId: r2id, network: network);
-      await r2.startAdvertising(
-        serviceUuid: serviceUuid,
-        displayName: 'r2',
-        localNodeId: r2id,
-      );
-      // Inject failure for r2's address.
-      localPort.connectAndIdentifyFailureInjector = (_) => true;
+    test(
+      'skips reconnect within address-backoff window after a connect failure',
+      () async {
+        final network = FakeBlueyNetwork();
+        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        final r2id = NodeId('33333333-3333-3333-3333-333333333333');
+        final r2 = FakeBlueyPort(localNodeId: r2id, network: network);
+        await r2.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'r2',
+          localNodeId: r2id,
+        );
+        // Inject failure for r2's address.
+        localPort.connectAndIdentifyFailureInjector = (_) => true;
 
-      final fakeClock = _ManualClock(DateTime(2026, 5, 4));
-      final svc = ConnectionService(
-        localNodeId: localId,
-        port: localPort,
-        registry: ConnectionRegistry(),
-        metrics: BlueyMetrics(),
-        serviceUuid: serviceUuid,
-        clock: fakeClock,
-      );
-      await svc.startDiscovery();
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-      expect(svc.registry.connectionCount, equals(0));
+        final fakeClock = _ManualClock(DateTime(2026, 5, 4));
+        final svc = ConnectionService(
+          localNodeId: localId,
+          port: localPort,
+          registry: ConnectionRegistry(),
+          metrics: BlueyMetrics(),
+          serviceUuid: serviceUuid,
+          clock: fakeClock,
+        );
+        await svc.startDiscovery();
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        expect(svc.registry.connectionCount, equals(0));
 
-      // Within backoff window (1s) — re-emitting the same address
-      // should NOT trigger another connectAndIdentify call.
-      var attempts = 0;
-      localPort.connectAndIdentifyFailureInjector = (_) {
-        attempts++;
-        return true;
-      };
-      fakeClock.advance(const Duration(milliseconds: 500));
-      localPort.emitScanCandidate(
-        ScanCandidate(address: BleAddress(r2id.value), displayName: 'r2'),
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-      expect(attempts, equals(0));
-      expect(svc.registry.connectionCount, equals(0));
+        // Within backoff window (1s) — re-emitting the same address
+        // should NOT trigger another connectAndIdentify call.
+        var attempts = 0;
+        localPort.connectAndIdentifyFailureInjector = (_) {
+          attempts++;
+          return true;
+        };
+        fakeClock.advance(const Duration(milliseconds: 500));
+        localPort.emitScanCandidate(
+          ScanCandidate(address: BleAddress(r2id.value), displayName: 'r2'),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        expect(attempts, equals(0));
+        expect(svc.registry.connectionCount, equals(0));
 
-      // After backoff expires (1s elapsed), discovery retries.
-      // (Total elapsed: 500ms + 600ms = 1100ms.)
-      localPort.connectAndIdentifyFailureInjector = null;
-      fakeClock.advance(const Duration(milliseconds: 600));
-      localPort.emitScanCandidate(
-        ScanCandidate(address: BleAddress(r2id.value), displayName: 'r2'),
-      );
-      await Future<void>.delayed(const Duration(milliseconds: 10));
-      expect(svc.registry.connectionCount, equals(1));
+        // After backoff expires (1s elapsed), discovery retries.
+        // (Total elapsed: 500ms + 600ms = 1100ms.)
+        localPort.connectAndIdentifyFailureInjector = null;
+        fakeClock.advance(const Duration(milliseconds: 600));
+        localPort.emitScanCandidate(
+          ScanCandidate(address: BleAddress(r2id.value), displayName: 'r2'),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        expect(svc.registry.connectionCount, equals(1));
 
-      await svc.dispose();
-      await r2.dispose();
-    });
+        await svc.dispose();
+        await r2.dispose();
+      },
+    );
 
     test('disconnectAll calls port.disconnect for every active peer', () async {
       final network = FakeBlueyNetwork();

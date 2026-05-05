@@ -58,7 +58,11 @@ class BlueyPortImpl implements BlueyPort {
   /// Looked up by [connectAndIdentify].
   final Map<BleAddress, bluey.Device> _devicesByAddress = {};
 
+  // Cancelled in [stopScan] and [dispose].
+  // ignore: cancel_subscriptions
   StreamSubscription<bluey.ScanResult>? _scanSubscription;
+  // Closed in [stopScan] and [dispose].
+  // ignore: close_sinks
   StreamController<ScanCandidate>? _scanController;
 
   /// Default ATT payload when MTU is unknown (BLE 4.0 default MTU 23
@@ -87,8 +91,7 @@ class BlueyPortImpl implements BlueyPort {
   });
 
   @override
-  Stream<String> get diagnosticEvents =>
-      _bluey.events.map((e) => e.toString());
+  Stream<String> get diagnosticEvents => _bluey.events.map((e) => e.toString());
 
   @override
   Future<void> startAdvertising({
@@ -290,11 +293,13 @@ class BlueyPortImpl implements BlueyPort {
     if (notifSub != null) unawaited(notifSub.cancel());
     final stateSub = _centralStateSubs.remove(target);
     if (stateSub != null) unawaited(stateSub.cancel());
-    _events.add(PortPeerDisconnected(
-      nodeId: target,
-      role: ConnectionRole.central,
-      reason: reason,
-    ));
+    _events.add(
+      PortPeerDisconnected(
+        nodeId: target,
+        role: ConnectionRole.central,
+        reason: reason,
+      ),
+    );
   }
 
   @override
@@ -388,6 +393,8 @@ class BlueyPortImpl implements BlueyPort {
     if (previous != null) {
       unawaited(stopScan());
     }
+    // Closed in [stopScan] and [dispose] (also via onCancel below).
+    // ignore: close_sinks
     final controller = StreamController<ScanCandidate>.broadcast(
       onCancel: () => unawaited(stopScan()),
     );
@@ -396,19 +403,21 @@ class BlueyPortImpl implements BlueyPort {
     _scanSubscription = scanner
         .scan(services: [bluey.UUID(serviceUuid.value)])
         .listen(
-      (result) {
-        final address = BleAddress(result.device.address);
-        _devicesByAddress[address] = result.device;
-        if (!controller.isClosed) {
-          controller.add(ScanCandidate(
-            address: address,
-            displayName: result.device.name,
-          ));
-        }
-      },
-      onError: controller.addError,
-      onDone: () => unawaited(stopScan()),
-    );
+          (result) {
+            final address = BleAddress(result.device.address);
+            _devicesByAddress[address] = result.device;
+            if (!controller.isClosed) {
+              controller.add(
+                ScanCandidate(
+                  address: address,
+                  displayName: result.device.name,
+                ),
+              );
+            }
+          },
+          onError: controller.addError,
+          onDone: () => unawaited(stopScan()),
+        );
     return controller.stream;
   }
 
