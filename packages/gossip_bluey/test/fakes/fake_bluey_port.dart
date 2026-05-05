@@ -173,13 +173,39 @@ class FakeBlueyPort implements BlueyPort {
     final wasCentral = _connectedAsCentral.remove(nodeId);
     final wasPeripheral = _connectedAsPeripheral.remove(nodeId);
     if (!wasCentral && !wasPeripheral) return;
-    _events.add(PortPeerDisconnected(nodeId: nodeId, reason: 'local request'));
-    remote?._connectedAsCentral.remove(localNodeId);
-    remote?._connectedAsPeripheral.remove(localNodeId);
-    if (remote != null && !remote._events.isClosed) {
-      remote._events.add(
-        PortPeerDisconnected(nodeId: localNodeId, reason: 'peer disconnected'),
-      );
+    if (wasCentral) {
+      _events.add(PortPeerDisconnected(
+        nodeId: nodeId,
+        role: ConnectionRole.central,
+        reason: 'local request',
+      ));
+      // Our central → remote's peripheral view of us
+      if (remote != null && remote._connectedAsPeripheral.remove(localNodeId)) {
+        if (!remote._events.isClosed) {
+          remote._events.add(PortPeerDisconnected(
+            nodeId: localNodeId,
+            role: ConnectionRole.peripheral,
+            reason: 'peer disconnected',
+          ));
+        }
+      }
+    }
+    if (wasPeripheral) {
+      _events.add(PortPeerDisconnected(
+        nodeId: nodeId,
+        role: ConnectionRole.peripheral,
+        reason: 'local request',
+      ));
+      // Our peripheral → remote's central view of us
+      if (remote != null && remote._connectedAsCentral.remove(localNodeId)) {
+        if (!remote._events.isClosed) {
+          remote._events.add(PortPeerDisconnected(
+            nodeId: localNodeId,
+            role: ConnectionRole.central,
+            reason: 'peer disconnected',
+          ));
+        }
+      }
     }
   }
 
@@ -246,9 +272,41 @@ class FakeBlueyPort implements BlueyPort {
 
   @override
   Future<void> disconnectRole(NodeId nodeId, ConnectionRole role) async {
-    // The fake's connection state is role-symmetric; route through the
-    // existing disconnect for simplicity.
-    await disconnect(nodeId);
+    // Tear down only the requested role on this side, mirroring the
+    // remote's view of that role. The other role (if any) stays intact.
+    final remote = network.lookup(nodeId);
+    switch (role) {
+      case ConnectionRole.central:
+        if (!_connectedAsCentral.remove(nodeId)) return;
+        remote?._connectedAsPeripheral.remove(localNodeId);
+        _events.add(PortPeerDisconnected(
+          nodeId: nodeId,
+          role: ConnectionRole.central,
+          reason: 'local request (role)',
+        ));
+        if (remote != null && !remote._events.isClosed) {
+          remote._events.add(PortPeerDisconnected(
+            nodeId: localNodeId,
+            role: ConnectionRole.peripheral,
+            reason: 'peer disconnected (role)',
+          ));
+        }
+      case ConnectionRole.peripheral:
+        if (!_connectedAsPeripheral.remove(nodeId)) return;
+        remote?._connectedAsCentral.remove(localNodeId);
+        _events.add(PortPeerDisconnected(
+          nodeId: nodeId,
+          role: ConnectionRole.peripheral,
+          reason: 'local request (role)',
+        ));
+        if (remote != null && !remote._events.isClosed) {
+          remote._events.add(PortPeerDisconnected(
+            nodeId: localNodeId,
+            role: ConnectionRole.central,
+            reason: 'peer disconnected (role)',
+          ));
+        }
+    }
   }
 
   @override

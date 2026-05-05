@@ -99,14 +99,34 @@ class ConnectionService implements MessageDispatcher {
           displayName: displayName,
           connectedAt: _clock.now(),
         );
-        registry.add(handle);
-        _decoders[nodeId] = FrameDecoder();
-        _backoff.remove(nodeId);
-        metrics.recordConnectionEstablished();
-        metrics.setConnectedPeerCount(registry.connectionCount);
-        _events.add(PeerOpened(nodeId: nodeId, displayName: displayName));
-      case PortPeerDisconnected(:final nodeId, :final reason):
-        final removed = registry.remove(nodeId);
+        switch (registry.tryRegister(handle)) {
+          case DuplicateRejected():
+            onLog?.call(
+              LogLevel.info,
+              'duplicate connection for $nodeId arrived as $role; dropping',
+            );
+            unawaited(port.disconnectRole(nodeId, role));
+            return;
+          case Registered():
+            _decoders[nodeId] = FrameDecoder();
+            _backoff.remove(nodeId);
+            metrics.recordConnectionEstablished();
+            metrics.setConnectedPeerCount(registry.connectionCount);
+            _events.add(PeerOpened(nodeId: nodeId, displayName: displayName));
+        }
+      case PortPeerDisconnected(:final nodeId, :final role, :final reason):
+        // The registry only holds one handle per NodeId regardless of
+        // role. When a disconnect arrives, it may be for the role we
+        // registered (the "real" link) OR for a duplicate role we
+        // race-rejected (which never made it into the registry).
+        // Only act if the disconnected role matches the registered one;
+        // otherwise the duplicate's teardown is just bookkeeping and
+        // must not unregister the active link.
+        final existing = registry.get(nodeId);
+        if (existing == null || existing.role != role) {
+          return;
+        }
+        registry.remove(nodeId);
         _decoders.remove(nodeId);
         // Drop any in-flight send chain. The chain's Future will
         // resolve on its own; we just stop tracking it for new sends.
@@ -114,9 +134,7 @@ class ConnectionService implements MessageDispatcher {
         // on its next dispatch and fail cleanly.
         unawaited(_sendQueue.remove(nodeId) ?? Future<void>.value());
         metrics.setConnectedPeerCount(registry.connectionCount);
-        if (removed != null) {
-          _events.add(PeerClosed(nodeId: nodeId, reason: reason));
-        }
+        _events.add(PeerClosed(nodeId: nodeId, reason: reason));
       case PortPeerData(:final nodeId, :final data):
         final decoder = _decoders[nodeId];
         if (decoder == null) {

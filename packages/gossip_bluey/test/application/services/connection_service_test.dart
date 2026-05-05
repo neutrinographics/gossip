@@ -92,6 +92,50 @@ void main() {
       await remotePort.dispose();
     });
 
+    test('PortPeerConnected for already-registered NodeId triggers '
+        'disconnectRole on the just-arrived role; existing handle untouched',
+        () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
+      final registry = ConnectionRegistry();
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: registry,
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+      );
+
+      await localPort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Local',
+        localNodeId: localId,
+      );
+
+      // First: peer connects to us → registry stores remoteId as peripheral.
+      await remotePort.connect(localId);
+      await Future<void>.delayed(Duration.zero);
+      expect(registry.contains(remoteId), isTrue);
+      expect(registry.get(remoteId)!.role, equals(ConnectionRole.peripheral));
+
+      // Now we initiate to the same peer → duplicate central connection.
+      // The fake fires PortPeerConnected(remoteId, central) on local; the
+      // service should detect the duplicate via tryRegister and call
+      // disconnectRole(remoteId, central), which (via the fake) tears
+      // down the link. The peripheral handle stays.
+      await localPort.connect(remoteId);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(registry.contains(remoteId), isTrue,
+          reason: 'peripheral handle should remain after duplicate central drop');
+      expect(localPort.connectedAsCentral, isNot(contains(remoteId)),
+          reason: 'duplicate central connection should have been disconnected');
+
+      await svc.dispose();
+      await remotePort.dispose();
+    });
+
     test('PortPeerData feeds the FrameDecoder and emits IncomingMessage', () async {
       final network = FakeBlueyNetwork();
       final localPort = FakeBlueyPort(localNodeId: localId, network: network);

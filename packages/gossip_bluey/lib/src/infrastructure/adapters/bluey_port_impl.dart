@@ -139,7 +139,11 @@ class BlueyPortImpl implements BlueyPort {
           _peripheralClients.remove(nodeId);
           _mtuByNode.remove(nodeId);
           _events.add(
-            PortPeerDisconnected(nodeId: nodeId, reason: 'peer disconnected'),
+            PortPeerDisconnected(
+              nodeId: nodeId,
+              role: ConnectionRole.peripheral,
+              reason: 'peer disconnected',
+            ),
           );
         }
       }),
@@ -285,7 +289,11 @@ class BlueyPortImpl implements BlueyPort {
     if (notifSub != null) unawaited(notifSub.cancel());
     final stateSub = _centralStateSubs.remove(target);
     if (stateSub != null) unawaited(stateSub.cancel());
-    _events.add(PortPeerDisconnected(nodeId: target, reason: reason));
+    _events.add(PortPeerDisconnected(
+      nodeId: target,
+      role: ConnectionRole.central,
+      reason: reason,
+    ));
   }
 
   @override
@@ -317,7 +325,11 @@ class BlueyPortImpl implements BlueyPort {
       // be torn down by the lifecycle heartbeat protocol or by the
       // central side.
       _events.add(
-        PortPeerDisconnected(nodeId: nodeId, reason: 'local request'),
+        PortPeerDisconnected(
+          nodeId: nodeId,
+          role: ConnectionRole.peripheral,
+          reason: 'local request',
+        ),
       );
     }
   }
@@ -443,7 +455,11 @@ class BlueyPortImpl implements BlueyPort {
         _clientIdToNodeId.remove(peripheral.client.id.toString());
         _mtuByNode.remove(nodeId);
         _events.add(
-          PortPeerDisconnected(nodeId: nodeId, reason: 'local request (role)'),
+          PortPeerDisconnected(
+            nodeId: nodeId,
+            role: ConnectionRole.peripheral,
+            reason: 'local request (role)',
+          ),
         );
     }
   }

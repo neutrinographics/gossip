@@ -118,8 +118,13 @@ final class PortPeerConnected extends BlueyPortEvent {
 
 final class PortPeerDisconnected extends BlueyPortEvent {
   final NodeId nodeId;
+  final ConnectionRole role;
   final String reason;
-  const PortPeerDisconnected({required this.nodeId, required this.reason});
+  const PortPeerDisconnected({
+    required this.nodeId,
+    required this.role,
+    required this.reason,
+  });
 }
 
 /// Bytes received from a peer (already extracted from notification or
