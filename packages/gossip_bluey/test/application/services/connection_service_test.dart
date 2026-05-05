@@ -211,6 +211,65 @@ void main() {
     );
 
     test(
+      'after peripheral disconnect, scan emission re-enables connect '
+      '(cache is stale but registry gate opens)',
+      () async {
+        final network = FakeBlueyNetwork();
+        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        final remotePort = FakeBlueyPort(
+          localNodeId: remoteId,
+          network: network,
+        );
+        final registry = ConnectionRegistry();
+        final svc = ConnectionService(
+          localNodeId: localId,
+          port: localPort,
+          registry: registry,
+          metrics: BlueyMetrics(),
+          serviceUuid: serviceUuid,
+        );
+
+        var connectAndIdentifyCalls = 0;
+        localPort.onConnectAndIdentify = (_) => connectAndIdentifyCalls++;
+
+        await localPort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Local',
+          localNodeId: localId,
+        );
+
+        // Inbound peripheral registration populates the cache.
+        await remotePort.connect(localId);
+        await Future<void>.delayed(Duration.zero);
+        expect(registry.contains(remoteId), isTrue);
+
+        // Remote disconnects — registry empties.
+        await remotePort.disconnect(localId);
+        await Future<void>.delayed(Duration.zero);
+        expect(registry.contains(remoteId), isFalse);
+
+        // The cache still has remote's address, but registry no longer
+        // contains the NodeId — _onCandidate's gate
+        // (`knownNode != null && registry.contains(knownNode)`) opens
+        // because the registry side is false. connectAndIdentify must
+        // fire on the next scan emission.
+        await remotePort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Remote',
+          localNodeId: remoteId,
+        );
+        await svc.startDiscovery();
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+
+        expect(connectAndIdentifyCalls, greaterThanOrEqualTo(1));
+        expect(registry.contains(remoteId), isTrue);
+
+        await svc.dispose();
+        await remotePort.dispose();
+      },
+    );
+
+    test(
       'scan emission → connectAndIdentify → peer registered (happy path)',
       () async {
         final network = FakeBlueyNetwork();
