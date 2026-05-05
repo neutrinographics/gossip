@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 
+import '../../domain/errors/not_a_bluey_peer_exception.dart' as domain;
 import '../../domain/interfaces/bluey_port.dart';
 import '../../domain/value_objects/ble_address.dart';
 import '../../domain/value_objects/discovered_peer.dart';
@@ -432,7 +433,12 @@ class BlueyPortImpl implements BlueyPort {
         "did the candidate come from this port's scanForCandidates stream?",
       );
     }
-    final peerConn = await _bluey.connectAsPeer(device);
+    final bluey.PeerConnection peerConn;
+    try {
+      peerConn = await _bluey.connectAsPeer(device);
+    } on bluey.NotABlueyPeerException {
+      throw domain.NotABlueyPeerException(candidate.address);
+    }
     final nodeId = NodeId(peerConn.serverId.value);
     await _registerCentralConnection(nodeId, peerConn);
     return nodeId;

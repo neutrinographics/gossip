@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:gossip/gossip.dart';
+import 'package:gossip_bluey/src/domain/errors/not_a_bluey_peer_exception.dart';
 import 'package:gossip_bluey/src/domain/interfaces/bluey_port.dart';
 import 'package:gossip_bluey/src/domain/value_objects/ble_address.dart';
 import 'package:gossip_bluey/src/domain/value_objects/discovered_peer.dart';
@@ -85,6 +86,11 @@ class FakeBlueyPort implements BlueyPort {
   /// next connectAndIdentify call for that address throws a generic
   /// failure (transient).
   bool Function(BleAddress address)? connectAndIdentifyFailureInjector;
+
+  /// Test hook: when the predicate returns true for an address, the
+  /// next connectAndIdentify call for that address throws
+  /// [NotABlueyPeerException].
+  bool Function(BleAddress address)? notABlueyPeerInjector;
 
   StreamController<ScanCandidate>? _scanController;
   Timer? _scanRebroadcastTimer;
@@ -272,6 +278,9 @@ class FakeBlueyPort implements BlueyPort {
     onConnectAndIdentify?.call(candidate);
     if (connectAndIdentifyDelay > Duration.zero) {
       await Future<void>.delayed(connectAndIdentifyDelay);
+    }
+    if (notABlueyPeerInjector?.call(candidate.address) ?? false) {
+      throw NotABlueyPeerException(candidate.address);
     }
     if (connectAndIdentifyFailureInjector?.call(candidate.address) ?? false) {
       throw StateError('test injected connectAndIdentify failure');

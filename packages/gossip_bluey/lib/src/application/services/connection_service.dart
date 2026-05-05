@@ -6,6 +6,7 @@ import 'package:gossip/gossip.dart';
 import '../../domain/aggregates/connection_registry.dart';
 import '../../domain/entities/connection_handle.dart';
 import '../../domain/errors/connection_error.dart';
+import '../../domain/errors/not_a_bluey_peer_exception.dart';
 import '../../domain/events/connection_event.dart';
 import '../../domain/interfaces/bluey_port.dart';
 import '../../domain/value_objects/ble_address.dart';
@@ -299,6 +300,15 @@ class ConnectionService implements MessageDispatcher {
             'candidate $nodeId filtered; disconnecting');
         unawaited(port.disconnectRole(nodeId, ConnectionRole.central));
       }
+    } on NotABlueyPeerException {
+      onLog?.call(
+        LogLevel.debug,
+        'candidate ${c.address} is not a bluey peer; long backoff',
+      );
+      _addressBackoff[c.address] = (
+        delay: _addressLongBackoff,
+        nextAttempt: _clock.now().add(_addressLongBackoff),
+      );
     } catch (e, st) {
       onLog?.call(
         LogLevel.warning,

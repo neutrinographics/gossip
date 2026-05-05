@@ -285,6 +285,52 @@ void main() {
       await remotePort.dispose();
     });
 
+    test('NotABlueyPeerException → long backoff', () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
+      final registry = ConnectionRegistry();
+      final clock = _ManualClock(DateTime.utc(2026, 5, 5, 12));
+      final svc = ConnectionService(
+        localNodeId: localId,
+        port: localPort,
+        registry: registry,
+        metrics: BlueyMetrics(),
+        serviceUuid: serviceUuid,
+        clock: clock,
+      );
+
+      var calls = 0;
+      localPort.notABlueyPeerInjector = (_) {
+        calls++;
+        return true;
+      };
+
+      await localPort.startAdvertising(
+          serviceUuid: serviceUuid, displayName: 'L', localNodeId: localId);
+      await remotePort.startAdvertising(
+          serviceUuid: serviceUuid, displayName: 'R', localNodeId: remoteId);
+      await svc.startDiscovery();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      // First emission threw NotABlueyPeerException. Long backoff applied.
+      expect(calls, equals(1));
+      expect(registry.contains(remoteId), isFalse);
+
+      // Even 30 s later (well past short transient backoff) we should
+      // still be in the long backoff window (5 minutes) — re-emissions
+      // ignored.
+      clock.advance(const Duration(seconds: 30));
+      localPort.emitScanCandidate(
+        ScanCandidate(address: BleAddress(remoteId.value), displayName: 'R'),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(calls, equals(1));
+
+      await svc.dispose();
+      await remotePort.dispose();
+    });
+
     test('PortPeerData feeds the FrameDecoder and emits IncomingMessage', () async {
       final network = FakeBlueyNetwork();
       final localPort = FakeBlueyPort(localNodeId: localId, network: network);
