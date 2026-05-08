@@ -19,7 +19,7 @@ void main() {
 
     setUp(() {
       nearby = MockNearby();
-      adapter = NearbyAdapter(nearby: nearby);
+      adapter = NearbyAdapter(nearby: nearby, strategy: Strategy.P2P_CLUSTER);
       // stopAllEndpoints is called whenever we adopt platform state, to
       // tear down orphaned platform connections. Stub it for every test
       // so adoption paths don't blow up on an unstubbed call.
