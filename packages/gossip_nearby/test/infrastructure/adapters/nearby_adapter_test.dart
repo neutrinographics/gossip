@@ -134,4 +134,74 @@ void main() {
       );
     });
   });
+
+  group('NearbyAdapter strategy plumbing', () {
+    // Pin the contract that this commit establishes: the Strategy passed
+    // to the constructor is the Strategy forwarded to the underlying
+    // platform calls. Without this, a future regression that re-hardcodes
+    // a value at the platform call would silently pass.
+    late MockNearby nearby;
+    final serviceId = ServiceId('com.example.test');
+
+    setUp(() {
+      nearby = MockNearby();
+      when(() => nearby.stopAllEndpoints()).thenAnswer((_) async {});
+    });
+
+    test('startAdvertising forwards the configured Strategy to the plugin',
+        () async {
+      final adapter = NearbyAdapter(nearby: nearby, strategy: Strategy.P2P_STAR);
+      addTearDown(adapter.dispose);
+      when(
+        () => nearby.startAdvertising(
+          any(),
+          any(),
+          onConnectionInitiated: any(named: 'onConnectionInitiated'),
+          onConnectionResult: any(named: 'onConnectionResult'),
+          onDisconnected: any(named: 'onDisconnected'),
+          serviceId: any(named: 'serviceId'),
+        ),
+      ).thenAnswer((_) async => true);
+
+      await adapter.startAdvertising(serviceId, 'display');
+
+      verify(
+        () => nearby.startAdvertising(
+          any(),
+          Strategy.P2P_STAR,
+          onConnectionInitiated: any(named: 'onConnectionInitiated'),
+          onConnectionResult: any(named: 'onConnectionResult'),
+          onDisconnected: any(named: 'onDisconnected'),
+          serviceId: any(named: 'serviceId'),
+        ),
+      ).called(1);
+    });
+
+    test('startDiscovery forwards the configured Strategy to the plugin',
+        () async {
+      final adapter = NearbyAdapter(nearby: nearby, strategy: Strategy.P2P_STAR);
+      addTearDown(adapter.dispose);
+      when(
+        () => nearby.startDiscovery(
+          any(),
+          any(),
+          onEndpointFound: any(named: 'onEndpointFound'),
+          onEndpointLost: any(named: 'onEndpointLost'),
+          serviceId: any(named: 'serviceId'),
+        ),
+      ).thenAnswer((_) async => true);
+
+      await adapter.startDiscovery(serviceId);
+
+      verify(
+        () => nearby.startDiscovery(
+          any(),
+          Strategy.P2P_STAR,
+          onEndpointFound: any(named: 'onEndpointFound'),
+          onEndpointLost: any(named: 'onEndpointLost'),
+          serviceId: any(named: 'serviceId'),
+        ),
+      ).called(1);
+    });
+  });
 }
