@@ -20,6 +20,10 @@ void main() {
     setUp(() {
       nearby = MockNearby();
       adapter = NearbyAdapter(nearby: nearby);
+      // stopAllEndpoints is called whenever we adopt platform state, to
+      // tear down orphaned platform connections. Stub it for every test
+      // so adoption paths don't blow up on an unstubbed call.
+      when(() => nearby.stopAllEndpoints()).thenAnswer((_) async {});
     });
 
     tearDown(() async {
@@ -51,6 +55,10 @@ void main() {
           completes,
         );
 
+        // Adoption must drop orphaned platform connections so the higher
+        // layers can re-handshake fresh.
+        verify(() => nearby.stopAllEndpoints()).called(1);
+
         // Proves _isAdvertising was set to true: a subsequent stop must
         // actually call the platform (otherwise the early-return in
         // stopAdvertising would skip it).
@@ -79,6 +87,8 @@ void main() {
         when(() => nearby.stopDiscovery()).thenAnswer((_) async {});
 
         await expectLater(adapter.startDiscovery(serviceId), completes);
+
+        verify(() => nearby.stopAllEndpoints()).called(1);
 
         await adapter.stopDiscovery();
         verify(() => nearby.stopDiscovery()).called(1);

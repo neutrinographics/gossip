@@ -77,6 +77,7 @@ class NearbyAdapter implements NearbyPort {
           'Platform reports already advertising — adopting state '
           '(prior session likely did not clean up)',
         );
+        await _dropOrphanedConnections();
         return;
       }
       _log(LogLevel.error, 'startAdvertising failed', e, stack);
@@ -129,6 +130,7 @@ class NearbyAdapter implements NearbyPort {
           'Platform reports already discovering — adopting state '
           '(prior session likely did not clean up)',
         );
+        await _dropOrphanedConnections();
         return;
       }
       _log(LogLevel.error, 'startDiscovery failed', e, stack);
@@ -149,6 +151,23 @@ class NearbyAdapter implements NearbyPort {
   /// under our service. Status code 8002.
   bool _isAlreadyDiscovering(PlatformException e) =>
       e.message?.contains(_statusAlreadyDiscovering) ?? false;
+
+  /// Drops any platform-level connections we have no Dart-side state for.
+  ///
+  /// When we adopt a STATUS_ALREADY_* state, the radio survived from a
+  /// prior process (e.g. a hot restart) but every connection it holds is
+  /// orphaned: the higher layers have no message-port wiring for those
+  /// endpoints, so traffic over them silently disappears. Tearing the
+  /// connections down lets discovery re-find peers and run a fresh
+  /// handshake — restoring a working state instead of leaving the radio
+  /// stuck talking past everyone.
+  Future<void> _dropOrphanedConnections() async {
+    try {
+      await _nearby.stopAllEndpoints();
+    } catch (e, stack) {
+      _log(LogLevel.warning, 'stopAllEndpoints during adoption failed', e, stack);
+    }
+  }
 
   @override
   Future<void> stopDiscovery() async {
