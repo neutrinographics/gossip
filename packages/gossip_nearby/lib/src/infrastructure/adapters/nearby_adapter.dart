@@ -1,6 +1,7 @@
 import 'dart:async' show StreamController, unawaited;
 import 'dart:typed_data';
 
+import 'package:flutter/services.dart' show PlatformException;
 import 'package:gossip/gossip.dart';
 import 'package:nearby_connections/nearby_connections.dart';
 
@@ -14,6 +15,15 @@ import '../../domain/value_objects/service_id.dart';
 /// `NodeId`s after connection. The Nearby Connections API requires a
 /// non-null string, so we pass an empty string.
 const _unusedUserName = '';
+
+/// Marker for the platform-side "already advertising" status — the radio
+/// is active under our service ID even though our Dart-side state thinks
+/// it isn't. See [NearbyAdapter.startAdvertising] for the recovery path.
+const _statusAlreadyAdvertising = 'STATUS_ALREADY_ADVERTISING';
+
+/// Marker for the platform-side "already discovering" status. See
+/// [NearbyAdapter.startDiscovery].
+const _statusAlreadyDiscovering = 'STATUS_ALREADY_DISCOVERING';
 
 /// Implements [NearbyPort] using the `nearby_connections` Flutter plugin.
 ///
@@ -54,6 +64,23 @@ class NearbyAdapter implements NearbyPort {
       } else {
         _log(LogLevel.warning, 'startAdvertising returned false');
       }
+    } on PlatformException catch (e, stack) {
+      // The platform is already advertising for our service — the OS-level
+      // state and our Dart-side flag drifted out of sync (e.g. a prior
+      // stop call silently failed under a Bluetooth toggle). The radio is
+      // doing what we asked it to; adopt the state instead of bubbling
+      // a misleading failure up to the caller.
+      if (_isAlreadyAdvertising(e)) {
+        _isAdvertising = true;
+        _log(
+          LogLevel.warning,
+          'Platform reports already advertising — adopting state '
+          '(prior session likely did not clean up)',
+        );
+        return;
+      }
+      _log(LogLevel.error, 'startAdvertising failed', e, stack);
+      rethrow;
     } catch (e, stack) {
       _log(LogLevel.error, 'startAdvertising failed', e, stack);
       rethrow;
@@ -91,11 +118,37 @@ class NearbyAdapter implements NearbyPort {
       } else {
         _log(LogLevel.warning, 'startDiscovery returned false');
       }
+    } on PlatformException catch (e, stack) {
+      // See [startAdvertising] for the reasoning — adopt platform state
+      // when it's already running our discovery rather than treating it
+      // as a failure.
+      if (_isAlreadyDiscovering(e)) {
+        _isDiscovering = true;
+        _log(
+          LogLevel.warning,
+          'Platform reports already discovering — adopting state '
+          '(prior session likely did not clean up)',
+        );
+        return;
+      }
+      _log(LogLevel.error, 'startDiscovery failed', e, stack);
+      rethrow;
     } catch (e, stack) {
       _log(LogLevel.error, 'startDiscovery failed', e, stack);
       rethrow;
     }
   }
+
+  /// True iff [e] indicates the platform is already advertising under our
+  /// service. The Google Nearby Connections plugin surfaces this as
+  /// status code 8001 with the message "8001: STATUS_ALREADY_ADVERTISING".
+  bool _isAlreadyAdvertising(PlatformException e) =>
+      e.message?.contains(_statusAlreadyAdvertising) ?? false;
+
+  /// True iff [e] indicates the platform is already running discovery
+  /// under our service. Status code 8002.
+  bool _isAlreadyDiscovering(PlatformException e) =>
+      e.message?.contains(_statusAlreadyDiscovering) ?? false;
 
   @override
   Future<void> stopDiscovery() async {
