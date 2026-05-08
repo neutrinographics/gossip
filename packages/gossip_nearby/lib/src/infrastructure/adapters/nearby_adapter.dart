@@ -165,7 +165,12 @@ class NearbyAdapter implements NearbyPort {
     try {
       await _nearby.stopAllEndpoints();
     } catch (e, stack) {
-      _log(LogLevel.warning, 'stopAllEndpoints during adoption failed', e, stack);
+      _log(
+        LogLevel.warning,
+        'stopAllEndpoints during adoption failed',
+        e,
+        stack,
+      );
     }
   }
 

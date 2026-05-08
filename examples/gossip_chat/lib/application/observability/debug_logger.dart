@@ -552,10 +552,7 @@ class DebugLogger {
       '  Messages received: ${metrics.totalMessagesReceived}',
     );
     _logVerbose('METRICS', '  Frames sent: ${metrics.totalFramesSent}');
-    _logVerbose(
-      'METRICS',
-      '  Frames received: ${metrics.totalFramesReceived}',
-    );
+    _logVerbose('METRICS', '  Frames received: ${metrics.totalFramesReceived}');
     _logVerbose(
       'METRICS',
       '  Bytes sent: ${_formatBytes(metrics.totalBytesSent)}',

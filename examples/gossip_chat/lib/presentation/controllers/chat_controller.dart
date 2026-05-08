@@ -559,7 +559,8 @@ class ChatController extends ChangeNotifier {
 
   Future<bool> startNetworking() async {
     // Request OS-level permissions first.
-    final hasPermissions = await _permissionService.requestBluetoothPermissions();
+    final hasPermissions = await _permissionService
+        .requestBluetoothPermissions();
     if (!hasPermissions) {
       return false;
     }
