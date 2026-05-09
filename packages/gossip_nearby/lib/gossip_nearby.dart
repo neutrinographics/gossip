@@ -16,6 +16,7 @@
 ///     localNodeRepository: localNodeRepo,
 ///     serviceId: ServiceId('com.example.myapp'),
 ///     displayName: 'My Device',
+///     strategy: Strategy.P2P_STAR,
 ///   );
 ///
 ///   // 2. Create gossip coordinator (same repo guarantees same node ID)
@@ -75,3 +76,7 @@ export 'src/domain/errors/connection_error.dart';
 // Observability (logging and metrics)
 export 'src/application/observability/log_level.dart';
 export 'src/application/observability/nearby_metrics.dart';
+
+// Re-export Strategy from nearby_connections so consumers don't need a
+// separate import.
+export 'package:nearby_connections/nearby_connections.dart' show Strategy;

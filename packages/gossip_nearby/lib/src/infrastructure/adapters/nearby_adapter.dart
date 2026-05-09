@@ -36,10 +36,15 @@ class NearbyAdapter implements NearbyPort {
 
   bool _isAdvertising = false;
   bool _isDiscovering = false;
+  final Strategy _strategy;
 
-  NearbyAdapter({Nearby? nearby, LogCallback? onLog})
-    : _nearby = nearby ?? Nearby(),
-      _onLog = onLog;
+  NearbyAdapter({
+    Nearby? nearby,
+    required Strategy strategy,
+    LogCallback? onLog,
+  }) : _nearby = nearby ?? Nearby(),
+       _strategy = strategy,
+       _onLog = onLog;
 
   @override
   Stream<NearbyEvent> get events => _eventController.stream;
@@ -51,7 +56,7 @@ class NearbyAdapter implements NearbyPort {
     try {
       final started = await _nearby.startAdvertising(
         displayName,
-        Strategy.P2P_CLUSTER,
+        _strategy,
         onConnectionInitiated: _onConnectionInitiated,
         onConnectionResult: _onConnectionResult,
         onDisconnected: _onDisconnected,
@@ -107,7 +112,7 @@ class NearbyAdapter implements NearbyPort {
     try {
       final started = await _nearby.startDiscovery(
         _unusedUserName,
-        Strategy.P2P_CLUSTER,
+        _strategy,
         onEndpointFound: _onEndpointFound,
         onEndpointLost: _onEndpointLost,
         serviceId: serviceId.value,

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:gossip/gossip.dart';
+import 'package:nearby_connections/nearby_connections.dart' show Strategy;
 
 import '../application/observability/nearby_metrics.dart';
 import '../application/services/connection_service.dart';
@@ -55,6 +56,7 @@ class PeerDisconnected extends PeerEvent {
 ///   localNodeRepository: localNodeRepo,
 ///   serviceId: ServiceId('com.example.app'),
 ///   displayName: 'My Device',
+///   strategy: Strategy.P2P_STAR,
 ///   onLog: (level, message, [error, stack]) {
 ///     print('[$level] $message');
 ///   },
@@ -127,6 +129,7 @@ class NearbyTransport {
     required LocalNodeRepository localNodeRepository,
     required ServiceId serviceId,
     required String displayName,
+    required Strategy strategy,
     int? maxConnections,
     LogCallback? onLog,
   }) async {
@@ -135,6 +138,7 @@ class NearbyTransport {
       localNodeId: nodeId,
       serviceId: serviceId,
       displayName: displayName,
+      strategy: strategy,
       maxConnections: maxConnections,
       onLog: onLog,
     );
@@ -149,6 +153,7 @@ class NearbyTransport {
     required NodeId localNodeId,
     required ServiceId serviceId,
     required String displayName,
+    required Strategy strategy,
     int? maxConnections,
     LogCallback? onLog,
   }) {
@@ -157,7 +162,7 @@ class NearbyTransport {
       serviceId: serviceId,
       displayName: displayName,
       maxConnections: maxConnections,
-      nearbyPort: NearbyAdapter(onLog: onLog),
+      nearbyPort: NearbyAdapter(strategy: strategy, onLog: onLog),
       onLog: onLog,
     );
   }
