@@ -11,7 +11,16 @@ import '../managers/signal_strength_manager.dart';
 import '../view_models/view_models.dart';
 
 /// Connection status for the transport layer.
-enum ConnectionStatus { disconnected, advertising, discovering, connected }
+enum ConnectionStatus {
+  /// Bluetooth adapter is off / unauthorized / unsupported / unknown.
+  /// Takes precedence over every other status because the radio cannot
+  /// be used at all.
+  bluetoothOff,
+  disconnected,
+  advertising,
+  discovering,
+  connected,
+}
 
 /// Callback for controller errors (e.g., networking failures).
 typedef ControllerErrorCallback = void Function(String operation, Object error);
@@ -46,6 +55,7 @@ class ChatController extends ChangeNotifier {
   List<MessageState> _currentMessages = [];
   Map<gossip.NodeId, TypingEvent> _typingUsers = {};
   ConnectionStatus _connectionStatus = ConnectionStatus.disconnected;
+  BluetoothAdapterState _bluetoothState = BluetoothAdapterState.unknown;
   bool _isTyping = false;
 
   /// Tracks delivery status for locally sent messages.
@@ -66,6 +76,7 @@ class ChatController extends ChangeNotifier {
 
   StreamSubscription<gossip.DomainEvent>? _eventSubscription;
   StreamSubscription<PeerEvent>? _peerSubscription;
+  StreamSubscription<BluetoothAdapterState>? _bluetoothStateSubscription;
   Timer? _typingTimer;
   Timer? _typingExpirationTimer;
   Timer? _signalDecayTimer;
@@ -109,6 +120,7 @@ class ChatController extends ChangeNotifier {
   }
 
   ConnectionStatus get connectionStatus => _connectionStatus;
+  BluetoothAdapterState get bluetoothAdapterState => _bluetoothState;
   bool get isTyping => _isTyping;
   gossip.NodeId get localNodeId => _chatService.localNodeId;
   MetricsState get metrics => _metrics;
@@ -120,6 +132,8 @@ class ChatController extends ChangeNotifier {
     // Subscribe to domain events via SyncService (not Coordinator directly)
     _eventSubscription = _syncService.events.listen(_onDomainEvent);
     _peerSubscription = _connectionService.peerEvents.listen(_onPeerEvent);
+    _bluetoothStateSubscription = _connectionService.bluetoothStateStream
+        .listen(_onBluetoothStateChanged);
 
     // Start signal update timer - refreshes peer signal strength periodically.
     // This polls failedProbeCount from the gossip library and decays penalties.
@@ -240,7 +254,9 @@ class ChatController extends ChangeNotifier {
 
   void _updateConnectionStatus() {
     final oldStatus = _connectionStatus;
-    if (_connectionService.connectedPeerCount > 0) {
+    if (_bluetoothState != BluetoothAdapterState.on) {
+      _connectionStatus = ConnectionStatus.bluetoothOff;
+    } else if (_connectionService.connectedPeerCount > 0) {
       _connectionStatus = ConnectionStatus.connected;
     } else if (_connectionService.isDiscovering) {
       _connectionStatus = ConnectionStatus.discovering;
@@ -252,6 +268,12 @@ class ChatController extends ChangeNotifier {
     if (oldStatus != _connectionStatus) {
       notifyListeners();
     }
+  }
+
+  void _onBluetoothStateChanged(BluetoothAdapterState state) {
+    _bluetoothState = state;
+    _updateConnectionStatus();
+    notifyListeners();
   }
 
   // --- Refresh Methods ---
@@ -612,6 +634,7 @@ class ChatController extends ChangeNotifier {
   void dispose() {
     _eventSubscription?.cancel();
     _peerSubscription?.cancel();
+    _bluetoothStateSubscription?.cancel();
     _typingTimer?.cancel();
     _typingExpirationTimer?.cancel();
     _signalDecayTimer?.cancel();

@@ -66,6 +66,15 @@ class ConnectionService {
   /// Whether discovery is currently active.
   bool get isDiscovering => _transport.isDiscovering;
 
+  /// Current Bluetooth adapter state.
+  BluetoothAdapterState get bluetoothAdapterState =>
+      _transport.bluetoothAdapterState;
+
+  /// Stream of Bluetooth adapter transitions. Replays the current value
+  /// on subscription.
+  Stream<BluetoothAdapterState> get bluetoothStateStream =>
+      _transport.bluetoothStateStream;
+
   /// Currently connected peer count.
   int get connectedPeerCount => _transport.connectedPeerCount;
 

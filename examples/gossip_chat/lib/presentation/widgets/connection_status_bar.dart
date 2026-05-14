@@ -59,6 +59,7 @@ class ConnectionStatusBar extends StatelessWidget {
       case ConnectionStatus.advertising:
         return StatusIndicatorState.advertising;
       case ConnectionStatus.disconnected:
+      case ConnectionStatus.bluetoothOff:
         return StatusIndicatorState.disconnected;
     }
   }
@@ -73,6 +74,8 @@ class ConnectionStatusBar extends StatelessWidget {
         return 'Advertising...';
       case ConnectionStatus.disconnected:
         return 'Disconnected';
+      case ConnectionStatus.bluetoothOff:
+        return 'Bluetooth is off';
     }
   }
 }

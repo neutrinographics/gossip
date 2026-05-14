@@ -36,6 +36,13 @@ class PeersScreen extends StatelessWidget {
 
   Widget _buildEmptyState() {
     final status = controller.connectionStatus;
+    if (status == ConnectionStatus.bluetoothOff) {
+      return const AnimatedEmptyState(
+        icon: Icons.bluetooth_disabled,
+        title: 'Bluetooth is off',
+        subtitle: 'Turn Bluetooth on, then tap Start Discovery',
+      );
+    }
     final isSearching =
         status == ConnectionStatus.discovering ||
         status == ConnectionStatus.advertising;
@@ -76,6 +83,7 @@ class PeersScreen extends StatelessWidget {
         status == ConnectionStatus.discovering ||
         status == ConnectionStatus.advertising ||
         status == ConnectionStatus.connected;
+    final isBluetoothOff = status == ConnectionStatus.bluetoothOff;
 
     return Container(
       padding: const EdgeInsets.all(16),
@@ -87,9 +95,11 @@ class PeersScreen extends StatelessWidget {
         child: SizedBox(
           width: double.infinity,
           child: ElevatedButton.icon(
-            onPressed: isActive
-                ? controller.stopNetworking
-                : () => _handleStartNetworking(context),
+            onPressed: isBluetoothOff
+                ? null
+                : (isActive
+                      ? controller.stopNetworking
+                      : () => _handleStartNetworking(context)),
             icon: Icon(isActive ? Icons.stop : Icons.play_arrow),
             label: Text(isActive ? 'Stop Discovery' : 'Start Discovery'),
             style: ElevatedButton.styleFrom(
