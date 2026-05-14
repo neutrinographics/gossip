@@ -9,6 +9,7 @@ import '../domain/aggregates/connection_registry.dart';
 import '../domain/errors/connection_error.dart';
 import '../domain/events/connection_event.dart';
 import '../domain/interfaces/bluey_port.dart';
+import '../domain/value_objects/bluetooth_adapter_state.dart';
 import '../domain/value_objects/service_uuid.dart';
 import '../infrastructure/adapters/bluey_port_impl.dart';
 import '../infrastructure/ports/bluey_message_port.dart';
@@ -161,6 +162,22 @@ class BlueyTransport {
   MessagePort get messagePort => _messagePort;
   Stream<PeerEvent> get peerEvents => _peers.stream;
   Stream<ConnectionError> get errors => _service.errors;
+
+  /// Last-known Bluetooth adapter state. Synchronous; reflects the most
+  /// recent value observed from the underlying platform.
+  BluetoothAdapterState get bluetoothAdapterState =>
+      _port.bluetoothAdapterState;
+
+  /// Stream of Bluetooth adapter transitions. Emits the current value on
+  /// subscription, then every transition. Multi-listener.
+  ///
+  /// When the value is anything other than [BluetoothAdapterState.on],
+  /// `BlueyTransport` is in a disabled state: [startAdvertising] and
+  /// other operations throw `BluetoothUnavailableException`. Disabled
+  /// transitions also fire [PeerDisconnected] events on [peerEvents] for
+  /// every previously-active peer.
+  Stream<BluetoothAdapterState> get bluetoothStateStream =>
+      _port.bluetoothStateStream;
 
   /// Diagnostic log lines from the underlying BLE library. Useful for
   /// debugging discovery and connection issues. Emits the empty stream

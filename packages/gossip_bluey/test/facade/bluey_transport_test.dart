@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
+import 'package:gossip_bluey/src/domain/value_objects/bluetooth_adapter_state.dart';
 import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
 import 'package:gossip_bluey/src/facade/bluey_transport.dart';
 
@@ -71,6 +72,57 @@ void main() {
       await sub.cancel();
       await transport.dispose();
       await remote.dispose();
+    });
+
+    group('adapter-state surface', () {
+      test('bluetoothAdapterState forwards the port value', () async {
+        final network = FakeBlueyNetwork();
+        final port = FakeBlueyPort(localNodeId: localId, network: network);
+        final transport = BlueyTransport.testing(
+          localNodeId: localId,
+          serviceUuid: serviceUuid,
+          displayName: 'phone',
+          port: port,
+        );
+
+        port.setBluetoothAdapterStateForTest(BluetoothAdapterState.off);
+
+        expect(
+          transport.bluetoothAdapterState,
+          equals(BluetoothAdapterState.off),
+        );
+
+        await transport.dispose();
+      });
+
+      test('bluetoothStateStream forwards the port stream', () async {
+        final network = FakeBlueyNetwork();
+        final port = FakeBlueyPort(localNodeId: localId, network: network);
+        final transport = BlueyTransport.testing(
+          localNodeId: localId,
+          serviceUuid: serviceUuid,
+          displayName: 'phone',
+          port: port,
+        );
+
+        final received = <BluetoothAdapterState>[];
+        final sub = transport.bluetoothStateStream.listen(received.add);
+
+        port.setBluetoothAdapterStateForTest(BluetoothAdapterState.off);
+        port.setBluetoothAdapterStateForTest(BluetoothAdapterState.on);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(
+          received,
+          containsAll([
+            BluetoothAdapterState.off,
+            BluetoothAdapterState.on,
+          ]),
+        );
+
+        await sub.cancel();
+        await transport.dispose();
+      });
     });
   });
 }
