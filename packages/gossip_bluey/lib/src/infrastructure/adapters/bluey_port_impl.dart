@@ -83,11 +83,21 @@ class BlueyPortImpl implements BlueyPort {
   late final StreamSubscription<bluey.BluetoothState> _stateSub;
   late final StreamController<BluetoothAdapterState> _adapterStateController;
   BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
+
+  /// Set by `_onBluetoothStateChanged` when the adapter transitions away
+  /// from on. Read by `_requireAdapterEnabled` (Task 7 gate) to short-circuit
+  /// operations with `BluetoothUnavailableException`.
   bool _adapterDisabled = false;
 
   /// Default ATT payload when MTU is unknown (BLE 4.0 default MTU 23
   /// minus 3-byte ATT header).
   static const int _defaultChunkSize = 20;
+
+  /// Reason emitted on `PortPeerDisconnected` events fired by
+  /// `_invalidateLiveState` when the adapter goes off or the port is
+  /// disposed.
+  static const String _adapterUnavailableReason =
+      'bluetooth adapter unavailable';
 
   /// Safety margin subtracted from the ATT payload to leave room for
   /// transient platform overhead (e.g. opcode encoding edge cases).
@@ -657,19 +667,20 @@ class BlueyPortImpl implements BlueyPort {
         PortPeerDisconnected(
           nodeId: nodeId,
           role: ConnectionRole.central,
-          reason: 'bluetooth adapter unavailable',
+          reason: _adapterUnavailableReason,
         ),
       );
     }
+    final centralPeerSet = centralPeers.toSet();
     for (final nodeId in peripheralPeers) {
       // Avoid double-firing for cross-role-tracked peers (the central
       // event above already covered them).
-      if (centralPeers.contains(nodeId)) continue;
+      if (centralPeerSet.contains(nodeId)) continue;
       _events.add(
         PortPeerDisconnected(
           nodeId: nodeId,
           role: ConnectionRole.peripheral,
-          reason: 'bluetooth adapter unavailable',
+          reason: _adapterUnavailableReason,
         ),
       );
     }
