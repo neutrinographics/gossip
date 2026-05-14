@@ -9,6 +9,8 @@ export 'src/facade/bluey_transport.dart'
     show BlueyTransport, PeerEvent, PeerConnected, PeerDisconnected;
 
 // Domain value objects
+export 'src/domain/value_objects/bluetooth_adapter_state.dart'
+    show BluetoothAdapterState;
 export 'src/domain/value_objects/service_uuid.dart' show ServiceUuid;
 
 // Domain events
@@ -16,6 +18,8 @@ export 'src/domain/events/connection_event.dart'
     show ConnectionEvent, PeerOpened, PeerClosed;
 
 // Domain errors
+export 'src/domain/errors/bluetooth_unavailable_exception.dart'
+    show BluetoothUnavailableException;
 export 'src/domain/errors/connection_error.dart'
     show
         ConnectionError,

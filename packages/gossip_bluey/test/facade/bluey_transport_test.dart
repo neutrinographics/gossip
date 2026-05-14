@@ -1,8 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
-import 'package:gossip_bluey/src/domain/value_objects/bluetooth_adapter_state.dart';
-import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
-import 'package:gossip_bluey/src/facade/bluey_transport.dart';
+import 'package:gossip_bluey/gossip_bluey.dart';
 
 import '../fakes/fake_bluey_port.dart';
 
