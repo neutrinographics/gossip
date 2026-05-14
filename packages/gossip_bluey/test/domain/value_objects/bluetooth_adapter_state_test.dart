@@ -5,13 +5,16 @@ void main() {
   group('BluetoothAdapterState', () {
     test('has the five expected values', () {
       expect(BluetoothAdapterState.values, hasLength(5));
-      expect(BluetoothAdapterState.values, containsAll([
-        BluetoothAdapterState.on,
-        BluetoothAdapterState.off,
-        BluetoothAdapterState.unauthorized,
-        BluetoothAdapterState.unsupported,
-        BluetoothAdapterState.unknown,
-      ]));
+      expect(
+        BluetoothAdapterState.values,
+        containsAll([
+          BluetoothAdapterState.on,
+          BluetoothAdapterState.off,
+          BluetoothAdapterState.unauthorized,
+          BluetoothAdapterState.unsupported,
+          BluetoothAdapterState.unknown,
+        ]),
+      );
     });
   });
 }

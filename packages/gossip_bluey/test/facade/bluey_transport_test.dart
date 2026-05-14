@@ -112,10 +112,7 @@ void main() {
 
         expect(
           received,
-          containsAll([
-            BluetoothAdapterState.off,
-            BluetoothAdapterState.on,
-          ]),
+          containsAll([BluetoothAdapterState.off, BluetoothAdapterState.on]),
         );
 
         await sub.cancel();

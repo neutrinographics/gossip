@@ -30,9 +30,7 @@ void main() {
   // Helper: build a BlueyPortImpl with a mock that publishes the given
   // initial state and exposes a controllable stateStream.
   ({BlueyPortImpl port, StreamController<bluey.BluetoothState> stateCtrl})
-      buildPort({
-    bluey.BluetoothState initialState = bluey.BluetoothState.on,
-  }) {
+  buildPort({bluey.BluetoothState initialState = bluey.BluetoothState.on}) {
     final mock = _MockBluey();
     // Test helper: lifecycle managed by individual tests via stateCtrl.close
     // or implicitly by test teardown — no explicit close needed here.
@@ -62,22 +60,26 @@ void main() {
       await sub.cancel();
     });
 
-    test('pushing a state transition updates getter and emits on stream',
-        () async {
-      final fixture = buildPort(initialState: bluey.BluetoothState.on);
-      final received = <BluetoothAdapterState>[];
-      final sub = fixture.port.bluetoothStateStream.listen(received.add);
-      await Future<void>.delayed(Duration.zero);
-      received.clear(); // discard initial replay
+    test(
+      'pushing a state transition updates getter and emits on stream',
+      () async {
+        final fixture = buildPort(initialState: bluey.BluetoothState.on);
+        final received = <BluetoothAdapterState>[];
+        final sub = fixture.port.bluetoothStateStream.listen(received.add);
+        await Future<void>.delayed(Duration.zero);
+        received.clear(); // discard initial replay
 
-      fixture.stateCtrl.add(bluey.BluetoothState.off);
-      await Future<void>.delayed(Duration.zero);
+        fixture.stateCtrl.add(bluey.BluetoothState.off);
+        await Future<void>.delayed(Duration.zero);
 
-      expect(fixture.port.bluetoothAdapterState,
-          equals(BluetoothAdapterState.off));
-      expect(received, equals([BluetoothAdapterState.off]));
-      await sub.cancel();
-    });
+        expect(
+          fixture.port.bluetoothAdapterState,
+          equals(BluetoothAdapterState.off),
+        );
+        expect(received, equals([BluetoothAdapterState.off]));
+        await sub.cancel();
+      },
+    );
 
     test('maps each bluey state to the corresponding domain enum', () {
       final cases = <bluey.BluetoothState, BluetoothAdapterState>{
@@ -97,90 +99,76 @@ void main() {
       }
     });
 
-    test(
-      'transition to non-on updates state and fires no errors',
-      () async {
-        final fixture = buildPort(initialState: bluey.BluetoothState.on);
+    test('transition to non-on updates state and fires no errors', () async {
+      final fixture = buildPort(initialState: bluey.BluetoothState.on);
 
-        // The fuller behaviour — clearing internal maps and firing
-        // PortPeerDisconnected per peer — requires a full server.peerConnections
-        // setup that mocktail-mocking bluey.Bluey doesn't readily provide.
-        // We assert the observable surface: the state transition itself lands.
-        // Per-peer cleanup is exercised by hardware testing and the
-        // _invalidateLiveState method is unit-callable for future tests.
-        fixture.stateCtrl.add(bluey.BluetoothState.off);
-        await Future<void>.delayed(Duration.zero);
+      // The fuller behaviour — clearing internal maps and firing
+      // PortPeerDisconnected per peer — requires a full server.peerConnections
+      // setup that mocktail-mocking bluey.Bluey doesn't readily provide.
+      // We assert the observable surface: the state transition itself lands.
+      // Per-peer cleanup is exercised by hardware testing and the
+      // _invalidateLiveState method is unit-callable for future tests.
+      fixture.stateCtrl.add(bluey.BluetoothState.off);
+      await Future<void>.delayed(Duration.zero);
 
-        expect(
-          fixture.port.bluetoothAdapterState,
-          equals(BluetoothAdapterState.off),
-        );
-      },
-    );
+      expect(
+        fixture.port.bluetoothAdapterState,
+        equals(BluetoothAdapterState.off),
+      );
+    });
 
-    test(
-      'transition back to on does not auto-reinit; consumer must call '
-      'startAdvertising explicitly',
-      () async {
-        final fixture = buildPort(initialState: bluey.BluetoothState.on);
-        fixture.stateCtrl.add(bluey.BluetoothState.off);
-        await Future<void>.delayed(Duration.zero);
-        fixture.stateCtrl.add(bluey.BluetoothState.on);
-        await Future<void>.delayed(Duration.zero);
+    test('transition back to on does not auto-reinit; consumer must call '
+        'startAdvertising explicitly', () async {
+      final fixture = buildPort(initialState: bluey.BluetoothState.on);
+      fixture.stateCtrl.add(bluey.BluetoothState.off);
+      await Future<void>.delayed(Duration.zero);
+      fixture.stateCtrl.add(bluey.BluetoothState.on);
+      await Future<void>.delayed(Duration.zero);
 
-        expect(
-          fixture.port.bluetoothAdapterState,
-          equals(BluetoothAdapterState.on),
-        );
-        // No assertion on side-effects: we explicitly do NOT auto-reinit.
-        // The port is back in the enabled state and ready for the consumer
-        // to call startAdvertising again. The gate test in Task 7 verifies
-        // operations succeed post-on.
-      },
-    );
+      expect(
+        fixture.port.bluetoothAdapterState,
+        equals(BluetoothAdapterState.on),
+      );
+      // No assertion on side-effects: we explicitly do NOT auto-reinit.
+      // The port is back in the enabled state and ready for the consumer
+      // to call startAdvertising again. The gate test in Task 7 verifies
+      // operations succeed post-on.
+    });
 
-    test(
-      'startAdvertising throws BluetoothUnavailableException after adapter '
-      'goes off',
-      () async {
-        final fixture = buildPort(initialState: bluey.BluetoothState.on);
-        fixture.stateCtrl.add(bluey.BluetoothState.off);
-        await Future<void>.delayed(Duration.zero);
+    test('startAdvertising throws BluetoothUnavailableException after adapter '
+        'goes off', () async {
+      final fixture = buildPort(initialState: bluey.BluetoothState.on);
+      fixture.stateCtrl.add(bluey.BluetoothState.off);
+      await Future<void>.delayed(Duration.zero);
 
-        expect(
-          () => fixture.port.startAdvertising(
-            serviceUuid: ServiceUuid(
-              'f0000000-0000-0000-0000-000000000000',
-            ),
-            displayName: 'Local',
-            localNodeId: localId,
+      expect(
+        () => fixture.port.startAdvertising(
+          serviceUuid: ServiceUuid('f0000000-0000-0000-0000-000000000000'),
+          displayName: 'Local',
+          localNodeId: localId,
+        ),
+        throwsA(isA<BluetoothUnavailableException>()),
+      );
+    });
+
+    test('sendData throws BluetoothUnavailableException with nodeId context '
+        'after adapter goes off', () async {
+      final fixture = buildPort(initialState: bluey.BluetoothState.on);
+      fixture.stateCtrl.add(bluey.BluetoothState.off);
+      await Future<void>.delayed(Duration.zero);
+
+      final peer = NodeId('22222222-2222-2222-2222-222222222222');
+      await expectLater(
+        () => fixture.port.sendData(peer, Uint8List.fromList([1, 2, 3])),
+        throwsA(
+          isA<BluetoothUnavailableException>().having(
+            (e) => e.nodeId,
+            'nodeId',
+            equals(peer),
           ),
-          throwsA(isA<BluetoothUnavailableException>()),
-        );
-      },
-    );
-
-    test(
-      'sendData throws BluetoothUnavailableException with nodeId context '
-      'after adapter goes off',
-      () async {
-        final fixture = buildPort(initialState: bluey.BluetoothState.on);
-        fixture.stateCtrl.add(bluey.BluetoothState.off);
-        await Future<void>.delayed(Duration.zero);
-
-        final peer = NodeId('22222222-2222-2222-2222-222222222222');
-        await expectLater(
-          () => fixture.port.sendData(peer, Uint8List.fromList([1, 2, 3])),
-          throwsA(
-            isA<BluetoothUnavailableException>().having(
-              (e) => e.nodeId,
-              'nodeId',
-              equals(peer),
-            ),
-          ),
-        );
-      },
-    );
+        ),
+      );
+    });
 
     test(
       'after returning to on, operations no longer throw the disabled gate',
@@ -194,9 +182,7 @@ void main() {
         // negative assertion pass vacuously.
         await expectLater(
           () => fixture.port.startAdvertising(
-            serviceUuid: ServiceUuid(
-              'f0000000-0000-0000-0000-000000000000',
-            ),
+            serviceUuid: ServiceUuid('f0000000-0000-0000-0000-000000000000'),
             displayName: 'Local',
             localNodeId: localId,
           ),
@@ -218,9 +204,7 @@ void main() {
         Object? thrown;
         try {
           await fixture.port.startAdvertising(
-            serviceUuid: ServiceUuid(
-              'f0000000-0000-0000-0000-000000000000',
-            ),
+            serviceUuid: ServiceUuid('f0000000-0000-0000-0000-000000000000'),
             displayName: 'Local',
             localNodeId: localId,
           );
@@ -234,44 +218,39 @@ void main() {
       },
     );
 
-    test(
-      'startAdvertising translates a thrown bluey error into '
-      'BluetoothUnavailableException with cause',
-      () async {
-        final mock = _MockBluey();
-        // Test helper: lifecycle managed implicitly via test teardown.
-        // ignore: close_sinks
-        final stateCtrl = StreamController<bluey.BluetoothState>.broadcast();
-        when(() => mock.currentState).thenReturn(bluey.BluetoothState.on);
-        when(() => mock.stateStream).thenAnswer((_) => stateCtrl.stream);
+    test('startAdvertising translates a thrown bluey error into '
+        'BluetoothUnavailableException with cause', () async {
+      final mock = _MockBluey();
+      // Test helper: lifecycle managed implicitly via test teardown.
+      // ignore: close_sinks
+      final stateCtrl = StreamController<bluey.BluetoothState>.broadcast();
+      when(() => mock.currentState).thenReturn(bluey.BluetoothState.on);
+      when(() => mock.stateStream).thenAnswer((_) => stateCtrl.stream);
 
-        // Stub server() to return a server whose addService throws.
-        final mockServer = _MockServer();
-        when(() => mock.server()).thenReturn(mockServer);
-        when(
-          () => mockServer.addService(any()),
-        ).thenThrow(Exception('synthetic-platform-failure'));
+      // Stub server() to return a server whose addService throws.
+      final mockServer = _MockServer();
+      when(() => mock.server()).thenReturn(mockServer);
+      when(
+        () => mockServer.addService(any()),
+      ).thenThrow(Exception('synthetic-platform-failure'));
 
-        final port = BlueyPortImpl(localNodeId: localId, blueyInstance: mock);
+      final port = BlueyPortImpl(localNodeId: localId, blueyInstance: mock);
 
-        await expectLater(
-          () => port.startAdvertising(
-            serviceUuid: ServiceUuid(
-              'f0000000-0000-0000-0000-000000000000',
-            ),
-            displayName: 'Local',
-            localNodeId: localId,
+      await expectLater(
+        () => port.startAdvertising(
+          serviceUuid: ServiceUuid('f0000000-0000-0000-0000-000000000000'),
+          displayName: 'Local',
+          localNodeId: localId,
+        ),
+        throwsA(
+          isA<BluetoothUnavailableException>().having(
+            (e) => e.cause.toString(),
+            'cause',
+            contains('synthetic-platform-failure'),
           ),
-          throwsA(
-            isA<BluetoothUnavailableException>().having(
-              (e) => e.cause.toString(),
-              'cause',
-              contains('synthetic-platform-failure'),
-            ),
-          ),
-        );
-      },
-    );
+        ),
+      );
+    });
 
     test(
       'startAdvertising resets internal state after a thrown bluey error',
@@ -312,9 +291,7 @@ void main() {
         ).thenAnswer((_) async {});
 
         final port = BlueyPortImpl(localNodeId: localId, blueyInstance: mock);
-        final svcUuid = ServiceUuid(
-          'f0000000-0000-0000-0000-000000000000',
-        );
+        final svcUuid = ServiceUuid('f0000000-0000-0000-0000-000000000000');
 
         // First attempt fails.
         await expectLater(
