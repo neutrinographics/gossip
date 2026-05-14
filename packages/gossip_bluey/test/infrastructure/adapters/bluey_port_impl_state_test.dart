@@ -176,10 +176,26 @@ void main() {
         final fixture = buildPort(initialState: bluey.BluetoothState.on);
         fixture.stateCtrl.add(bluey.BluetoothState.off);
         await Future<void>.delayed(Duration.zero);
+
+        // Phase 1: confirm the gate is actually closed while off. Without
+        // this precondition, a silent success in phase 2 would make the
+        // negative assertion pass vacuously.
+        await expectLater(
+          () => fixture.port.startAdvertising(
+            serviceUuid: ServiceUuid(
+              'f0000000-0000-0000-0000-000000000000',
+            ),
+            displayName: 'Local',
+            localNodeId: localId,
+          ),
+          throwsA(isA<BluetoothUnavailableException>()),
+        );
+
+        // Phase 2: transition back to on; the gate should now be open.
         fixture.stateCtrl.add(bluey.BluetoothState.on);
         await Future<void>.delayed(Duration.zero);
 
-        // Operation will still fail (the underlying server is null after
+        // Operation may still fail (the underlying server is null after
         // invalidation), but it will fail with the regular StateError —
         // not BluetoothUnavailableException. The point is the gate is open.
         //
