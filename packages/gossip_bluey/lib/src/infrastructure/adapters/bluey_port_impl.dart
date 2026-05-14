@@ -246,13 +246,11 @@ class BlueyPortImpl implements BlueyPort {
         services: [bluey.UUID(serviceUuid.value)],
         peerDiscoverable: true,
       );
-    } catch (e) {
+    } on Exception catch (e, st) {
       // Roll back partial setup so a retry starts clean. Cancel any
       // subscriptions we managed to register before the throw, drop the
       // stale server reference, clear _serviceUuid.
-      for (final sub in _serverSubs) {
-        unawaited(sub.cancel());
-      }
+      await Future.wait(_serverSubs.map((sub) => sub.cancel()));
       _serverSubs.clear();
       _server = null;
       _serviceUuid = null;
@@ -260,7 +258,7 @@ class BlueyPortImpl implements BlueyPort {
       // state-related failures from other lifecycle errors. Once bluey's
       // backlog I333 lands typed exceptions, narrow this to
       // `on bluey.BluetoothUnavailableException catch (e)`.
-      throw BluetoothUnavailableException(cause: e);
+      Error.throwWithStackTrace(BluetoothUnavailableException(cause: e), st);
     }
   }
 
