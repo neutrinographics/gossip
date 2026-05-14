@@ -1,6 +1,6 @@
 import 'package:gossip/gossip.dart';
 
-/// Thrown by [BlueyPort] lifecycle and operation methods when the
+/// Thrown by BlueyPort lifecycle and operation methods when the
 /// underlying Bluetooth adapter is in a state that prevents normal
 /// operation — typically because the adapter is off, transitioning, or
 /// permission was revoked.
@@ -9,7 +9,7 @@ import 'package:gossip/gossip.dart';
 /// to a *disabled* state on any non-`on` value. While disabled, calls
 /// throw this exception immediately. The port re-enables when
 /// `stateStream` emits `on` again, but advertising/services must be
-/// re-established by an explicit call to [BlueyPort.startAdvertising].
+/// re-established by an explicit call to `BlueyPort.startAdvertising`.
 class BluetoothUnavailableException implements Exception {
   /// Underlying error from bluey or the platform plugin, when this
   /// exception was caused by a thrown lifecycle call. Null when the
