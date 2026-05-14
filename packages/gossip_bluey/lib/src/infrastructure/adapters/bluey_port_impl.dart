@@ -164,85 +164,104 @@ class BlueyPortImpl implements BlueyPort {
     _serviceUuid = serviceUuid;
     final server = _bluey.server();
     if (server == null) {
+      _serviceUuid = null;
       throw StateError(
         'peripheral role not supported on this platform — '
         'gossip_bluey requires both central and peripheral roles',
       );
     }
     _server = server;
-    await server.addService(GossipGattService.build(serviceUuid));
 
-    final charUuid = GossipCharacteristicUuids.derive(
-      serviceUuid,
-    ).dataCharacteristic;
+    try {
+      await server.addService(GossipGattService.build(serviceUuid));
 
-    _serverSubs.add(
-      server.peerConnections.listen((peerClient) {
-        // bluey now exposes the central's real ServerId via
-        // PeerClient.serverId — no synthesis needed.
-        final nodeId = NodeId(peerClient.serverId.value);
-        final clientIdString = peerClient.client.id.toString();
-        final address = BleAddress(clientIdString);
-        _peripheralClients[nodeId] = peerClient;
-        _clientIdToNodeId[clientIdString] = nodeId;
-        _mtuByNode[nodeId] = peerClient.client.mtu;
-        _events.add(
-          PortPeerConnected(
-            nodeId: nodeId,
-            role: ConnectionRole.peripheral,
-            address: address,
-          ),
-        );
-      }),
-    );
+      final charUuid = GossipCharacteristicUuids.derive(
+        serviceUuid,
+      ).dataCharacteristic;
 
-    _serverSubs.add(
-      server.disconnections.listen((clientId) {
-        final nodeId = _clientIdToNodeId.remove(clientId);
-        if (nodeId != null) {
-          _peripheralClients.remove(nodeId);
-          _mtuByNode.remove(nodeId);
+      _serverSubs.add(
+        server.peerConnections.listen((peerClient) {
+          // bluey now exposes the central's real ServerId via
+          // PeerClient.serverId — no synthesis needed.
+          final nodeId = NodeId(peerClient.serverId.value);
+          final clientIdString = peerClient.client.id.toString();
+          final address = BleAddress(clientIdString);
+          _peripheralClients[nodeId] = peerClient;
+          _clientIdToNodeId[clientIdString] = nodeId;
+          _mtuByNode[nodeId] = peerClient.client.mtu;
           _events.add(
-            PortPeerDisconnected(
+            PortPeerConnected(
               nodeId: nodeId,
               role: ConnectionRole.peripheral,
-              reason: 'peer disconnected',
+              address: address,
             ),
           );
-        }
-      }),
-    );
+        }),
+      );
 
-    _serverSubs.add(
-      server.writeRequests.listen((req) {
-        if (req.characteristicId.toString().toLowerCase() !=
-            charUuid.toLowerCase()) {
-          return;
-        }
-        final senderNodeId = _clientIdToNodeId[req.client.id.toString()];
-        if (senderNodeId == null) {
-          // Write arrived before the client identified itself via the
-          // lifecycle heartbeat. Drop — gossip will resync once the
-          // peer is properly registered.
-          return;
-        }
-        _events.add(PortPeerData(nodeId: senderNodeId, data: req.value));
-        if (req.responseNeeded) {
-          unawaited(
-            server.respondToWrite(
-              req,
-              status: bluey.GattResponseStatus.success,
-            ),
-          );
-        }
-      }),
-    );
+      _serverSubs.add(
+        server.disconnections.listen((clientId) {
+          final nodeId = _clientIdToNodeId.remove(clientId);
+          if (nodeId != null) {
+            _peripheralClients.remove(nodeId);
+            _mtuByNode.remove(nodeId);
+            _events.add(
+              PortPeerDisconnected(
+                nodeId: nodeId,
+                role: ConnectionRole.peripheral,
+                reason: 'peer disconnected',
+              ),
+            );
+          }
+        }),
+      );
 
-    await server.startAdvertising(
-      name: displayName,
-      services: [bluey.UUID(serviceUuid.value)],
-      peerDiscoverable: true,
-    );
+      _serverSubs.add(
+        server.writeRequests.listen((req) {
+          if (req.characteristicId.toString().toLowerCase() !=
+              charUuid.toLowerCase()) {
+            return;
+          }
+          final senderNodeId = _clientIdToNodeId[req.client.id.toString()];
+          if (senderNodeId == null) {
+            // Write arrived before the client identified itself via the
+            // lifecycle heartbeat. Drop — gossip will resync once the
+            // peer is properly registered.
+            return;
+          }
+          _events.add(PortPeerData(nodeId: senderNodeId, data: req.value));
+          if (req.responseNeeded) {
+            unawaited(
+              server.respondToWrite(
+                req,
+                status: bluey.GattResponseStatus.success,
+              ),
+            );
+          }
+        }),
+      );
+
+      await server.startAdvertising(
+        name: displayName,
+        services: [bluey.UUID(serviceUuid.value)],
+        peerDiscoverable: true,
+      );
+    } catch (e) {
+      // Roll back partial setup so a retry starts clean. Cancel any
+      // subscriptions we managed to register before the throw, drop the
+      // stale server reference, clear _serviceUuid.
+      for (final sub in _serverSubs) {
+        unawaited(sub.cancel());
+      }
+      _serverSubs.clear();
+      _server = null;
+      _serviceUuid = null;
+      // The catch is broad on purpose — bluey doesn't yet differentiate
+      // state-related failures from other lifecycle errors. Once bluey's
+      // backlog I333 lands typed exceptions, narrow this to
+      // `on bluey.BluetoothUnavailableException catch (e)`.
+      throw BluetoothUnavailableException(cause: e);
+    }
   }
 
   @override

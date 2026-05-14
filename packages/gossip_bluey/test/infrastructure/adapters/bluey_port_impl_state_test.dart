@@ -12,7 +12,19 @@ import 'package:mocktail/mocktail.dart';
 
 class _MockBluey extends Mock implements bluey.Bluey {}
 
+class _MockServer extends Mock implements bluey.Server {}
+
 void main() {
+  setUpAll(() {
+    registerFallbackValue(
+      bluey.HostedService(
+        uuid: bluey.UUID('00000000-0000-0000-0000-000000000000'),
+        characteristics: const [],
+      ),
+    );
+    registerFallbackValue(const <bluey.UUID>[]);
+  });
+
   final localId = NodeId('11111111-1111-1111-1111-111111111111');
 
   // Helper: build a BlueyPortImpl with a mock that publishes the given
@@ -219,6 +231,110 @@ void main() {
         // OTHER than BluetoothUnavailableException — both are acceptable
         // "gate is open" signals.
         expect(thrown, isNot(isA<BluetoothUnavailableException>()));
+      },
+    );
+
+    test(
+      'startAdvertising translates a thrown bluey error into '
+      'BluetoothUnavailableException with cause',
+      () async {
+        final mock = _MockBluey();
+        // Test helper: lifecycle managed implicitly via test teardown.
+        // ignore: close_sinks
+        final stateCtrl = StreamController<bluey.BluetoothState>.broadcast();
+        when(() => mock.currentState).thenReturn(bluey.BluetoothState.on);
+        when(() => mock.stateStream).thenAnswer((_) => stateCtrl.stream);
+
+        // Stub server() to return a server whose addService throws.
+        final mockServer = _MockServer();
+        when(() => mock.server()).thenReturn(mockServer);
+        when(
+          () => mockServer.addService(any()),
+        ).thenThrow(Exception('synthetic-platform-failure'));
+
+        final port = BlueyPortImpl(localNodeId: localId, blueyInstance: mock);
+
+        await expectLater(
+          () => port.startAdvertising(
+            serviceUuid: ServiceUuid(
+              'f0000000-0000-0000-0000-000000000000',
+            ),
+            displayName: 'Local',
+            localNodeId: localId,
+          ),
+          throwsA(
+            isA<BluetoothUnavailableException>().having(
+              (e) => e.cause.toString(),
+              'cause',
+              contains('synthetic-platform-failure'),
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'startAdvertising resets internal state after a thrown bluey error',
+      () async {
+        final mock = _MockBluey();
+        // Test helper: lifecycle managed implicitly via test teardown.
+        // ignore: close_sinks
+        final stateCtrl = StreamController<bluey.BluetoothState>.broadcast();
+        when(() => mock.currentState).thenReturn(bluey.BluetoothState.on);
+        when(() => mock.stateStream).thenAnswer((_) => stateCtrl.stream);
+        final mockServer = _MockServer();
+        when(() => mock.server()).thenReturn(mockServer);
+        // First call throws; second call succeeds.
+        var addServiceCalls = 0;
+        when(() => mockServer.addService(any())).thenAnswer((_) async {
+          addServiceCalls++;
+          if (addServiceCalls == 1) {
+            throw Exception('first-call-fails');
+          }
+        });
+        // For the success path we also need peerConnections, disconnections,
+        // writeRequests streams + startAdvertising itself to be stubbable.
+        when(
+          () => mockServer.peerConnections,
+        ).thenAnswer((_) => const Stream.empty());
+        when(
+          () => mockServer.disconnections,
+        ).thenAnswer((_) => const Stream.empty());
+        when(
+          () => mockServer.writeRequests,
+        ).thenAnswer((_) => const Stream.empty());
+        when(
+          () => mockServer.startAdvertising(
+            name: any(named: 'name'),
+            services: any(named: 'services'),
+            peerDiscoverable: any(named: 'peerDiscoverable'),
+          ),
+        ).thenAnswer((_) async {});
+
+        final port = BlueyPortImpl(localNodeId: localId, blueyInstance: mock);
+        final svcUuid = ServiceUuid(
+          'f0000000-0000-0000-0000-000000000000',
+        );
+
+        // First attempt fails.
+        await expectLater(
+          () => port.startAdvertising(
+            serviceUuid: svcUuid,
+            displayName: 'Local',
+            localNodeId: localId,
+          ),
+          throwsA(isA<BluetoothUnavailableException>()),
+        );
+
+        // Second attempt succeeds — state was reset.
+        await expectLater(
+          port.startAdvertising(
+            serviceUuid: svcUuid,
+            displayName: 'Local',
+            localNodeId: localId,
+          ),
+          completes,
+        );
       },
     );
   });
