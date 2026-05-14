@@ -7,6 +7,7 @@ import 'package:gossip/gossip.dart';
 import '../../domain/errors/not_a_bluey_peer_exception.dart' as domain;
 import '../../domain/interfaces/bluey_port.dart';
 import '../../domain/value_objects/ble_address.dart';
+import '../../domain/value_objects/bluetooth_adapter_state.dart';
 import '../../domain/value_objects/discovered_peer.dart';
 import '../../domain/value_objects/gossip_characteristic_uuids.dart';
 import '../../domain/value_objects/scan_candidate.dart';
@@ -26,7 +27,21 @@ class BlueyPortImpl implements BlueyPort {
     : _localNodeIdValue = localNodeId.value,
       _bluey =
           blueyInstance ??
-          bluey.Bluey(localIdentity: bluey.ServerId(localNodeId.value));
+          bluey.Bluey(localIdentity: bluey.ServerId(localNodeId.value)) {
+    _adapterState = _mapBlueyState(_bluey.currentState);
+    _adapterStateController = StreamController<BluetoothAdapterState>.broadcast(
+      onListen: () {
+        // Replay the current value to new subscribers so they don't have
+        // to wait for the next transition to learn the state.
+        if (!_adapterStateController.isClosed) {
+          _adapterStateController.add(_adapterState);
+        }
+      },
+    );
+    _stateSub = _bluey.stateStream.listen(
+      (s) => _onBluetoothStateChanged(_mapBlueyState(s)),
+    );
+  }
 
   final bluey.Bluey _bluey;
   bluey.Server? _server;
@@ -65,6 +80,10 @@ class BlueyPortImpl implements BlueyPort {
   // ignore: close_sinks
   StreamController<ScanCandidate>? _scanController;
 
+  late final StreamSubscription<bluey.BluetoothState> _stateSub;
+  late final StreamController<BluetoothAdapterState> _adapterStateController;
+  BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
+
   /// Default ATT payload when MTU is unknown (BLE 4.0 default MTU 23
   /// minus 3-byte ATT header).
   static const int _defaultChunkSize = 20;
@@ -94,6 +113,13 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Stream<BlueyPortEvent> get events => _events.stream;
+
+  @override
+  BluetoothAdapterState get bluetoothAdapterState => _adapterState;
+
+  @override
+  Stream<BluetoothAdapterState> get bluetoothStateStream =>
+      _adapterStateController.stream;
 
   @override
   Stream<String> get diagnosticLog => _bluey.logEvents.map((e) {
@@ -551,6 +577,32 @@ class BlueyPortImpl implements BlueyPort {
     _devicesByAddress.clear();
     await _server?.dispose();
     _server = null;
+    await _stateSub.cancel();
+    if (!_adapterStateController.isClosed) {
+      await _adapterStateController.close();
+    }
     await _events.close();
+  }
+
+  void _onBluetoothStateChanged(BluetoothAdapterState state) {
+    _adapterState = state;
+    if (!_adapterStateController.isClosed) {
+      _adapterStateController.add(state);
+    }
+  }
+
+  static BluetoothAdapterState _mapBlueyState(bluey.BluetoothState s) {
+    switch (s) {
+      case bluey.BluetoothState.on:
+        return BluetoothAdapterState.on;
+      case bluey.BluetoothState.off:
+        return BluetoothAdapterState.off;
+      case bluey.BluetoothState.unauthorized:
+        return BluetoothAdapterState.unauthorized;
+      case bluey.BluetoothState.unsupported:
+        return BluetoothAdapterState.unsupported;
+      case bluey.BluetoothState.unknown:
+        return BluetoothAdapterState.unknown;
+    }
   }
 }
