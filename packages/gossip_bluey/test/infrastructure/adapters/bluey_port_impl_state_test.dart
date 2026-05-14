@@ -314,5 +314,27 @@ void main() {
         );
       },
     );
+
+    test(
+      'dispose succeeds when the adapter is disabled',
+      () async {
+        final fixture = buildPort(initialState: bluey.BluetoothState.on);
+        fixture.stateCtrl.add(bluey.BluetoothState.off);
+        await Future<void>.delayed(Duration.zero);
+
+        // Should not throw despite _adapterDisabled being true.
+        await expectLater(fixture.port.dispose(), completes);
+      },
+    );
+
+    test(
+      'dispose is idempotent',
+      () async {
+        final fixture = buildPort(initialState: bluey.BluetoothState.on);
+        await fixture.port.dispose();
+        // Second call must be a no-op, not a throw.
+        await expectLater(fixture.port.dispose(), completes);
+      },
+    );
   });
 }

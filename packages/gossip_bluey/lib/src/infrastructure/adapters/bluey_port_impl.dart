@@ -90,6 +90,11 @@ class BlueyPortImpl implements BlueyPort {
   /// operations with `BluetoothUnavailableException`.
   bool _adapterDisabled = false;
 
+  /// Set on the first call to [dispose] to make subsequent calls no-ops.
+  /// Prevents `_invalidateLiveState` from re-emitting `PortPeerDisconnected`
+  /// events on a closed `_events` controller.
+  bool _disposed = false;
+
   /// Default ATT payload when MTU is unknown (BLE 4.0 default MTU 23
   /// minus 3-byte ATT header).
   static const int _defaultChunkSize = 20;
@@ -264,7 +269,8 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Future<void> stopAdvertising() async {
-    _requireAdapterEnabled();
+    // Pure teardown — safe to call when the adapter is disabled (the
+    // underlying server has already been cleared by _invalidateLiveState).
     await _server?.stopAdvertising();
   }
 
@@ -531,7 +537,8 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Future<void> stopScan() async {
-    _requireAdapterEnabled();
+    // Pure teardown — safe to call when the adapter is disabled (the
+    // underlying scan has already been cleared by _invalidateLiveState).
     final sub = _scanSubscription;
     _scanSubscription = null;
     final controller = _scanController;
@@ -592,6 +599,8 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
     for (final s in _serverSubs) {
       await s.cancel();
     }
