@@ -55,10 +55,38 @@ Once I333 ships:
 
 - **Auto-reinitializing advertising/services on `state == on`.** The consumer must opt in. Auto-reinit is a footgun (consumer might not realize state was lost; might not want to re-advertise immediately).
 - **Defensive catches in every operation method.** This iteration covers `startAdvertising` (the demonstrated failure point) and adds the proactive `stateStream` subscription that handles the broader class of failures regardless of which method would have been called next. Per-method catches are recorded as follow-up but not all rolled in here.
-- **Application-layer UI affordance.** When `BluetoothUnavailableException` surfaces or `PortPeerDisconnected` fires for every peer, gossip_chat (or any consumer) decides what UI to show. Not part of the library.
-- **Surfacing the adapter state on the public API of `BlueyTransport`.** Useful for UI ("Bluetooth is off — please enable it"), but a separate piece of work. Consumers can subscribe to peer-disconnect events as a proxy for now; we add a clean `BlueyTransport.bluetoothState: Stream<BluetoothState>` getter when there's a concrete UI need.
+- **Application-layer UI affordance.** Gossip_chat decides how to render the state (banner, dialog, etc.). The library exposes the signal; the UI is the consumer's call.
 
 ## Design
+
+### New domain value object: `BluetoothAdapterState`
+
+`packages/gossip_bluey/lib/src/domain/value_objects/bluetooth_adapter_state.dart`:
+
+```dart
+/// Coarse-grained state of the underlying Bluetooth adapter. Maps from
+/// the bluey platform-interface `BluetoothState` so the domain layer
+/// doesn't import bluey types directly.
+enum BluetoothAdapterState {
+  /// Adapter is on and usable. The only state in which transport
+  /// operations succeed.
+  on,
+
+  /// User or OS turned the adapter off.
+  off,
+
+  /// App is not permitted to use Bluetooth (permission denied or
+  /// missing usage-description on iOS).
+  unauthorized,
+
+  /// Device has no BLE support, or the platform doesn't expose it.
+  unsupported,
+
+  /// Mid-transition (turning on, turning off, iOS resetting) or not
+  /// yet determined at startup. Treat as "not on" for gating purposes.
+  unknown,
+}
+```
 
 ### New domain exception
 
@@ -101,9 +129,25 @@ class BluetoothUnavailableException implements Exception {
 }
 ```
 
-### `BlueyPortImpl` — `stateStream` subscription
+### `BlueyPort` interface additions
 
-Subscribe in the constructor, retain the subscription, react in a private handler:
+```dart
+abstract interface class BlueyPort {
+  // ... existing methods ...
+
+  /// Last-known Bluetooth adapter state. Synchronous; backed by a
+  /// cache that the [bluetoothStateStream] keeps current.
+  BluetoothAdapterState get bluetoothAdapterState;
+
+  /// Stream of every Bluetooth adapter transition. Multi-listener;
+  /// emits the current value on subscription.
+  Stream<BluetoothAdapterState> get bluetoothStateStream;
+}
+```
+
+### `BlueyPortImpl` — `stateStream` subscription + adapter-state surface
+
+Subscribe in the constructor, retain the subscription, react in a private handler, expose to consumers via a re-broadcast controller (so we can map bluey's type to our domain type once and serve multiple listeners):
 
 ```dart
 class BlueyPortImpl implements BlueyPort {
@@ -111,20 +155,56 @@ class BlueyPortImpl implements BlueyPort {
       : _localNodeIdValue = localNodeId.value,
         _bluey = blueyInstance ??
             bluey.Bluey(localIdentity: bluey.ServerId(localNodeId.value)) {
-    _stateSub = _bluey.stateStream.listen(_onBluetoothStateChanged);
+    _adapterState = _mapBlueyState(_bluey.currentState);
+    _adapterStateController = StreamController<BluetoothAdapterState>.broadcast(
+      onListen: () => _adapterStateController.add(_adapterState),
+    );
+    _stateSub = _bluey.stateStream.listen((s) {
+      _onBluetoothStateChanged(_mapBlueyState(s));
+    });
   }
 
   late final StreamSubscription<bluey.BluetoothState> _stateSub;
-  bool _adapterDisabled = false;
+  late final StreamController<BluetoothAdapterState> _adapterStateController;
+  BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
+  bool _adapterDisabled = true;  // start disabled; flip on first 'on' event
 
-  void _onBluetoothStateChanged(bluey.BluetoothState state) {
-    final isOn = state == bluey.BluetoothState.on;
+  @override
+  BluetoothAdapterState get bluetoothAdapterState => _adapterState;
+
+  @override
+  Stream<BluetoothAdapterState> get bluetoothStateStream =>
+      _adapterStateController.stream;
+
+  void _onBluetoothStateChanged(BluetoothAdapterState state) {
+    _adapterState = state;
+    if (!_adapterStateController.isClosed) {
+      _adapterStateController.add(state);
+    }
+    final isOn = state == BluetoothAdapterState.on;
     if (!isOn && !_adapterDisabled) {
       _adapterDisabled = true;
       _invalidateLiveState();
     } else if (isOn && _adapterDisabled) {
       _adapterDisabled = false;
       // No auto-reinit. Consumer must call startAdvertising again.
+    }
+  }
+
+  static BluetoothAdapterState _mapBlueyState(bluey.BluetoothState s) {
+    switch (s) {
+      case bluey.BluetoothState.on:
+        return BluetoothAdapterState.on;
+      case bluey.BluetoothState.off:
+        return BluetoothAdapterState.off;
+      case bluey.BluetoothState.unauthorized:
+        return BluetoothAdapterState.unauthorized;
+      case bluey.BluetoothState.unsupported:
+        return BluetoothAdapterState.unsupported;
+      // Any other bluey value (turningOn, turningOff, resetting, unknown,
+      // future additions) is treated as "not on" — collapse to unknown.
+      default:
+        return BluetoothAdapterState.unknown;
     }
   }
 
@@ -259,9 +339,33 @@ Future<void> startAdvertising({
 
 The catch is **broad on purpose** — bluey doesn't yet differentiate state-related failures from other lifecycle errors. Once I333 ships its `DeadObjectException → BluetoothUnavailableException` translation upstream, we narrow to `on bluey.BluetoothUnavailableException catch (e)`. Documented inline.
 
+### `BlueyTransport` (facade) — public surface
+
+Add to `BlueyTransport`:
+
+```dart
+/// Last-known Bluetooth adapter state.
+BluetoothAdapterState get bluetoothAdapterState =>
+    _port.bluetoothAdapterState;
+
+/// Stream of Bluetooth adapter transitions. Emits the current value
+/// on subscription; emits again on every transition. Multi-listener.
+///
+/// When the value is anything other than [BluetoothAdapterState.on],
+/// `BlueyTransport` is in a disabled state: lifecycle calls
+/// ([startAdvertising], [stopAdvertising]) and per-peer operations
+/// throw [BluetoothUnavailableException]. Disabled-state transitions
+/// also fire [PeerDisconnected] events on [peerEvents] for every
+/// previously-active peer.
+Stream<BluetoothAdapterState> get bluetoothStateStream =>
+    _port.bluetoothStateStream;
+```
+
+The application layer (gossip_chat) consumes this to render UI affordances ("Bluetooth is off — please enable it") and to gate user actions (greying out the "start networking" button when state is not `on`).
+
 ### `dispose`
 
-`_stateSub.cancel()` added to the existing dispose flow. `_invalidateLiveState` is also called (idempotent).
+`_stateSub.cancel()` and `_adapterStateController.close()` added to the existing dispose flow. `_invalidateLiveState` is also called (idempotent).
 
 ### `BlueyPort` interface contract update
 
@@ -271,16 +375,19 @@ Doc-comment on every public method gains: "Throws `BluetoothUnavailableException
 
 | Concern | Layer | Component |
 |---|---|---|
+| Domain enum (adapter state) | Domain | `BluetoothAdapterState` (new) |
 | Domain exception type | Domain | `BluetoothUnavailableException` (new) |
-| Subscribing to `bluey.stateStream` | Infrastructure | `BlueyPortImpl` constructor + `_onBluetoothStateChanged` |
+| Domain interface — adapter state surface | Domain | `BlueyPort` (new getter + stream) |
+| Subscribing to `bluey.stateStream`; mapping bluey→domain | Infrastructure | `BlueyPortImpl` constructor + `_mapBlueyState` |
 | Internal invalidation on adapter-off | Infrastructure | `BlueyPortImpl._invalidateLiveState` |
 | Firing per-peer disconnects so the registry cleans up | Infrastructure (emit) → Application (receive) | `BlueyPortImpl` emits `PortPeerDisconnected` on `_events`; `ConnectionService._onPortEvent` already handles it |
 | Disable-gate on operations | Infrastructure | `BlueyPortImpl._requireAdapterEnabled` |
 | Translating thrown bluey errors into typed domain errors | Infrastructure | `BlueyPortImpl.startAdvertising` (catch block) |
+| Public adapter-state surface | Facade | `BlueyTransport.bluetoothAdapterState` + `bluetoothStateStream` (new getters) |
 
 `ConnectionService` does not change in this iteration. Its existing `PortPeerDisconnected` handler already does the right thing — removes from registry, drops decoder, emits `PeerClosed` to the application. By firing those events from `BlueyPortImpl._invalidateLiveState`, we re-use the existing cleanup path instead of duplicating it.
 
-`BlueyTransport` does not change. The exception propagates naturally; per-peer cleanup happens via `ConnectionService.events`.
+`BlueyTransport` gains two getters but no behavioral logic — it forwards to `_port`. The exception propagates naturally through `startAdvertising`; per-peer cleanup happens via `ConnectionService.events`.
 
 ## Test plan
 
@@ -308,27 +415,36 @@ The fake will need:
 
 7. **`startAdvertising` cancels in-flight subscriptions on failure.** Fake whose `addService` succeeds but whose `startAdvertising` throws. Assert `_serverSubs` is empty after the catch fires.
 
+**Adapter-state surface:**
+
+8. **`bluetoothAdapterState` returns the current mapped state.** Push `BluetoothState.on`, assert getter returns `BluetoothAdapterState.on`. Push `.off`, assert getter returns `.off`. Push `.unauthorized`, assert returns `.unauthorized`. Push any other bluey state, assert returns `.unknown` (catch-all).
+
+9. **`bluetoothStateStream` emits the current value to new subscribers and re-emits on transitions.** New listener subscribes; assert receives the current value immediately. Push a transition; assert listener receives the new value.
+
+10. **`BlueyTransport.bluetoothAdapterState` and `bluetoothStateStream` forward correctly.** Wire a `BlueyTransport` to the fake port, push state transitions, assert the transport's getter and stream reflect them.
+
 **Disposal:**
 
-8. **`dispose` cancels the stateStream subscription.** Verify the fake's `stateStream` controller has zero listeners after `dispose` is called.
+11. **`dispose` cancels the stateStream subscription and closes the rebroadcast controller.** After dispose, `bluetoothStateStream` is a closed stream (subscribers immediately complete); the fake's underlying stream has zero remaining listeners.
 
 ## Files touched
 
 **New:**
-- `packages/gossip_bluey/lib/src/domain/errors/bluetooth_unavailable_exception.dart`
-- `packages/gossip_bluey/test/infrastructure/adapters/bluey_port_impl_test.dart`
+- `packages/gossip_bluey/lib/src/domain/value_objects/bluetooth_adapter_state.dart` — the new enum.
+- `packages/gossip_bluey/lib/src/domain/errors/bluetooth_unavailable_exception.dart` — the new exception.
+- `packages/gossip_bluey/test/infrastructure/adapters/bluey_port_impl_test.dart` — tests above.
 
 **Modified:**
-- `packages/gossip_bluey/lib/src/infrastructure/adapters/bluey_port_impl.dart` — `_stateSub`, `_adapterDisabled`, `_onBluetoothStateChanged`, `_invalidateLiveState`, `_requireAdapterEnabled`, gate calls in every operation method, defensive catch in `startAdvertising`, dispose update.
-- `packages/gossip_bluey/lib/src/domain/interfaces/bluey_port.dart` — doc-comments mentioning the new exception on each method.
-- `packages/gossip_bluey/lib/src/facade/bluey_transport.dart` — doc-comments only (the exception propagates naturally).
+- `packages/gossip_bluey/lib/src/domain/interfaces/bluey_port.dart` — add `bluetoothAdapterState` getter and `bluetoothStateStream` to the interface; doc-comments noting the new exception on each operation method.
+- `packages/gossip_bluey/lib/src/infrastructure/adapters/bluey_port_impl.dart` — `_stateSub`, `_adapterStateController`, `_adapterState`, `_adapterDisabled`, `_onBluetoothStateChanged`, `_mapBlueyState`, `_invalidateLiveState`, `_requireAdapterEnabled`, gate calls in every operation method, defensive catch in `startAdvertising`, dispose update.
+- `packages/gossip_bluey/lib/src/facade/bluey_transport.dart` — `bluetoothAdapterState` getter + `bluetoothStateStream` forwarding to `_port`; doc-comments noting the new exception on `startAdvertising`.
+- `packages/gossip_bluey/test/fakes/fake_bluey_port.dart` — implement the new `bluetoothAdapterState` + `bluetoothStateStream` getters with a controllable stream so other tests that drive `BlueyPort` keep compiling (and we can drive state transitions in tests that use the fake).
 
-No public API change beyond the new exception type and doc-comments. No new aggregates. `ConnectionService`, `ConnectionRegistry`, `BlueyMetrics`, `BlueyTransport` unchanged in this iteration.
+`ConnectionService`, `ConnectionRegistry`, `BlueyMetrics` unchanged in this iteration.
 
 ## Out of scope (recorded for follow-up)
 
 - **Per-method defensive catches in `connect`, `connectAndIdentify`, `sendData`, etc.** The adapter-state subscription handles the *common* case (adapter cycled, all subsequent operations should fail clean). Per-method catches address the rarer race where a thrown bluey error doesn't correspond to an adapter-state issue. Add when actual production usage surfaces a failure mode in those paths, or when bluey ships I333's typed exceptions and a uniform translation layer makes the work cheap.
-- **`BlueyTransport.bluetoothState` getter.** Useful for UI; a separate ticket when there's a concrete UI need.
 - **Re-narrowing the catch from `catch (e)` to `on BluetoothUnavailableException catch (e)` after I333 ships.** Tracked as follow-up to I333.
 
 ## Why this is the right step
