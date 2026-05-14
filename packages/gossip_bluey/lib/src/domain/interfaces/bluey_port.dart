@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:gossip/gossip.dart';
 
 import '../value_objects/ble_address.dart';
+import '../value_objects/bluetooth_adapter_state.dart';
 import '../value_objects/discovered_peer.dart';
 import '../value_objects/scan_candidate.dart';
 import '../value_objects/service_uuid.dart';
@@ -83,6 +84,17 @@ abstract interface class BlueyPort {
 
   /// Stream of role-agnostic transport events.
   Stream<BlueyPortEvent> get events;
+
+  /// Last-known Bluetooth adapter state. Synchronous; backed by an
+  /// internal cache that [bluetoothStateStream] keeps current.
+  BluetoothAdapterState get bluetoothAdapterState;
+
+  /// Stream of every Bluetooth adapter transition. Broadcast; emits the
+  /// current value on subscription, then every transition. While the
+  /// state is anything other than [BluetoothAdapterState.on], all
+  /// lifecycle and per-peer operation methods on this port throw
+  /// `BluetoothUnavailableException`.
+  Stream<BluetoothAdapterState> get bluetoothStateStream;
 
   /// Diagnostic log lines from the underlying BLE library, formatted as
   /// human-readable strings. Useful for debugging discovery and
