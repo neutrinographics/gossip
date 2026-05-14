@@ -5,6 +5,7 @@ import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/src/domain/errors/not_a_bluey_peer_exception.dart';
 import 'package:gossip_bluey/src/domain/interfaces/bluey_port.dart';
 import 'package:gossip_bluey/src/domain/value_objects/ble_address.dart';
+import 'package:gossip_bluey/src/domain/value_objects/bluetooth_adapter_state.dart';
 import 'package:gossip_bluey/src/domain/value_objects/discovered_peer.dart';
 import 'package:gossip_bluey/src/domain/value_objects/scan_candidate.dart';
 import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
@@ -67,6 +68,10 @@ class FakeBlueyPort implements BlueyPort {
   final Set<NodeId> _connectedAsCentral = {};
   final Set<NodeId> _connectedAsPeripheral = {};
 
+  BluetoothAdapterState _adapterState = BluetoothAdapterState.on;
+  final StreamController<BluetoothAdapterState> _adapterStateController =
+      StreamController<BluetoothAdapterState>.broadcast();
+
   /// Test hook: inject a connect failure for target node.
   bool Function(NodeId target)? connectFailureInjector;
 
@@ -107,6 +112,15 @@ class FakeBlueyPort implements BlueyPort {
     _scanController?.add(candidate);
   }
 
+  /// Test hook: drive an adapter-state transition. Updates the cached
+  /// value and broadcasts on [bluetoothStateStream].
+  void setBluetoothAdapterStateForTest(BluetoothAdapterState state) {
+    _adapterState = state;
+    if (!_adapterStateController.isClosed) {
+      _adapterStateController.add(state);
+    }
+  }
+
   /// Read-only view of central-role connections held by this fake.
   Set<NodeId> get connectedAsCentral => Set.unmodifiable(_connectedAsCentral);
 
@@ -116,6 +130,13 @@ class FakeBlueyPort implements BlueyPort {
 
   @override
   Stream<BlueyPortEvent> get events => _events.stream;
+
+  @override
+  BluetoothAdapterState get bluetoothAdapterState => _adapterState;
+
+  @override
+  Stream<BluetoothAdapterState> get bluetoothStateStream =>
+      _adapterStateController.stream;
 
   @override
   Future<void> startAdvertising({
@@ -379,6 +400,9 @@ class FakeBlueyPort implements BlueyPort {
     final c = _scanController;
     _scanController = null;
     if (c != null && !c.isClosed) await c.close();
+    if (!_adapterStateController.isClosed) {
+      await _adapterStateController.close();
+    }
     if (!_events.isClosed) {
       await _events.close();
     }
