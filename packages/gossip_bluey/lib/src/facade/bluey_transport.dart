@@ -49,6 +49,7 @@ class BlueyTransport {
        // ignore: unused_field
        _onLog = onLog {
     _eventSub = service.events.listen(_onEvent);
+    _adapterStateSub = port.bluetoothStateStream.listen(_onAdapterState);
   }
 
   static final RegExp _uuidPattern = RegExp(
@@ -151,6 +152,7 @@ class BlueyTransport {
   final LogCallback? _onLog;
 
   late final StreamSubscription<ConnectionEvent> _eventSub;
+  late final StreamSubscription<BluetoothAdapterState> _adapterStateSub;
   final StreamController<PeerEvent> _peers =
       StreamController<PeerEvent>.broadcast();
 
@@ -239,6 +241,7 @@ class BlueyTransport {
 
   Future<void> dispose() async {
     await _eventSub.cancel();
+    await _adapterStateSub.cancel();
     await _peers.close();
     await _service.dispose();
     await _port.dispose();
@@ -250,6 +253,13 @@ class BlueyTransport {
         _peers.add(PeerConnected(nodeId, displayName: displayName));
       case PeerClosed(:final nodeId):
         _peers.add(PeerDisconnected(nodeId));
+    }
+  }
+
+  void _onAdapterState(BluetoothAdapterState state) {
+    if (state != BluetoothAdapterState.on) {
+      _isAdvertising = false;
+      _isDiscovering = false;
     }
   }
 }

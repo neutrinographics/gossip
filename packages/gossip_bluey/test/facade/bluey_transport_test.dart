@@ -93,6 +93,30 @@ void main() {
         await transport.dispose();
       });
 
+      test('adapter-off resets isAdvertising and isDiscovering', () async {
+        final network = FakeBlueyNetwork();
+        final port = FakeBlueyPort(localNodeId: localId, network: network);
+        final transport = BlueyTransport.testing(
+          localNodeId: localId,
+          serviceUuid: serviceUuid,
+          displayName: 'phone',
+          port: port,
+        );
+
+        await transport.startAdvertising();
+        await transport.startDiscovery();
+        expect(transport.isAdvertising, isTrue);
+        expect(transport.isDiscovering, isTrue);
+
+        port.setBluetoothAdapterStateForTest(BluetoothAdapterState.off);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(transport.isAdvertising, isFalse);
+        expect(transport.isDiscovering, isFalse);
+
+        await transport.dispose();
+      });
+
       test('bluetoothStateStream forwards the port stream', () async {
         final network = FakeBlueyNetwork();
         final port = FakeBlueyPort(localNodeId: localId, network: network);
