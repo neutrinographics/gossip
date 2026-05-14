@@ -80,6 +80,10 @@ class BlueyPortImpl implements BlueyPort {
   // Closed in [stopScan] and [dispose].
   // ignore: close_sinks
   StreamController<ScanCandidate>? _scanController;
+  // Held so [stopScan] can call scanner.stop() — bluey doesn't propagate
+  // controller cancellation to the platform, so without this the radio
+  // keeps scanning even after our subscription is torn down.
+  bluey.Scanner? _scanner;
 
   late final StreamSubscription<bluey.BluetoothState> _stateSub;
   late final StreamController<BluetoothAdapterState> _adapterStateController;
@@ -514,6 +518,7 @@ class BlueyPortImpl implements BlueyPort {
     );
     _scanController = controller;
     final scanner = _bluey.scanner();
+    _scanner = scanner;
     _scanSubscription = scanner
         .scan(services: [bluey.UUID(serviceUuid.value)])
         .listen(
@@ -539,10 +544,22 @@ class BlueyPortImpl implements BlueyPort {
   Future<void> stopScan() async {
     // Pure teardown — safe to call when the adapter is disabled (the
     // underlying scan has already been cleared by _invalidateLiveState).
+    final scanner = _scanner;
+    _scanner = null;
     final sub = _scanSubscription;
     _scanSubscription = null;
     final controller = _scanController;
     _scanController = null;
+    // Tell bluey to actually stop the platform scan. Cancelling our
+    // subscription on the controller stream does not propagate to the
+    // platform — only scanner.stop() does.
+    if (scanner != null) {
+      try {
+        await scanner.stop();
+      } catch (_) {
+        // Best-effort; the adapter may have already torn the scan down.
+      }
+    }
     await sub?.cancel();
     if (controller != null && !controller.isClosed) {
       await controller.close();
@@ -697,6 +714,7 @@ class BlueyPortImpl implements BlueyPort {
       unawaited(_scanController!.close());
     }
     _scanController = null;
+    _scanner = null;
 
     _centralConnections.clear();
     _peripheralClients.clear();
