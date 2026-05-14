@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:bluey/bluey.dart' as bluey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
+import 'package:gossip_bluey/src/domain/errors/bluetooth_unavailable_exception.dart';
 import 'package:gossip_bluey/src/domain/value_objects/bluetooth_adapter_state.dart';
+import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
 import 'package:gossip_bluey/src/infrastructure/adapters/bluey_port_impl.dart';
 import 'package:mocktail/mocktail.dart';
 
@@ -121,6 +124,85 @@ void main() {
         // The port is back in the enabled state and ready for the consumer
         // to call startAdvertising again. The gate test in Task 7 verifies
         // operations succeed post-on.
+      },
+    );
+
+    test(
+      'startAdvertising throws BluetoothUnavailableException after adapter '
+      'goes off',
+      () async {
+        final fixture = buildPort(initialState: bluey.BluetoothState.on);
+        fixture.stateCtrl.add(bluey.BluetoothState.off);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(
+          () => fixture.port.startAdvertising(
+            serviceUuid: ServiceUuid(
+              'f0000000-0000-0000-0000-000000000000',
+            ),
+            displayName: 'Local',
+            localNodeId: localId,
+          ),
+          throwsA(isA<BluetoothUnavailableException>()),
+        );
+      },
+    );
+
+    test(
+      'sendData throws BluetoothUnavailableException with nodeId context '
+      'after adapter goes off',
+      () async {
+        final fixture = buildPort(initialState: bluey.BluetoothState.on);
+        fixture.stateCtrl.add(bluey.BluetoothState.off);
+        await Future<void>.delayed(Duration.zero);
+
+        final peer = NodeId('22222222-2222-2222-2222-222222222222');
+        await expectLater(
+          () => fixture.port.sendData(peer, Uint8List.fromList([1, 2, 3])),
+          throwsA(
+            isA<BluetoothUnavailableException>().having(
+              (e) => e.nodeId,
+              'nodeId',
+              equals(peer),
+            ),
+          ),
+        );
+      },
+    );
+
+    test(
+      'after returning to on, operations no longer throw the disabled gate',
+      () async {
+        final fixture = buildPort(initialState: bluey.BluetoothState.on);
+        fixture.stateCtrl.add(bluey.BluetoothState.off);
+        await Future<void>.delayed(Duration.zero);
+        fixture.stateCtrl.add(bluey.BluetoothState.on);
+        await Future<void>.delayed(Duration.zero);
+
+        // Operation will still fail (the underlying server is null after
+        // invalidation), but it will fail with the regular StateError —
+        // not BluetoothUnavailableException. The point is the gate is open.
+        //
+        // We cannot use `isNot(throwsA(...))` directly because the matcher
+        // pipeline doesn't compose negation with async throws — it reports
+        // both a synchronous "Closure didn't throw" failure and the later
+        // async error. Catch manually and assert on the type.
+        Object? thrown;
+        try {
+          await fixture.port.startAdvertising(
+            serviceUuid: ServiceUuid(
+              'f0000000-0000-0000-0000-000000000000',
+            ),
+            displayName: 'Local',
+            localNodeId: localId,
+          );
+        } catch (e) {
+          thrown = e;
+        }
+        // Either it succeeded (against the mock) or threw something
+        // OTHER than BluetoothUnavailableException — both are acceptable
+        // "gate is open" signals.
+        expect(thrown, isNot(isA<BluetoothUnavailableException>()));
       },
     );
   });

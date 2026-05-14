@@ -4,6 +4,7 @@ import 'dart:typed_data';
 import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 
+import '../../domain/errors/bluetooth_unavailable_exception.dart';
 import '../../domain/errors/not_a_bluey_peer_exception.dart' as domain;
 import '../../domain/interfaces/bluey_port.dart';
 import '../../domain/value_objects/ble_address.dart';
@@ -151,6 +152,7 @@ class BlueyPortImpl implements BlueyPort {
     required String displayName,
     required NodeId localNodeId,
   }) async {
+    _requireAdapterEnabled();
     if (localNodeId.value != _localNodeIdValue) {
       throw ArgumentError.value(
         localNodeId,
@@ -245,17 +247,22 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Future<void> stopAdvertising() async {
+    _requireAdapterEnabled();
     await _server?.stopAdvertising();
   }
 
   @override
-  Future<void> ensureReady() => _bluey.ensureReady();
+  Future<void> ensureReady() async {
+    _requireAdapterEnabled();
+    return _bluey.ensureReady();
+  }
 
   @override
   Future<List<DiscoveredPeer>> discoverPeers({
     required ServiceUuid serviceUuid,
     Duration timeout = const Duration(seconds: 5),
   }) async {
+    _requireAdapterEnabled();
     final peers = await _bluey.discoverPeers(timeout: timeout);
     final out = <DiscoveredPeer>[];
     for (final p in peers) {
@@ -268,6 +275,7 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Future<void> connect(NodeId target) async {
+    _requireAdapterEnabled(target);
     final serviceUuid = _serviceUuid;
     if (serviceUuid == null) {
       throw StateError(
@@ -393,6 +401,7 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Future<void> disconnect(NodeId nodeId) async {
+    _requireAdapterEnabled(nodeId);
     final central = _centralConnections[nodeId];
     if (central != null) {
       try {
@@ -422,6 +431,7 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Future<void> sendData(NodeId nodeId, Uint8List data) async {
+    _requireAdapterEnabled(nodeId);
     final serviceUuid = _serviceUuid;
     if (serviceUuid == null) {
       throw StateError(
@@ -468,6 +478,7 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid}) {
+    _requireAdapterEnabled();
     // If a previous scan is still open, tear it down first.
     final previous = _scanController;
     if (previous != null) {
@@ -503,6 +514,7 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Future<void> stopScan() async {
+    _requireAdapterEnabled();
     final sub = _scanSubscription;
     _scanSubscription = null;
     final controller = _scanController;
@@ -515,6 +527,7 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Future<NodeId> connectAndIdentify(ScanCandidate candidate) async {
+    _requireAdapterEnabled();
     final device = _devicesByAddress[candidate.address];
     if (device == null) {
       throw StateError(
@@ -535,6 +548,7 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Future<void> disconnectRole(NodeId nodeId, ConnectionRole role) async {
+    _requireAdapterEnabled(nodeId);
     switch (role) {
       case ConnectionRole.central:
         final central = _centralConnections[nodeId];
@@ -623,6 +637,12 @@ class BlueyPortImpl implements BlueyPort {
         return BluetoothAdapterState.unsupported;
       case bluey.BluetoothState.unknown:
         return BluetoothAdapterState.unknown;
+    }
+  }
+
+  void _requireAdapterEnabled([NodeId? nodeId]) {
+    if (_adapterDisabled) {
+      throw BluetoothUnavailableException(nodeId: nodeId);
     }
   }
 
