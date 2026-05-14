@@ -83,6 +83,7 @@ class BlueyPortImpl implements BlueyPort {
   late final StreamSubscription<bluey.BluetoothState> _stateSub;
   late final StreamController<BluetoothAdapterState> _adapterStateController;
   BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
+  bool _adapterDisabled = false;
 
   /// Default ATT payload when MTU is unknown (BLE 4.0 default MTU 23
   /// minus 3-byte ATT header).
@@ -577,6 +578,7 @@ class BlueyPortImpl implements BlueyPort {
     _devicesByAddress.clear();
     await _server?.dispose();
     _server = null;
+    _invalidateLiveState();
     await _stateSub.cancel();
     if (!_adapterStateController.isClosed) {
       await _adapterStateController.close();
@@ -588,6 +590,14 @@ class BlueyPortImpl implements BlueyPort {
     _adapterState = state;
     if (!_adapterStateController.isClosed) {
       _adapterStateController.add(state);
+    }
+    final isOn = state == BluetoothAdapterState.on;
+    if (!isOn && !_adapterDisabled) {
+      _adapterDisabled = true;
+      _invalidateLiveState();
+    } else if (isOn && _adapterDisabled) {
+      _adapterDisabled = false;
+      // No auto-reinit — consumer must call startAdvertising again.
     }
   }
 
@@ -603,6 +613,65 @@ class BlueyPortImpl implements BlueyPort {
         return BluetoothAdapterState.unsupported;
       case bluey.BluetoothState.unknown:
         return BluetoothAdapterState.unknown;
+    }
+  }
+
+  /// Drop every live reference to platform objects, cancel every
+  /// subscription, fire PortPeerDisconnected for every active peer.
+  /// Idempotent. Called on adapter-off and on dispose.
+  void _invalidateLiveState() {
+    final centralPeers = _centralConnections.keys.toList();
+    final peripheralPeers = _peripheralClients.keys.toList();
+
+    for (final sub in _centralNotifSubs.values) {
+      unawaited(sub.cancel());
+    }
+    _centralNotifSubs.clear();
+    for (final sub in _centralStateSubs.values) {
+      unawaited(sub.cancel());
+    }
+    _centralStateSubs.clear();
+    for (final sub in _serverSubs) {
+      unawaited(sub.cancel());
+    }
+    _serverSubs.clear();
+    unawaited(_scanSubscription?.cancel());
+    _scanSubscription = null;
+    if (_scanController != null && !_scanController!.isClosed) {
+      unawaited(_scanController!.close());
+    }
+    _scanController = null;
+
+    _centralConnections.clear();
+    _peripheralClients.clear();
+    _clientIdToNodeId.clear();
+    _mtuByNode.clear();
+    _devicesByAddress.clear();
+    _server = null;
+    _serviceUuid = null;
+
+    // Fire one PortPeerDisconnected per peer per role. ConnectionService's
+    // existing handler removes registry entries and emits PeerClosed.
+    for (final nodeId in centralPeers) {
+      _events.add(
+        PortPeerDisconnected(
+          nodeId: nodeId,
+          role: ConnectionRole.central,
+          reason: 'bluetooth adapter unavailable',
+        ),
+      );
+    }
+    for (final nodeId in peripheralPeers) {
+      // Avoid double-firing for cross-role-tracked peers (the central
+      // event above already covered them).
+      if (centralPeers.contains(nodeId)) continue;
+      _events.add(
+        PortPeerDisconnected(
+          nodeId: nodeId,
+          role: ConnectionRole.peripheral,
+          reason: 'bluetooth adapter unavailable',
+        ),
+      );
     }
   }
 }
