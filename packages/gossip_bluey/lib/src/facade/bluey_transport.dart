@@ -49,7 +49,6 @@ class BlueyTransport {
        // ignore: unused_field
        _onLog = onLog {
     _eventSub = service.events.listen(_onEvent);
-    _adapterStateSub = port.bluetoothStateStream.listen(_onAdapterState);
   }
 
   static final RegExp _uuidPattern = RegExp(
@@ -152,15 +151,20 @@ class BlueyTransport {
   final LogCallback? _onLog;
 
   late final StreamSubscription<ConnectionEvent> _eventSub;
-  late final StreamSubscription<BluetoothAdapterState> _adapterStateSub;
   final StreamController<PeerEvent> _peers =
       StreamController<PeerEvent>.broadcast();
 
-  bool _isAdvertising = false;
-  bool _isDiscovering = false;
+  /// Whether the transport is actively advertising. Derived from the
+  /// underlying bluey `Server.advertisingStateChanges`, true only while
+  /// the platform confirms the advertisement is running. False during
+  /// starting/stopping transients and after adapter-state invalidation.
+  bool get isAdvertising => _port.isAdvertising;
 
-  bool get isAdvertising => _isAdvertising;
-  bool get isDiscovering => _isDiscovering;
+  /// Whether the transport is actively scanning. Derived from the
+  /// underlying bluey `Scanner.stateChanges`, true only while the
+  /// platform confirms the scan is running. False during starting/
+  /// stopping transients and after adapter-state invalidation.
+  bool get isDiscovering => _port.isDiscovering;
   MessagePort get messagePort => _messagePort;
   Stream<PeerEvent> get peerEvents => _peers.stream;
   Stream<ConnectionError> get errors => _service.errors;
@@ -211,37 +215,25 @@ class BlueyTransport {
   /// duplicate platform listeners and observable issues on iOS).
   Future<void> ensureReady() => _port.ensureReady();
 
-  Future<void> startAdvertising() async {
-    if (_isAdvertising) return;
-    await _port.startAdvertising(
-      serviceUuid: _serviceUuid,
-      displayName: _displayName,
-      localNodeId: localNodeId,
-    );
-    _isAdvertising = true;
-  }
+  /// Begin advertising. Idempotent at the port level — calling while
+  /// already advertising or mid-start is a no-op.
+  Future<void> startAdvertising() => _port.startAdvertising(
+    serviceUuid: _serviceUuid,
+    displayName: _displayName,
+    localNodeId: localNodeId,
+  );
 
-  Future<void> stopAdvertising() async {
-    if (!_isAdvertising) return;
-    await _port.stopAdvertising();
-    _isAdvertising = false;
-  }
+  Future<void> stopAdvertising() => _port.stopAdvertising();
 
-  Future<void> startDiscovery({bool Function(NodeId)? filter}) async {
-    await _service.startDiscovery(filter: filter);
-    _isDiscovering = true;
-  }
+  Future<void> startDiscovery({bool Function(NodeId)? filter}) =>
+      _service.startDiscovery(filter: filter);
 
-  Future<void> stopDiscovery() async {
-    await _service.stopDiscovery();
-    _isDiscovering = false;
-  }
+  Future<void> stopDiscovery() => _service.stopDiscovery();
 
   Future<void> disconnectAll() => _service.disconnectAll();
 
   Future<void> dispose() async {
     await _eventSub.cancel();
-    await _adapterStateSub.cancel();
     await _peers.close();
     await _service.dispose();
     await _port.dispose();
@@ -253,13 +245,6 @@ class BlueyTransport {
         _peers.add(PeerConnected(nodeId, displayName: displayName));
       case PeerClosed(:final nodeId):
         _peers.add(PeerDisconnected(nodeId));
-    }
-  }
-
-  void _onAdapterState(BluetoothAdapterState state) {
-    if (state != BluetoothAdapterState.on) {
-      _isAdvertising = false;
-      _isDiscovering = false;
     }
   }
 }

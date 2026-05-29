@@ -237,6 +237,12 @@ void main() {
       final mockServer = _MockServer();
       when(() => mock.server()).thenReturn(mockServer);
       when(
+        () => mockServer.advertisingState,
+      ).thenReturn(bluey.AdvertisingState.idle);
+      when(
+        () => mockServer.advertisingStateChanges,
+      ).thenAnswer((_) => const Stream.empty());
+      when(
         () => mockServer.addService(any()),
       ).thenThrow(Exception('synthetic-platform-failure'));
 
@@ -272,6 +278,12 @@ void main() {
         when(() => mock.stateStream).thenAnswer((_) => stateCtrl.stream);
         final mockServer = _MockServer();
         when(() => mock.server()).thenReturn(mockServer);
+        when(
+          () => mockServer.advertisingState,
+        ).thenReturn(bluey.AdvertisingState.idle);
+        when(
+          () => mockServer.advertisingStateChanges,
+        ).thenAnswer((_) => const Stream.empty());
         // First call throws; second call succeeds.
         var addServiceCalls = 0;
         when(() => mockServer.addService(any())).thenAnswer((_) async {

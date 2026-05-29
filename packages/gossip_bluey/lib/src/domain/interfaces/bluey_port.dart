@@ -82,6 +82,22 @@ abstract interface class BlueyPort {
   /// MTU has not yet been read.
   int chunkSizeFor(NodeId nodeId);
 
+  /// Whether the port is actively advertising — derived from the
+  /// underlying bluey `Server.advertisingStateChanges`, true only while
+  /// the platform confirms the advertisement is running. False during
+  /// the starting/stopping transient windows and after the server is
+  /// invalidated by an adapter cycle. Reflects platform reality, not
+  /// the consumer's last call to [startAdvertising].
+  bool get isAdvertising;
+
+  /// Whether the port is actively scanning — derived from the underlying
+  /// bluey `Scanner.stateChanges`, true only while the platform confirms
+  /// the scan is running. False during the starting/stopping transient
+  /// windows and after the scanner is invalidated by an adapter cycle.
+  /// Reflects platform reality, not the consumer's last call to
+  /// [scanForCandidates].
+  bool get isDiscovering;
+
   /// Stream of role-agnostic transport events.
   Stream<BlueyPortEvent> get events;
 

@@ -63,10 +63,17 @@ class FakeBlueyPort implements BlueyPort {
   final StreamController<BlueyPortEvent> _events =
       StreamController<BlueyPortEvent>.broadcast();
   bool _isAdvertising = false;
+  bool _isDiscovering = false;
   ServiceUuid? _advertisedServiceUuid;
   String? _advertisedDisplayName;
   final Set<NodeId> _connectedAsCentral = {};
   final Set<NodeId> _connectedAsPeripheral = {};
+
+  @override
+  bool get isAdvertising => _isAdvertising;
+
+  @override
+  bool get isDiscovering => _isDiscovering;
 
   BluetoothAdapterState _adapterState = BluetoothAdapterState.on;
   final StreamController<BluetoothAdapterState> _adapterStateController =
@@ -113,9 +120,17 @@ class FakeBlueyPort implements BlueyPort {
   }
 
   /// Test hook: drive an adapter-state transition. Updates the cached
-  /// value and broadcasts on [bluetoothStateStream].
+  /// value and broadcasts on [bluetoothStateStream]. When transitioning
+  /// to anything other than `on`, also resets `isAdvertising` and
+  /// `isDiscovering` to mimic the real port's behavior (bluey's
+  /// Server/Scanner are marked `invalidated` and the port's derived
+  /// bools go false).
   void setBluetoothAdapterStateForTest(BluetoothAdapterState state) {
     _adapterState = state;
+    if (state != BluetoothAdapterState.on) {
+      _isAdvertising = false;
+      _isDiscovering = false;
+    }
     if (!_adapterStateController.isClosed) {
       _adapterStateController.add(state);
     }
@@ -293,6 +308,7 @@ class FakeBlueyPort implements BlueyPort {
 
   @override
   Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid}) {
+    _isDiscovering = true;
     // Closed in [stopScan] and [dispose].
     // ignore: close_sinks
     final controller = StreamController<ScanCandidate>.broadcast();
@@ -321,6 +337,7 @@ class FakeBlueyPort implements BlueyPort {
 
   @override
   Future<void> stopScan() async {
+    _isDiscovering = false;
     _scanRebroadcastTimer?.cancel();
     _scanRebroadcastTimer = null;
     final c = _scanController;

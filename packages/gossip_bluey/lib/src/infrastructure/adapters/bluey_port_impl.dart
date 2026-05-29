@@ -93,6 +93,13 @@ class BlueyPortImpl implements BlueyPort {
   // Closed in [stopScan] and [dispose].
   // ignore: close_sinks
   StreamController<ScanCandidate>? _scanController;
+  // ignore: cancel_subscriptions
+  StreamSubscription<bluey.ScanState>? _scanStateSub;
+  bluey.ScanState _scanState = bluey.ScanState.stopped;
+
+  // ignore: cancel_subscriptions
+  StreamSubscription<bluey.AdvertisingState>? _advertisingStateSub;
+  bluey.AdvertisingState _advertisingState = bluey.AdvertisingState.idle;
 
   late final StreamSubscription<bluey.BluetoothState> _stateSub;
   BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
@@ -144,6 +151,13 @@ class BlueyPortImpl implements BlueyPort {
   Stream<BlueyPortEvent> get events => _events.stream;
 
   @override
+  bool get isAdvertising =>
+      _advertisingState == bluey.AdvertisingState.advertising;
+
+  @override
+  bool get isDiscovering => _scanState == bluey.ScanState.scanning;
+
+  @override
   BluetoothAdapterState get bluetoothAdapterState => _adapterState;
 
   @override
@@ -178,6 +192,10 @@ class BlueyPortImpl implements BlueyPort {
             '(got ${localNodeId.value}, expected $_localNodeIdValue)',
       );
     }
+    // Idempotent for the facade — if we already hold a server (whether
+    // confirmed-advertising or mid-starting), don't construct a second
+    // one. The previous server would be orphaned otherwise.
+    if (_server != null) return;
     _serviceUuid = serviceUuid;
     final server = _bluey.server();
     if (server == null) {
@@ -190,6 +208,15 @@ class BlueyPortImpl implements BlueyPort {
     _server = server;
 
     try {
+      // Subscribe to the server's advertising-state stream first so we
+      // observe every transition including the initial `starting`
+      // emission. Stream.multi replay (bluey I334) makes the first
+      // emission deterministic.
+      _advertisingState = server.advertisingState;
+      _advertisingStateSub = server.advertisingStateChanges.listen(
+        (s) => _advertisingState = s,
+      );
+
       await server.addService(GossipGattService.build(serviceUuid));
 
       final charUuid = GossipCharacteristicUuids.derive(
@@ -282,6 +309,9 @@ class BlueyPortImpl implements BlueyPort {
       // stale server reference, clear _serviceUuid.
       await Future.wait(_serverSubs.map((sub) => sub.cancel()));
       _serverSubs.clear();
+      await _advertisingStateSub?.cancel();
+      _advertisingStateSub = null;
+      _advertisingState = bluey.AdvertisingState.idle;
       _server = null;
       _serviceUuid = null;
       // The catch is broad on purpose — bluey doesn't yet differentiate
@@ -296,7 +326,22 @@ class BlueyPortImpl implements BlueyPort {
   Future<void> stopAdvertising() async {
     // Pure teardown — safe to call when the adapter is disabled (the
     // underlying server has already been cleared by _invalidateLiveState).
-    await _server?.stopAdvertising();
+    // Symmetric with startAdvertising: tear down every server-side
+    // reference so the next start does a clean full setup. Without this
+    // the early-return guard in startAdvertising would skip the rebuild
+    // on a stop-then-start cycle.
+    final server = _server;
+    _server = null;
+    _serviceUuid = null;
+    await Future.wait(_serverSubs.map((sub) => sub.cancel()));
+    _serverSubs.clear();
+    await _advertisingStateSub?.cancel();
+    _advertisingStateSub = null;
+    _advertisingState = bluey.AdvertisingState.idle;
+    if (server != null) {
+      await server.stopAdvertising();
+      await server.dispose();
+    }
   }
 
   @override
@@ -539,8 +584,13 @@ class BlueyPortImpl implements BlueyPort {
       onCancel: () => unawaited(stopScan()),
     );
     _scanController = controller;
-    _scanSubscription = _bluey
-        .scanner()
+    final scanner = _bluey.scanner();
+    // Track the scanner's lifecycle state so isDiscovering reflects
+    // platform reality, not just "we called scan()". Stream.multi replay
+    // (bluey I334) makes the initial emission deterministic.
+    _scanState = scanner.state;
+    _scanStateSub = scanner.stateChanges.listen((s) => _scanState = s);
+    _scanSubscription = scanner
         .scan(services: [bluey.UUID(serviceUuid.value)])
         .listen(
           (result) {
@@ -571,6 +621,9 @@ class BlueyPortImpl implements BlueyPort {
     _scanSubscription = null;
     final controller = _scanController;
     _scanController = null;
+    await _scanStateSub?.cancel();
+    _scanStateSub = null;
+    _scanState = bluey.ScanState.stopped;
     await sub?.cancel();
     if (controller != null && !controller.isClosed) {
       await controller.close();
@@ -715,6 +768,12 @@ class BlueyPortImpl implements BlueyPort {
     _serverSubs.clear();
     unawaited(_scanSubscription?.cancel());
     _scanSubscription = null;
+    unawaited(_scanStateSub?.cancel());
+    _scanStateSub = null;
+    _scanState = bluey.ScanState.stopped;
+    unawaited(_advertisingStateSub?.cancel());
+    _advertisingStateSub = null;
+    _advertisingState = bluey.AdvertisingState.idle;
     if (_scanController != null && !_scanController!.isClosed) {
       unawaited(_scanController!.close());
     }
