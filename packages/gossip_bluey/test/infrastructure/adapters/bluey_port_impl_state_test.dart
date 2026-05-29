@@ -57,14 +57,14 @@ void main() {
       );
     });
 
-    test('bluetoothStateStream emits current value on subscription', () async {
-      final fixture = await buildPort(initialState: bluey.BluetoothState.on);
-      final received = <BluetoothAdapterState>[];
-      final sub = fixture.port.bluetoothStateStream.listen(received.add);
-      await Future<void>.delayed(Duration.zero);
-      expect(received, equals([BluetoothAdapterState.on]));
-      await sub.cancel();
-    });
+    // The "stream replays current value on subscription" behavior used
+    // to be the responsibility of a local broadcast controller in
+    // BlueyPortImpl. After bluey I334 (stream-conventions sweep),
+    // bluey.stateStream is itself a `Stream.multi(isBroadcast: true)`
+    // that replays the cached value to each new subscriber, and the
+    // port simply forwards `_bluey.stateStream`. Bluey's own tests
+    // cover the replay contract; there's no consumer-side logic left
+    // to verify here.
 
     test(
       'pushing a state transition updates getter and emits on stream',

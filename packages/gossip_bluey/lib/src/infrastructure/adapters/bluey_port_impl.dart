@@ -30,15 +30,6 @@ class BlueyPortImpl implements BlueyPort {
   }) : _localNodeIdValue = localNodeId.value,
        _bluey = blueyInstance {
     _adapterState = _mapBlueyState(_bluey.currentState);
-    _adapterStateController = StreamController<BluetoothAdapterState>.broadcast(
-      onListen: () {
-        // Replay the current value to new subscribers so they don't have
-        // to wait for the next transition to learn the state.
-        if (!_adapterStateController.isClosed) {
-          _adapterStateController.add(_adapterState);
-        }
-      },
-    );
     _stateSub = _bluey.stateStream.listen(
       (s) => _onBluetoothStateChanged(_mapBlueyState(s)),
     );
@@ -108,7 +99,6 @@ class BlueyPortImpl implements BlueyPort {
   bluey.Scanner? _scanner;
 
   late final StreamSubscription<bluey.BluetoothState> _stateSub;
-  late final StreamController<BluetoothAdapterState> _adapterStateController;
   BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
 
   /// Set by `_onBluetoothStateChanged` when the adapter transitions away
@@ -162,7 +152,7 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   Stream<BluetoothAdapterState> get bluetoothStateStream =>
-      _adapterStateController.stream;
+      _bluey.stateStream.map(_mapBlueyState);
 
   @override
   Stream<String> get diagnosticLog => _bluey.logEvents.map((e) {
@@ -683,17 +673,11 @@ class BlueyPortImpl implements BlueyPort {
     _server = null;
     _invalidateLiveState();
     await _stateSub.cancel();
-    if (!_adapterStateController.isClosed) {
-      await _adapterStateController.close();
-    }
     await _events.close();
   }
 
   void _onBluetoothStateChanged(BluetoothAdapterState state) {
     _adapterState = state;
-    if (!_adapterStateController.isClosed) {
-      _adapterStateController.add(state);
-    }
     final isOn = state == BluetoothAdapterState.on;
     if (!isOn && !_adapterDisabled) {
       _adapterDisabled = true;
