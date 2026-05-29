@@ -68,6 +68,7 @@ class ChannelListScreen extends StatelessWidget {
               ),
               ConnectionStatusBar(
                 status: controller.connectionStatus,
+                adapterState: controller.bluetoothAdapterState,
                 peerCount: controller.peers.length,
                 onStart: controller.startNetworking,
               ),

@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gossip_bluey/gossip_bluey.dart';
 
 import '../../application/services/indirect_peer_service.dart';
 import '../controllers/chat_controller.dart';
@@ -37,11 +38,28 @@ class PeersScreen extends StatelessWidget {
   Widget _buildEmptyState() {
     final status = controller.connectionStatus;
     if (status == ConnectionStatus.bluetoothOff) {
-      return const AnimatedEmptyState(
-        icon: Icons.bluetooth_disabled,
-        title: 'Bluetooth is off',
-        subtitle: 'Turn Bluetooth on, then tap Start Discovery',
-      );
+      switch (controller.bluetoothAdapterState) {
+        case BluetoothAdapterState.unauthorized:
+          return const AnimatedEmptyState(
+            icon: Icons.bluetooth_disabled,
+            title: 'Bluetooth permission required',
+            subtitle: 'Grant Bluetooth permission in Settings to continue',
+          );
+        case BluetoothAdapterState.unsupported:
+          return const AnimatedEmptyState(
+            icon: Icons.bluetooth_disabled,
+            title: 'Bluetooth not supported',
+            subtitle: 'This device cannot use BLE peer discovery',
+          );
+        case BluetoothAdapterState.off:
+        case BluetoothAdapterState.unknown:
+        case BluetoothAdapterState.on:
+          return const AnimatedEmptyState(
+            icon: Icons.bluetooth_disabled,
+            title: 'Bluetooth is off',
+            subtitle: 'Turn Bluetooth on, then tap Start Discovery',
+          );
+      }
     }
     final isSearching =
         status == ConnectionStatus.discovering ||

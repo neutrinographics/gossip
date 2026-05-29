@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:gossip_bluey/gossip_bluey.dart';
 
 import '../controllers/chat_controller.dart';
 import 'animated_status_indicator.dart';
@@ -9,12 +10,14 @@ import 'animated_status_indicator.dart';
 /// with an animated indicator and a button to start networking.
 class ConnectionStatusBar extends StatelessWidget {
   final ConnectionStatus status;
+  final BluetoothAdapterState adapterState;
   final int peerCount;
   final VoidCallback onStart;
 
   const ConnectionStatusBar({
     super.key,
     required this.status,
+    required this.adapterState,
     required this.peerCount,
     required this.onStart,
   });
@@ -75,7 +78,16 @@ class ConnectionStatusBar extends StatelessWidget {
       case ConnectionStatus.disconnected:
         return 'Disconnected';
       case ConnectionStatus.bluetoothOff:
-        return 'Bluetooth is off';
+        switch (adapterState) {
+          case BluetoothAdapterState.unauthorized:
+            return 'Bluetooth permission required';
+          case BluetoothAdapterState.unsupported:
+            return 'Bluetooth not supported';
+          case BluetoothAdapterState.off:
+          case BluetoothAdapterState.unknown:
+          case BluetoothAdapterState.on:
+            return 'Bluetooth is off';
+        }
     }
   }
 }
