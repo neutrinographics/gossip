@@ -19,16 +19,16 @@ import 'gossip_gatt_service.dart';
 /// [BlueyPort].
 ///
 /// Constructs a fresh `Bluey` instance with the local `ServerId` baked
-/// in (via `Bluey(localIdentity: ...)`). bluey threads that identity
-/// into both the GATT server (so other peers learn it via the lifecycle
-/// control characteristic) and the lifecycle heartbeat (so the
+/// in (via `Bluey.create(localIdentity: ...)`). bluey threads that
+/// identity into both the GATT server (so other peers learn it via the
+/// lifecycle control characteristic) and the lifecycle heartbeat (so the
 /// peripheral side learns the central's `ServerId` from `PeerClient`).
 class BlueyPortImpl implements BlueyPort {
-  BlueyPortImpl({required NodeId localNodeId, bluey.Bluey? blueyInstance})
-    : _localNodeIdValue = localNodeId.value,
-      _bluey =
-          blueyInstance ??
-          bluey.Bluey(localIdentity: bluey.ServerId(localNodeId.value)) {
+  BlueyPortImpl._({
+    required NodeId localNodeId,
+    required bluey.Bluey blueyInstance,
+  }) : _localNodeIdValue = localNodeId.value,
+       _bluey = blueyInstance {
     _adapterState = _mapBlueyState(_bluey.currentState);
     _adapterStateController = StreamController<BluetoothAdapterState>.broadcast(
       onListen: () {
@@ -42,6 +42,25 @@ class BlueyPortImpl implements BlueyPort {
     _stateSub = _bluey.stateStream.listen(
       (s) => _onBluetoothStateChanged(_mapBlueyState(s)),
     );
+  }
+
+  /// Construct a [BlueyPortImpl] wrapping a freshly-created `Bluey`
+  /// instance. Async because `Bluey.create()` awaits the first platform
+  /// state event before returning — see I333 in the bluey backlog.
+  ///
+  /// Pass [blueyInstance] to inject a pre-built `Bluey` (test fakes,
+  /// shared instance reuse). When omitted, a new one is constructed with
+  /// the local node id as the bluey `ServerId`.
+  static Future<BlueyPortImpl> create({
+    required NodeId localNodeId,
+    bluey.Bluey? blueyInstance,
+  }) async {
+    final instance =
+        blueyInstance ??
+        await bluey.Bluey.create(
+          localIdentity: bluey.ServerId(localNodeId.value),
+        );
+    return BlueyPortImpl._(localNodeId: localNodeId, blueyInstance: instance);
   }
 
   final bluey.Bluey _bluey;
@@ -65,10 +84,13 @@ class BlueyPortImpl implements BlueyPort {
   /// and `writeRequests` (which carry [bluey.Client], not [bluey.PeerClient]).
   final Map<String, NodeId> _clientIdToNodeId = {};
 
-  /// Negotiated MTU per peer. Populated in [connect] (central role,
-  /// after `requestMtu`) and in `peerConnections` (peripheral role,
-  /// from `client.mtu`). Used by [chunkSizeFor].
-  final Map<NodeId, int> _mtuByNode = {};
+  /// Largest single ATT write payload per peer. Populated by
+  /// [_registerCentralConnection] (central role, via
+  /// `Connection.maxWritePayload`) and by `peerConnections`
+  /// (peripheral role, from `Client.mtu` minus ATT overhead). Used by
+  /// [chunkSizeFor]. Value semantics are uniform on both sides: this
+  /// IS the max chunk size; no further arithmetic at the read site.
+  final Map<NodeId, int> _writePayloadByNode = {};
 
   /// Cached bluey.Device handles for scan emissions, keyed by address.
   /// Looked up by [connectAndIdentify].
@@ -197,7 +219,20 @@ class BlueyPortImpl implements BlueyPort {
           final address = BleAddress(clientIdString);
           _peripheralClients[nodeId] = peerClient;
           _clientIdToNodeId[clientIdString] = nodeId;
-          _mtuByNode[nodeId] = peerClient.client.mtu;
+          // Peripheral side has no Connection.maxWritePayload — only the
+          // Client.mtu raw value. Convert to a write-payload limit here
+          // so the map's value semantics stay uniform with the central
+          // path. On iOS, Client.mtu is always the BLE-default 23
+          // (bluey limitation — see I325) which would compute to an
+          // overly conservative 19-byte chunk; substitute the iOS
+          // fallback directly so chunkSizeFor stays trivial.
+          final clientMtu = peerClient.client.mtu;
+          final isIosDefaultMtu =
+              clientMtu == _bleDefaultMtu &&
+              _bluey.capabilities.platformKind.name == 'ios';
+          _writePayloadByNode[nodeId] = isIosDefaultMtu
+              ? _iosFallbackChunkSize
+              : clientMtu - 3 - _safetyMargin;
           _events.add(
             PortPeerConnected(
               nodeId: nodeId,
@@ -213,7 +248,7 @@ class BlueyPortImpl implements BlueyPort {
           final nodeId = _clientIdToNodeId.remove(clientId);
           if (nodeId != null) {
             _peripheralClients.remove(nodeId);
-            _mtuByNode.remove(nodeId);
+            _writePayloadByNode.remove(nodeId);
             _events.add(
               PortPeerDisconnected(
                 nodeId: nodeId,
@@ -281,7 +316,16 @@ class BlueyPortImpl implements BlueyPort {
   @override
   Future<void> ensureReady() async {
     _requireAdapterEnabled();
-    return _bluey.ensureReady();
+    // Bluey.ensureReady() was removed in I333 — bluey's factory methods
+    // (server, connect, scanner) now pre-check adapter state and throw
+    // typed exceptions. We keep this method on the BlueyPort interface
+    // so the example app can probe between permission grant and the
+    // first lifecycle call; throw our own typed exception when the
+    // adapter isn't on.
+    final state = _mapBlueyState(_bluey.currentState);
+    if (state != BluetoothAdapterState.on) {
+      throw const BluetoothUnavailableException();
+    }
   }
 
   @override
@@ -340,17 +384,19 @@ class BlueyPortImpl implements BlueyPort {
     }
     _centralConnections[target] = peerConnection;
 
-    // Negotiate the largest MTU the platform allows. Best-effort —
-    // failure leaves us at the BLE-default 23 (chunkSizeFor falls back
-    // to 20 in that case).
-    final caps = _bluey.capabilities;
+    // Query the platform-authoritative write payload limit. On Android
+    // this reflects the cached negotiated MTU; on iOS it comes from
+    // CBPeripheral.maximumWriteValueLength(for:). Either way the value
+    // IS the largest single ATT write — no MTU-minus-3 arithmetic needed
+    // on our side (I325). Best-effort: failure leaves us with no entry
+    // and chunkSizeFor falls back to the BLE-safe default.
     try {
-      final desired = bluey.Mtu(caps.maxMtu, capabilities: caps);
-      final negotiated = await peerConnection.connection.requestMtu(desired);
-      _mtuByNode[target] = negotiated.value;
+      final limit = await peerConnection.connection.maxWritePayload(
+        withResponse: false,
+      );
+      _writePayloadByNode[target] = limit.value;
     } catch (_) {
-      // requestMtu failed — read whatever the connection has now.
-      _mtuByNode[target] = peerConnection.connection.mtu.value;
+      // Leave _writePayloadByNode unset — chunkSizeFor's default takes over.
     }
 
     final charUuid = GossipCharacteristicUuids.derive(
@@ -395,7 +441,7 @@ class BlueyPortImpl implements BlueyPort {
 
   void _cleanupCentral(NodeId target, {required String reason}) {
     _centralConnections.remove(target);
-    _mtuByNode.remove(target);
+    _writePayloadByNode.remove(target);
     final notifSub = _centralNotifSubs.remove(target);
     if (notifSub != null) unawaited(notifSub.cancel());
     final stateSub = _centralStateSubs.remove(target);
@@ -411,18 +457,8 @@ class BlueyPortImpl implements BlueyPort {
 
   @override
   int chunkSizeFor(NodeId nodeId) {
-    final mtu = _mtuByNode[nodeId];
-    if (mtu == null) return _defaultChunkSize;
-    // Compare by name because bluey only re-exports `Capabilities`,
-    // not the `PlatformKind` enum. Easy to switch to a typed compare
-    // once bluey exports the enum (or once I325 lands and we drop this
-    // branch entirely).
-    if (mtu == _bleDefaultMtu &&
-        _bluey.capabilities.platformKind.name == 'ios') {
-      return _iosFallbackChunkSize;
-    }
-    // ATT payload = MTU - 3 (ATT header). Subtract a safety margin.
-    final size = mtu - 3 - _safetyMargin;
+    final size = _writePayloadByNode[nodeId];
+    if (size == null) return _defaultChunkSize;
     return size < _defaultChunkSize ? _defaultChunkSize : size;
   }
 
@@ -441,7 +477,7 @@ class BlueyPortImpl implements BlueyPort {
     final peripheral = _peripheralClients.remove(nodeId);
     if (peripheral != null) {
       _clientIdToNodeId.remove(peripheral.client.id.toString());
-      _mtuByNode.remove(nodeId);
+      _writePayloadByNode.remove(nodeId);
       // bluey.Server has no per-client disconnect API. Drop our local
       // reference and emit the disconnect event; the actual link will
       // be torn down by the lifecycle heartbeat protocol or by the
@@ -603,7 +639,7 @@ class BlueyPortImpl implements BlueyPort {
         final peripheral = _peripheralClients.remove(nodeId);
         if (peripheral == null) return;
         _clientIdToNodeId.remove(peripheral.client.id.toString());
-        _mtuByNode.remove(nodeId);
+        _writePayloadByNode.remove(nodeId);
         _events.add(
           PortPeerDisconnected(
             nodeId: nodeId,
@@ -640,7 +676,7 @@ class BlueyPortImpl implements BlueyPort {
     _centralConnections.clear();
     _peripheralClients.clear();
     _clientIdToNodeId.clear();
-    _mtuByNode.clear();
+    _writePayloadByNode.clear();
     await stopScan();
     _devicesByAddress.clear();
     await _server?.dispose();
@@ -719,7 +755,7 @@ class BlueyPortImpl implements BlueyPort {
     _centralConnections.clear();
     _peripheralClients.clear();
     _clientIdToNodeId.clear();
-    _mtuByNode.clear();
+    _writePayloadByNode.clear();
     _devicesByAddress.clear();
     _server = null;
     _serviceUuid = null;

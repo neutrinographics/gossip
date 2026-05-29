@@ -20,30 +20,32 @@ dependency_overrides:
     path: /Users/joel/git/neutrinographics/bluetooth_low_energy/bluetooth_low_energy_android
   bluetooth_low_energy_darwin:
     path: /Users/joel/git/neutrinographics/bluetooth_low_energy/bluetooth_low_energy_darwin
-  # Pinned to pre-I325 bluey (same ref as gossip_chat's pin). Keeps the
-  # workspace lock aligned with the app's lock so `melos run test` /
+  # Pinned to bluey main tip including I333 (adapter-state invalidation)
+  # and the I334/I335 stream-conventions sweep (current-value replay on
+  # state streams + onCancel-driven stop on scan). Keeps the workspace
+  # lock aligned with the app's lock so `melos run test` /
   # `flutter analyze` in `packages/gossip_bluey` resolve against the
-  # bluey API that the current gossip_bluey code targets.
+  # bluey API the current gossip_bluey code targets.
   bluey:
     git:
       url: https://github.com/neutrinographics/bluey.git
       path: bluey
-      ref: 5c4324e
+      ref: c766701
   bluey_platform_interface:
     git:
       url: https://github.com/neutrinographics/bluey.git
       path: bluey_platform_interface
-      ref: 5c4324e
+      ref: c766701
   bluey_android:
     git:
       url: https://github.com/neutrinographics/bluey.git
       path: bluey_android
-      ref: 5c4324e
+      ref: c766701
   bluey_ios:
     git:
       url: https://github.com/neutrinographics/bluey.git
       path: bluey_ios
-      ref: 5c4324e
+      ref: c766701
 
 melos:
   scripts:
