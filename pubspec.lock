@@ -66,8 +66,8 @@ packages:
     dependency: "direct overridden"
     description:
       path: bluey
-      ref: c766701
-      resolved-ref: c766701e2d4f5dc8f4541cb7cc8a04cabcda7900
+      ref: "3863358"
+      resolved-ref: "38633586b3fa8567e1fe419d60ba4e07cdbbd5c7"
       url: "https://github.com/neutrinographics/bluey.git"
     source: git
     version: "0.3.0"
@@ -75,8 +75,8 @@ packages:
     dependency: "direct overridden"
     description:
       path: bluey_android
-      ref: c766701
-      resolved-ref: c766701e2d4f5dc8f4541cb7cc8a04cabcda7900
+      ref: "3863358"
+      resolved-ref: "38633586b3fa8567e1fe419d60ba4e07cdbbd5c7"
       url: "https://github.com/neutrinographics/bluey.git"
     source: git
     version: "0.3.0"
@@ -84,8 +84,8 @@ packages:
     dependency: "direct overridden"
     description:
       path: bluey_ios
-      ref: c766701
-      resolved-ref: c766701e2d4f5dc8f4541cb7cc8a04cabcda7900
+      ref: "3863358"
+      resolved-ref: "38633586b3fa8567e1fe419d60ba4e07cdbbd5c7"
       url: "https://github.com/neutrinographics/bluey.git"
     source: git
     version: "0.3.0"
@@ -93,8 +93,8 @@ packages:
     dependency: "direct overridden"
     description:
       path: bluey_platform_interface
-      ref: c766701
-      resolved-ref: c766701e2d4f5dc8f4541cb7cc8a04cabcda7900
+      ref: "3863358"
+      resolved-ref: "38633586b3fa8567e1fe419d60ba4e07cdbbd5c7"
       url: "https://github.com/neutrinographics/bluey.git"
     source: git
     version: "0.3.0"

@@ -70,10 +70,13 @@ class BlueyPortImpl implements BlueyPort {
   /// [bluey.PeerClient]).
   final Map<NodeId, bluey.PeerClient> _peripheralClients = {};
 
-  /// Reverse lookup: platform client id → NodeId. Populated when
+  /// Reverse lookup: platform client address → NodeId. Populated when
   /// `peerConnections` fires; used to resolve `disconnections` events
   /// and `writeRequests` (which carry [bluey.Client], not [bluey.PeerClient]).
-  final Map<String, NodeId> _clientIdToNodeId = {};
+  /// Keyed by [bluey.ClientAddress] — the same value bluey emits on
+  /// `Server.disconnections`, fixing the I337 cross-stream identifier
+  /// mismatch.
+  final Map<bluey.ClientAddress, NodeId> _clientAddressToNodeId = {};
 
   /// Largest single ATT write payload per peer. Populated by
   /// [_registerCentralConnection] (central role, via
@@ -228,10 +231,10 @@ class BlueyPortImpl implements BlueyPort {
           // bluey now exposes the central's real ServerId via
           // PeerClient.serverId — no synthesis needed.
           final nodeId = NodeId(peerClient.serverId.value);
-          final clientIdString = peerClient.client.id.toString();
-          final address = BleAddress(clientIdString);
+          final clientAddress = peerClient.client.address;
+          final address = BleAddress(clientAddress.value);
           _peripheralClients[nodeId] = peerClient;
-          _clientIdToNodeId[clientIdString] = nodeId;
+          _clientAddressToNodeId[clientAddress] = nodeId;
           // Peripheral side has no Connection.maxWritePayload — only the
           // Client.mtu raw value. Convert to a write-payload limit here
           // so the map's value semantics stay uniform with the central
@@ -257,8 +260,8 @@ class BlueyPortImpl implements BlueyPort {
       );
 
       _serverSubs.add(
-        server.disconnections.listen((clientId) {
-          final nodeId = _clientIdToNodeId.remove(clientId);
+        server.disconnections.listen((clientAddress) {
+          final nodeId = _clientAddressToNodeId.remove(clientAddress);
           if (nodeId != null) {
             _peripheralClients.remove(nodeId);
             _writePayloadByNode.remove(nodeId);
@@ -279,7 +282,7 @@ class BlueyPortImpl implements BlueyPort {
               charUuid.toLowerCase()) {
             return;
           }
-          final senderNodeId = _clientIdToNodeId[req.client.id.toString()];
+          final senderNodeId = _clientAddressToNodeId[req.client.address];
           if (senderNodeId == null) {
             // Write arrived before the client identified itself via the
             // lifecycle heartbeat. Drop — gossip will resync once the
@@ -507,7 +510,7 @@ class BlueyPortImpl implements BlueyPort {
     }
     final peripheral = _peripheralClients.remove(nodeId);
     if (peripheral != null) {
-      _clientIdToNodeId.remove(peripheral.client.id.toString());
+      _clientAddressToNodeId.remove(peripheral.client.address);
       _writePayloadByNode.remove(nodeId);
       // bluey.Server has no per-client disconnect API. Drop our local
       // reference and emit the disconnect event; the actual link will
@@ -594,7 +597,7 @@ class BlueyPortImpl implements BlueyPort {
         .scan(services: [bluey.UUID(serviceUuid.value)])
         .listen(
           (result) {
-            final address = BleAddress(result.device.address);
+            final address = BleAddress(result.device.address.value);
             _devicesByAddress[address] = result.device;
             if (!controller.isClosed) {
               controller.add(
@@ -666,7 +669,7 @@ class BlueyPortImpl implements BlueyPort {
       case ConnectionRole.peripheral:
         final peripheral = _peripheralClients.remove(nodeId);
         if (peripheral == null) return;
-        _clientIdToNodeId.remove(peripheral.client.id.toString());
+        _clientAddressToNodeId.remove(peripheral.client.address);
         _writePayloadByNode.remove(nodeId);
         _events.add(
           PortPeerDisconnected(
@@ -703,7 +706,7 @@ class BlueyPortImpl implements BlueyPort {
     }
     _centralConnections.clear();
     _peripheralClients.clear();
-    _clientIdToNodeId.clear();
+    _clientAddressToNodeId.clear();
     _writePayloadByNode.clear();
     await stopScan();
     _devicesByAddress.clear();
@@ -781,7 +784,7 @@ class BlueyPortImpl implements BlueyPort {
 
     _centralConnections.clear();
     _peripheralClients.clear();
-    _clientIdToNodeId.clear();
+    _clientAddressToNodeId.clear();
     _writePayloadByNode.clear();
     _devicesByAddress.clear();
     _server = null;
