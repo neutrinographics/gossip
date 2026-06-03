@@ -8,12 +8,7 @@ import '../fakes/fake_bluey_port.dart';
 import '_coordinator_helpers.dart';
 
 void main() {
-  // TODO(C5): re-enable once DiscoveryService + AutoConnectPolicy are
-  // wired through BlueyTransport. As of C3 the facade's startDiscovery
-  // is a no-op (the auto-connect path moved out of ConnectionManager),
-  // so this end-to-end discovery convergence test cannot pass without
-  // either the new auto-connect policy or manual connectTo plumbing.
-  test('two-node mesh converges on a shared channel', skip: 'C5', () async {
+  test('two-node mesh converges on a shared channel', () async {
     final network = FakeBlueyNetwork();
     final idA = NodeId('11111111-1111-1111-1111-111111111111');
     final idB = NodeId('22222222-2222-2222-2222-222222222222');
@@ -44,6 +39,9 @@ void main() {
       messagePort: transportB.messagePort,
     );
 
+    // Mesh: both sides advertise + discover + auto-connect.
+    transportA.setConnectionMode(ConnectionMode.auto);
+    transportB.setConnectionMode(ConnectionMode.auto);
     await transportA.startAdvertising();
     await transportB.startAdvertising();
     await transportA.startDiscovery();

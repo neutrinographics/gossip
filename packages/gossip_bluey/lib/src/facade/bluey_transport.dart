@@ -5,12 +5,16 @@ import 'package:gossip/gossip.dart';
 import 'package:meta/meta.dart';
 
 import '../application/observability/bluey_metrics.dart';
+import '../application/services/auto_connect_policy.dart';
 import '../application/services/connection_manager.dart';
+import '../application/services/discovery_service.dart';
 import '../domain/aggregates/connection_registry.dart';
 import '../domain/errors/connection_error.dart';
 import '../domain/events/connection_event.dart';
 import '../domain/interfaces/bluey_port.dart';
 import '../domain/value_objects/bluetooth_adapter_state.dart';
+import '../domain/value_objects/connection_mode.dart';
+import '../domain/value_objects/scan_candidate.dart';
 import '../domain/value_objects/service_uuid.dart';
 import '../infrastructure/adapters/bluey_port_impl.dart';
 import '../infrastructure/ports/bluey_message_port.dart';
@@ -40,12 +44,16 @@ class BlueyTransport {
     required String displayName,
     required BlueyPort port,
     required ConnectionManager service,
+    required DiscoveryService discovery,
+    required AutoConnectPolicy autoConnect,
     required BlueyMessagePort messagePort,
     LogCallback? onLog,
   }) : _serviceUuid = serviceUuid,
        _displayName = displayName,
        _port = port,
        _service = service,
+       _discovery = discovery,
+       _autoConnect = autoConnect,
        _messagePort = messagePort,
        _onLog = onLog {
     _eventSub = service.events.listen(_onEvent);
@@ -62,9 +70,6 @@ class BlueyTransport {
     required ServiceUuid serviceUuid,
     required String displayName,
     int? maxConnections,
-    @Deprecated(
-      'No-op since C3; targetConnections moves to AutoConnectPolicy in C4.',
-    )
     int? targetConnections,
     @Deprecated(
       'No-op since the scan-upgrade migration; scan is now '
@@ -91,12 +96,23 @@ class BlueyTransport {
       maxConnections: maxConnections,
       onLog: onLog,
     );
+    final discovery = DiscoveryService(port: port, serviceUuid: serviceUuid);
+    final autoConnect = AutoConnectPolicy(
+      discovery: discovery,
+      connections: service,
+      registry: registry,
+      now: DateTime.now,
+      targetConnections: targetConnections,
+      onLog: onLog,
+    );
     return BlueyTransport._(
       localNodeId: nodeId,
       serviceUuid: serviceUuid,
       displayName: displayName,
       port: port,
       service: service,
+      discovery: discovery,
+      autoConnect: autoConnect,
       messagePort: BlueyMessagePort(service),
       onLog: onLog,
     );
@@ -109,9 +125,6 @@ class BlueyTransport {
     required String displayName,
     required BlueyPort port,
     int? maxConnections,
-    @Deprecated(
-      'No-op since C3; targetConnections moves to AutoConnectPolicy in C4.',
-    )
     int? targetConnections,
     @Deprecated(
       'No-op since the scan-upgrade migration; scan is now '
@@ -129,6 +142,15 @@ class BlueyTransport {
       maxConnections: maxConnections,
       onLog: onLog,
     );
+    final discovery = DiscoveryService(port: port, serviceUuid: serviceUuid);
+    final autoConnect = AutoConnectPolicy(
+      discovery: discovery,
+      connections: service,
+      registry: registry,
+      now: DateTime.now,
+      targetConnections: targetConnections,
+      onLog: onLog,
+    );
     final mp = BlueyMessagePort(service);
     return BlueyTransport._(
       localNodeId: localNodeId,
@@ -136,6 +158,8 @@ class BlueyTransport {
       displayName: displayName,
       port: port,
       service: service,
+      discovery: discovery,
+      autoConnect: autoConnect,
       messagePort: mp,
       onLog: onLog,
     );
@@ -146,7 +170,10 @@ class BlueyTransport {
   final String _displayName;
   final BlueyPort _port;
   final ConnectionManager _service;
+  final DiscoveryService _discovery;
+  final AutoConnectPolicy _autoConnect;
   final BlueyMessagePort _messagePort;
+  // ignore: unused_field
   final LogCallback? _onLog;
 
   late final StreamSubscription<ConnectionEvent> _eventSub;
@@ -208,6 +235,28 @@ class BlueyTransport {
   int get connectedPeerCount => _service.registry.connectionCount;
   BlueyMetrics get metrics => _service.metrics;
 
+  /// Snapshot stream of the current discovery candidates. Emits the
+  /// current set on subscribe (replay-current), then every change.
+  Stream<List<ScanCandidate>> get candidates => _discovery.snapshots;
+
+  /// Per-event candidate stream. Each scan advertisement surfaces as one
+  /// emission.
+  Stream<ScanCandidate> get candidateEvents => _discovery.candidates;
+
+  /// Immutable snapshot of the current candidate set, in insertion order.
+  List<ScanCandidate> get currentCandidates => _discovery.currentCandidates;
+
+  /// Current connection-mode policy. Defaults to [ConnectionMode.manual]
+  /// — discovered peers are surfaced but no connection is initiated
+  /// until [connectTo] is called explicitly.
+  ConnectionMode get connectionMode => _autoConnect.mode;
+
+  /// Switch between manual and auto connection modes. In
+  /// [ConnectionMode.auto], every discovered candidate triggers an
+  /// auto-connect attempt subject to backoff and the optional
+  /// target-connections cap.
+  void setConnectionMode(ConnectionMode mode) => _autoConnect.setMode(mode);
+
   /// Test-only access to the underlying ConnectionManager for triggering
   /// integration tests against connection lifecycle.
   @visibleForTesting
@@ -234,32 +283,33 @@ class BlueyTransport {
 
   Future<void> stopAdvertising() => _port.stopAdvertising();
 
-  // TODO(C5): re-introduce startDiscovery / stopDiscovery once
-  // DiscoveryService + AutoConnectPolicy are wired through the facade.
-  // Until then, startDiscovery is a no-op stub kept ONLY to preserve
-  // gossip_chat compilation. It logs a warning so test runs surface the
-  // missing behavior.
-  Future<void> startDiscovery({bool Function(NodeId)? filter}) async {
-    // Asymmetric with stopDiscovery (silent no-op): startDiscovery logs
-    // so test runs surface the missing behavior. We surface the filter's
-    // presence too so it's obvious a star-topology hint is being dropped.
-    _onLog?.call(
-      LogLevel.warning,
-      'BlueyTransport.startDiscovery is a no-op until C5; '
-      'no peers will be discovered or auto-connected '
-      '(filter ${filter == null ? "absent" : "present, discarded"})',
-    );
-  }
+  /// Begin scanning for gossip-speaking peers. Idempotent: calling while
+  /// already scanning is a no-op. Discovered candidates surface on
+  /// [candidates] / [candidateEvents]; the consumer drives connection
+  /// decisions via [connectTo] (manual mode) or sets
+  /// [setConnectionMode] to [ConnectionMode.auto] to let
+  /// [AutoConnectPolicy] auto-connect them.
+  Future<void> startDiscovery() => _discovery.start();
 
-  Future<void> stopDiscovery() async {
-    // no-op until C5
-  }
+  Future<void> stopDiscovery() => _discovery.stop();
+
+  /// Initiate a connection to [candidate]. Returns the remote NodeId
+  /// once the bluey-protocol identification handshake completes.
+  /// Used in manual mode; [AutoConnectPolicy] calls this on its own in
+  /// auto mode.
+  Future<NodeId> connectTo(ScanCandidate candidate) =>
+      _service.connectTo(candidate);
+
+  /// Disconnect a specific peer (whichever role we hold for that peer).
+  Future<void> disconnect(NodeId nodeId) => _port.disconnect(nodeId);
 
   Future<void> disconnectAll() => _service.disconnectAll();
 
   Future<void> dispose() async {
     await _eventSub.cancel();
     await _peers.close();
+    await _autoConnect.dispose();
+    await _discovery.dispose();
     await _service.dispose();
     await _port.dispose();
   }

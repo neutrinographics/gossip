@@ -8,13 +8,8 @@ import '../fakes/fake_bluey_port.dart';
 import '_coordinator_helpers.dart';
 
 void main() {
-  // TODO(C5): re-enable once DiscoveryService + AutoConnectPolicy are
-  // wired through BlueyTransport. As of C3 the facade's startDiscovery
-  // is a no-op; star-topology convergence requires the policy-driven
-  // auto-connect that moves into C4/C5.
   test(
     'three-node star: spokes converge through hub',
-    skip: 'C5',
     () async {
     final network = FakeBlueyNetwork();
     final hubId = NodeId('99999999-9999-9999-9999-999999999999');
@@ -71,9 +66,13 @@ void main() {
     await bCoord.start();
 
     await hub.startAdvertising();
-    // Note: spokes do NOT call startAdvertising.
-    await spokeA.startDiscovery(filter: (id) => id == hubId);
-    await spokeB.startDiscovery(filter: (id) => id == hubId);
+    // Note: spokes do NOT call startAdvertising. Only the hub is
+    // advertising, so the spokes' discovery streams will only ever
+    // surface the hub — no peer filter required.
+    spokeA.setConnectionMode(ConnectionMode.auto);
+    spokeB.setConnectionMode(ConnectionMode.auto);
+    await spokeA.startDiscovery();
+    await spokeB.startDiscovery();
 
     await Future<void>.delayed(const Duration(milliseconds: 20));
     await Future<void>.delayed(const Duration(milliseconds: 20));
