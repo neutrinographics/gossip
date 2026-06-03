@@ -7,8 +7,9 @@ import '../../domain/value_objects/service_uuid.dart';
 
 /// Owns the BLE scan subscription and the current-candidates map. Emits
 /// per-candidate events and replay-current snapshot streams. Does not
-/// decide whether to connect — that is the job of `AutoConnectPolicy`
-/// (auto mode) or the consumer's explicit `connectTo` call (manual mode).
+/// decide whether to connect — connection decisions are made elsewhere
+/// (an auto-connect policy in mesh mode, or the consumer's explicit
+/// `connectTo` call in manual mode).
 class DiscoveryService {
   DiscoveryService({
     required BlueyPort port,
@@ -64,13 +65,15 @@ class DiscoveryService {
   Future<void> stop() async {
     final sub = _sub;
     _sub = null;
+    await sub?.cancel();
     if (sub != null) {
-      await sub.cancel();
       await _port.stopScan();
     }
-    _current.clear();
-    if (!_snapshotChanges.isClosed) {
-      _snapshotChanges.add(const []);
+    if (_current.isNotEmpty) {
+      _current.clear();
+      if (!_snapshotChanges.isClosed) {
+        _snapshotChanges.add(const []);
+      }
     }
   }
 

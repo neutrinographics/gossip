@@ -107,13 +107,18 @@ void main() {
     test('stop() unsubscribes, clears candidates, and emits empty snapshot',
         () async {
       await service.start();
+      final received = <List<ScanCandidate>>[];
+      final sub = service.snapshots.listen(received.add);
       port.emitCandidate(_candidate('AA:BB:CC:DD:EE:01'));
       await Future<void>.delayed(Duration.zero);
       await service.stop();
+      await Future<void>.delayed(Duration.zero);
       expect(service.isRunning, isFalse);
       expect(service.currentCandidates, isEmpty);
-      // Verify stopScan was called on the port
       expect(port.stopScanCallCount, greaterThan(0));
+      // Final emission must be the empty list.
+      expect(received.last, isEmpty);
+      await sub.cancel();
     });
 
     test('multiple subscribers each get independent replay', () async {
@@ -121,17 +126,38 @@ void main() {
       port.emitCandidate(_candidate('AA:BB:CC:DD:EE:01'));
       await Future<void>.delayed(Duration.zero);
 
-      final a = await service.snapshots.first;
-      expect(a.map((c) => c.address.value), ['AA:BB:CC:DD:EE:01']);
+      // Subscriber A subscribes while map has {EE:01}.
+      final receivedA = <List<ScanCandidate>>[];
+      final subA = service.snapshots.listen(receivedA.add);
+      await Future<void>.delayed(Duration.zero);
 
+      // State transitions: add EE:02.
       port.emitCandidate(_candidate('AA:BB:CC:DD:EE:02'));
       await Future<void>.delayed(Duration.zero);
 
-      final b = await service.snapshots.first;
-      expect(b.map((c) => c.address.value), [
+      // Subscriber B subscribes while map has {EE:01, EE:02}.
+      final receivedB = <List<ScanCandidate>>[];
+      final subB = service.snapshots.listen(receivedB.add);
+      await Future<void>.delayed(Duration.zero);
+
+      // A's first emission must reflect state-at-A-time (just EE:01).
+      expect(receivedA.first.map((c) => c.address.value), ['AA:BB:CC:DD:EE:01']);
+
+      // B's first emission must reflect state-at-B-time (EE:01 + EE:02).
+      expect(receivedB.first.map((c) => c.address.value), [
         'AA:BB:CC:DD:EE:01',
         'AA:BB:CC:DD:EE:02',
       ]);
+
+      // A must have received the EE:02 update too (proving the subscription
+      // continues to receive transitions, not just the initial replay).
+      expect(receivedA.last.map((c) => c.address.value), [
+        'AA:BB:CC:DD:EE:01',
+        'AA:BB:CC:DD:EE:02',
+      ]);
+
+      await subA.cancel();
+      await subB.cancel();
     });
   });
 }
