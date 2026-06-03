@@ -237,17 +237,12 @@ class BlueyPortImpl implements BlueyPort {
     _server = server;
 
     try {
-      // Subscribe to the server's advertising-state stream first so we
-      // observe every transition including the initial `starting`
-      // emission. Stream.multi replay (bluey I334) makes the first
-      // emission deterministic.
-      _advertisingState = server.advertisingState;
-      _advertisingStateSub = server.advertisingStateChanges.listen((s) {
-        _advertisingState = s;
-        if (!_advertisingStateChanges.isClosed) {
-          _advertisingStateChanges.add(s);
-        }
-      });
+      // Seed the cached state from the server's current value, then
+      // subscribe for subsequent transitions.
+      _setAdvertisingState(server.advertisingState);
+      _advertisingStateSub = server.advertisingStateChanges.listen(
+        _setAdvertisingState,
+      );
 
       await server.addService(GossipGattService.build(serviceUuid));
 
@@ -618,15 +613,10 @@ class BlueyPortImpl implements BlueyPort {
     _scanController = controller;
     final scanner = _bluey.scanner();
     // Track the scanner's lifecycle state so [scanState] reflects
-    // platform reality, not just "we called scan()". Stream.multi replay
-    // (bluey I334) makes the initial emission deterministic.
-    _scanState = scanner.state;
-    _scanStateSub = scanner.stateChanges.listen((s) {
-      _scanState = s;
-      if (!_scanStateChanges.isClosed) {
-        _scanStateChanges.add(s);
-      }
-    });
+    // platform reality, not just "we called scan()". Seed from the
+    // scanner's current value, then subscribe for subsequent transitions.
+    _setScanState(scanner.state);
+    _scanStateSub = scanner.stateChanges.listen(_setScanState);
     _scanSubscription = scanner
         .scan(services: [bluey.UUID(serviceUuid.value)])
         .listen(
@@ -783,9 +773,10 @@ class BlueyPortImpl implements BlueyPort {
   }
 
   /// Update the cached advertising state and broadcast the transition to
-  /// any subscribers of [advertisingStateStream]. Used by teardown paths
-  /// (stopAdvertising, _invalidateLiveState, rollback) that mutate the
-  /// state outside the bluey subscription callback.
+  /// any subscribers of [advertisingStateStream]. The single mutation
+  /// point for [_advertisingState] — both the bluey subscription callback
+  /// and teardown paths (stopAdvertising, _invalidateLiveState, rollback)
+  /// route through here so every transition reaches subscribers.
   void _setAdvertisingState(bluey.AdvertisingState s) {
     _advertisingState = s;
     if (!_advertisingStateChanges.isClosed) {
@@ -794,6 +785,8 @@ class BlueyPortImpl implements BlueyPort {
   }
 
   /// Symmetric counterpart for [_setAdvertisingState], for scan state.
+  /// The single mutation point for [_scanState] — both the scanner
+  /// subscription callback and teardown paths route through here.
   void _setScanState(bluey.ScanState s) {
     _scanState = s;
     if (!_scanStateChanges.isClosed) {

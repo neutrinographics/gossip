@@ -124,34 +124,82 @@ void main() {
       await transport.dispose();
     });
 
-    test('multiple simultaneous subscribers each receive independent replay',
-        () async {
-      final network = FakeBlueyNetwork();
-      final port = FakeBlueyPort(localNodeId: localId, network: network);
-      port.setAdvertisingStateForTest(bluey.AdvertisingState.advertising);
-      final transport = makeTransport(port);
+    test(
+      'advertising: each subscriber sees the current value at its own '
+      'subscribe time',
+      () async {
+        final network = FakeBlueyNetwork();
+        final port = FakeBlueyPort(localNodeId: localId, network: network);
+        port.setAdvertisingStateForTest(bluey.AdvertisingState.advertising);
+        final transport = makeTransport(port);
 
-      final aReceived = <bluey.AdvertisingState>[];
-      final subA = transport.advertisingStateStream.listen(aReceived.add);
-      await Future<void>.delayed(Duration.zero);
+        // Subscriber A subscribes while state is `advertising`.
+        final aReceived = <bluey.AdvertisingState>[];
+        final subA = transport.advertisingStateStream.listen(aReceived.add);
+        await Future<void>.delayed(Duration.zero);
 
-      // Subscriber B comes later — should still see replay-current.
-      final bReceived = <bluey.AdvertisingState>[];
-      final subB = transport.advertisingStateStream.listen(bReceived.add);
-      await Future<void>.delayed(Duration.zero);
+        // Transition state.
+        port.setAdvertisingStateForTest(bluey.AdvertisingState.stopping);
+        await Future<void>.delayed(Duration.zero);
 
-      expect(aReceived.first, equals(bluey.AdvertisingState.advertising));
-      expect(bReceived.first, equals(bluey.AdvertisingState.advertising));
+        // Subscriber B subscribes AFTER the transition — should replay
+        // the current value (`stopping`), not the historical first
+        // emission A saw. A shared replay impl would (incorrectly) hand
+        // B `advertising` as its first emission.
+        final bReceived = <bluey.AdvertisingState>[];
+        final subB = transport.advertisingStateStream.listen(bReceived.add);
+        await Future<void>.delayed(Duration.zero);
 
-      port.setAdvertisingStateForTest(bluey.AdvertisingState.stopping);
-      await Future<void>.delayed(Duration.zero);
+        expect(aReceived.first, equals(bluey.AdvertisingState.advertising));
+        expect(bReceived.first, equals(bluey.AdvertisingState.stopping));
+        // Confirm A saw the transition as its SECOND emission (not its
+        // first), i.e. replay then live stream.
+        expect(aReceived, [
+          bluey.AdvertisingState.advertising,
+          bluey.AdvertisingState.stopping,
+        ]);
 
-      expect(aReceived.last, equals(bluey.AdvertisingState.stopping));
-      expect(bReceived.last, equals(bluey.AdvertisingState.stopping));
+        await subA.cancel();
+        await subB.cancel();
+        await transport.dispose();
+      },
+    );
 
-      await subA.cancel();
-      await subB.cancel();
-      await transport.dispose();
-    });
+    test(
+      'scan: each subscriber sees the current value at its own subscribe '
+      'time',
+      () async {
+        final network = FakeBlueyNetwork();
+        final port = FakeBlueyPort(localNodeId: localId, network: network);
+        port.setScanStateForTest(bluey.ScanState.scanning);
+        final transport = makeTransport(port);
+
+        // Subscriber A subscribes while state is `scanning`.
+        final aReceived = <bluey.ScanState>[];
+        final subA = transport.scanStateStream.listen(aReceived.add);
+        await Future<void>.delayed(Duration.zero);
+
+        // Transition state.
+        port.setScanStateForTest(bluey.ScanState.stopping);
+        await Future<void>.delayed(Duration.zero);
+
+        // Subscriber B subscribes AFTER the transition — should replay
+        // the current value (`stopping`), not what A saw first.
+        final bReceived = <bluey.ScanState>[];
+        final subB = transport.scanStateStream.listen(bReceived.add);
+        await Future<void>.delayed(Duration.zero);
+
+        expect(aReceived.first, equals(bluey.ScanState.scanning));
+        expect(bReceived.first, equals(bluey.ScanState.stopping));
+        expect(aReceived, [
+          bluey.ScanState.scanning,
+          bluey.ScanState.stopping,
+        ]);
+
+        await subA.cancel();
+        await subB.cancel();
+        await transport.dispose();
+      },
+    );
   });
 }

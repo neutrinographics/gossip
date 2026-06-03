@@ -62,14 +62,22 @@ class ConnectionService {
   Future<void> ensureReady() => _transport.ensureReady();
 
   /// Whether advertising is currently active.
-  // TODO(Phase D): replace this boolean derivation with rich state once
-  // the chat controller migrates to the AdvertisingState/ScanState enums.
+  // TODO(Phase D): rewrite to consume transport.advertisingStateStream and
+  // surface the full AdvertisingState enum (idle/starting/advertising/
+  // stopping) in ChatController status, rather than collapsing the four
+  // states into a single boolean here. Callers in the UI can then
+  // distinguish "starting up" from "running" and "stopping" from "off"
+  // without polling.
   bool get isAdvertising =>
       _transport.advertisingState == bluey.AdvertisingState.advertising;
 
   /// Whether discovery is currently active.
-  // TODO(Phase D): replace this boolean derivation with rich state once
-  // the chat controller migrates to the AdvertisingState/ScanState enums.
+  // TODO(Phase D): rewrite to consume transport.scanStateStream and
+  // surface the full ScanState enum (stopped/starting/scanning/stopping)
+  // in ChatController status, rather than collapsing the four states
+  // into a single boolean here. Callers in the UI can then distinguish
+  // "starting up" from "running" and "stopping" from "off" without
+  // polling.
   bool get isDiscovering =>
       _transport.scanState == bluey.ScanState.scanning;
 
