@@ -840,7 +840,7 @@ class BlueyPortImpl implements BlueyPort {
     _server = null;
     _serviceUuid = null;
 
-    // Fire one PortPeerDisconnected per peer per role. ConnectionService's
+    // Fire one PortPeerDisconnected per peer per role. ConnectionManager's
     // existing handler removes registry entries and emits PeerClosed.
     for (final nodeId in centralPeers) {
       _events.add(

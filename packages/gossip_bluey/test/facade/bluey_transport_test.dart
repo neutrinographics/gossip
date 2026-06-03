@@ -110,7 +110,15 @@ void main() {
           );
 
           await transport.startAdvertising();
-          await transport.startDiscovery();
+          // TODO(C5): replace direct port.scanForCandidates with
+          // transport.startDiscovery once DiscoveryService is wired through
+          // BlueyTransport. As of C3, transport.startDiscovery is a no-op,
+          // so we drive the underlying port directly to bring scanState to
+          // scanning for this test's adapter-off reset assertion.
+          // ignore: cancel_subscriptions
+          final scanSub = port
+              .scanForCandidates(serviceUuid: serviceUuid)
+              .listen((_) {});
           expect(
             transport.advertisingState,
             bluey.AdvertisingState.advertising,
@@ -123,6 +131,7 @@ void main() {
           expect(transport.advertisingState, bluey.AdvertisingState.idle);
           expect(transport.scanState, bluey.ScanState.stopped);
 
+          await scanSub.cancel();
           await transport.dispose();
         },
       );

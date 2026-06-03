@@ -5,7 +5,7 @@ import 'package:gossip/gossip.dart';
 import 'package:meta/meta.dart';
 
 import '../application/observability/bluey_metrics.dart';
-import '../application/services/connection_service.dart';
+import '../application/services/connection_manager.dart';
 import '../domain/aggregates/connection_registry.dart';
 import '../domain/errors/connection_error.dart';
 import '../domain/events/connection_event.dart';
@@ -39,7 +39,7 @@ class BlueyTransport {
     required ServiceUuid serviceUuid,
     required String displayName,
     required BlueyPort port,
-    required ConnectionService service,
+    required ConnectionManager service,
     required BlueyMessagePort messagePort,
     LogCallback? onLog,
   }) : _serviceUuid = serviceUuid,
@@ -47,7 +47,6 @@ class BlueyTransport {
        _port = port,
        _service = service,
        _messagePort = messagePort,
-       // ignore: unused_field
        _onLog = onLog {
     _eventSub = service.events.listen(_onEvent);
   }
@@ -63,6 +62,9 @@ class BlueyTransport {
     required ServiceUuid serviceUuid,
     required String displayName,
     int? maxConnections,
+    @Deprecated(
+      'No-op since C3; targetConnections moves to AutoConnectPolicy in C4.',
+    )
     int? targetConnections,
     @Deprecated(
       'No-op since the scan-upgrade migration; scan is now '
@@ -82,14 +84,13 @@ class BlueyTransport {
     final port = await BlueyPortImpl.create(localNodeId: nodeId);
     final registry = ConnectionRegistry();
     final metrics = BlueyMetrics();
-    final service = ConnectionService(
+    final service = ConnectionManager(
       localNodeId: nodeId,
       port: port,
       registry: registry,
       metrics: metrics,
       serviceUuid: serviceUuid,
       maxConnections: maxConnections,
-      targetConnections: targetConnections,
       onLog: onLog,
     );
     return BlueyTransport._(
@@ -110,6 +111,9 @@ class BlueyTransport {
     required String displayName,
     required BlueyPort port,
     int? maxConnections,
+    @Deprecated(
+      'No-op since C3; targetConnections moves to AutoConnectPolicy in C4.',
+    )
     int? targetConnections,
     @Deprecated(
       'No-op since the scan-upgrade migration; scan is now '
@@ -120,14 +124,13 @@ class BlueyTransport {
   }) {
     final registry = ConnectionRegistry();
     final metrics = BlueyMetrics();
-    final service = ConnectionService(
+    final service = ConnectionManager(
       localNodeId: localNodeId,
       port: port,
       registry: registry,
       metrics: metrics,
       serviceUuid: serviceUuid,
       maxConnections: maxConnections,
-      targetConnections: targetConnections,
       onLog: onLog,
     );
     final mp = BlueyMessagePort(service);
@@ -146,9 +149,8 @@ class BlueyTransport {
   final ServiceUuid _serviceUuid;
   final String _displayName;
   final BlueyPort _port;
-  final ConnectionService _service;
+  final ConnectionManager _service;
   final BlueyMessagePort _messagePort;
-  // ignore: unused_field
   final LogCallback? _onLog;
 
   late final StreamSubscription<ConnectionEvent> _eventSub;
@@ -210,10 +212,10 @@ class BlueyTransport {
   int get connectedPeerCount => _service.registry.connectionCount;
   BlueyMetrics get metrics => _service.metrics;
 
-  /// Test-only access to the underlying ConnectionService for triggering
-  /// discovery rounds synchronously in integration tests.
+  /// Test-only access to the underlying ConnectionManager for triggering
+  /// integration tests against connection lifecycle.
   @visibleForTesting
-  ConnectionService get serviceForTest => _service;
+  ConnectionManager get serviceForTest => _service;
 
   /// Verify Bluetooth is on / supported / authorized at the OS layer.
   /// Throws a platform-specific exception if not. Use this between
@@ -236,10 +238,22 @@ class BlueyTransport {
 
   Future<void> stopAdvertising() => _port.stopAdvertising();
 
-  Future<void> startDiscovery({bool Function(NodeId)? filter}) =>
-      _service.startDiscovery(filter: filter);
+  // TODO(C5): re-introduce startDiscovery / stopDiscovery once
+  // DiscoveryService + AutoConnectPolicy are wired through the facade.
+  // Until then, startDiscovery is a no-op stub kept ONLY to preserve
+  // gossip_chat compilation. It logs a warning so test runs surface the
+  // missing behavior.
+  Future<void> startDiscovery({bool Function(NodeId)? filter}) async {
+    _onLog?.call(
+      LogLevel.warning,
+      'BlueyTransport.startDiscovery is a no-op until C5; '
+      'no peers will be discovered or auto-connected',
+    );
+  }
 
-  Future<void> stopDiscovery() => _service.stopDiscovery();
+  Future<void> stopDiscovery() async {
+    // no-op until C5
+  }
 
   Future<void> disconnectAll() => _service.disconnectAll();
 

@@ -12,8 +12,12 @@ void main() {
     final cId = NodeId('33333333-3333-3333-3333-333333333333');
     final dId = NodeId('44444444-4444-4444-4444-444444444444');
 
+    // TODO(C5): re-enable once DiscoveryService + AutoConnectPolicy are
+    // wired through BlueyTransport. As of C3 the facade's startDiscovery
+    // is a no-op and targetConnections moves to AutoConnectPolicy.
     test(
       'maxConnections rejects extra incoming, targetConnections allows fewer initiations',
+      skip: 'C5',
       () async {
         final network = FakeBlueyNetwork();
         final aPort = FakeBlueyPort(localNodeId: aId, network: network);

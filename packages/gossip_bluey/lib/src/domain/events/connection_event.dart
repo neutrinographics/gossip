@@ -1,6 +1,6 @@
 import 'package:gossip/gossip.dart';
 
-/// Domain events emitted by `ConnectionService` as connections come and go.
+/// Domain events emitted by `ConnectionManager` as connections come and go.
 sealed class ConnectionEvent {
   const ConnectionEvent();
 }

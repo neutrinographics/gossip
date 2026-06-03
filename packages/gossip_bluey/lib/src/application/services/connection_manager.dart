@@ -6,7 +6,6 @@ import 'package:gossip/gossip.dart';
 import '../../domain/aggregates/connection_registry.dart';
 import '../../domain/entities/connection_handle.dart';
 import '../../domain/errors/connection_error.dart';
-import '../../domain/errors/not_a_bluey_peer_exception.dart';
 import '../../domain/events/connection_event.dart';
 import '../../domain/interfaces/bluey_port.dart';
 import '../../domain/value_objects/ble_address.dart';
@@ -22,26 +21,24 @@ class Clock {
   DateTime now() => DateTime.now();
 }
 
-class ConnectionService implements MessageDispatcher {
-  ConnectionService({
+/// Owns the active-connection registry, frame decoders, per-peer send
+/// queue, and the subscription to [BlueyPort] events. Does NOT own the
+/// scan subscription nor make auto-connect decisions; those live in
+/// `DiscoveryService` and `AutoConnectPolicy` respectively.
+///
+/// To establish a new connection, callers (manual mode) or
+/// `AutoConnectPolicy` (auto mode) invoke [connectTo].
+class ConnectionManager implements MessageDispatcher {
+  ConnectionManager({
     required this.localNodeId,
     required this.port,
     required this.registry,
     required this.metrics,
     required this.serviceUuid,
     this.maxConnections,
-    int? targetConnections,
     this.onLog,
-    bool Function(NodeId)? discoveryFilter,
     Clock? clock,
-    @Deprecated(
-      'No-op since the scan-upgrade migration; scan is now '
-      'long-lived and does not run on a fixed interval.',
-    )
-    Duration discoveryInterval = const Duration(seconds: 5),
-  }) : targetConnections = targetConnections ?? maxConnections,
-       _discoveryFilter = discoveryFilter,
-       _clock = clock ?? const Clock() {
+  }) : _clock = clock ?? const Clock() {
     _portSub = port.events.listen(_onPortEvent);
   }
 
@@ -51,24 +48,12 @@ class ConnectionService implements MessageDispatcher {
   final BlueyMetrics metrics;
   final ServiceUuid serviceUuid;
   final int? maxConnections;
-  final int? targetConnections;
   final LogCallback? onLog;
-  // ignore: prefer_final_fields
-  bool Function(NodeId)? _discoveryFilter;
   final Clock _clock;
-  bool _discoveryEnabled = false;
 
-  // Cancelled in [stopDiscovery] and [dispose].
-  // ignore: cancel_subscriptions
-  StreamSubscription<ScanCandidate>? _scanSub;
+  /// Addresses with an in-flight [connectTo] call. Used to guard against
+  /// reentrant [connectTo] for the same address.
   final Set<BleAddress> _connectingAddresses = {};
-  final Map<BleAddress, NodeId> _addressToNodeId = {};
-
-  static const _initialBackoff = Duration(seconds: 1);
-  static const _maxBackoff = Duration(seconds: 30);
-  static const _addressLongBackoff = Duration(minutes: 5);
-  final Map<BleAddress, ({Duration delay, DateTime nextAttempt})>
-  _addressBackoff = {};
 
   /// Per-peer send queue. Each peer's chunked sends are serialized so
   /// concurrent `sendGossipMessage` calls to the same peer don't
@@ -91,11 +76,35 @@ class ConnectionService implements MessageDispatcher {
   @override
   Stream<IncomingMessage> get incomingMessages => _incoming.stream;
 
+  /// Initiate a connection to [candidate]. The candidate's address is
+  /// passed through to [BlueyPort.connectAndIdentify], which performs the
+  /// GATT-level connect plus Bluey-protocol identification and returns
+  /// the resolved [NodeId]. The caller can then send to that NodeId.
+  ///
+  /// Reentrancy-protected via [_connectingAddresses]: a second call for
+  /// the same address while one is in flight throws [StateError].
+  ///
+  /// Does NOT add backoff or dedup against the connection registry; those
+  /// are the responsibility of `AutoConnectPolicy` in auto mode. In
+  /// manual mode the consumer makes the policy decision.
+  Future<NodeId> connectTo(ScanCandidate candidate) async {
+    if (_connectingAddresses.contains(candidate.address)) {
+      throw StateError('already connecting to ${candidate.address}');
+    }
+    _connectingAddresses.add(candidate.address);
+    try {
+      return await port.connectAndIdentify(candidate);
+    } finally {
+      _connectingAddresses.remove(candidate.address);
+    }
+  }
+
   void _onPortEvent(BlueyPortEvent event) {
     switch (event) {
       case PortPeerConnected(
         :final nodeId,
         :final role,
+        // ignore: unused_local_variable
         :final address,
         :final displayName,
       ):
@@ -126,12 +135,6 @@ class ConnectionService implements MessageDispatcher {
             unawaited(port.disconnectRole(nodeId, role));
             return;
           case Registered():
-            // Populate the address cache so subsequent scan emissions
-            // for this peer (in the inverse role) are silenced
-            // pre-connect. Critical on iOS where calling connectAsPeer
-            // for a device already held in the inverse role triggers
-            // CoreBluetooth's peer-merge tear-down.
-            _addressToNodeId[address] = nodeId;
             _decoders[nodeId] = FrameDecoder();
             metrics.recordConnectionEstablished();
             metrics.setConnectedPeerCount(registry.connectionCount);
@@ -270,93 +273,6 @@ class ConnectionService implements MessageDispatcher {
   @override
   Future<void> close() async => dispose();
 
-  Future<void> startDiscovery({bool Function(NodeId)? filter}) async {
-    if (filter != null) {
-      _discoveryFilter = filter;
-    }
-    if (_scanSub != null) return;
-    _discoveryEnabled = true;
-    _scanSub = port
-        .scanForCandidates(serviceUuid: serviceUuid)
-        .listen(_onCandidate);
-  }
-
-  Future<void> stopDiscovery() async {
-    _discoveryEnabled = false;
-    final sub = _scanSub;
-    _scanSub = null;
-    await sub?.cancel();
-    await port.stopScan();
-  }
-
-  Future<void> _onCandidate(ScanCandidate c) async {
-    if (!_discoveryEnabled) return;
-    if (_connectingAddresses.contains(c.address)) return;
-
-    // Pre-connect dedup: if we've already learned this address's NodeId
-    // from a prior connect, and that NodeId is still in the registry,
-    // silence repeated scan emissions.
-    final knownNode = _addressToNodeId[c.address];
-    if (knownNode != null && registry.contains(knownNode)) return;
-
-    final backoffEntry = _addressBackoff[c.address];
-    if (backoffEntry != null &&
-        _clock.now().isBefore(backoffEntry.nextAttempt)) {
-      return;
-    }
-    if (targetConnections != null &&
-        registry.connectionCount >= targetConnections!) {
-      return;
-    }
-
-    _connectingAddresses.add(c.address);
-    try {
-      final nodeId = await port.connectAndIdentify(c);
-      _addressToNodeId[c.address] = nodeId;
-      _addressBackoff.remove(c.address);
-
-      if (_discoveryFilter != null && !_discoveryFilter!(nodeId)) {
-        onLog?.call(
-          LogLevel.debug,
-          'candidate $nodeId filtered; disconnecting',
-        );
-        unawaited(port.disconnectRole(nodeId, ConnectionRole.central));
-      }
-    } on NotABlueyPeerException {
-      onLog?.call(
-        LogLevel.debug,
-        'candidate ${c.address} is not a bluey peer; long backoff',
-      );
-      _addressBackoff[c.address] = (
-        delay: _addressLongBackoff,
-        nextAttempt: _clock.now().add(_addressLongBackoff),
-      );
-    } catch (e, st) {
-      onLog?.call(
-        LogLevel.warning,
-        'connectAndIdentify failed for ${c.address}',
-        e,
-        st,
-      );
-      final prev = _addressBackoff[c.address]?.delay ?? Duration.zero;
-      final next = prev == Duration.zero
-          ? _initialBackoff
-          : Duration(
-              milliseconds: (prev.inMilliseconds * 2).clamp(
-                _initialBackoff.inMilliseconds,
-                _maxBackoff.inMilliseconds,
-              ),
-            );
-      _addressBackoff[c.address] = (
-        delay: next,
-        nextAttempt: _clock.now().add(next),
-      );
-      metrics.recordConnectionFailed();
-    } finally {
-      _connectingAddresses.remove(c.address);
-    }
-  }
-
   Future<void> disconnectAll() async {
     final ids = registry.connections.map((h) => h.nodeId).toList();
     for (final id in ids) {
@@ -369,12 +285,6 @@ class ConnectionService implements MessageDispatcher {
   }
 
   Future<void> dispose() async {
-    _discoveryEnabled = false;
-    final scanSub = _scanSub;
-    _scanSub = null;
-    await scanSub?.cancel();
-    _addressBackoff.clear();
-    _addressToNodeId.clear();
     _connectingAddresses.clear();
     _sendQueue.clear();
     await _portSub.cancel();

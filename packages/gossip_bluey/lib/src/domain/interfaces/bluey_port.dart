@@ -149,7 +149,7 @@ sealed class BlueyPortEvent {
 /// address (or platform-equivalent stable peer identifier on iOS) for
 /// the remote, populated from `peerClient.client.id` on the peripheral
 /// side and from the originating `ScanCandidate.address` on the central
-/// side. Used by ConnectionService to dedup scan candidates against
+/// side. Used by ConnectionManager to dedup scan candidates against
 /// existing connections.
 final class PortPeerConnected extends BlueyPortEvent {
   final NodeId nodeId;

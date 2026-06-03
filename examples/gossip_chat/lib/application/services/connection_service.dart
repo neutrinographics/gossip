@@ -44,11 +44,19 @@ class ConnectionService {
   }
 
   /// Starts discovering nearby peers.
+  ///
+  /// TODO(Phase D): As of gossip_bluey C3 this is a no-op until C5 wires
+  /// DiscoveryService + AutoConnectPolicy through BlueyTransport. Move
+  /// discovery start/stop to the to-be-wired DiscoveryService in C5;
+  /// surface via BlueyTransport.startDiscovery / stopDiscovery (and/or
+  /// expose a `connectTo(ScanCandidate)` path for manual mode).
   Future<void> startDiscovery() async {
     await _transport.startDiscovery();
   }
 
   /// Stops discovery.
+  ///
+  /// TODO(Phase D): see startDiscovery — no-op until C5.
   Future<void> stopDiscovery() async {
     await _transport.stopDiscovery();
   }
