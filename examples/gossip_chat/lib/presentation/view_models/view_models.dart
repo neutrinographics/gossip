@@ -1,3 +1,4 @@
+export 'ble_health.dart';
 export 'channel_state.dart';
 export 'indirect_peer_state.dart';
 export 'message_state.dart';
