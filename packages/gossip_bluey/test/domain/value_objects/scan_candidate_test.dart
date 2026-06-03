@@ -88,5 +88,27 @@ void main() {
         isNot(equals(base)),
       );
     });
+
+    test('toString includes all four fields', () {
+      final c = ScanCandidate(
+        address: const BleAddress('AA:BB:CC:DD:EE:FF'),
+        displayName: 'Pixel 6a',
+        rssi: -48,
+        lastSeen: DateTime.utc(2026, 6, 3, 12),
+      );
+      final s = c.toString();
+      expect(s, contains('AA:BB:CC:DD:EE:FF'));
+      expect(s, contains('Pixel 6a'));
+      expect(s, contains('-48'));
+      expect(s, contains('2026-06-03'));
+    });
+
+    test('toString renders null rssi as "unknown"', () {
+      final c = ScanCandidate(
+        address: const BleAddress('AA:BB:CC:DD:EE:FF'),
+        lastSeen: DateTime.utc(2026, 6, 3),
+      );
+      expect(c.toString(), contains('rssi: unknown'));
+    });
   });
 }

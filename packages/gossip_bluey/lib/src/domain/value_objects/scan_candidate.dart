@@ -35,4 +35,9 @@ class ScanCandidate {
 
   @override
   int get hashCode => Object.hash(address, displayName, rssi, lastSeen);
+
+  @override
+  String toString() =>
+      'ScanCandidate(address: $address, displayName: $displayName, '
+      'rssi: ${rssi != null ? '$rssi dBm' : 'unknown'}, lastSeen: $lastSeen)';
 }

@@ -23,6 +23,8 @@ class _ManualClock extends Clock {
   void advance(Duration d) => _now = _now.add(d);
 }
 
+final _t0 = DateTime.utc(2026, 1, 1);
+
 void main() {
   group('ConnectionService', () {
     final localId = NodeId('11111111-1111-1111-1111-111111111111');
@@ -548,7 +550,7 @@ void main() {
       final candidate = ScanCandidate(
         address: BleAddress(remoteId.value),
         displayName: 'R',
-        lastSeen: DateTime.now(),
+        lastSeen: _t0,
       );
       localPort.emitScanCandidate(candidate);
       localPort.emitScanCandidate(candidate);
@@ -702,7 +704,7 @@ void main() {
         ScanCandidate(
           address: BleAddress(remoteId.value),
           displayName: 'R',
-          lastSeen: DateTime.now(),
+          lastSeen: _t0,
         ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));
@@ -961,7 +963,7 @@ void main() {
         ScanCandidate(
           address: BleAddress(r2id.value),
           displayName: 'r2',
-          lastSeen: DateTime.now(),
+          lastSeen: _t0,
         ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -1107,7 +1109,7 @@ void main() {
           ScanCandidate(
             address: BleAddress(r2id.value),
             displayName: 'r2',
-            lastSeen: DateTime.now(),
+            lastSeen: _t0,
           ),
         );
         await Future<void>.delayed(const Duration(milliseconds: 10));
@@ -1122,7 +1124,7 @@ void main() {
           ScanCandidate(
             address: BleAddress(r2id.value),
             displayName: 'r2',
-            lastSeen: DateTime.now(),
+            lastSeen: _t0,
           ),
         );
         await Future<void>.delayed(const Duration(milliseconds: 10));

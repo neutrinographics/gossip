@@ -10,6 +10,8 @@ import 'package:gossip_bluey/src/domain/value_objects/discovered_peer.dart';
 import 'package:gossip_bluey/src/domain/value_objects/scan_candidate.dart';
 import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
 
+final _testCandidateInstant = DateTime.utc(2026, 1, 1);
+
 /// In-memory shared bus that lets multiple [FakeBlueyPort]s find,
 /// connect to, and exchange data with each other in tests.
 class FakeBlueyNetwork {
@@ -48,7 +50,7 @@ class FakeBlueyNetwork {
         address: BleAddress(p.localNodeId.value),
         displayName: p._advertisedDisplayName,
         rssi: -50,
-        lastSeen: DateTime.now(),
+        lastSeen: _testCandidateInstant,
       );
     }
   }
