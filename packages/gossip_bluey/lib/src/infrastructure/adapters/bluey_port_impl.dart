@@ -99,10 +99,14 @@ class BlueyPortImpl implements BlueyPort {
   // ignore: cancel_subscriptions
   StreamSubscription<bluey.ScanState>? _scanStateSub;
   bluey.ScanState _scanState = bluey.ScanState.stopped;
+  final StreamController<bluey.ScanState> _scanStateChanges =
+      StreamController<bluey.ScanState>.broadcast();
 
   // ignore: cancel_subscriptions
   StreamSubscription<bluey.AdvertisingState>? _advertisingStateSub;
   bluey.AdvertisingState _advertisingState = bluey.AdvertisingState.idle;
+  final StreamController<bluey.AdvertisingState> _advertisingStateChanges =
+      StreamController<bluey.AdvertisingState>.broadcast();
 
   late final StreamSubscription<bluey.BluetoothState> _stateSub;
   BluetoothAdapterState _adapterState = BluetoothAdapterState.unknown;
@@ -154,11 +158,33 @@ class BlueyPortImpl implements BlueyPort {
   Stream<BlueyPortEvent> get events => _events.stream;
 
   @override
-  bool get isAdvertising =>
-      _advertisingState == bluey.AdvertisingState.advertising;
+  bluey.AdvertisingState get advertisingState => _advertisingState;
 
   @override
-  bool get isDiscovering => _scanState == bluey.ScanState.scanning;
+  Stream<bluey.AdvertisingState> get advertisingStateStream =>
+      Stream.multi((controller) {
+        controller.add(_advertisingState);
+        final sub = _advertisingStateChanges.stream.listen(
+          controller.add,
+          onError: controller.addError,
+          onDone: controller.close,
+        );
+        controller.onCancel = sub.cancel;
+      });
+
+  @override
+  bluey.ScanState get scanState => _scanState;
+
+  @override
+  Stream<bluey.ScanState> get scanStateStream => Stream.multi((controller) {
+    controller.add(_scanState);
+    final sub = _scanStateChanges.stream.listen(
+      controller.add,
+      onError: controller.addError,
+      onDone: controller.close,
+    );
+    controller.onCancel = sub.cancel;
+  });
 
   @override
   BluetoothAdapterState get bluetoothAdapterState => _adapterState;
@@ -216,9 +242,12 @@ class BlueyPortImpl implements BlueyPort {
       // emission. Stream.multi replay (bluey I334) makes the first
       // emission deterministic.
       _advertisingState = server.advertisingState;
-      _advertisingStateSub = server.advertisingStateChanges.listen(
-        (s) => _advertisingState = s,
-      );
+      _advertisingStateSub = server.advertisingStateChanges.listen((s) {
+        _advertisingState = s;
+        if (!_advertisingStateChanges.isClosed) {
+          _advertisingStateChanges.add(s);
+        }
+      });
 
       await server.addService(GossipGattService.build(serviceUuid));
 
@@ -314,7 +343,7 @@ class BlueyPortImpl implements BlueyPort {
       _serverSubs.clear();
       await _advertisingStateSub?.cancel();
       _advertisingStateSub = null;
-      _advertisingState = bluey.AdvertisingState.idle;
+      _setAdvertisingState(bluey.AdvertisingState.idle);
       _server = null;
       _serviceUuid = null;
       // The catch is broad on purpose — bluey doesn't yet differentiate
@@ -340,7 +369,7 @@ class BlueyPortImpl implements BlueyPort {
     _serverSubs.clear();
     await _advertisingStateSub?.cancel();
     _advertisingStateSub = null;
-    _advertisingState = bluey.AdvertisingState.idle;
+    _setAdvertisingState(bluey.AdvertisingState.idle);
     if (server != null) {
       await server.stopAdvertising();
       await server.dispose();
@@ -588,11 +617,16 @@ class BlueyPortImpl implements BlueyPort {
     );
     _scanController = controller;
     final scanner = _bluey.scanner();
-    // Track the scanner's lifecycle state so isDiscovering reflects
+    // Track the scanner's lifecycle state so [scanState] reflects
     // platform reality, not just "we called scan()". Stream.multi replay
     // (bluey I334) makes the initial emission deterministic.
     _scanState = scanner.state;
-    _scanStateSub = scanner.stateChanges.listen((s) => _scanState = s);
+    _scanStateSub = scanner.stateChanges.listen((s) {
+      _scanState = s;
+      if (!_scanStateChanges.isClosed) {
+        _scanStateChanges.add(s);
+      }
+    });
     _scanSubscription = scanner
         .scan(services: [bluey.UUID(serviceUuid.value)])
         .listen(
@@ -628,7 +662,7 @@ class BlueyPortImpl implements BlueyPort {
     _scanController = null;
     await _scanStateSub?.cancel();
     _scanStateSub = null;
-    _scanState = bluey.ScanState.stopped;
+    _setScanState(bluey.ScanState.stopped);
     await sub?.cancel();
     if (controller != null && !controller.isClosed) {
       await controller.close();
@@ -717,6 +751,8 @@ class BlueyPortImpl implements BlueyPort {
     _invalidateLiveState();
     await _stateSub.cancel();
     await _events.close();
+    await _advertisingStateChanges.close();
+    await _scanStateChanges.close();
   }
 
   void _onBluetoothStateChanged(BluetoothAdapterState state) {
@@ -743,6 +779,25 @@ class BlueyPortImpl implements BlueyPort {
         return BluetoothAdapterState.unsupported;
       case bluey.BluetoothState.unknown:
         return BluetoothAdapterState.unknown;
+    }
+  }
+
+  /// Update the cached advertising state and broadcast the transition to
+  /// any subscribers of [advertisingStateStream]. Used by teardown paths
+  /// (stopAdvertising, _invalidateLiveState, rollback) that mutate the
+  /// state outside the bluey subscription callback.
+  void _setAdvertisingState(bluey.AdvertisingState s) {
+    _advertisingState = s;
+    if (!_advertisingStateChanges.isClosed) {
+      _advertisingStateChanges.add(s);
+    }
+  }
+
+  /// Symmetric counterpart for [_setAdvertisingState], for scan state.
+  void _setScanState(bluey.ScanState s) {
+    _scanState = s;
+    if (!_scanStateChanges.isClosed) {
+      _scanStateChanges.add(s);
     }
   }
 
@@ -775,10 +830,10 @@ class BlueyPortImpl implements BlueyPort {
     _scanSubscription = null;
     unawaited(_scanStateSub?.cancel());
     _scanStateSub = null;
-    _scanState = bluey.ScanState.stopped;
+    _setScanState(bluey.ScanState.stopped);
     unawaited(_advertisingStateSub?.cancel());
     _advertisingStateSub = null;
-    _advertisingState = bluey.AdvertisingState.idle;
+    _setAdvertisingState(bluey.AdvertisingState.idle);
     if (_scanController != null && !_scanController!.isClosed) {
       unawaited(_scanController!.close());
     }

@@ -1,3 +1,4 @@
+import 'package:bluey/bluey.dart' as bluey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/gossip_bluey.dart';
@@ -21,22 +22,25 @@ void main() {
       );
     });
 
-    test('startAdvertising / stopAdvertising flip isAdvertising', () async {
-      final network = FakeBlueyNetwork();
-      final port = FakeBlueyPort(localNodeId: localId, network: network);
-      final transport = BlueyTransport.testing(
-        localNodeId: localId,
-        serviceUuid: serviceUuid,
-        displayName: 'phone',
-        port: port,
-      );
-      expect(transport.isAdvertising, isFalse);
-      await transport.startAdvertising();
-      expect(transport.isAdvertising, isTrue);
-      await transport.stopAdvertising();
-      expect(transport.isAdvertising, isFalse);
-      await transport.dispose();
-    });
+    test(
+      'startAdvertising / stopAdvertising drive advertisingState',
+      () async {
+        final network = FakeBlueyNetwork();
+        final port = FakeBlueyPort(localNodeId: localId, network: network);
+        final transport = BlueyTransport.testing(
+          localNodeId: localId,
+          serviceUuid: serviceUuid,
+          displayName: 'phone',
+          port: port,
+        );
+        expect(transport.advertisingState, bluey.AdvertisingState.idle);
+        await transport.startAdvertising();
+        expect(transport.advertisingState, bluey.AdvertisingState.advertising);
+        await transport.stopAdvertising();
+        expect(transport.advertisingState, bluey.AdvertisingState.idle);
+        await transport.dispose();
+      },
+    );
 
     test('peerEvents fires PeerConnected/PeerDisconnected', () async {
       final remoteId = NodeId('22222222-2222-2222-2222-222222222222');
@@ -93,29 +97,35 @@ void main() {
         await transport.dispose();
       });
 
-      test('adapter-off resets isAdvertising and isDiscovering', () async {
-        final network = FakeBlueyNetwork();
-        final port = FakeBlueyPort(localNodeId: localId, network: network);
-        final transport = BlueyTransport.testing(
-          localNodeId: localId,
-          serviceUuid: serviceUuid,
-          displayName: 'phone',
-          port: port,
-        );
+      test(
+        'adapter-off resets advertisingState and scanState',
+        () async {
+          final network = FakeBlueyNetwork();
+          final port = FakeBlueyPort(localNodeId: localId, network: network);
+          final transport = BlueyTransport.testing(
+            localNodeId: localId,
+            serviceUuid: serviceUuid,
+            displayName: 'phone',
+            port: port,
+          );
 
-        await transport.startAdvertising();
-        await transport.startDiscovery();
-        expect(transport.isAdvertising, isTrue);
-        expect(transport.isDiscovering, isTrue);
+          await transport.startAdvertising();
+          await transport.startDiscovery();
+          expect(
+            transport.advertisingState,
+            bluey.AdvertisingState.advertising,
+          );
+          expect(transport.scanState, bluey.ScanState.scanning);
 
-        port.setBluetoothAdapterStateForTest(BluetoothAdapterState.off);
-        await Future<void>.delayed(Duration.zero);
+          port.setBluetoothAdapterStateForTest(BluetoothAdapterState.off);
+          await Future<void>.delayed(Duration.zero);
 
-        expect(transport.isAdvertising, isFalse);
-        expect(transport.isDiscovering, isFalse);
+          expect(transport.advertisingState, bluey.AdvertisingState.idle);
+          expect(transport.scanState, bluey.ScanState.stopped);
 
-        await transport.dispose();
-      });
+          await transport.dispose();
+        },
+      );
 
       test('bluetoothStateStream forwards the port stream', () async {
         final network = FakeBlueyNetwork();

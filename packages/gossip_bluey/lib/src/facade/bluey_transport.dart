@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 import 'package:meta/meta.dart';
 
@@ -154,17 +155,27 @@ class BlueyTransport {
   final StreamController<PeerEvent> _peers =
       StreamController<PeerEvent>.broadcast();
 
-  /// Whether the transport is actively advertising. Derived from the
-  /// underlying bluey `Server.advertisingStateChanges`, true only while
-  /// the platform confirms the advertisement is running. False during
-  /// starting/stopping transients and after adapter-state invalidation.
-  bool get isAdvertising => _port.isAdvertising;
+  /// Current advertising lifecycle state. Derived from the underlying
+  /// bluey `Server.advertisingState`; reflects platform reality, not the
+  /// consumer's last call to [startAdvertising]. The matching
+  /// [advertisingStateStream] replays this value on subscribe.
+  bluey.AdvertisingState get advertisingState => _port.advertisingState;
 
-  /// Whether the transport is actively scanning. Derived from the
-  /// underlying bluey `Scanner.stateChanges`, true only while the
-  /// platform confirms the scan is running. False during starting/
-  /// stopping transients and after adapter-state invalidation.
-  bool get isDiscovering => _port.isDiscovering;
+  /// Stream of advertising-state transitions. Replays the current value
+  /// on subscribe (Stream.multi pattern), then emits every subsequent
+  /// transition. Multi-listener.
+  Stream<bluey.AdvertisingState> get advertisingStateStream =>
+      _port.advertisingStateStream;
+
+  /// Current scan lifecycle state. Derived from the underlying bluey
+  /// `Scanner.state`; reflects platform reality, not the consumer's
+  /// last call to [startDiscovery]. The matching [scanStateStream]
+  /// replays this value on subscribe.
+  bluey.ScanState get scanState => _port.scanState;
+
+  /// Stream of scan-state transitions. Replays the current value on
+  /// subscribe, then emits every subsequent transition. Multi-listener.
+  Stream<bluey.ScanState> get scanStateStream => _port.scanStateStream;
   MessagePort get messagePort => _messagePort;
   Stream<PeerEvent> get peerEvents => _peers.stream;
   Stream<ConnectionError> get errors => _service.errors;

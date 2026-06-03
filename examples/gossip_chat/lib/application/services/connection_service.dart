@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/gossip_bluey.dart';
 
@@ -61,10 +62,16 @@ class ConnectionService {
   Future<void> ensureReady() => _transport.ensureReady();
 
   /// Whether advertising is currently active.
-  bool get isAdvertising => _transport.isAdvertising;
+  // TODO(Phase D): replace this boolean derivation with rich state once
+  // the chat controller migrates to the AdvertisingState/ScanState enums.
+  bool get isAdvertising =>
+      _transport.advertisingState == bluey.AdvertisingState.advertising;
 
   /// Whether discovery is currently active.
-  bool get isDiscovering => _transport.isDiscovering;
+  // TODO(Phase D): replace this boolean derivation with rich state once
+  // the chat controller migrates to the AdvertisingState/ScanState enums.
+  bool get isDiscovering =>
+      _transport.scanState == bluey.ScanState.scanning;
 
   /// Current Bluetooth adapter state.
   BluetoothAdapterState get bluetoothAdapterState =>

@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 
 import '../value_objects/ble_address.dart';
@@ -82,21 +83,32 @@ abstract interface class BlueyPort {
   /// MTU has not yet been read.
   int chunkSizeFor(NodeId nodeId);
 
-  /// Whether the port is actively advertising — derived from the
-  /// underlying bluey `Server.advertisingStateChanges`, true only while
-  /// the platform confirms the advertisement is running. False during
-  /// the starting/stopping transient windows and after the server is
-  /// invalidated by an adapter cycle. Reflects platform reality, not
-  /// the consumer's last call to [startAdvertising].
-  bool get isAdvertising;
+  /// Current advertising lifecycle state — derived from the underlying
+  /// bluey `Server.advertisingState`. Reflects platform reality, not the
+  /// consumer's last call to [startAdvertising]. Stable across the
+  /// starting/stopping transient windows; transitions to
+  /// [bluey.AdvertisingState.invalidated] after an adapter cycle. The
+  /// matching [advertisingStateStream] replays this value on subscribe.
+  bluey.AdvertisingState get advertisingState;
 
-  /// Whether the port is actively scanning — derived from the underlying
-  /// bluey `Scanner.stateChanges`, true only while the platform confirms
-  /// the scan is running. False during the starting/stopping transient
-  /// windows and after the scanner is invalidated by an adapter cycle.
-  /// Reflects platform reality, not the consumer's last call to
-  /// [scanForCandidates].
-  bool get isDiscovering;
+  /// Stream of advertising-state transitions. Replays the current value
+  /// on subscribe (Stream.multi pattern; matches bluey's I334 convention
+  /// for `Server.advertisingStateChanges`), then emits every subsequent
+  /// transition. Multi-listener — each subscriber gets its own
+  /// replay-current emission.
+  Stream<bluey.AdvertisingState> get advertisingStateStream;
+
+  /// Current scan lifecycle state — derived from the underlying bluey
+  /// `Scanner.state`. Reflects platform reality, not the consumer's last
+  /// call to [scanForCandidates]. Stable across the starting/stopping
+  /// transient windows; transitions to [bluey.ScanState.invalidated]
+  /// after an adapter cycle. The matching [scanStateStream] replays this
+  /// value on subscribe.
+  bluey.ScanState get scanState;
+
+  /// Stream of scan-state transitions. Replays the current value on
+  /// subscribe, then emits every subsequent transition. Multi-listener.
+  Stream<bluey.ScanState> get scanStateStream;
 
   /// Stream of role-agnostic transport events.
   Stream<BlueyPortEvent> get events;

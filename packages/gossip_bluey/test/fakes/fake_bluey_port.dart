@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/src/domain/errors/not_a_bluey_peer_exception.dart';
 import 'package:gossip_bluey/src/domain/interfaces/bluey_port.dart';
@@ -27,7 +28,8 @@ class FakeBlueyNetwork {
 
   Iterable<FakeBlueyPort> advertisingPeersFor(ServiceUuid serviceUuid) sync* {
     for (final p in _ports.values) {
-      if (p._isAdvertising && p._advertisedServiceUuid == serviceUuid) {
+      if (p._isAdvertisingInternal &&
+          p._advertisedServiceUuid == serviceUuid) {
         yield p;
       }
     }
@@ -44,7 +46,7 @@ class FakeBlueyNetwork {
   ) sync* {
     for (final p in _ports.values) {
       if (p.localNodeId == self) continue;
-      if (!p._isAdvertising) continue;
+      if (!p._isAdvertisingInternal) continue;
       if (p._advertisedServiceUuid != serviceUuid) continue;
       yield ScanCandidate(
         address: BleAddress(p.localNodeId.value),
@@ -66,18 +68,67 @@ class FakeBlueyPort implements BlueyPort {
 
   final StreamController<BlueyPortEvent> _events =
       StreamController<BlueyPortEvent>.broadcast();
-  bool _isAdvertising = false;
-  bool _isDiscovering = false;
+  bluey.AdvertisingState _advertisingState = bluey.AdvertisingState.idle;
+  bluey.ScanState _scanState = bluey.ScanState.stopped;
+  final StreamController<bluey.AdvertisingState> _advertisingStateChanges =
+      StreamController<bluey.AdvertisingState>.broadcast();
+  final StreamController<bluey.ScanState> _scanStateChanges =
+      StreamController<bluey.ScanState>.broadcast();
   ServiceUuid? _advertisedServiceUuid;
   String? _advertisedDisplayName;
   final Set<NodeId> _connectedAsCentral = {};
   final Set<NodeId> _connectedAsPeripheral = {};
 
-  @override
-  bool get isAdvertising => _isAdvertising;
+  /// Internal convenience: peers are visible to network scans iff
+  /// advertising state is [bluey.AdvertisingState.advertising].
+  bool get _isAdvertisingInternal =>
+      _advertisingState == bluey.AdvertisingState.advertising;
 
   @override
-  bool get isDiscovering => _isDiscovering;
+  bluey.AdvertisingState get advertisingState => _advertisingState;
+
+  @override
+  Stream<bluey.AdvertisingState> get advertisingStateStream =>
+      Stream.multi((controller) {
+        controller.add(_advertisingState);
+        final sub = _advertisingStateChanges.stream.listen(
+          controller.add,
+          onError: controller.addError,
+          onDone: controller.close,
+        );
+        controller.onCancel = sub.cancel;
+      });
+
+  @override
+  bluey.ScanState get scanState => _scanState;
+
+  @override
+  Stream<bluey.ScanState> get scanStateStream => Stream.multi((controller) {
+    controller.add(_scanState);
+    final sub = _scanStateChanges.stream.listen(
+      controller.add,
+      onError: controller.addError,
+      onDone: controller.close,
+    );
+    controller.onCancel = sub.cancel;
+  });
+
+  /// Test hook: drive an advertising-state transition. Updates the
+  /// cached value and emits on [advertisingStateStream].
+  void setAdvertisingStateForTest(bluey.AdvertisingState s) {
+    _advertisingState = s;
+    if (!_advertisingStateChanges.isClosed) {
+      _advertisingStateChanges.add(s);
+    }
+  }
+
+  /// Test hook: drive a scan-state transition.
+  void setScanStateForTest(bluey.ScanState s) {
+    _scanState = s;
+    if (!_scanStateChanges.isClosed) {
+      _scanStateChanges.add(s);
+    }
+  }
 
   BluetoothAdapterState _adapterState = BluetoothAdapterState.on;
   final StreamController<BluetoothAdapterState> _adapterStateController =
@@ -125,15 +176,14 @@ class FakeBlueyPort implements BlueyPort {
 
   /// Test hook: drive an adapter-state transition. Updates the cached
   /// value and broadcasts on [bluetoothStateStream]. When transitioning
-  /// to anything other than `on`, also resets `isAdvertising` and
-  /// `isDiscovering` to mimic the real port's behavior (bluey's
-  /// Server/Scanner are marked `invalidated` and the port's derived
-  /// bools go false).
+  /// to anything other than `on`, also resets advertising/scan state to
+  /// mimic the real port's behavior (bluey's Server/Scanner are marked
+  /// `invalidated` and the port's derived state goes to idle/stopped).
   void setBluetoothAdapterStateForTest(BluetoothAdapterState state) {
     _adapterState = state;
     if (state != BluetoothAdapterState.on) {
-      _isAdvertising = false;
-      _isDiscovering = false;
+      setAdvertisingStateForTest(bluey.AdvertisingState.idle);
+      setScanStateForTest(bluey.ScanState.stopped);
     }
     if (!_adapterStateController.isClosed) {
       _adapterStateController.add(state);
@@ -163,14 +213,14 @@ class FakeBlueyPort implements BlueyPort {
     required String displayName,
     required NodeId localNodeId,
   }) async {
-    _isAdvertising = true;
     _advertisedServiceUuid = serviceUuid;
     _advertisedDisplayName = displayName;
+    setAdvertisingStateForTest(bluey.AdvertisingState.advertising);
   }
 
   @override
   Future<void> stopAdvertising() async {
-    _isAdvertising = false;
+    setAdvertisingStateForTest(bluey.AdvertisingState.idle);
   }
 
   @override
@@ -312,7 +362,7 @@ class FakeBlueyPort implements BlueyPort {
 
   @override
   Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid}) {
-    _isDiscovering = true;
+    setScanStateForTest(bluey.ScanState.scanning);
     // Closed in [stopScan] and [dispose].
     // ignore: close_sinks
     final controller = StreamController<ScanCandidate>.broadcast();
@@ -341,7 +391,7 @@ class FakeBlueyPort implements BlueyPort {
 
   @override
   Future<void> stopScan() async {
-    _isDiscovering = false;
+    setScanStateForTest(bluey.ScanState.stopped);
     _scanRebroadcastTimer?.cancel();
     _scanRebroadcastTimer = null;
     final c = _scanController;
@@ -423,6 +473,12 @@ class FakeBlueyPort implements BlueyPort {
     if (c != null && !c.isClosed) await c.close();
     if (!_adapterStateController.isClosed) {
       await _adapterStateController.close();
+    }
+    if (!_advertisingStateChanges.isClosed) {
+      await _advertisingStateChanges.close();
+    }
+    if (!_scanStateChanges.isClosed) {
+      await _scanStateChanges.close();
     }
     if (!_events.isClosed) {
       await _events.close();
