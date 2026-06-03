@@ -548,6 +548,7 @@ void main() {
       final candidate = ScanCandidate(
         address: BleAddress(remoteId.value),
         displayName: 'R',
+        lastSeen: DateTime.now(),
       );
       localPort.emitScanCandidate(candidate);
       localPort.emitScanCandidate(candidate);
@@ -698,7 +699,11 @@ void main() {
       // ignored.
       clock.advance(const Duration(seconds: 30));
       localPort.emitScanCandidate(
-        ScanCandidate(address: BleAddress(remoteId.value), displayName: 'R'),
+        ScanCandidate(
+          address: BleAddress(remoteId.value),
+          displayName: 'R',
+          lastSeen: DateTime.now(),
+        ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 20));
       expect(calls, equals(1));
@@ -953,7 +958,11 @@ void main() {
       var calls = 0;
       localPort.onConnectAndIdentify = (_) => calls++;
       localPort.emitScanCandidate(
-        ScanCandidate(address: BleAddress(r2id.value), displayName: 'r2'),
+        ScanCandidate(
+          address: BleAddress(r2id.value),
+          displayName: 'r2',
+          lastSeen: DateTime.now(),
+        ),
       );
       await Future<void>.delayed(const Duration(milliseconds: 10));
       expect(calls, equals(0));
@@ -1095,7 +1104,11 @@ void main() {
         };
         fakeClock.advance(const Duration(milliseconds: 500));
         localPort.emitScanCandidate(
-          ScanCandidate(address: BleAddress(r2id.value), displayName: 'r2'),
+          ScanCandidate(
+            address: BleAddress(r2id.value),
+            displayName: 'r2',
+            lastSeen: DateTime.now(),
+          ),
         );
         await Future<void>.delayed(const Duration(milliseconds: 10));
         expect(attempts, equals(0));
@@ -1106,7 +1119,11 @@ void main() {
         localPort.connectAndIdentifyFailureInjector = null;
         fakeClock.advance(const Duration(milliseconds: 600));
         localPort.emitScanCandidate(
-          ScanCandidate(address: BleAddress(r2id.value), displayName: 'r2'),
+          ScanCandidate(
+            address: BleAddress(r2id.value),
+            displayName: 'r2',
+            lastSeen: DateTime.now(),
+          ),
         );
         await Future<void>.delayed(const Duration(milliseconds: 10));
         expect(svc.registry.connectionCount, equals(1));

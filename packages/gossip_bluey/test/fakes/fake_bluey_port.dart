@@ -47,6 +47,8 @@ class FakeBlueyNetwork {
       yield ScanCandidate(
         address: BleAddress(p.localNodeId.value),
         displayName: p._advertisedDisplayName,
+        rssi: -50,
+        lastSeen: DateTime.now(),
       );
     }
   }

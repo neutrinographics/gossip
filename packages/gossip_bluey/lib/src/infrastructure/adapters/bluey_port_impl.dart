@@ -604,6 +604,8 @@ class BlueyPortImpl implements BlueyPort {
                 ScanCandidate(
                   address: address,
                   displayName: result.device.name,
+                  rssi: result.rssi,
+                  lastSeen: DateTime.now(),
                 ),
               );
             }
