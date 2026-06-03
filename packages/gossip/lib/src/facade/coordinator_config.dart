@@ -90,12 +90,34 @@ class CoordinatorConfig {
   /// are likely still down. Set to 0 to disable unreachable probing.
   final int unreachableProbeInterval;
 
+  /// Explicit gossip round interval. When null (default), `GossipEngine`
+  /// computes the interval adaptively from per-peer RTT, bounded to
+  /// [100ms, 5s]. When non-null, the engine uses this value verbatim.
+  final Duration? gossipInterval;
+
+  /// Explicit SWIM probe interval. When null (default), `FailureDetector`
+  /// derives the interval adaptively from pingTimeout * 3.
+  final Duration? probeInterval;
+
+  /// Explicit SWIM ping timeout. When null (default), `FailureDetector`
+  /// computes the timeout adaptively from per-peer RTT.
+  final Duration? pingTimeout;
+
+  /// Whether to allow adaptive timing for any knob left null above.
+  /// When false, the engine and failure-detector use their internal
+  /// fallback constants instead of adaptive computation.
+  final bool adaptiveTimingEnabled;
+
   /// Creates a [CoordinatorConfig] with the specified options.
   const CoordinatorConfig({
     this.suspicionThreshold = 5,
     this.unreachableThreshold = 15,
     this.unreachableProbeInterval = 5,
     this.startupGracePeriod = const Duration(seconds: 10),
+    this.gossipInterval,
+    this.probeInterval,
+    this.pingTimeout,
+    this.adaptiveTimingEnabled = true,
   });
 
   /// Default configuration with standard values.
