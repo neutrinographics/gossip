@@ -167,12 +167,25 @@ class FakeBlueyPort implements BlueyPort {
   StreamController<ScanCandidate>? _scanController;
   Timer? _scanRebroadcastTimer;
 
+  // ---- Test-only helpers ----
+
+  /// Number of times [scanForCandidates] has been called. Useful for
+  /// asserting idempotent start behaviour in services that own the scan
+  /// subscription.
+  int scanForCandidatesCallCount = 0;
+
+  /// Number of times [stopScan] has been called.
+  int stopScanCallCount = 0;
+
   /// Drive a scan emission for the open scan stream (test-only). Used
   /// to deliver candidates synchronously in tests without depending on
   /// network advertise state.
   void emitScanCandidate(ScanCandidate candidate) {
     _scanController?.add(candidate);
   }
+
+  /// Alias for [emitScanCandidate]. Newer tests use the shorter name.
+  void emitCandidate(ScanCandidate candidate) => emitScanCandidate(candidate);
 
   /// Test hook: drive an adapter-state transition. Updates the cached
   /// value and broadcasts on [bluetoothStateStream]. When transitioning
@@ -362,6 +375,7 @@ class FakeBlueyPort implements BlueyPort {
 
   @override
   Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid}) {
+    scanForCandidatesCallCount++;
     setScanStateForTest(bluey.ScanState.scanning);
     // Closed in [stopScan] and [dispose].
     // ignore: close_sinks
@@ -391,6 +405,7 @@ class FakeBlueyPort implements BlueyPort {
 
   @override
   Future<void> stopScan() async {
+    stopScanCallCount++;
     setScanStateForTest(bluey.ScanState.stopped);
     _scanRebroadcastTimer?.cancel();
     _scanRebroadcastTimer = null;
