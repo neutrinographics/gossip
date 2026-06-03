@@ -47,15 +47,13 @@ class BlueyTransport {
     required DiscoveryService discovery,
     required AutoConnectPolicy autoConnect,
     required BlueyMessagePort messagePort,
-    LogCallback? onLog,
   }) : _serviceUuid = serviceUuid,
        _displayName = displayName,
        _port = port,
        _service = service,
        _discovery = discovery,
        _autoConnect = autoConnect,
-       _messagePort = messagePort,
-       _onLog = onLog {
+       _messagePort = messagePort {
     _eventSub = service.events.listen(_onEvent);
   }
 
@@ -114,7 +112,6 @@ class BlueyTransport {
       discovery: discovery,
       autoConnect: autoConnect,
       messagePort: BlueyMessagePort(service),
-      onLog: onLog,
     );
   }
 
@@ -161,7 +158,6 @@ class BlueyTransport {
       discovery: discovery,
       autoConnect: autoConnect,
       messagePort: mp,
-      onLog: onLog,
     );
   }
 
@@ -173,8 +169,6 @@ class BlueyTransport {
   final DiscoveryService _discovery;
   final AutoConnectPolicy _autoConnect;
   final BlueyMessagePort _messagePort;
-  // ignore: unused_field
-  final LogCallback? _onLog;
 
   late final StreamSubscription<ConnectionEvent> _eventSub;
   final StreamController<PeerEvent> _peers =
@@ -251,10 +245,19 @@ class BlueyTransport {
   /// until [connectTo] is called explicitly.
   ConnectionMode get connectionMode => _autoConnect.mode;
 
-  /// Switch between manual and auto connection modes. In
-  /// [ConnectionMode.auto], every discovered candidate triggers an
-  /// auto-connect attempt subject to backoff and the optional
-  /// target-connections cap.
+  /// Sets the auto-connect policy mode.
+  ///
+  /// Returns synchronously. When transitioning from [ConnectionMode.manual]
+  /// to [ConnectionMode.auto], the policy enumerates current discovery
+  /// candidates and schedules connect attempts as background microtasks —
+  /// individual attempts begin on subsequent microtasks and may not have
+  /// started by the time this method returns. Use [candidateEvents] or
+  /// [peerEvents] to observe when attempts actually begin.
+  ///
+  /// Transitioning to [ConnectionMode.manual] cancels the discovery
+  /// subscription but does NOT tear down existing connections; consumers
+  /// that want to disconnect must call [disconnect] or [disconnectAll]
+  /// explicitly.
   void setConnectionMode(ConnectionMode mode) => _autoConnect.setMode(mode);
 
   /// Test-only access to the underlying ConnectionManager for triggering
@@ -301,7 +304,7 @@ class BlueyTransport {
       _service.connectTo(candidate);
 
   /// Disconnect a specific peer (whichever role we hold for that peer).
-  Future<void> disconnect(NodeId nodeId) => _port.disconnect(nodeId);
+  Future<void> disconnect(NodeId nodeId) => _service.disconnect(nodeId);
 
   Future<void> disconnectAll() => _service.disconnectAll();
 

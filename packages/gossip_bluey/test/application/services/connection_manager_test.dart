@@ -401,6 +401,35 @@ void main() {
       await r3.dispose();
     });
 
+    test('disconnect delegates to the port', () async {
+      final network = FakeBlueyNetwork();
+      final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+      final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
+      final svc = ConnectionManager(
+        port: localPort,
+        registry: ConnectionRegistry(),
+        metrics: BlueyMetrics(),
+      );
+
+      await localPort.startAdvertising(
+        serviceUuid: serviceUuid,
+        displayName: 'Local',
+        localNodeId: localId,
+      );
+      await remotePort.connect(localId);
+      await Future<void>.delayed(Duration.zero);
+      expect(svc.registry.contains(remoteId), isTrue);
+
+      await svc.disconnect(remoteId);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(svc.registry.contains(remoteId), isFalse);
+      expect(svc.registry.connectionCount, equals(0));
+
+      await svc.dispose();
+      await remotePort.dispose();
+    });
+
     test('disconnectAll calls port.disconnect for every active peer', () async {
       final network = FakeBlueyNetwork();
       final localPort = FakeBlueyPort(localNodeId: localId, network: network);

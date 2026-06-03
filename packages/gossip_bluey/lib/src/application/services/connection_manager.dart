@@ -266,6 +266,11 @@ class ConnectionManager implements MessageDispatcher {
   @override
   Future<void> close() async => dispose();
 
+  /// Initiates a local disconnect for [nodeId]. Returns when the
+  /// platform-level disconnect call has been issued; the registry entry
+  /// is removed via the resulting `PortPeerDisconnected` event handler.
+  Future<void> disconnect(NodeId nodeId) => port.disconnect(nodeId);
+
   Future<void> disconnectAll() async {
     final ids = registry.connections.map((h) => h.nodeId).toList();
     for (final id in ids) {

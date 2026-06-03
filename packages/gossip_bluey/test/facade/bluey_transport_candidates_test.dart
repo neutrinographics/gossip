@@ -112,7 +112,7 @@ void main() {
         port.emitCandidate(candidateFor(remoteAId));
         await Future<void>.delayed(const Duration(milliseconds: 20));
 
-        expect(port.connectAndIdentifyCallCount, greaterThanOrEqualTo(1));
+        expect(port.connectAndIdentifyCallCount, equals(1));
         expect(transport.connectedPeerCount, equals(1));
 
         await transport.dispose();
