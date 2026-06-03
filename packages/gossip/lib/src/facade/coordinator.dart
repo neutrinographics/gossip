@@ -316,7 +316,8 @@ class Coordinator {
         hlcClock: hlcClock,
         localNodeRepository: localNodeRepository,
         random: random,
-        adaptiveTimingEnabled: true,
+        adaptiveTimingEnabled: cfg.adaptiveTimingEnabled,
+        gossipInterval: cfg.gossipInterval,
       );
 
       coordinator._failureDetector = FailureDetector(
@@ -330,6 +331,8 @@ class Coordinator {
         failureThreshold: cfg.suspicionThreshold,
         unreachableThreshold: cfg.unreachableThreshold,
         unreachableProbeInterval: cfg.unreachableProbeInterval,
+        probeInterval: cfg.probeInterval,
+        pingTimeout: cfg.pingTimeout,
         rttTracker: failureDetectorRttTracker,
       );
     }
