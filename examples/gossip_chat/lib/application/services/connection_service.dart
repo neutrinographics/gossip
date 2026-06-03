@@ -95,6 +95,17 @@ class ConnectionService {
   Stream<BluetoothAdapterState> get bluetoothStateStream =>
       _transport.bluetoothStateStream;
 
+  /// Stream of advertising lifecycle transitions
+  /// (idle/starting/advertising/stopping/invalidated). Replays the
+  /// current value on subscription.
+  Stream<bluey.AdvertisingState> get advertisingStateStream =>
+      _transport.advertisingStateStream;
+
+  /// Stream of scan lifecycle transitions
+  /// (stopped/starting/scanning/stopping/invalidated). Replays the
+  /// current value on subscription.
+  Stream<bluey.ScanState> get scanStateStream => _transport.scanStateStream;
+
   /// Currently connected peer count.
   int get connectedPeerCount => _transport.connectedPeerCount;
 

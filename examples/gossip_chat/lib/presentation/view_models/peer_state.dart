@@ -1,13 +1,16 @@
 import 'package:gossip/gossip.dart' as gossip;
 
-/// Connection status for a peer in the UI.
-enum PeerConnectionStatus { connected, suspected, unreachable }
+import 'discovered_peer.dart';
 
 /// UI state for a connected peer.
+///
+/// NOTE: This model is being replaced by [DiscoveredPeer] in Phase D4. For
+/// now the [status] field is retyped to [DiscoveredPeerStatus] so the rest
+/// of the app can converge on a single enum.
 class PeerState {
   final gossip.NodeId id;
   final String displayName;
-  final PeerConnectionStatus status;
+  final DiscoveredPeerStatus status;
 
   /// Number of consecutive failed probes (0 = healthy connection).
   ///
@@ -33,7 +36,7 @@ class PeerState {
 
   PeerState copyWith({
     String? displayName,
-    PeerConnectionStatus? status,
+    DiscoveredPeerStatus? status,
     int? failedProbeCount,
   }) => PeerState(
     id: id,

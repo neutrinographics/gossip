@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:bluey/bluey.dart' as bluey;
 import 'package:flutter/foundation.dart';
 import 'package:gossip/gossip.dart' as gossip;
 import 'package:gossip_bluey/gossip_bluey.dart';
@@ -11,14 +12,35 @@ import '../managers/signal_strength_manager.dart';
 import '../view_models/view_models.dart';
 
 /// Connection status for the transport layer.
+///
+/// Composes bluey's [bluey.AdvertisingState] and [bluey.ScanState] into a
+/// single status used by the UI. Ordering of branches in
+/// [ChatController._updateConnectionStatus] determines precedence:
+/// bluetoothOff > invalidated > connected > meshActive > advertising/scan
+/// transients.
 enum ConnectionStatus {
   /// Bluetooth adapter is off / unauthorized / unsupported / unknown.
   /// Takes precedence over every other status because the radio cannot
   /// be used at all.
   bluetoothOff,
   disconnected,
+
+  // Transient advertising / scanning lifecycle (sourced from
+  // bluey.AdvertisingState / bluey.ScanState).
+  advertisingStarting,
   advertising,
+  advertisingStopping,
+  discoveryStarting,
   discovering,
+  discoveryStopping,
+
+  // Composed: both advertising AND scanning active.
+  meshActive,
+
+  // Terminal recovery state: an adapter cycle invalidated the live
+  // server/scanner. The user must restart networking.
+  invalidated,
+
   connected,
 }
 
@@ -56,6 +78,8 @@ class ChatController extends ChangeNotifier {
   Map<gossip.NodeId, TypingEvent> _typingUsers = {};
   ConnectionStatus _connectionStatus = ConnectionStatus.disconnected;
   BluetoothAdapterState _bluetoothState = BluetoothAdapterState.unknown;
+  bluey.AdvertisingState _advertisingState = bluey.AdvertisingState.idle;
+  bluey.ScanState _scanState = bluey.ScanState.stopped;
   bool _isTyping = false;
 
   /// Tracks delivery status for locally sent messages.
@@ -77,6 +101,8 @@ class ChatController extends ChangeNotifier {
   StreamSubscription<gossip.DomainEvent>? _eventSubscription;
   StreamSubscription<PeerEvent>? _peerSubscription;
   StreamSubscription<BluetoothAdapterState>? _bluetoothStateSubscription;
+  StreamSubscription<bluey.AdvertisingState>? _advertisingStateSubscription;
+  StreamSubscription<bluey.ScanState>? _scanStateSubscription;
   Timer? _typingTimer;
   Timer? _typingExpirationTimer;
   Timer? _signalDecayTimer;
@@ -134,6 +160,10 @@ class ChatController extends ChangeNotifier {
     _peerSubscription = _connectionService.peerEvents.listen(_onPeerEvent);
     _bluetoothStateSubscription = _connectionService.bluetoothStateStream
         .listen(_onBluetoothStateChanged);
+    _advertisingStateSubscription = _connectionService.advertisingStateStream
+        .listen(_onAdvertisingStateChanged);
+    _scanStateSubscription = _connectionService.scanStateStream
+        .listen(_onScanStateChanged);
 
     // Start signal update timer - refreshes peer signal strength periodically.
     // This polls failedProbeCount from the gossip library and decays penalties.
@@ -241,14 +271,14 @@ class ChatController extends ChangeNotifier {
     }
   }
 
-  PeerConnectionStatus _mapPeerStatus(gossip.PeerStatus status) {
+  DiscoveredPeerStatus _mapPeerStatus(gossip.PeerStatus status) {
     switch (status) {
       case gossip.PeerStatus.reachable:
-        return PeerConnectionStatus.connected;
+        return DiscoveredPeerStatus.connected;
       case gossip.PeerStatus.suspected:
-        return PeerConnectionStatus.suspected;
+        return DiscoveredPeerStatus.suspected;
       case gossip.PeerStatus.unreachable:
-        return PeerConnectionStatus.unreachable;
+        return DiscoveredPeerStatus.unreachable;
     }
   }
 
@@ -256,14 +286,32 @@ class ChatController extends ChangeNotifier {
     final oldStatus = _connectionStatus;
     if (_bluetoothState != BluetoothAdapterState.on) {
       _connectionStatus = ConnectionStatus.bluetoothOff;
+    } else if (_advertisingState == bluey.AdvertisingState.invalidated ||
+        _scanState == bluey.ScanState.invalidated) {
+      _connectionStatus = ConnectionStatus.invalidated;
     } else if (_connectionService.connectedPeerCount > 0) {
       _connectionStatus = ConnectionStatus.connected;
-    } else if (_connectionService.isDiscovering) {
-      _connectionStatus = ConnectionStatus.discovering;
-    } else if (_connectionService.isAdvertising) {
-      _connectionStatus = ConnectionStatus.advertising;
     } else {
-      _connectionStatus = ConnectionStatus.disconnected;
+      final adv = _advertisingState;
+      final scan = _scanState;
+      if (adv == bluey.AdvertisingState.advertising &&
+          scan == bluey.ScanState.scanning) {
+        _connectionStatus = ConnectionStatus.meshActive;
+      } else if (adv == bluey.AdvertisingState.starting) {
+        _connectionStatus = ConnectionStatus.advertisingStarting;
+      } else if (adv == bluey.AdvertisingState.advertising) {
+        _connectionStatus = ConnectionStatus.advertising;
+      } else if (adv == bluey.AdvertisingState.stopping) {
+        _connectionStatus = ConnectionStatus.advertisingStopping;
+      } else if (scan == bluey.ScanState.starting) {
+        _connectionStatus = ConnectionStatus.discoveryStarting;
+      } else if (scan == bluey.ScanState.scanning) {
+        _connectionStatus = ConnectionStatus.discovering;
+      } else if (scan == bluey.ScanState.stopping) {
+        _connectionStatus = ConnectionStatus.discoveryStopping;
+      } else {
+        _connectionStatus = ConnectionStatus.disconnected;
+      }
     }
     if (oldStatus != _connectionStatus) {
       notifyListeners();
@@ -274,6 +322,16 @@ class ChatController extends ChangeNotifier {
     _bluetoothState = state;
     _updateConnectionStatus();
     notifyListeners();
+  }
+
+  void _onAdvertisingStateChanged(bluey.AdvertisingState state) {
+    _advertisingState = state;
+    _updateConnectionStatus();
+  }
+
+  void _onScanStateChanged(bluey.ScanState state) {
+    _scanState = state;
+    _updateConnectionStatus();
   }
 
   // --- Refresh Methods ---
@@ -635,6 +693,8 @@ class ChatController extends ChangeNotifier {
     _eventSubscription?.cancel();
     _peerSubscription?.cancel();
     _bluetoothStateSubscription?.cancel();
+    _advertisingStateSubscription?.cancel();
+    _scanStateSubscription?.cancel();
     _typingTimer?.cancel();
     _typingExpirationTimer?.cancel();
     _signalDecayTimer?.cancel();

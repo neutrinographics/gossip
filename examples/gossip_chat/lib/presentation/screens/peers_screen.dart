@@ -63,7 +63,10 @@ class PeersScreen extends StatelessWidget {
     }
     final isSearching =
         status == ConnectionStatus.discovering ||
-        status == ConnectionStatus.advertising;
+        status == ConnectionStatus.discoveryStarting ||
+        status == ConnectionStatus.advertising ||
+        status == ConnectionStatus.advertisingStarting ||
+        status == ConnectionStatus.meshActive;
 
     return AnimatedEmptyState(
       icon: isSearching ? Icons.radar : Icons.people_outline,
@@ -97,10 +100,19 @@ class PeersScreen extends StatelessWidget {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
     final status = controller.connectionStatus;
-    final isActive =
-        status == ConnectionStatus.discovering ||
-        status == ConnectionStatus.advertising ||
-        status == ConnectionStatus.connected;
+    final isActive = switch (status) {
+      ConnectionStatus.advertisingStarting ||
+      ConnectionStatus.advertising ||
+      ConnectionStatus.advertisingStopping ||
+      ConnectionStatus.discoveryStarting ||
+      ConnectionStatus.discovering ||
+      ConnectionStatus.discoveryStopping ||
+      ConnectionStatus.meshActive ||
+      ConnectionStatus.connected => true,
+      ConnectionStatus.bluetoothOff ||
+      ConnectionStatus.disconnected ||
+      ConnectionStatus.invalidated => false,
+    };
     final isBluetoothOff = status == ConnectionStatus.bluetoothOff;
 
     return Container(
@@ -175,10 +187,18 @@ class _PeerTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final statusText = switch (peer.status) {
-      PeerConnectionStatus.connected => 'Connected',
-      PeerConnectionStatus.suspected => 'Connection unstable',
-      PeerConnectionStatus.unreachable => 'Disconnected',
+      DiscoveredPeerStatus.discovered => 'Discovered',
+      DiscoveredPeerStatus.connecting => 'Connecting...',
+      DiscoveredPeerStatus.connected => 'Connected',
+      DiscoveredPeerStatus.suspected => 'Connection unstable',
+      DiscoveredPeerStatus.unreachable => 'Disconnected',
+      DiscoveredPeerStatus.disconnecting => 'Disconnecting...',
+      DiscoveredPeerStatus.failed => 'Connection failed',
     };
+
+    final isOffline =
+        peer.status == DiscoveredPeerStatus.unreachable ||
+        peer.status == DiscoveredPeerStatus.failed;
 
     return ListTile(
       leading: NodeAvatar(
@@ -188,7 +208,7 @@ class _PeerTile extends StatelessWidget {
       ),
       title: Text(peer.displayName),
       subtitle: Text(statusText),
-      trailing: peer.status == PeerConnectionStatus.unreachable
+      trailing: isOffline
           ? Icon(
               Icons.signal_cellular_off,
               size: 18,

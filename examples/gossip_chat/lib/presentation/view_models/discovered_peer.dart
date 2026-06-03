@@ -2,10 +2,9 @@ import 'package:flutter/foundation.dart';
 import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/gossip_bluey.dart';
 
-/// Status of a row on the peers list. Subsumes the older
-/// `PeerConnectionStatus` (which only had connected/suspected/unreachable)
-/// by adding the never-connected, in-flight, and post-failure states the
-/// new UI exposes.
+/// Status of a row on the peers list. Subsumes the older three-value
+/// connection status (connected/suspected/unreachable) by adding the
+/// never-connected, in-flight, and post-failure states the new UI exposes.
 enum DiscoveredPeerStatus {
   /// Scanner has seen this address; no connection has been attempted yet.
   discovered,

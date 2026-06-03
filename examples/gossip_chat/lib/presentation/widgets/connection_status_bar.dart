@@ -46,7 +46,8 @@ class ConnectionStatusBar extends StatelessWidget {
               style: TextStyle(color: colorScheme.onSurfaceVariant),
             ),
           ),
-          if (status == ConnectionStatus.disconnected)
+          if (status == ConnectionStatus.disconnected ||
+              status == ConnectionStatus.invalidated)
             TextButton(onPressed: onStart, child: const Text('Start')),
         ],
       ),
@@ -57,12 +58,18 @@ class ConnectionStatusBar extends StatelessWidget {
     switch (status) {
       case ConnectionStatus.connected:
         return StatusIndicatorState.connected;
+      case ConnectionStatus.meshActive:
       case ConnectionStatus.discovering:
+      case ConnectionStatus.discoveryStarting:
+      case ConnectionStatus.discoveryStopping:
         return StatusIndicatorState.discovering;
       case ConnectionStatus.advertising:
+      case ConnectionStatus.advertisingStarting:
+      case ConnectionStatus.advertisingStopping:
         return StatusIndicatorState.advertising;
       case ConnectionStatus.disconnected:
       case ConnectionStatus.bluetoothOff:
+      case ConnectionStatus.invalidated:
         return StatusIndicatorState.disconnected;
     }
   }
@@ -71,12 +78,24 @@ class ConnectionStatusBar extends StatelessWidget {
     switch (status) {
       case ConnectionStatus.connected:
         return '$peerCount peer${peerCount == 1 ? '' : 's'} connected';
+      case ConnectionStatus.meshActive:
+        return 'Listening for peers';
       case ConnectionStatus.discovering:
         return 'Discovering...';
+      case ConnectionStatus.discoveryStarting:
+        return 'Starting discovery...';
+      case ConnectionStatus.discoveryStopping:
+        return 'Stopping...';
       case ConnectionStatus.advertising:
         return 'Advertising...';
+      case ConnectionStatus.advertisingStarting:
+        return 'Starting advertising...';
+      case ConnectionStatus.advertisingStopping:
+        return 'Stopping...';
       case ConnectionStatus.disconnected:
         return 'Disconnected';
+      case ConnectionStatus.invalidated:
+        return 'Bluetooth restarted — tap Start to recover';
       case ConnectionStatus.bluetoothOff:
         switch (adapterState) {
           case BluetoothAdapterState.unauthorized:
