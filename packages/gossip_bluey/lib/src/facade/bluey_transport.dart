@@ -85,11 +85,9 @@ class BlueyTransport {
     final registry = ConnectionRegistry();
     final metrics = BlueyMetrics();
     final service = ConnectionManager(
-      localNodeId: nodeId,
       port: port,
       registry: registry,
       metrics: metrics,
-      serviceUuid: serviceUuid,
       maxConnections: maxConnections,
       onLog: onLog,
     );
@@ -125,11 +123,9 @@ class BlueyTransport {
     final registry = ConnectionRegistry();
     final metrics = BlueyMetrics();
     final service = ConnectionManager(
-      localNodeId: localNodeId,
       port: port,
       registry: registry,
       metrics: metrics,
-      serviceUuid: serviceUuid,
       maxConnections: maxConnections,
       onLog: onLog,
     );
@@ -244,10 +240,14 @@ class BlueyTransport {
   // gossip_chat compilation. It logs a warning so test runs surface the
   // missing behavior.
   Future<void> startDiscovery({bool Function(NodeId)? filter}) async {
+    // Asymmetric with stopDiscovery (silent no-op): startDiscovery logs
+    // so test runs surface the missing behavior. We surface the filter's
+    // presence too so it's obvious a star-topology hint is being dropped.
     _onLog?.call(
       LogLevel.warning,
       'BlueyTransport.startDiscovery is a no-op until C5; '
-      'no peers will be discovered or auto-connected',
+      'no peers will be discovered or auto-connected '
+      '(filter ${filter == null ? "absent" : "present, discarded"})',
     );
   }
 

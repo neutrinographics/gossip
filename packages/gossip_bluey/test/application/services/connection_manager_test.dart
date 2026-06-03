@@ -7,7 +7,6 @@ import 'package:gossip_bluey/src/application/services/connection_manager.dart';
 import 'package:gossip_bluey/src/domain/aggregates/connection_registry.dart';
 import 'package:gossip_bluey/src/domain/errors/connection_error.dart';
 import 'package:gossip_bluey/src/domain/events/connection_event.dart';
-// ignore: unused_import
 import 'package:gossip_bluey/src/domain/interfaces/bluey_port.dart';
 import 'package:gossip_bluey/src/domain/value_objects/ble_address.dart';
 import 'package:gossip_bluey/src/domain/value_objects/scan_candidate.dart';
@@ -28,11 +27,9 @@ void main() {
       final localPort = FakeBlueyPort(localNodeId: localId, network: network);
       final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
       final svc = ConnectionManager(
-        localNodeId: localId,
         port: localPort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
-        serviceUuid: serviceUuid,
       );
       final events = <ConnectionEvent>[];
       final sub = svc.events.listen(events.add);
@@ -59,11 +56,9 @@ void main() {
       final localPort = FakeBlueyPort(localNodeId: localId, network: network);
       final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
       final svc = ConnectionManager(
-        localNodeId: localId,
         port: localPort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
-        serviceUuid: serviceUuid,
       );
       await localPort.startAdvertising(
         serviceUuid: serviceUuid,
@@ -100,11 +95,9 @@ void main() {
         );
         final registry = ConnectionRegistry();
         final svc = ConnectionManager(
-          localNodeId: localId,
           port: localPort,
           registry: registry,
           metrics: BlueyMetrics(),
-          serviceUuid: serviceUuid,
         );
 
         await localPort.startAdvertising(
@@ -153,11 +146,9 @@ void main() {
         final metrics = BlueyMetrics();
         final logs = <String>[];
         final svc = ConnectionManager(
-          localNodeId: localId,
           port: localPort,
           registry: ConnectionRegistry(),
           metrics: metrics,
-          serviceUuid: serviceUuid,
           onLog: (level, msg, [e, st]) {
             if (level == LogLevel.warning) logs.add(msg);
           },
@@ -202,18 +193,14 @@ void main() {
       final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
       final localMetrics = BlueyMetrics();
       final localSvc = ConnectionManager(
-        localNodeId: localId,
         port: localPort,
         registry: ConnectionRegistry(),
         metrics: localMetrics,
-        serviceUuid: serviceUuid,
       );
       final remoteSvc = ConnectionManager(
-        localNodeId: remoteId,
         port: remotePort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
-        serviceUuid: serviceUuid,
       );
 
       await localPort.startAdvertising(
@@ -270,11 +257,9 @@ void main() {
           network: network,
         );
         final svc = ConnectionManager(
-          localNodeId: localId,
           port: localPort,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
-          serviceUuid: serviceUuid,
         );
         await localPort.startAdvertising(
           serviceUuid: serviceUuid,
@@ -310,18 +295,14 @@ void main() {
       final remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
 
       final svc = ConnectionManager(
-        localNodeId: localId,
         port: localPort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
-        serviceUuid: serviceUuid,
       );
       final remoteSvc = ConnectionManager(
-        localNodeId: remoteId,
         port: remotePort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
-        serviceUuid: serviceUuid,
       );
 
       await localPort.startAdvertising(
@@ -354,11 +335,9 @@ void main() {
         final network = FakeBlueyNetwork();
         final localPort = FakeBlueyPort(localNodeId: localId, network: network);
         final svc = ConnectionManager(
-          localNodeId: localId,
           port: localPort,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
-          serviceUuid: serviceUuid,
         );
 
         final errs = <ConnectionError>[];
@@ -395,11 +374,9 @@ void main() {
       );
 
       final svc = ConnectionManager(
-        localNodeId: localId,
         port: localPort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
-        serviceUuid: serviceUuid,
         maxConnections: 1,
       );
       final errs = <ConnectionError>[];
@@ -435,11 +412,9 @@ void main() {
         localNodeId: localId,
       );
       final svc = ConnectionManager(
-        localNodeId: localId,
         port: localPort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
-        serviceUuid: serviceUuid,
       );
       await r2.connect(localId);
       await Future<void>.delayed(Duration.zero);
@@ -470,11 +445,9 @@ void main() {
           localNodeId: remoteId,
         );
         final svc = ConnectionManager(
-          localNodeId: localId,
           port: localPort,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
-          serviceUuid: serviceUuid,
         );
 
         final candidate = ScanCandidate(
@@ -511,11 +484,9 @@ void main() {
           localPort.connectAndIdentifyDelay = const Duration(milliseconds: 50);
 
           final svc = ConnectionManager(
-            localNodeId: localId,
             port: localPort,
             registry: ConnectionRegistry(),
             metrics: BlueyMetrics(),
-            serviceUuid: serviceUuid,
           );
 
           final candidate = ScanCandidate(
@@ -552,11 +523,9 @@ void main() {
             localNodeId: remoteId,
           );
           final svc = ConnectionManager(
-            localNodeId: localId,
             port: localPort,
             registry: ConnectionRegistry(),
             metrics: BlueyMetrics(),
-            serviceUuid: serviceUuid,
           );
 
           final candidate = ScanCandidate(
@@ -601,11 +570,9 @@ void main() {
           };
 
           final svc = ConnectionManager(
-            localNodeId: localId,
             port: localPort,
             registry: ConnectionRegistry(),
             metrics: BlueyMetrics(),
-            serviceUuid: serviceUuid,
           );
 
           final candidate = ScanCandidate(

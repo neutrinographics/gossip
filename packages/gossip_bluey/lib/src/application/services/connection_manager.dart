@@ -10,7 +10,6 @@ import '../../domain/events/connection_event.dart';
 import '../../domain/interfaces/bluey_port.dart';
 import '../../domain/value_objects/ble_address.dart';
 import '../../domain/value_objects/scan_candidate.dart';
-import '../../domain/value_objects/service_uuid.dart';
 import '../../infrastructure/codec/frame_codec.dart';
 import '../../infrastructure/ports/bluey_message_port.dart';
 import '../observability/bluey_metrics.dart';
@@ -30,11 +29,9 @@ class Clock {
 /// `AutoConnectPolicy` (auto mode) invoke [connectTo].
 class ConnectionManager implements MessageDispatcher {
   ConnectionManager({
-    required this.localNodeId,
     required this.port,
     required this.registry,
     required this.metrics,
-    required this.serviceUuid,
     this.maxConnections,
     this.onLog,
     Clock? clock,
@@ -42,11 +39,9 @@ class ConnectionManager implements MessageDispatcher {
     _portSub = port.events.listen(_onPortEvent);
   }
 
-  final NodeId localNodeId;
   final BlueyPort port;
   final ConnectionRegistry registry;
   final BlueyMetrics metrics;
-  final ServiceUuid serviceUuid;
   final int? maxConnections;
   final LogCallback? onLog;
   final Clock _clock;
@@ -104,8 +99,6 @@ class ConnectionManager implements MessageDispatcher {
       case PortPeerConnected(
         :final nodeId,
         :final role,
-        // ignore: unused_local_variable
-        :final address,
         :final displayName,
       ):
         if (maxConnections != null &&
@@ -185,7 +178,7 @@ class ConnectionManager implements MessageDispatcher {
           );
         }
       case PortConnectFailed():
-        // handled in Task 24
+        // TODO(C4): forward to AutoConnectPolicy backoff bookkeeping
         break;
     }
   }
