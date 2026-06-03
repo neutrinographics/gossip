@@ -154,6 +154,21 @@ class FakeBlueyPort implements BlueyPort {
   /// failure (transient).
   bool Function(BleAddress address)? connectAndIdentifyFailureInjector;
 
+  /// Test hook: per-address override that throws a specific exception
+  /// from connectAndIdentify (e.g. to simulate
+  /// ConnectionManager.connectTo's reentrancy guard throwing StateError).
+  final Map<BleAddress, Object> _connectAndIdentifyErrors = {};
+
+  /// Configures [connectAndIdentify] to throw [error] the next time it
+  /// is called with a candidate matching [address].
+  void injectConnectAndIdentifyError(BleAddress address, Object error) {
+    _connectAndIdentifyErrors[address] = error;
+  }
+
+  /// Number of times [connectAndIdentify] has been called. Used by
+  /// tests asserting whether a retry was attempted.
+  int connectAndIdentifyCallCount = 0;
+
   /// Test hook: when the predicate returns true for an address, the
   /// next connectAndIdentify call for that address throws
   /// [NotABlueyPeerException].
@@ -416,15 +431,23 @@ class FakeBlueyPort implements BlueyPort {
 
   @override
   Future<NodeId> connectAndIdentify(ScanCandidate candidate) async {
+    connectAndIdentifyCallCount++;
     onConnectAndIdentify?.call(candidate);
     if (connectAndIdentifyDelay > Duration.zero) {
       await Future<void>.delayed(connectAndIdentifyDelay);
+    }
+    final injected = _connectAndIdentifyErrors.remove(candidate.address);
+    if (injected != null) {
+      throw injected;
     }
     if (notABlueyPeerInjector?.call(candidate.address) ?? false) {
       throw NotABlueyPeerException(candidate.address);
     }
     if (connectAndIdentifyFailureInjector?.call(candidate.address) ?? false) {
-      throw StateError('test injected connectAndIdentify failure');
+      // Non-StateError so AutoConnectPolicy treats it as a generic
+      // transient failure (which should trigger exponential backoff)
+      // rather than as the benign reentrancy-guard case.
+      throw Exception('test injected connectAndIdentify failure');
     }
     final target = NodeId(candidate.address.value);
     await connect(target);

@@ -67,6 +67,11 @@ class AutoConnectPolicy {
   /// identified a peer at an address, repeated scan emissions for that
   /// address are silenced as long as the NodeId is still in the
   /// connection registry.
+  // TODO(post-Phase-D): On peer disconnect (PortPeerDisconnected event),
+  // remove the entry here so the map doesn't grow unbounded across
+  // address-rotation events (iOS MAC randomization, peer
+  // rejoining with a fresh NodeId at an old address). At 8-peer scale
+  // the growth is bounded and harmless; revisit if scale grows.
   final Map<BleAddress, NodeId> _knownAddressToNode = {};
 
   ConnectionMode get mode => _mode;
@@ -86,6 +91,12 @@ class AutoConnectPolicy {
     if (mode == _mode) return;
     _mode = mode;
     if (_mode == ConnectionMode.auto) {
+      // TODO(C5 followup): If setMode(auto) is called twice with an
+      // intervening setMode(manual) before the catch-up microtasks drain,
+      // concurrent catch-up batches may race past the dedup check. In
+      // practice the ConnectionManager.connectTo reentrancy guard absorbs
+      // the duplicates (now logged at debug above), so this is bounded —
+      // but a mode-epoch counter would be cleaner.
       _sub ??= _discovery.candidates.listen(_tryConnect);
       // Catch up on candidates already discovered while we were
       // dormant.
@@ -132,6 +143,14 @@ class AutoConnectPolicy {
       _backoff[c.address] = (
         delay: _longBackoff,
         nextAttempt: _now().add(_longBackoff),
+      );
+    } on StateError catch (e) {
+      // ConnectionManager.connectTo's reentrancy guard fired: another
+      // attempt for this address is already in flight. Benign — no
+      // backoff; the in-flight call will resolve normally.
+      onLog?.call(
+        LogLevel.debug,
+        'auto-connect skipped reentrant attempt for ${c.address}: $e',
       );
     } catch (e, st) {
       onLog?.call(

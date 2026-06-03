@@ -582,7 +582,7 @@ void main() {
           );
           await expectLater(
             svc.connectTo(candidate),
-            throwsA(isA<StateError>()),
+            throwsA(isA<Exception>()),
           );
           // Reentrancy guard must have been released; a follow-up call
           // for the same address should be allowed (and succeed now that

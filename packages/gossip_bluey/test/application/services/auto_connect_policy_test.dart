@@ -326,6 +326,42 @@ void main() {
     });
 
     test(
+      'auto mode: StateError from connectTo is swallowed without backoff',
+      () async {
+        final policy = AutoConnectPolicy(
+          discovery: discovery,
+          connections: connections,
+          registry: registry,
+          now: () => clock.instant,
+          initialBackoff: const Duration(seconds: 1),
+        );
+        policy.setMode(ConnectionMode.auto);
+
+        // Simulate ConnectionManager.connectTo's reentrancy guard
+        // firing by throwing StateError from connectAndIdentify for the
+        // target address. The policy should swallow it without
+        // recording backoff.
+        port.injectConnectAndIdentifyError(
+          const BleAddress('AA:BB:CC:DD:EE:01'),
+          StateError('already connecting'),
+        );
+        port.emitCandidate(_candidate('AA:BB:CC:DD:EE:01'));
+        await _pump();
+        await _pump();
+        expect(port.connectAndIdentifyCallCount, 1);
+
+        // No backoff was recorded — a fresh emission for the same
+        // address should immediately retry (instead of being deferred
+        // by an exponential-backoff window).
+        final beforeRetry = port.connectAndIdentifyCallCount;
+        port.emitCandidate(_candidate('AA:BB:CC:DD:EE:01'));
+        await _pump();
+        await _pump();
+        expect(port.connectAndIdentifyCallCount, beforeRetry + 1);
+      },
+    );
+
+    test(
       'setMode(auto) catches up on currently-emitted candidates',
       () async {
         // Manual: candidate is recorded in discovery.currentCandidates
