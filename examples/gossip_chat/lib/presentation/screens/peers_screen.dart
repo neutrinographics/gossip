@@ -1,3 +1,4 @@
+import 'package:bluey/bluey.dart' as bluey;
 import 'package:flutter/material.dart';
 import 'package:gossip_bluey/gossip_bluey.dart';
 
@@ -5,9 +6,15 @@ import '../../application/services/indirect_peer_service.dart';
 import '../controllers/chat_controller.dart';
 import '../view_models/view_models.dart';
 import '../widgets/animated_empty_state.dart';
+import '../widgets/ble_signal_indicator.dart';
 import '../widgets/node_avatar.dart';
+import '../widgets/peer_status_pill.dart';
 import '../widgets/signal_strength_indicator.dart';
+import '../widgets/topology_controls.dart';
 
+/// Peers screen: lists nearby BLE peers and indirect peers (gossip-only),
+/// each with its own dual-indicator row (BLE signal + gossip health), plus
+/// a bottom [TopologyControls] panel that drives the BLE radio lifecycle.
 class PeersScreen extends StatelessWidget {
   final ChatController controller;
 
@@ -18,16 +25,41 @@ class PeersScreen extends StatelessWidget {
     return ListenableBuilder(
       listenable: controller,
       builder: (context, _) {
+        final hasDirect = controller.peers.isNotEmpty;
+        final hasIndirect = controller.indirectPeers.isNotEmpty;
+        final isEmpty = !hasDirect && !hasIndirect;
         return Scaffold(
-          appBar: AppBar(title: const Text('Nearby Peers')),
+          appBar: AppBar(
+            title: const Text('Nearby Peers'),
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.settings_outlined),
+                tooltip: 'Settings',
+                // Phase F wires the settings screen; no-op placeholder.
+                onPressed: () {},
+              ),
+            ],
+          ),
           body: Column(
             children: [
               Expanded(
-                child: controller.peers.isEmpty
-                    ? _buildEmptyState()
-                    : _buildPeerList(),
+                child: isEmpty ? _buildEmptyState() : _buildPeerList(context),
               ),
-              _buildControls(context),
+              TopologyControls(
+                advertisingState: controller.advertisingState,
+                scanState: controller.scanState,
+                mode: controller.connectionMode,
+                onToggleAdvertise: () => controller.setAdvertising(
+                  controller.advertisingState !=
+                      bluey.AdvertisingState.advertising,
+                ),
+                onToggleDiscover: () => controller.setDiscovering(
+                  controller.scanState != bluey.ScanState.scanning,
+                ),
+                onModeChanged: controller.setMode,
+                enabled: controller.bluetoothAdapterState ==
+                    BluetoothAdapterState.on,
+              ),
             ],
           ),
         );
@@ -57,48 +89,44 @@ class PeersScreen extends StatelessWidget {
           return const AnimatedEmptyState(
             icon: Icons.bluetooth_disabled,
             title: 'Bluetooth is off',
-            subtitle: 'Turn Bluetooth on, then tap Start Discovery',
+            subtitle: 'Turn Bluetooth on, then tap Discover',
           );
       }
     }
-    final isSearching = switch (status) {
-      ConnectionStatus.discovering ||
-      ConnectionStatus.discoveryStarting ||
-      ConnectionStatus.advertising ||
-      ConnectionStatus.advertisingStarting ||
-      ConnectionStatus.meshActive =>
-        true,
-      ConnectionStatus.advertisingStopping ||
-      ConnectionStatus.discoveryStopping ||
-      ConnectionStatus.disconnected ||
-      ConnectionStatus.connected ||
-      ConnectionStatus.invalidated ||
-      ConnectionStatus.bluetoothOff =>
-        false,
-    };
-
+    final isSearching = controller.scanState == bluey.ScanState.scanning ||
+        controller.scanState == bluey.ScanState.starting;
     return AnimatedEmptyState(
       icon: isSearching ? Icons.radar : Icons.people_outline,
-      title: isSearching ? 'Searching for peers...' : 'No peers found',
+      title: isSearching ? 'Searching for peers…' : 'No peers found',
       subtitle: isSearching
           ? 'Looking for nearby devices'
-          : 'Start discovery to find nearby devices',
+          : 'Tap Discover to start searching',
     );
   }
 
-  Widget _buildPeerList() {
-    final hasIndirectPeers = controller.indirectPeers.isNotEmpty;
+  Widget _buildPeerList(BuildContext context) {
+    final hasDirect = controller.peers.isNotEmpty;
+    final hasIndirect = controller.indirectPeers.isNotEmpty;
+    final scanningActive =
+        controller.scanState == bluey.ScanState.scanning;
 
     return ListView(
       children: [
-        // Direct peers section
-        ...controller.peers.map(
-          (peer) => _PeerTile(peer: peer, controller: controller),
-        ),
-
-        // Indirect peers section
-        if (hasIndirectPeers) ...[
-          const _SectionHeader(title: 'Indirect Peers'),
+        if (hasDirect) ...[
+          const _SectionHeader(title: 'Nearby'),
+          ...controller.peers.map(
+            (peer) => _DiscoveredPeerTile(
+              peer: peer,
+              scanningActive: scanningActive,
+              gossipProbeCount: peer.nodeId != null
+                  ? controller.getSmoothedFailedProbeCount(peer.nodeId!)
+                  : 0,
+              onTap: () => _onPeerTap(context, peer),
+            ),
+          ),
+        ],
+        if (hasIndirect) ...[
+          const _SectionHeader(title: 'Via gossip'),
           ...controller.indirectPeers.map(
             (peer) => _IndirectPeerTile(peer: peer),
           ),
@@ -107,66 +135,42 @@ class PeersScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildControls(BuildContext context) {
-    final theme = Theme.of(context);
-    final colorScheme = theme.colorScheme;
-    final status = controller.connectionStatus;
-    final isActive = switch (status) {
-      ConnectionStatus.advertisingStarting ||
-      ConnectionStatus.advertising ||
-      ConnectionStatus.advertisingStopping ||
-      ConnectionStatus.discoveryStarting ||
-      ConnectionStatus.discovering ||
-      ConnectionStatus.discoveryStopping ||
-      ConnectionStatus.meshActive ||
-      ConnectionStatus.connected => true,
-      ConnectionStatus.bluetoothOff ||
-      ConnectionStatus.disconnected ||
-      ConnectionStatus.invalidated => false,
-    };
-    final isBluetoothOff = status == ConnectionStatus.bluetoothOff;
+  void _onPeerTap(BuildContext context, DiscoveredPeer peer) {
+    switch (peer.status) {
+      case DiscoveredPeerStatus.discovered:
+      case DiscoveredPeerStatus.failed:
+        controller.tapPeer(peer);
+      case DiscoveredPeerStatus.connected:
+      case DiscoveredPeerStatus.suspected:
+      case DiscoveredPeerStatus.unreachable:
+        _showConnectedActionSheet(context, peer);
+      case DiscoveredPeerStatus.connecting:
+      case DiscoveredPeerStatus.disconnecting:
+        // Transient — ignore taps.
+        return;
+    }
+  }
 
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: colorScheme.surfaceContainerLow,
-        border: Border(top: BorderSide(color: colorScheme.outlineVariant)),
-      ),
-      child: SafeArea(
-        child: SizedBox(
-          width: double.infinity,
-          child: ElevatedButton.icon(
-            onPressed: isBluetoothOff
-                ? null
-                : (isActive
-                      ? controller.stopNetworking
-                      : () => _handleStartNetworking(context)),
-            icon: Icon(isActive ? Icons.stop : Icons.play_arrow),
-            label: Text(isActive ? 'Stop Discovery' : 'Start Discovery'),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isActive ? colorScheme.error : null,
-              foregroundColor: isActive ? colorScheme.onError : null,
-              padding: const EdgeInsets.symmetric(vertical: 16),
+  void _showConnectedActionSheet(BuildContext context, DiscoveredPeer peer) {
+    if (peer.nodeId == null) return;
+    final nodeId = peer.nodeId!;
+    showModalBottomSheet<void>(
+      context: context,
+      builder: (sheetContext) => SafeArea(
+        child: Wrap(
+          children: [
+            ListTile(
+              leading: const Icon(Icons.link_off),
+              title: const Text('Disconnect'),
+              onTap: () {
+                Navigator.of(sheetContext).pop();
+                controller.disconnectPeer(nodeId);
+              },
             ),
-          ),
+          ],
         ),
       ),
     );
-  }
-
-  Future<void> _handleStartNetworking(BuildContext context) async {
-    final success = await controller.startNetworking();
-    if (!success && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text(
-            'Permissions required for Nearby Connections. '
-            'Please grant Bluetooth and Location permissions.',
-          ),
-          duration: Duration(seconds: 4),
-        ),
-      );
-    }
   }
 }
 
@@ -190,46 +194,52 @@ class _SectionHeader extends StatelessWidget {
   }
 }
 
-class _PeerTile extends StatelessWidget {
+/// Row for a peer the local device has seen over BLE (directly discovered
+/// or directly connected). Trailing edge carries TWO indicators side-by-side:
+///   * [BleSignalIndicator] — RSSI-derived BLE link strength.
+///   * [SignalStrengthIndicator] — gossip-protocol health (SWIM probes).
+class _DiscoveredPeerTile extends StatelessWidget {
   final DiscoveredPeer peer;
-  final ChatController controller;
+  final bool scanningActive;
+  final int gossipProbeCount;
+  final VoidCallback onTap;
 
-  const _PeerTile({required this.peer, required this.controller});
+  const _DiscoveredPeerTile({
+    required this.peer,
+    required this.scanningActive,
+    required this.gossipProbeCount,
+    required this.onTap,
+  });
 
   @override
   Widget build(BuildContext context) {
-    final statusText = switch (peer.status) {
-      DiscoveredPeerStatus.discovered => 'Discovered',
-      DiscoveredPeerStatus.connecting => 'Connecting...',
-      DiscoveredPeerStatus.connected => 'Connected',
-      DiscoveredPeerStatus.suspected => 'Connection unstable',
-      DiscoveredPeerStatus.unreachable => 'Disconnected',
-      DiscoveredPeerStatus.disconnecting => 'Disconnecting...',
-      DiscoveredPeerStatus.failed => 'Connection failed',
-    };
-
-    final isOffline =
-        peer.status == DiscoveredPeerStatus.unreachable ||
-        peer.status == DiscoveredPeerStatus.failed;
-
-    // Identifier used for the avatar tint — prefer NodeId once known, fall
-    // back to the BleAddress while pre-handshake.
+    final theme = Theme.of(context);
     final identifier = peer.nodeId?.value ?? peer.address.value;
     final displayName = peer.displayName ?? '(unknown)';
 
-    // Gossip-protocol signal strength is only meaningful once we have a
-    // NodeId in the connection registry. Pre-handshake rows show the
-    // "no signal" placeholder.
-    // TODO(E1): replace with PeerStatusPill + BleSignalIndicator + GossipHealthDot.
-    final nodeId = peer.nodeId;
-    final smoothedProbeCount = nodeId != null
-        ? controller.getSmoothedFailedProbeCount(nodeId)
-        : 0;
-    final signalStrength = switch (smoothedProbeCount) {
+    final isConnected = peer.status == DiscoveredPeerStatus.connected ||
+        peer.status == DiscoveredPeerStatus.suspected ||
+        peer.status == DiscoveredPeerStatus.unreachable;
+    final isOffline = peer.status == DiscoveredPeerStatus.unreachable ||
+        peer.status == DiscoveredPeerStatus.failed;
+
+    // Gossip health is only meaningful for peers we've actually connected
+    // to (i.e. ones with a NodeId AND a non-failed status). Pre-handshake
+    // or offline rows render a "no signal" glyph.
+    final gossipStrength = switch (gossipProbeCount) {
       0 => 3,
       1 => 2,
       _ => 1,
     };
+    final showGossipHealth = peer.nodeId != null && isConnected && !isOffline;
+
+    final gossipIndicator = showGossipHealth
+        ? SignalStrengthIndicator(strength: gossipStrength)
+        : Icon(
+            Icons.signal_cellular_off,
+            size: 18,
+            color: theme.colorScheme.outline,
+          );
 
     return ListTile(
       leading: NodeAvatar(
@@ -238,14 +248,25 @@ class _PeerTile extends StatelessWidget {
         radius: 20,
       ),
       title: Text(displayName),
-      subtitle: Text(statusText),
-      trailing: isOffline || nodeId == null
-          ? Icon(
-              Icons.signal_cellular_off,
-              size: 18,
-              color: Theme.of(context).colorScheme.outline,
-            )
-          : SignalStrengthIndicator(strength: signalStrength),
+      subtitle: Align(
+        alignment: Alignment.centerLeft,
+        child: Padding(
+          padding: const EdgeInsets.only(top: 4),
+          child: PeerStatusPill(status: peer.status),
+        ),
+      ),
+      trailing: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          BleSignalIndicator(
+            health: BleHealth.fromRssi(peer.rssi),
+            scanningActive: scanningActive,
+          ),
+          const SizedBox(width: 8),
+          gossipIndicator,
+        ],
+      ),
+      onTap: onTap,
     );
   }
 }

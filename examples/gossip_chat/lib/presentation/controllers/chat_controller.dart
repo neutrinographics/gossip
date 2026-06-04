@@ -351,6 +351,8 @@ class ChatController extends ChangeNotifier {
 
   ConnectionStatus get connectionStatus => _connectionStatus;
   BluetoothAdapterState get bluetoothAdapterState => _bluetoothState;
+  bluey.AdvertisingState get advertisingState => _advertisingState;
+  bluey.ScanState get scanState => _scanState;
   bool get isTyping => _isTyping;
   gossip.NodeId get localNodeId => _chatService.localNodeId;
   MetricsState get metrics => _metrics;
@@ -864,6 +866,10 @@ class ChatController extends ChangeNotifier {
     _connectionService.setConnectionMode(mode);
     notifyListeners();
   }
+
+  /// Alias for [setConnectionMode]; matches the topology controls API
+  /// surface used by the peers screen.
+  void setMode(ConnectionMode mode) => setConnectionMode(mode);
 
   /// Starts or stops BLE advertising independently of discovery.
   Future<void> setAdvertising(bool on) async {
