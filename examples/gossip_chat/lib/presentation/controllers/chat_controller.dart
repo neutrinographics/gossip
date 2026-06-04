@@ -84,22 +84,19 @@ void mergeCandidate(Map<Object, DiscoveredPeer> peers, ScanCandidate c) {
 }
 
 /// Merges a PeerOpened (transport-level peer connected) event into the peer
-/// map. If an entry exists keyed by a BleAddress whose `nodeId` is null but
-/// matches via [findKeyForNodeIdHint] (typically the recently-`connecting`
-/// row), it is REKEYED to [nodeId]. If no entry exists, a fresh one is
-/// inserted keyed by [nodeId] with `everConnected: true`.
+/// map. Used by the auto-mode / event-driven path; the user-initiated
+/// [ChatController.tapPeer] path handles its own rekey synchronously off
+/// the [ConnectionService.connectTo] return value, so it does NOT rely on
+/// this helper for rekeying.
 ///
-/// The optional [addressHint] supplies the BleAddress associated with the
-/// successful connectTo call (the controller knows this synchronously since
-/// connectTo takes a ScanCandidate). When provided, it's used to find the
-/// pre-existing entry; otherwise we fall back to "first entry with status
-/// connecting and no nodeId yet".
+/// If an entry exists keyed by [nodeId], it is updated in place. Otherwise
+/// we fall back to "first entry with status connecting and no nodeId yet"
+/// and rekey it. If nothing matches, a fresh NodeId-keyed entry is inserted.
 @visibleForTesting
 void mergePeerOpened(
   Map<Object, DiscoveredPeer> peers,
   gossip.NodeId nodeId, {
   String? displayName,
-  BleAddress? addressHint,
   DateTime? now,
 }) {
   final timestamp = now ?? DateTime.now();
@@ -114,26 +111,16 @@ void mergePeerOpened(
     );
     return;
   }
-  // Try to find by BleAddress hint.
+  // Fallback: a single in-flight connecting entry without a known nodeId.
   Object? oldKey;
   DiscoveredPeer? toRekey;
-  if (addressHint != null) {
-    final byAddress = peers[addressHint];
-    if (byAddress != null && byAddress.nodeId == null) {
-      oldKey = addressHint;
-      toRekey = byAddress;
-    }
-  }
-  // Fallback: a single in-flight connecting entry without a known nodeId.
-  if (toRekey == null) {
-    for (final entry in peers.entries) {
-      final p = entry.value;
-      if (p.nodeId == null &&
-          p.status == DiscoveredPeerStatus.connecting) {
-        oldKey = entry.key;
-        toRekey = p;
-        break;
-      }
+  for (final entry in peers.entries) {
+    final p = entry.value;
+    if (p.nodeId == null &&
+        p.status == DiscoveredPeerStatus.connecting) {
+      oldKey = entry.key;
+      toRekey = p;
+      break;
     }
   }
   if (toRekey != null && oldKey != null) {
@@ -288,11 +275,6 @@ class ChatController extends ChangeNotifier {
   ///   3. gossip [gossip.PeerStatus] updates (SWIM probes)
   final Map<Object, DiscoveredPeer> _peers = {};
 
-  /// Tracks BleAddresses of in-flight connectTo attempts so that the
-  /// subsequent PeerOpened event can rekey the entry from address to
-  /// NodeId deterministically. The earliest still-pending address is used
-  /// as the hint passed to [mergePeerOpened].
-  final List<BleAddress> _connectingAddresses = [];
   gossip.ChannelId? _currentChannelId;
   List<MessageState> _currentMessages = [];
   Map<gossip.NodeId, TypingEvent> _typingUsers = {};
@@ -439,20 +421,7 @@ class ChatController extends ChangeNotifier {
   void _onPeerEvent(PeerEvent event) {
     switch (event) {
       case PeerConnected(:final nodeId, :final displayName):
-        // Pop the earliest in-flight address as a hint for rekeying. If
-        // the address still maps to a `connecting` entry without a NodeId,
-        // [mergePeerOpened] will rekey it; otherwise it falls back to
-        // scanning the map for an in-flight entry or creates a fresh one.
-        BleAddress? hint;
-        if (_connectingAddresses.isNotEmpty) {
-          hint = _connectingAddresses.removeAt(0);
-        }
-        mergePeerOpened(
-          _peers,
-          nodeId,
-          displayName: displayName,
-          addressHint: hint,
-        );
+        mergePeerOpened(_peers, nodeId, displayName: displayName);
         _signalStrengthManager.updatePenalty(nodeId, 0);
         _refreshIndirectPeers();
         _updateConnectionStatus();
@@ -927,6 +896,15 @@ class ChatController extends ChangeNotifier {
   /// connected/suspected/unreachable, no-ops (the caller should surface an
   /// action sheet). For transient states (connecting/disconnecting),
   /// no-ops.
+  ///
+  /// On success, this method rekeys the entry from BleAddress to NodeId
+  /// SYNCHRONOUSLY using the value returned by
+  /// [ConnectionService.connectTo] — it does NOT rely on the subsequent
+  /// PeerOpened event to perform the rekey. This is important under
+  /// concurrency: an inbound PeerOpened (peripheral-role accepting a
+  /// remote central) can fire while this outbound connectTo is still
+  /// in flight, which would otherwise rekey the wrong row if we relied
+  /// on a shared hint set.
   Future<void> tapPeer(DiscoveredPeer peer) async {
     switch (peer.status) {
       case DiscoveredPeerStatus.discovered:
@@ -946,13 +924,21 @@ class ChatController extends ChangeNotifier {
           notifyListeners();
           return;
         }
-        _connectingAddresses.add(candidate.address);
         try {
-          await _connectionService.connectTo(candidate);
-          // On success, the PeerOpened event handler rekeys + sets
-          // status: connected + everConnected: true.
+          final nodeId = await _connectionService.connectTo(candidate);
+          // Rekey synchronously off connectTo's return value. The PeerOpened
+          // event will still arrive; mergePeerOpened is idempotent on an
+          // already-keyed-by-NodeId entry, so it's a safe no-op then.
+          final existing = _peers.remove(key);
+          if (existing != null) {
+            _peers[nodeId] = existing.copyWith(
+              nodeId: nodeId,
+              status: DiscoveredPeerStatus.connected,
+              everConnected: true,
+            );
+            notifyListeners();
+          }
         } catch (e) {
-          _connectingAddresses.remove(candidate.address);
           // Re-read since PeerOpened may have arrived concurrently (unlikely
           // on failure, but be defensive).
           final current = _peers[key];
@@ -979,6 +965,13 @@ class ChatController extends ChangeNotifier {
 
   /// Disconnects a specific peer. Flips the entry to
   /// [DiscoveredPeerStatus.disconnecting] until PeerClosed arrives.
+  ///
+  /// Self-heals if PeerClosed never arrives (already-closed peer, race,
+  /// etc.): after [ConnectionService.disconnect] returns, if the peer is
+  /// no longer reported as a sync peer and the row is still showing
+  /// `disconnecting`, we transition it to `unreachable` so the UI doesn't
+  /// get stuck. A later PeerClosed event will be a no-op (mergePeerClosed
+  /// keeps unreachable rows at unreachable).
   Future<void> disconnectPeer(gossip.NodeId nodeId) async {
     final existing = _peers[nodeId];
     if (existing != null) {
@@ -990,6 +983,19 @@ class ChatController extends ChangeNotifier {
       await _connectionService.disconnect(nodeId);
     } catch (e) {
       _onError?.call('disconnect', e);
+      return;
+    }
+    // Defensive: if no PeerClosed has arrived in time and the peer is no
+    // longer in the sync registry, transition to unreachable.
+    final stillConnected = _syncService.peers.any((p) => p.id == nodeId);
+    if (!stillConnected) {
+      final current = _peers[nodeId];
+      if (current != null &&
+          current.status == DiscoveredPeerStatus.disconnecting) {
+        _peers[nodeId] =
+            current.copyWith(status: DiscoveredPeerStatus.unreachable);
+        notifyListeners();
+      }
     }
   }
 

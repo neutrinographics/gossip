@@ -101,7 +101,6 @@ void main() {
         peers,
         nodeId,
         displayName: 'Pixel 6a',
-        addressHint: addr,
         now: t1,
       );
       expect(peers.containsKey(addr), isFalse);
