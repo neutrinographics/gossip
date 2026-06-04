@@ -61,12 +61,21 @@ class PeersScreen extends StatelessWidget {
           );
       }
     }
-    final isSearching =
-        status == ConnectionStatus.discovering ||
-        status == ConnectionStatus.discoveryStarting ||
-        status == ConnectionStatus.advertising ||
-        status == ConnectionStatus.advertisingStarting ||
-        status == ConnectionStatus.meshActive;
+    final isSearching = switch (status) {
+      ConnectionStatus.discovering ||
+      ConnectionStatus.discoveryStarting ||
+      ConnectionStatus.advertising ||
+      ConnectionStatus.advertisingStarting ||
+      ConnectionStatus.meshActive =>
+        true,
+      ConnectionStatus.advertisingStopping ||
+      ConnectionStatus.discoveryStopping ||
+      ConnectionStatus.disconnected ||
+      ConnectionStatus.connected ||
+      ConnectionStatus.invalidated ||
+      ConnectionStatus.bluetoothOff =>
+        false,
+    };
 
     return AnimatedEmptyState(
       icon: isSearching ? Icons.radar : Icons.people_outline,

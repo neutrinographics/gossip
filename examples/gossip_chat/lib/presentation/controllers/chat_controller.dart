@@ -47,6 +47,58 @@ enum ConnectionStatus {
 /// Callback for controller errors (e.g., networking failures).
 typedef ControllerErrorCallback = void Function(String operation, Object error);
 
+/// Composes the displayed ConnectionStatus from its inputs.
+///
+/// Precedence (highest to lowest):
+///   1. bluetoothOff       — radio unusable.
+///   2. invalidated        — adapter cycle invalidated the live server/scanner.
+///   3. connected          — at least one peer in the registry.
+///   4. meshActive         — both advertising AND scanning are active.
+///   5. adv/scan transients — starting/advertising/stopping or
+///                            starting/scanning/stopping.
+///   6. disconnected       — none of the above.
+///
+/// Pure function; testable in isolation.
+@visibleForTesting
+ConnectionStatus computeConnectionStatus({
+  required BluetoothAdapterState bluetoothState,
+  required bluey.AdvertisingState advertisingState,
+  required bluey.ScanState scanState,
+  required int connectedPeerCount,
+}) {
+  if (bluetoothState != BluetoothAdapterState.on) {
+    return ConnectionStatus.bluetoothOff;
+  }
+  if (advertisingState == bluey.AdvertisingState.invalidated ||
+      scanState == bluey.ScanState.invalidated) {
+    return ConnectionStatus.invalidated;
+  }
+  if (connectedPeerCount > 0) return ConnectionStatus.connected;
+  if (advertisingState == bluey.AdvertisingState.advertising &&
+      scanState == bluey.ScanState.scanning) {
+    return ConnectionStatus.meshActive;
+  }
+  if (advertisingState == bluey.AdvertisingState.starting) {
+    return ConnectionStatus.advertisingStarting;
+  }
+  if (advertisingState == bluey.AdvertisingState.advertising) {
+    return ConnectionStatus.advertising;
+  }
+  if (advertisingState == bluey.AdvertisingState.stopping) {
+    return ConnectionStatus.advertisingStopping;
+  }
+  if (scanState == bluey.ScanState.starting) {
+    return ConnectionStatus.discoveryStarting;
+  }
+  if (scanState == bluey.ScanState.scanning) {
+    return ConnectionStatus.discovering;
+  }
+  if (scanState == bluey.ScanState.stopping) {
+    return ConnectionStatus.discoveryStopping;
+  }
+  return ConnectionStatus.disconnected;
+}
+
 /// Main controller for the chat app state.
 ///
 /// This is a presentation layer controller that manages UI state and
@@ -160,6 +212,8 @@ class ChatController extends ChangeNotifier {
     _peerSubscription = _connectionService.peerEvents.listen(_onPeerEvent);
     _bluetoothStateSubscription = _connectionService.bluetoothStateStream
         .listen(_onBluetoothStateChanged);
+    // `_advertisingState` / `_scanState` defaults (idle / stopped) match
+    // bluey's initial values, so the first replay tick lands cleanly.
     _advertisingStateSubscription = _connectionService.advertisingStateStream
         .listen(_onAdvertisingStateChanged);
     _scanStateSubscription = _connectionService.scanStateStream
@@ -283,39 +337,14 @@ class ChatController extends ChangeNotifier {
   }
 
   void _updateConnectionStatus() {
-    final oldStatus = _connectionStatus;
-    if (_bluetoothState != BluetoothAdapterState.on) {
-      _connectionStatus = ConnectionStatus.bluetoothOff;
-    } else if (_advertisingState == bluey.AdvertisingState.invalidated ||
-        _scanState == bluey.ScanState.invalidated) {
-      _connectionStatus = ConnectionStatus.invalidated;
-    } else if (_connectionService.connectedPeerCount > 0) {
-      _connectionStatus = ConnectionStatus.connected;
-    } else {
-      final adv = _advertisingState;
-      final scan = _scanState;
-      if (adv == bluey.AdvertisingState.advertising &&
-          scan == bluey.ScanState.scanning) {
-        _connectionStatus = ConnectionStatus.meshActive;
-      } else if (adv == bluey.AdvertisingState.starting) {
-        _connectionStatus = ConnectionStatus.advertisingStarting;
-      } else if (adv == bluey.AdvertisingState.advertising) {
-        _connectionStatus = ConnectionStatus.advertising;
-      } else if (adv == bluey.AdvertisingState.stopping) {
-        _connectionStatus = ConnectionStatus.advertisingStopping;
-      } else if (scan == bluey.ScanState.starting) {
-        _connectionStatus = ConnectionStatus.discoveryStarting;
-      } else if (scan == bluey.ScanState.scanning) {
-        _connectionStatus = ConnectionStatus.discovering;
-      } else if (scan == bluey.ScanState.stopping) {
-        _connectionStatus = ConnectionStatus.discoveryStopping;
-      } else {
-        _connectionStatus = ConnectionStatus.disconnected;
-      }
-    }
-    if (oldStatus != _connectionStatus) {
-      notifyListeners();
-    }
+    final old = _connectionStatus;
+    _connectionStatus = computeConnectionStatus(
+      bluetoothState: _bluetoothState,
+      advertisingState: _advertisingState,
+      scanState: _scanState,
+      connectedPeerCount: _connectionService.connectedPeerCount,
+    );
+    if (old != _connectionStatus) notifyListeners();
   }
 
   void _onBluetoothStateChanged(BluetoothAdapterState state) {

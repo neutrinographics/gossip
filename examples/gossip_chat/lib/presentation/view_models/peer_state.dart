@@ -4,8 +4,8 @@ import 'discovered_peer.dart';
 
 /// UI state for a connected peer.
 ///
-/// NOTE: This model is being replaced by [DiscoveredPeer] in Phase D4. For
-/// now the [status] field is retyped to [DiscoveredPeerStatus] so the rest
+/// TODO(D4): replace with DiscoveredPeer (see view_models/discovered_peer.dart)
+/// For now the [status] field is retyped to [DiscoveredPeerStatus] so the rest
 /// of the app can converge on a single enum.
 class PeerState {
   final gossip.NodeId id;

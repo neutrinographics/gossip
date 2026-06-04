@@ -85,13 +85,13 @@ class ConnectionStatusBar extends StatelessWidget {
       case ConnectionStatus.discoveryStarting:
         return 'Starting discovery...';
       case ConnectionStatus.discoveryStopping:
-        return 'Stopping...';
+        return 'Stopping discovery...';
       case ConnectionStatus.advertising:
         return 'Advertising...';
       case ConnectionStatus.advertisingStarting:
         return 'Starting advertising...';
       case ConnectionStatus.advertisingStopping:
-        return 'Stopping...';
+        return 'Stopping advertising...';
       case ConnectionStatus.disconnected:
         return 'Disconnected';
       case ConnectionStatus.invalidated:
