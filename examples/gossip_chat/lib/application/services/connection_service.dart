@@ -112,6 +112,29 @@ class ConnectionService {
   /// Stream of peer events from transport.
   Stream<PeerEvent> get peerEvents => _transport.peerEvents;
 
+  /// Per-event scan candidate stream from the BLE scanner.
+  Stream<ScanCandidate> get candidateEvents => _transport.candidateEvents;
+
+  /// Snapshot stream of the current discovery candidate set.
+  Stream<List<ScanCandidate>> get candidates => _transport.candidates;
+
+  /// Snapshot of currently-known discovery candidates, in insertion order.
+  List<ScanCandidate> get currentCandidates => _transport.currentCandidates;
+
+  /// Current auto-connect policy mode.
+  ConnectionMode get connectionMode => _transport.connectionMode;
+
+  /// Sets the auto-connect policy mode (manual/auto).
+  void setConnectionMode(ConnectionMode mode) =>
+      _transport.setConnectionMode(mode);
+
+  /// Initiates a connection to a discovered candidate.
+  Future<NodeId> connectTo(ScanCandidate candidate) =>
+      _transport.connectTo(candidate);
+
+  /// Disconnects a specific peer.
+  Future<void> disconnect(NodeId nodeId) => _transport.disconnect(nodeId);
+
   /// Stream of connection errors for observability.
   Stream<ConnectionError> get errors => _transport.errors;
 

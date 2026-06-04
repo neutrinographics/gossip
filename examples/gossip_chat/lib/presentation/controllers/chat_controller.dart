@@ -47,6 +47,162 @@ enum ConnectionStatus {
 /// Callback for controller errors (e.g., networking failures).
 typedef ControllerErrorCallback = void Function(String operation, Object error);
 
+/// Merges a [ScanCandidate] into the peer map, keyed by NodeId when known
+/// or BleAddress pre-handshake. Pure function; testable in isolation.
+///
+/// If an entry already exists for [c.address] (matched by `peer.address`),
+/// it is updated in-place with the new rssi/lastSeen/displayName, preserving
+/// nodeId/everConnected/status. If no entry exists, a new
+/// [DiscoveredPeerStatus.discovered] entry is inserted under the BleAddress
+/// key.
+@visibleForTesting
+void mergeCandidate(Map<Object, DiscoveredPeer> peers, ScanCandidate c) {
+  // Find existing entry by address (may be keyed by either BleAddress or NodeId).
+  DiscoveredPeer? existing;
+  for (final p in peers.values) {
+    if (p.address == c.address) {
+      existing = p;
+      break;
+    }
+  }
+  if (existing != null) {
+    final key = existing.nodeId ?? existing.address;
+    peers[key] = existing.copyWith(
+      rssi: c.rssi,
+      lastSeenAt: c.lastSeen,
+      displayName: c.displayName ?? existing.displayName,
+    );
+    return;
+  }
+  peers[c.address] = DiscoveredPeer(
+    address: c.address,
+    displayName: c.displayName,
+    rssi: c.rssi,
+    lastSeenAt: c.lastSeen,
+    status: DiscoveredPeerStatus.discovered,
+  );
+}
+
+/// Merges a PeerOpened (transport-level peer connected) event into the peer
+/// map. If an entry exists keyed by a BleAddress whose `nodeId` is null but
+/// matches via [findKeyForNodeIdHint] (typically the recently-`connecting`
+/// row), it is REKEYED to [nodeId]. If no entry exists, a fresh one is
+/// inserted keyed by [nodeId] with `everConnected: true`.
+///
+/// The optional [addressHint] supplies the BleAddress associated with the
+/// successful connectTo call (the controller knows this synchronously since
+/// connectTo takes a ScanCandidate). When provided, it's used to find the
+/// pre-existing entry; otherwise we fall back to "first entry with status
+/// connecting and no nodeId yet".
+@visibleForTesting
+void mergePeerOpened(
+  Map<Object, DiscoveredPeer> peers,
+  gossip.NodeId nodeId, {
+  String? displayName,
+  BleAddress? addressHint,
+  DateTime? now,
+}) {
+  final timestamp = now ?? DateTime.now();
+  // Already keyed by NodeId?
+  final existingByNode = peers[nodeId];
+  if (existingByNode != null) {
+    peers[nodeId] = existingByNode.copyWith(
+      status: DiscoveredPeerStatus.connected,
+      everConnected: true,
+      displayName: displayName ?? existingByNode.displayName,
+      lastSeenAt: timestamp,
+    );
+    return;
+  }
+  // Try to find by BleAddress hint.
+  Object? oldKey;
+  DiscoveredPeer? toRekey;
+  if (addressHint != null) {
+    final byAddress = peers[addressHint];
+    if (byAddress != null && byAddress.nodeId == null) {
+      oldKey = addressHint;
+      toRekey = byAddress;
+    }
+  }
+  // Fallback: a single in-flight connecting entry without a known nodeId.
+  if (toRekey == null) {
+    for (final entry in peers.entries) {
+      final p = entry.value;
+      if (p.nodeId == null &&
+          p.status == DiscoveredPeerStatus.connecting) {
+        oldKey = entry.key;
+        toRekey = p;
+        break;
+      }
+    }
+  }
+  if (toRekey != null && oldKey != null) {
+    peers.remove(oldKey);
+    peers[nodeId] = toRekey.copyWith(
+      nodeId: nodeId,
+      status: DiscoveredPeerStatus.connected,
+      everConnected: true,
+      displayName: displayName ?? toRekey.displayName,
+      lastSeenAt: timestamp,
+    );
+    return;
+  }
+  // Brand-new entry (direct connection without a prior scan emission).
+  // BleAddress is unknown here; use a synthetic placeholder derived from
+  // the NodeId so DiscoveredPeer's required `address` field is satisfied.
+  // The UI keys off NodeId in this case anyway.
+  peers[nodeId] = DiscoveredPeer(
+    address: BleAddress(nodeId.value),
+    nodeId: nodeId,
+    displayName: displayName,
+    lastSeenAt: timestamp,
+    status: DiscoveredPeerStatus.connected,
+    everConnected: true,
+  );
+}
+
+/// Merges a PeerClosed (transport-level peer disconnected) event into the
+/// peer map. Sets status to [DiscoveredPeerStatus.unreachable] and keeps
+/// the entry; the `everConnected: true` flag (set on the prior PeerOpened)
+/// prevents prune-on-stop from evicting it.
+@visibleForTesting
+void mergePeerClosed(Map<Object, DiscoveredPeer> peers, gossip.NodeId nodeId) {
+  final existing = peers[nodeId];
+  if (existing == null) return;
+  peers[nodeId] = existing.copyWith(
+    status: DiscoveredPeerStatus.unreachable,
+  );
+}
+
+/// Maps a gossip [gossip.PeerStatus] update to the corresponding
+/// [DiscoveredPeerStatus] for the peer keyed by [nodeId]. No-op if the
+/// peer is not currently in the map — a gossip-only status update for a
+/// not-yet-connected peer is informational and must not surprise the user
+/// with a "connected" pill on a discovered-but-not-yet-connected row.
+@visibleForTesting
+void mergeGossipPeerStatus(
+  Map<Object, DiscoveredPeer> peers,
+  gossip.NodeId nodeId,
+  gossip.PeerStatus status,
+) {
+  final existing = peers[nodeId];
+  if (existing == null) return;
+  final mapped = switch (status) {
+    gossip.PeerStatus.reachable => DiscoveredPeerStatus.connected,
+    gossip.PeerStatus.suspected => DiscoveredPeerStatus.suspected,
+    gossip.PeerStatus.unreachable => DiscoveredPeerStatus.unreachable,
+  };
+  peers[nodeId] = existing.copyWith(status: mapped);
+}
+
+/// Prune-on-stop: drop every peer that has never reached `connected`
+/// (i.e. `everConnected == false`). Peers that were once connected stay
+/// regardless of current status. Pure function; testable in isolation.
+@visibleForTesting
+void pruneUnconnected(Map<Object, DiscoveredPeer> peers) {
+  peers.removeWhere((_, peer) => !peer.everConnected);
+}
+
 /// Composes the displayed ConnectionStatus from its inputs.
 ///
 /// Precedence (highest to lowest):
@@ -124,7 +280,19 @@ class ChatController extends ChangeNotifier {
   final ControllerErrorCallback? _onError;
 
   List<ChannelState> _channels = [];
-  List<PeerState> _peers = [];
+
+  /// Merged peer map keyed by either [NodeId] (once known) or
+  /// [BleAddress] (pre-handshake). Populated from three sources:
+  ///   1. transport candidate events (scan emissions)
+  ///   2. transport peer events (PeerOpened/PeerClosed)
+  ///   3. gossip [gossip.PeerStatus] updates (SWIM probes)
+  final Map<Object, DiscoveredPeer> _peers = {};
+
+  /// Tracks BleAddresses of in-flight connectTo attempts so that the
+  /// subsequent PeerOpened event can rekey the entry from address to
+  /// NodeId deterministically. The earliest still-pending address is used
+  /// as the hint passed to [mergePeerOpened].
+  final List<BleAddress> _connectingAddresses = [];
   gossip.ChannelId? _currentChannelId;
   List<MessageState> _currentMessages = [];
   Map<gossip.NodeId, TypingEvent> _typingUsers = {};
@@ -152,6 +320,7 @@ class ChatController extends ChangeNotifier {
 
   StreamSubscription<gossip.DomainEvent>? _eventSubscription;
   StreamSubscription<PeerEvent>? _peerSubscription;
+  StreamSubscription<ScanCandidate>? _candidateSubscription;
   StreamSubscription<BluetoothAdapterState>? _bluetoothStateSubscription;
   StreamSubscription<bluey.AdvertisingState>? _advertisingStateSubscription;
   StreamSubscription<bluey.ScanState>? _scanStateSubscription;
@@ -181,7 +350,8 @@ class ChatController extends ChangeNotifier {
   // --- Getters ---
 
   List<ChannelState> get channels => _channels;
-  List<PeerState> get peers => _peers;
+  List<DiscoveredPeer> get peers => List.unmodifiable(_peers.values);
+  ConnectionMode get connectionMode => _connectionService.connectionMode;
   gossip.ChannelId? get currentChannelId => _currentChannelId;
   ChannelState? get currentChannel => _currentChannelId != null
       ? _channels.cast<ChannelState?>().firstWhere(
@@ -210,6 +380,9 @@ class ChatController extends ChangeNotifier {
     // Subscribe to domain events via SyncService (not Coordinator directly)
     _eventSubscription = _syncService.events.listen(_onDomainEvent);
     _peerSubscription = _connectionService.peerEvents.listen(_onPeerEvent);
+    _candidateSubscription = _connectionService.candidateEvents.listen(
+      _onCandidate,
+    );
     _bluetoothStateSubscription = _connectionService.bluetoothStateStream
         .listen(_onBluetoothStateChanged);
     // `_advertisingState` / `_scanState` defaults (idle / stopped) match
@@ -265,13 +438,37 @@ class ChatController extends ChangeNotifier {
 
   void _onPeerEvent(PeerEvent event) {
     switch (event) {
-      case PeerConnected():
-        _refreshPeers();
+      case PeerConnected(:final nodeId, :final displayName):
+        // Pop the earliest in-flight address as a hint for rekeying. If
+        // the address still maps to a `connecting` entry without a NodeId,
+        // [mergePeerOpened] will rekey it; otherwise it falls back to
+        // scanning the map for an in-flight entry or creates a fresh one.
+        BleAddress? hint;
+        if (_connectingAddresses.isNotEmpty) {
+          hint = _connectingAddresses.removeAt(0);
+        }
+        mergePeerOpened(
+          _peers,
+          nodeId,
+          displayName: displayName,
+          addressHint: hint,
+        );
+        _signalStrengthManager.updatePenalty(nodeId, 0);
+        _refreshIndirectPeers();
         _updateConnectionStatus();
-      case PeerDisconnected():
-        _refreshPeers();
+        notifyListeners();
+      case PeerDisconnected(:final nodeId):
+        mergePeerClosed(_peers, nodeId);
+        _signalStrengthManager.clearPeer(nodeId);
+        _refreshIndirectPeers();
         _updateConnectionStatus();
+        notifyListeners();
     }
+  }
+
+  void _onCandidate(ScanCandidate c) {
+    mergeCandidate(_peers, c);
+    notifyListeners();
   }
 
   void _onEntryAppended(
@@ -318,21 +515,10 @@ class ChatController extends ChangeNotifier {
   }
 
   void _updatePeerStatus(gossip.NodeId peerId, gossip.PeerStatus newStatus) {
-    final index = _peers.indexWhere((p) => p.id == peerId);
-    if (index >= 0) {
-      _peers[index] = _peers[index].copyWith(status: _mapPeerStatus(newStatus));
+    final before = _peers[peerId];
+    mergeGossipPeerStatus(_peers, peerId, newStatus);
+    if (!identical(before, _peers[peerId])) {
       notifyListeners();
-    }
-  }
-
-  DiscoveredPeerStatus _mapPeerStatus(gossip.PeerStatus status) {
-    switch (status) {
-      case gossip.PeerStatus.reachable:
-        return DiscoveredPeerStatus.connected;
-      case gossip.PeerStatus.suspected:
-        return DiscoveredPeerStatus.suspected;
-      case gossip.PeerStatus.unreachable:
-        return DiscoveredPeerStatus.unreachable;
     }
   }
 
@@ -361,6 +547,11 @@ class ChatController extends ChangeNotifier {
   void _onScanStateChanged(bluey.ScanState state) {
     _scanState = state;
     _updateConnectionStatus();
+    if (state != bluey.ScanState.scanning) {
+      final before = _peers.length;
+      pruneUnconnected(_peers);
+      if (_peers.length != before) notifyListeners();
+    }
   }
 
   // --- Refresh Methods ---
@@ -457,29 +648,12 @@ class ChatController extends ChangeNotifier {
     });
   }
 
-  void _refreshPeers() {
-    // Get peers via SyncService (not Coordinator directly)
-    final syncPeers = _syncService.peers;
-    _peers = syncPeers.map((p) {
-      _signalStrengthManager.updatePenalty(p.id, p.failedProbeCount);
-      return PeerState(
-        id: p.id,
-        displayName: p.displayName,
-        status: _mapPeerStatus(p.status),
-        failedProbeCount: _signalStrengthManager.getSmoothedFailedProbeCount(
-          p.id,
-        ),
-      );
-    }).toList();
-
-    // Refresh indirect peers since direct peer set changed
-    _refreshIndirectPeers();
-
-    notifyListeners();
-  }
-
   void _refreshIndirectPeers() {
-    final directPeerIds = _peers.map((p) => p.id).toSet();
+    final directPeerIds = <gossip.NodeId>{};
+    for (final p in _peers.values) {
+      final id = p.nodeId;
+      if (id != null) directPeerIds.add(id);
+    }
     final indirectNodeIds = _indirectPeerService.getIndirectPeers(
       directPeerIds: directPeerIds,
     );
@@ -499,26 +673,35 @@ class ChatController extends ChangeNotifier {
     });
   }
 
-  /// Refreshes peer signal strength by polling latest probe counts and decaying penalties.
+  /// Returns smoothed failed-probe count for a peer (0-2). Used by the
+  /// peers screen for the gossip-health signal indicator.
+  int getSmoothedFailedProbeCount(gossip.NodeId nodeId) =>
+      _signalStrengthManager.getSmoothedFailedProbeCount(nodeId);
+
+  /// Refreshes peer signal strength by polling latest probe counts and
+  /// decaying penalties. Polls gossip's failedProbeCount for every NodeId
+  /// currently in the peer map.
   void _refreshPeerSignalStrength() {
     if (_peers.isEmpty) return;
 
-    // Poll latest failedProbeCount from gossip library
-    final syncPeers = _syncService.peers;
-    for (final p in syncPeers) {
-      _signalStrengthManager.updatePenalty(p.id, p.failedProbeCount);
+    // Poll latest failedProbeCount from gossip library for any peers
+    // that are known by NodeId (i.e. have completed the handshake).
+    final connectedIds = <gossip.NodeId>{};
+    for (final p in _peers.values) {
+      final id = p.nodeId;
+      if (id != null) connectedIds.add(id);
+    }
+    if (connectedIds.isNotEmpty) {
+      final syncPeers = _syncService.peers;
+      for (final p in syncPeers) {
+        if (connectedIds.contains(p.id)) {
+          _signalStrengthManager.updatePenalty(p.id, p.failedProbeCount);
+        }
+      }
     }
 
-    // Decay penalties and update UI if changed
+    // Decay penalties and notify if any visible signal level changed.
     if (_signalStrengthManager.decayPenalties()) {
-      _peers = _peers
-          .map(
-            (p) => p.copyWith(
-              failedProbeCount: _signalStrengthManager
-                  .getSmoothedFailedProbeCount(p.id),
-            ),
-          )
-          .toList();
       notifyListeners();
     }
   }
@@ -703,6 +886,113 @@ class ChatController extends ChangeNotifier {
     _updateConnectionStatus();
   }
 
+  // --- Manual-mode API ---
+
+  /// Sets the auto-connect policy mode (manual/auto). In manual mode, the
+  /// user must tap discovered rows; in auto mode, gossip_bluey's
+  /// AutoConnectPolicy initiates connections as candidates appear.
+  void setConnectionMode(ConnectionMode mode) {
+    _connectionService.setConnectionMode(mode);
+    notifyListeners();
+  }
+
+  /// Starts or stops BLE advertising independently of discovery.
+  Future<void> setAdvertising(bool on) async {
+    try {
+      if (on) {
+        await _connectionService.startAdvertising();
+      } else {
+        await _connectionService.stopAdvertising();
+      }
+    } catch (e) {
+      _onError?.call(on ? 'startAdvertising' : 'stopAdvertising', e);
+    }
+  }
+
+  /// Starts or stops BLE discovery independently of advertising.
+  Future<void> setDiscovering(bool on) async {
+    try {
+      if (on) {
+        await _connectionService.startDiscovery();
+      } else {
+        await _connectionService.stopDiscovery();
+      }
+    } catch (e) {
+      _onError?.call(on ? 'startDiscovery' : 'stopDiscovery', e);
+    }
+  }
+
+  /// Tap-handler for a discovered peer row. For a [discovered]/[failed]
+  /// row, initiates a connectTo and flips status to [connecting]. For
+  /// connected/suspected/unreachable, no-ops (the caller should surface an
+  /// action sheet). For transient states (connecting/disconnecting),
+  /// no-ops.
+  Future<void> tapPeer(DiscoveredPeer peer) async {
+    switch (peer.status) {
+      case DiscoveredPeerStatus.discovered:
+      case DiscoveredPeerStatus.failed:
+        final key = peer.nodeId ?? peer.address;
+        _peers[key] = peer.copyWith(status: DiscoveredPeerStatus.connecting);
+        notifyListeners();
+        ScanCandidate? candidate;
+        for (final c in _connectionService.currentCandidates) {
+          if (c.address == peer.address) {
+            candidate = c;
+            break;
+          }
+        }
+        if (candidate == null) {
+          _peers[key] = peer.copyWith(status: DiscoveredPeerStatus.failed);
+          notifyListeners();
+          return;
+        }
+        _connectingAddresses.add(candidate.address);
+        try {
+          await _connectionService.connectTo(candidate);
+          // On success, the PeerOpened event handler rekeys + sets
+          // status: connected + everConnected: true.
+        } catch (e) {
+          _connectingAddresses.remove(candidate.address);
+          // Re-read since PeerOpened may have arrived concurrently (unlikely
+          // on failure, but be defensive).
+          final current = _peers[key];
+          if (current != null &&
+              current.status == DiscoveredPeerStatus.connecting) {
+            _peers[key] = current.copyWith(
+              status: DiscoveredPeerStatus.failed,
+            );
+            notifyListeners();
+          }
+          _onError?.call('connectTo', e);
+        }
+      case DiscoveredPeerStatus.connected:
+      case DiscoveredPeerStatus.suspected:
+      case DiscoveredPeerStatus.unreachable:
+        // Caller's responsibility to show an action sheet (e.g. disconnect).
+        return;
+      case DiscoveredPeerStatus.connecting:
+      case DiscoveredPeerStatus.disconnecting:
+        // Transient — ignore.
+        return;
+    }
+  }
+
+  /// Disconnects a specific peer. Flips the entry to
+  /// [DiscoveredPeerStatus.disconnecting] until PeerClosed arrives.
+  Future<void> disconnectPeer(gossip.NodeId nodeId) async {
+    final existing = _peers[nodeId];
+    if (existing != null) {
+      _peers[nodeId] =
+          existing.copyWith(status: DiscoveredPeerStatus.disconnecting);
+      notifyListeners();
+    }
+    try {
+      await _connectionService.disconnect(nodeId);
+    } catch (e) {
+      _onError?.call('disconnect', e);
+    }
+  }
+
   String getTypingIndicatorText() {
     if (_typingUsers.isEmpty) return '';
 
@@ -721,6 +1011,7 @@ class ChatController extends ChangeNotifier {
   void dispose() {
     _eventSubscription?.cancel();
     _peerSubscription?.cancel();
+    _candidateSubscription?.cancel();
     _bluetoothStateSubscription?.cancel();
     _advertisingStateSubscription?.cancel();
     _scanStateSubscription?.cancel();

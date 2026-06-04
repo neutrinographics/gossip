@@ -92,7 +92,9 @@ class PeersScreen extends StatelessWidget {
     return ListView(
       children: [
         // Direct peers section
-        ...controller.peers.map((peer) => _PeerTile(peer: peer)),
+        ...controller.peers.map(
+          (peer) => _PeerTile(peer: peer, controller: controller),
+        ),
 
         // Indirect peers section
         if (hasIndirectPeers) ...[
@@ -189,9 +191,10 @@ class _SectionHeader extends StatelessWidget {
 }
 
 class _PeerTile extends StatelessWidget {
-  final PeerState peer;
+  final DiscoveredPeer peer;
+  final ChatController controller;
 
-  const _PeerTile({required this.peer});
+  const _PeerTile({required this.peer, required this.controller});
 
   @override
   Widget build(BuildContext context) {
@@ -209,21 +212,40 @@ class _PeerTile extends StatelessWidget {
         peer.status == DiscoveredPeerStatus.unreachable ||
         peer.status == DiscoveredPeerStatus.failed;
 
+    // Identifier used for the avatar tint — prefer NodeId once known, fall
+    // back to the BleAddress while pre-handshake.
+    final identifier = peer.nodeId?.value ?? peer.address.value;
+    final displayName = peer.displayName ?? '(unknown)';
+
+    // Gossip-protocol signal strength is only meaningful once we have a
+    // NodeId in the connection registry. Pre-handshake rows show the
+    // "no signal" placeholder.
+    // TODO(E1): replace with PeerStatusPill + BleSignalIndicator + GossipHealthDot.
+    final nodeId = peer.nodeId;
+    final smoothedProbeCount = nodeId != null
+        ? controller.getSmoothedFailedProbeCount(nodeId)
+        : 0;
+    final signalStrength = switch (smoothedProbeCount) {
+      0 => 3,
+      1 => 2,
+      _ => 1,
+    };
+
     return ListTile(
       leading: NodeAvatar(
-        identifier: peer.id.value,
-        displayText: peer.displayName,
+        identifier: identifier,
+        displayText: displayName,
         radius: 20,
       ),
-      title: Text(peer.displayName),
+      title: Text(displayName),
       subtitle: Text(statusText),
-      trailing: isOffline
+      trailing: isOffline || nodeId == null
           ? Icon(
               Icons.signal_cellular_off,
               size: 18,
               color: Theme.of(context).colorScheme.outline,
             )
-          : SignalStrengthIndicator(strength: peer.signalStrength),
+          : SignalStrengthIndicator(strength: signalStrength),
     );
   }
 }
