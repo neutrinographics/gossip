@@ -912,35 +912,19 @@ class ChatController extends ChangeNotifier {
         final key = peer.nodeId ?? peer.address;
         _peers[key] = peer.copyWith(status: DiscoveredPeerStatus.connecting);
         notifyListeners();
-        ScanCandidate? candidate;
-        for (final c in _connectionService.currentCandidates) {
-          if (c.address == peer.address) {
-            candidate = c;
-            break;
-          }
-        }
-        if (candidate == null) {
+        final gossip.NodeId nodeId;
+        try {
+          nodeId = await _connectionService.connectByAddress(peer.address);
+        } on StateError {
+          // No candidate currently known for this address (scanner has
+          // not emitted one this session, or discovery was stopped).
           _peers[key] = peer.copyWith(status: DiscoveredPeerStatus.failed);
           notifyListeners();
           return;
-        }
-        try {
-          final nodeId = await _connectionService.connectTo(candidate);
-          // Rekey synchronously off connectTo's return value. The PeerOpened
-          // event will still arrive; mergePeerOpened is idempotent on an
-          // already-keyed-by-NodeId entry, so it's a safe no-op then.
-          final existing = _peers.remove(key);
-          if (existing != null) {
-            _peers[nodeId] = existing.copyWith(
-              nodeId: nodeId,
-              status: DiscoveredPeerStatus.connected,
-              everConnected: true,
-            );
-            notifyListeners();
-          }
         } catch (e) {
-          // Re-read since PeerOpened may have arrived concurrently (unlikely
-          // on failure, but be defensive).
+          // Connect attempt failed for some other reason. Re-read since
+          // PeerOpened may have arrived concurrently (unlikely on
+          // failure, but be defensive).
           final current = _peers[key];
           if (current != null &&
               current.status == DiscoveredPeerStatus.connecting) {
@@ -950,6 +934,19 @@ class ChatController extends ChangeNotifier {
             notifyListeners();
           }
           _onError?.call('connectTo', e);
+          return;
+        }
+        // Rekey synchronously off connectTo's return value. The PeerOpened
+        // event will still arrive; mergePeerOpened is idempotent on an
+        // already-keyed-by-NodeId entry, so it's a safe no-op then.
+        final existing = _peers.remove(key);
+        if (existing != null) {
+          _peers[nodeId] = existing.copyWith(
+            nodeId: nodeId,
+            status: DiscoveredPeerStatus.connected,
+            everConnected: true,
+          );
+          notifyListeners();
         }
       case DiscoveredPeerStatus.connected:
       case DiscoveredPeerStatus.suspected:

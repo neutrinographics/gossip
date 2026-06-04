@@ -132,6 +132,11 @@ class ConnectionService {
   Future<NodeId> connectTo(ScanCandidate candidate) =>
       _transport.connectTo(candidate);
 
+  /// Initiates a connection to the candidate currently known for [address].
+  /// Throws [StateError] if no such candidate exists.
+  Future<NodeId> connectByAddress(BleAddress address) =>
+      _transport.connectByAddress(address);
+
   /// Disconnects a specific peer.
   Future<void> disconnect(NodeId nodeId) => _transport.disconnect(nodeId);
 

@@ -12,6 +12,7 @@ import '../domain/aggregates/connection_registry.dart';
 import '../domain/errors/connection_error.dart';
 import '../domain/events/connection_event.dart';
 import '../domain/interfaces/bluey_port.dart';
+import '../domain/value_objects/ble_address.dart';
 import '../domain/value_objects/bluetooth_adapter_state.dart';
 import '../domain/value_objects/connection_mode.dart';
 import '../domain/value_objects/scan_candidate.dart';
@@ -302,6 +303,26 @@ class BlueyTransport {
   /// auto mode.
   Future<NodeId> connectTo(ScanCandidate candidate) =>
       _service.connectTo(candidate);
+
+  /// Initiates a connection to the candidate currently known for [address].
+  ///
+  /// Equivalent to looking up the most recent [ScanCandidate] in
+  /// [currentCandidates] and passing it to [connectTo], but resolved
+  /// inside the facade so callers don't have to thread candidate
+  /// lookups themselves.
+  ///
+  /// Throws [StateError] if no candidate is currently known for
+  /// [address] (the scanner has not emitted one this session, or
+  /// discovery has been stopped and the candidate map is empty).
+  Future<NodeId> connectByAddress(BleAddress address) {
+    final candidate = _discovery.currentCandidates
+        .where((c) => c.address == address)
+        .firstOrNull;
+    if (candidate == null) {
+      throw StateError('no candidate currently known for $address');
+    }
+    return _service.connectTo(candidate);
+  }
 
   /// Disconnect a specific peer (whichever role we hold for that peer).
   Future<void> disconnect(NodeId nodeId) => _service.disconnect(nodeId);

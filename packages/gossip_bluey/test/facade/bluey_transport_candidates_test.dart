@@ -154,6 +154,56 @@ void main() {
       },
     );
 
+    test(
+      'connectByAddress throws StateError when no candidate is known',
+      () async {
+        final network = FakeBlueyNetwork();
+        final port = FakeBlueyPort(localNodeId: localId, network: network);
+        final transport = BlueyTransport.testing(
+          localNodeId: localId,
+          serviceUuid: serviceUuid,
+          displayName: 'phone',
+          port: port,
+        );
+
+        // No discovery started, no candidate emitted.
+        expect(
+          () => transport.connectByAddress(const BleAddress('AA:BB:CC:DD:EE:FF')),
+          throwsStateError,
+        );
+
+        await transport.dispose();
+      },
+    );
+
+    test(
+      'connectByAddress connects using the candidate currently known',
+      () async {
+        final network = FakeBlueyNetwork();
+        final port = FakeBlueyPort(localNodeId: localId, network: network);
+        // Remote must exist on the network so connectAndIdentify can
+        // resolve it to remoteAId.
+        FakeBlueyPort(localNodeId: remoteAId, network: network);
+        final transport = BlueyTransport.testing(
+          localNodeId: localId,
+          serviceUuid: serviceUuid,
+          displayName: 'phone',
+          port: port,
+        );
+
+        await transport.startDiscovery();
+        port.emitCandidate(candidateFor(remoteAId));
+        await Future<void>.delayed(Duration.zero);
+
+        final resolved = await transport
+            .connectByAddress(BleAddress(remoteAId.value));
+        expect(resolved, equals(remoteAId));
+        expect(transport.connectedPeerCount, equals(1));
+
+        await transport.dispose();
+      },
+    );
+
     test('connectTo works in manual mode (drives ConnectionManager directly)',
         () async {
       final network = FakeBlueyNetwork();

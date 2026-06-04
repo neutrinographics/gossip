@@ -48,10 +48,31 @@ class FakeConnectionService implements ConnectionService {
 
   int disconnectCallCount = 0;
   final List<ScanCandidate> connectCalls = [];
+  final List<BleAddress> connectByAddressCalls = [];
 
   @override
   Future<gossip.NodeId> connectTo(ScanCandidate candidate) async {
     connectCalls.add(candidate);
+    if (connectDelay > Duration.zero) {
+      await Future<void>.delayed(connectDelay);
+    }
+    if (nextConnectError != null) {
+      throw nextConnectError!;
+    }
+    return nextConnectResult!;
+  }
+
+  @override
+  Future<gossip.NodeId> connectByAddress(BleAddress address) async {
+    connectByAddressCalls.add(address);
+    // Mirror the real transport: if no candidate is known for the
+    // address, throw StateError. Otherwise, defer to the same delay /
+    // result / error knobs used by connectTo.
+    final hasCandidate =
+        stagedCandidates.any((c) => c.address == address);
+    if (!hasCandidate) {
+      throw StateError('no candidate currently known for $address');
+    }
     if (connectDelay > Duration.zero) {
       await Future<void>.delayed(connectDelay);
     }
@@ -217,6 +238,47 @@ void main() {
       expect(p.address, addr);
       expect(p.status, DiscoveredPeerStatus.connected);
       expect(p.everConnected, isTrue);
+
+      controller.dispose();
+    });
+
+    test('transitions to failed when no candidate is known for the address',
+        () async {
+      final connection = FakeConnectionService();
+      final sync = FakeSyncService();
+      final chat = FakeChatService(localNodeId);
+      final metrics = FakeMetricsService();
+
+      // No candidates staged: connectByAddress will throw StateError.
+      expect(connection.stagedCandidates, isEmpty);
+
+      final controller = ChatController(
+        chatService: chat,
+        connectionService: connection,
+        syncService: sync,
+        metricsService: metrics,
+      );
+
+      // Seed a discovered peer via a scan candidate event (so _peers
+      // contains an entry under the BleAddress key), then drop it from
+      // stagedCandidates by *not* adding it. The candidate event drives
+      // the controller's _onCandidate path; stagedCandidates is what
+      // connectByAddress consults.
+      connection.candidateEventsCtrl
+          .add(ScanCandidate(address: addr, lastSeen: lastSeen));
+      await Future<void>.delayed(Duration.zero);
+      expect(controller.peers, hasLength(1));
+
+      final discovered = DiscoveredPeer(
+        address: addr,
+        lastSeenAt: lastSeen,
+        status: DiscoveredPeerStatus.discovered,
+      );
+      await controller.tapPeer(discovered);
+
+      expect(connection.connectByAddressCalls, hasLength(1));
+      expect(controller.peers, hasLength(1));
+      expect(controller.peers.first.status, DiscoveredPeerStatus.failed);
 
       controller.dispose();
     });
