@@ -9,4 +9,5 @@ export 'node_avatar.dart';
 export 'peer_status_pill.dart';
 export 'signal_strength_indicator.dart';
 export 'text_input_dialog.dart';
+export 'topology_controls.dart';
 export 'typing_indicator.dart';
