@@ -30,10 +30,9 @@ enum DiscoveredPeerStatus {
 
 /// Immutable view model for one row in the peers list.
 ///
-/// Keyed by [BleAddress] until [nodeId] is known, then by [nodeId].
-/// The [everConnected] flag is used by the prune-on-stop rule: when
-/// discovery stops, peers that have not reached [DiscoveredPeerStatus.connected]
-/// at any point during this session are evicted.
+/// Keyed by [BleAddress] until [nodeId] is known, then by [nodeId]. Status
+/// drives both the UI pill and the prune-on-stop rule: see
+/// `pruneUnconnected` in `chat_controller.dart`.
 @immutable
 class DiscoveredPeer {
   final BleAddress address;
@@ -42,7 +41,6 @@ class DiscoveredPeer {
   final int? rssi;
   final DateTime lastSeenAt;
   final DiscoveredPeerStatus status;
-  final bool everConnected;
 
   const DiscoveredPeer({
     required this.address,
@@ -51,7 +49,6 @@ class DiscoveredPeer {
     this.nodeId,
     this.displayName,
     this.rssi,
-    this.everConnected = false,
   });
 
   DiscoveredPeer copyWith({
@@ -61,7 +58,6 @@ class DiscoveredPeer {
     int? rssi,
     DateTime? lastSeenAt,
     DiscoveredPeerStatus? status,
-    bool? everConnected,
   }) =>
       DiscoveredPeer(
         address: address ?? this.address,
@@ -70,7 +66,6 @@ class DiscoveredPeer {
         rssi: rssi ?? this.rssi,
         lastSeenAt: lastSeenAt ?? this.lastSeenAt,
         status: status ?? this.status,
-        everConnected: everConnected ?? this.everConnected,
       );
 
   @override
@@ -82,8 +77,7 @@ class DiscoveredPeer {
           displayName == other.displayName &&
           rssi == other.rssi &&
           lastSeenAt == other.lastSeenAt &&
-          status == other.status &&
-          everConnected == other.everConnected;
+          status == other.status;
 
   @override
   int get hashCode => Object.hash(
@@ -93,7 +87,6 @@ class DiscoveredPeer {
         rssi,
         lastSeenAt,
         status,
-        everConnected,
       );
 
   @override
@@ -103,7 +96,6 @@ class DiscoveredPeer {
       'displayName: $displayName, '
       'rssi: ${rssi != null ? '$rssi dBm' : 'null'}, '
       'lastSeenAt: $lastSeenAt, '
-      'status: $status, '
-      'everConnected: $everConnected'
+      'status: $status'
       ')';
 }

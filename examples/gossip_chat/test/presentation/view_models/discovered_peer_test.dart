@@ -17,7 +17,6 @@ void main() {
         rssi: -48,
         lastSeenAt: t,
         status: DiscoveredPeerStatus.connected,
-        everConnected: true,
       );
       expect(peer.address, addr);
       expect(peer.nodeId, nodeId);
@@ -25,7 +24,6 @@ void main() {
       expect(peer.rssi, -48);
       expect(peer.lastSeenAt, t);
       expect(peer.status, DiscoveredPeerStatus.connected);
-      expect(peer.everConnected, isTrue);
     });
 
     test('nodeId, displayName, rssi nullable; address/lastSeenAt/status required', () {
@@ -37,7 +35,6 @@ void main() {
       expect(peer.nodeId, isNull);
       expect(peer.displayName, isNull);
       expect(peer.rssi, isNull);
-      expect(peer.everConnected, isFalse); // default
     });
 
     test('copyWith updates only the named fields', () {
@@ -54,17 +51,6 @@ void main() {
       expect(updated.status, DiscoveredPeerStatus.connecting);
       expect(updated.rssi, -42);
       expect(updated.lastSeenAt, t);
-      expect(updated.everConnected, isFalse);
-    });
-
-    test('copyWith can set everConnected to true', () {
-      final peer = DiscoveredPeer(
-        address: addr,
-        lastSeenAt: t,
-        status: DiscoveredPeerStatus.connected,
-      );
-      final updated = peer.copyWith(everConnected: true);
-      expect(updated.everConnected, isTrue);
     });
 
     test('copyWith preserves nullable fields when not specified', () {
@@ -90,7 +76,6 @@ void main() {
         rssi: -50,
         lastSeenAt: t,
         status: DiscoveredPeerStatus.connected,
-        everConnected: true,
       );
       final b = DiscoveredPeer(
         address: addr,
@@ -99,7 +84,6 @@ void main() {
         rssi: -50,
         lastSeenAt: t,
         status: DiscoveredPeerStatus.connected,
-        everConnected: true,
       );
       expect(a, equals(b));
       expect(a.hashCode, b.hashCode);
@@ -113,11 +97,9 @@ void main() {
         rssi: -50,
         lastSeenAt: t,
         status: DiscoveredPeerStatus.connected,
-        everConnected: true,
       );
       expect(base.copyWith(status: DiscoveredPeerStatus.suspected), isNot(equals(base)));
       expect(base.copyWith(rssi: -49), isNot(equals(base)));
-      expect(base.copyWith(everConnected: false), isNot(equals(base)));
       expect(
         DiscoveredPeer(
           address: BleAddress('FF:FF:FF:FF:FF:FF'),

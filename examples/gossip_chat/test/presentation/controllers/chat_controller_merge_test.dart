@@ -34,11 +34,10 @@ void main() {
       expect(p.displayName, 'Pixel 6a');
       expect(p.rssi, -55);
       expect(p.lastSeenAt, t0);
-      expect(p.everConnected, isFalse);
     });
 
     test('subsequent emission for same address updates rssi/lastSeen and '
-        'preserves nodeId/status/everConnected', () {
+        'preserves nodeId/status', () {
       final peers = <Object, DiscoveredPeer>{
         nodeId: DiscoveredPeer(
           address: addr,
@@ -47,7 +46,6 @@ void main() {
           rssi: -55,
           lastSeenAt: t0,
           status: DiscoveredPeerStatus.connected,
-          everConnected: true,
         ),
       };
       mergeCandidate(
@@ -64,7 +62,6 @@ void main() {
       expect(p.rssi, -70);
       expect(p.lastSeenAt, t1);
       expect(p.status, DiscoveredPeerStatus.connected);
-      expect(p.everConnected, isTrue);
     });
 
     test('updates the existing entry keyed by BleAddress', () {
@@ -84,11 +81,37 @@ void main() {
       expect(peers[addr]!.rssi, -42);
       expect(peers[addr]!.lastSeenAt, t1);
     });
+
+    test(
+        'matches existing connected entry by real address (no duplicate row) — '
+        'regression for inbound peripheral-role connection then discovery toggle',
+        () {
+      // Setup: an inbound peripheral-role connection arrived first.
+      // mergePeerOpened was called with the real BleAddress; the entry is
+      // keyed by NodeId with address = the real address.
+      final peers = <Object, DiscoveredPeer>{};
+      mergePeerOpened(peers, nodeId, addr, displayName: 'X', now: t0);
+      expect(peers, hasLength(1));
+      expect(peers[nodeId]!.address, addr);
+
+      // Now Discovery is enabled and a scan candidate for the same address
+      // arrives. mergeCandidate must update the existing entry, not create
+      // a new BleAddress-keyed one.
+      mergeCandidate(
+        peers,
+        ScanCandidate(address: addr, rssi: -50, lastSeen: t1),
+      );
+
+      expect(peers, hasLength(1));
+      expect(peers.containsKey(addr), isFalse);
+      expect(peers[nodeId]!.rssi, -50);
+      expect(peers[nodeId]!.status, DiscoveredPeerStatus.connected);
+    });
   });
 
   group('mergePeerOpened', () {
-    test('rekeys a connecting entry from BleAddress to NodeId, sets '
-        'connected + everConnected', () {
+    test('rekeys a connecting entry from BleAddress to NodeId, sets connected',
+        () {
       final peers = <Object, DiscoveredPeer>{
         addr: DiscoveredPeer(
           address: addr,
@@ -100,6 +123,7 @@ void main() {
       mergePeerOpened(
         peers,
         nodeId,
+        addr,
         displayName: 'Pixel 6a',
         now: t1,
       );
@@ -110,52 +134,51 @@ void main() {
       expect(p.nodeId, nodeId);
       expect(p.displayName, 'Pixel 6a');
       expect(p.status, DiscoveredPeerStatus.connected);
-      expect(p.everConnected, isTrue);
       expect(p.lastSeenAt, t1);
     });
 
-    test('inserts a fresh NodeId-keyed entry when no prior entry exists', () {
+    test('inserts a fresh NodeId-keyed entry with the real address when no '
+        'prior entry exists', () {
       final peers = <Object, DiscoveredPeer>{};
       mergePeerOpened(
         peers,
         nodeId,
+        addr,
         displayName: 'Pixel 6a',
         now: t1,
       );
       expect(peers, hasLength(1));
       final p = peers[nodeId]!;
       expect(p.nodeId, nodeId);
+      expect(p.address, addr); // real address, not synthetic
       expect(p.status, DiscoveredPeerStatus.connected);
-      expect(p.everConnected, isTrue);
     });
 
-    test('updates an existing NodeId-keyed entry to connected/everConnected', () {
+    test('updates an existing NodeId-keyed entry to connected', () {
       final peers = <Object, DiscoveredPeer>{
         nodeId: DiscoveredPeer(
           address: addr,
           nodeId: nodeId,
           lastSeenAt: t0,
           status: DiscoveredPeerStatus.unreachable,
-          everConnected: true,
         ),
       };
-      mergePeerOpened(peers, nodeId, now: t1);
+      mergePeerOpened(peers, nodeId, addr, now: t1);
       final p = peers[nodeId]!;
       expect(p.status, DiscoveredPeerStatus.connected);
-      expect(p.everConnected, isTrue);
+      expect(p.address, addr);
       expect(p.lastSeenAt, t1);
     });
 
-    test('falls back to a single in-flight connecting entry when no '
-        'addressHint is supplied', () {
+    test('rekeys a discovered entry keyed by the matching BleAddress', () {
       final peers = <Object, DiscoveredPeer>{
         addr: DiscoveredPeer(
           address: addr,
           lastSeenAt: t0,
-          status: DiscoveredPeerStatus.connecting,
+          status: DiscoveredPeerStatus.discovered,
         ),
       };
-      mergePeerOpened(peers, nodeId, now: t1);
+      mergePeerOpened(peers, nodeId, addr, now: t1);
       expect(peers.containsKey(addr), isFalse);
       expect(peers[nodeId]!.nodeId, nodeId);
       expect(peers[nodeId]!.status, DiscoveredPeerStatus.connected);
@@ -163,21 +186,17 @@ void main() {
   });
 
   group('mergePeerClosed', () {
-    test('transitions a connected entry to unreachable and keeps everConnected', () {
+    test('removes the entry entirely', () {
       final peers = <Object, DiscoveredPeer>{
         nodeId: DiscoveredPeer(
           address: addr,
           nodeId: nodeId,
           lastSeenAt: t0,
           status: DiscoveredPeerStatus.connected,
-          everConnected: true,
         ),
       };
       mergePeerClosed(peers, nodeId);
-      expect(peers, hasLength(1));
-      final p = peers[nodeId]!;
-      expect(p.status, DiscoveredPeerStatus.unreachable);
-      expect(p.everConnected, isTrue);
+      expect(peers, isEmpty);
     });
 
     test('no-ops if peer not in map', () {
@@ -195,7 +214,6 @@ void main() {
           nodeId: nodeId,
           lastSeenAt: t0,
           status: DiscoveredPeerStatus.suspected,
-          everConnected: true,
         ),
       };
       mergeGossipPeerStatus(peers, nodeId, gossip.PeerStatus.reachable);
@@ -209,7 +227,6 @@ void main() {
           nodeId: nodeId,
           lastSeenAt: t0,
           status: DiscoveredPeerStatus.connected,
-          everConnected: true,
         ),
       };
       mergeGossipPeerStatus(peers, nodeId, gossip.PeerStatus.suspected);
@@ -223,7 +240,6 @@ void main() {
           nodeId: nodeId,
           lastSeenAt: t0,
           status: DiscoveredPeerStatus.connected,
-          everConnected: true,
         ),
       };
       mergeGossipPeerStatus(peers, nodeId, gossip.PeerStatus.unreachable);
@@ -247,7 +263,9 @@ void main() {
   });
 
   group('pruneUnconnected (prune-on-stop)', () {
-    test('drops discovered-only entries; keeps ever-connected entries', () {
+    test(
+        'drops discovered/connecting/failed entries; keeps '
+        'connected/suspected/unreachable/disconnecting entries', () {
       final peers = <Object, DiscoveredPeer>{
         addr: DiscoveredPeer(
           address: addr,
@@ -264,14 +282,12 @@ void main() {
           nodeId: nodeId,
           lastSeenAt: t0,
           status: DiscoveredPeerStatus.unreachable,
-          everConnected: true,
         ),
         nodeId2: DiscoveredPeer(
           address: BleAddress('AB:CD:EF:01:02:03'),
           nodeId: nodeId2,
           lastSeenAt: t0,
           status: DiscoveredPeerStatus.connected,
-          everConnected: true,
         ),
       };
       pruneUnconnected(peers);
@@ -281,14 +297,14 @@ void main() {
       expect(peers.containsKey(nodeId2), isTrue);
     });
 
-    test('drops nothing when all entries are everConnected', () {
+    test('drops nothing when all entries are at connected/suspected/'
+        'unreachable/disconnecting status', () {
       final peers = <Object, DiscoveredPeer>{
         nodeId: DiscoveredPeer(
           address: addr,
           nodeId: nodeId,
           lastSeenAt: t0,
           status: DiscoveredPeerStatus.unreachable,
-          everConnected: true,
         ),
       };
       pruneUnconnected(peers);
@@ -301,6 +317,18 @@ void main() {
           address: addr,
           lastSeenAt: t0,
           status: DiscoveredPeerStatus.discovered,
+        ),
+      };
+      pruneUnconnected(peers);
+      expect(peers, isEmpty);
+    });
+
+    test('drops connecting entries', () {
+      final peers = <Object, DiscoveredPeer>{
+        addr: DiscoveredPeer(
+          address: addr,
+          lastSeenAt: t0,
+          status: DiscoveredPeerStatus.connecting,
         ),
       };
       pruneUnconnected(peers);

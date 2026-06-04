@@ -27,8 +27,9 @@ sealed class PeerEvent {
 
 final class PeerConnected extends PeerEvent {
   final NodeId nodeId;
+  final BleAddress address;
   final String? displayName;
-  const PeerConnected(this.nodeId, {this.displayName});
+  const PeerConnected(this.nodeId, {required this.address, this.displayName});
 }
 
 final class PeerDisconnected extends PeerEvent {
@@ -340,8 +341,10 @@ class BlueyTransport {
 
   void _onEvent(ConnectionEvent event) {
     switch (event) {
-      case PeerOpened(:final nodeId, :final displayName):
-        _peers.add(PeerConnected(nodeId, displayName: displayName));
+      case PeerOpened(:final nodeId, :final address, :final displayName):
+        _peers.add(
+          PeerConnected(nodeId, address: address, displayName: displayName),
+        );
       case PeerClosed(:final nodeId):
         _peers.add(PeerDisconnected(nodeId));
     }

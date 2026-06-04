@@ -99,6 +99,7 @@ class ConnectionManager implements MessageDispatcher {
       case PortPeerConnected(
         :final nodeId,
         :final role,
+        :final address,
         :final displayName,
       ):
         if (maxConnections != null &&
@@ -131,7 +132,13 @@ class ConnectionManager implements MessageDispatcher {
             _decoders[nodeId] = FrameDecoder();
             metrics.recordConnectionEstablished();
             metrics.setConnectedPeerCount(registry.connectionCount);
-            _events.add(PeerOpened(nodeId: nodeId, displayName: displayName));
+            _events.add(
+              PeerOpened(
+                nodeId: nodeId,
+                address: address,
+                displayName: displayName,
+              ),
+            );
         }
       case PortPeerDisconnected(:final nodeId, :final role, :final reason):
         // The registry only holds one handle per NodeId regardless of

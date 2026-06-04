@@ -246,7 +246,7 @@ void main() {
 
       // PeerConnected (no prior candidate): merges directly under NodeId.
       bundle.connection.peerEventsCtrl
-          .add(PeerConnected(remoteNodeId, displayName: 'Bob'));
+          .add(PeerConnected(remoteNodeId, address: addr, displayName: 'Bob'));
 
       await _pump(t, bundle.controller);
 

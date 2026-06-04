@@ -233,13 +233,12 @@ void main() {
       await controller.tapPeer(discovered);
 
       // No PeerOpened event was emitted. The entry must still have been
-      // rekeyed to remoteNodeId and marked connected/everConnected.
+      // rekeyed to remoteNodeId and marked connected.
       expect(controller.peers, hasLength(1));
       final p = controller.peers.first;
       expect(p.nodeId, remoteNodeId);
       expect(p.address, addr);
       expect(p.status, DiscoveredPeerStatus.connected);
-      expect(p.everConnected, isTrue);
 
       controller.dispose();
     });
@@ -308,7 +307,7 @@ void main() {
 
       // Seed a connected peer keyed by NodeId by emitting a PeerConnected
       // event through the connection service stream.
-      connection.peerEventsCtrl.add(PeerConnected(remoteNodeId));
+      connection.peerEventsCtrl.add(PeerConnected(remoteNodeId, address: addr));
       await Future<void>.delayed(Duration.zero);
       expect(controller.peers, hasLength(1));
       expect(controller.peers.first.nodeId, remoteNodeId);

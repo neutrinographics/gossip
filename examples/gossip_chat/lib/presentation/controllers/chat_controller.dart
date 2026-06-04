@@ -52,7 +52,7 @@ typedef ControllerErrorCallback = void Function(String operation, Object error);
 ///
 /// If an entry already exists for [c.address] (matched by `peer.address`),
 /// it is updated in-place with the new rssi/lastSeen/displayName, preserving
-/// nodeId/everConnected/status. If no entry exists, a new
+/// nodeId/status. If no entry exists, a new
 /// [DiscoveredPeerStatus.discovered] entry is inserted under the BleAddress
 /// key.
 @visibleForTesting
@@ -90,12 +90,15 @@ void mergeCandidate(Map<Object, DiscoveredPeer> peers, ScanCandidate c) {
 /// this helper for rekeying.
 ///
 /// If an entry exists keyed by [nodeId], it is updated in place. Otherwise
-/// we fall back to "first entry with status connecting and no nodeId yet"
-/// and rekey it. If nothing matches, a fresh NodeId-keyed entry is inserted.
+/// we look for a pre-handshake entry keyed by [address] (a BleAddress-keyed
+/// row inserted by a prior [mergeCandidate] call) and rekey it. If nothing
+/// matches, a fresh NodeId-keyed entry is inserted using the real
+/// [address] from the event — no synthetic placeholder.
 @visibleForTesting
 void mergePeerOpened(
   Map<Object, DiscoveredPeer> peers,
-  gossip.NodeId nodeId, {
+  gossip.NodeId nodeId,
+  BleAddress address, {
   String? displayName,
   DateTime? now,
 }) {
@@ -104,61 +107,44 @@ void mergePeerOpened(
   final existingByNode = peers[nodeId];
   if (existingByNode != null) {
     peers[nodeId] = existingByNode.copyWith(
+      address: address,
       status: DiscoveredPeerStatus.connected,
-      everConnected: true,
       displayName: displayName ?? existingByNode.displayName,
       lastSeenAt: timestamp,
     );
     return;
   }
-  // Fallback: a single in-flight connecting entry without a known nodeId.
-  Object? oldKey;
-  DiscoveredPeer? toRekey;
-  for (final entry in peers.entries) {
-    final p = entry.value;
-    if (p.nodeId == null &&
-        p.status == DiscoveredPeerStatus.connecting) {
-      oldKey = entry.key;
-      toRekey = p;
-      break;
-    }
-  }
-  if (toRekey != null && oldKey != null) {
-    peers.remove(oldKey);
-    peers[nodeId] = toRekey.copyWith(
+  // Fallback: an in-flight entry keyed by BleAddress (e.g. inserted by
+  // mergeCandidate, then a connect was initiated). Rekey it to NodeId.
+  final existingByAddress = peers[address];
+  if (existingByAddress != null && existingByAddress.nodeId == null) {
+    peers.remove(address);
+    peers[nodeId] = existingByAddress.copyWith(
       nodeId: nodeId,
       status: DiscoveredPeerStatus.connected,
-      everConnected: true,
-      displayName: displayName ?? toRekey.displayName,
+      displayName: displayName ?? existingByAddress.displayName,
       lastSeenAt: timestamp,
     );
     return;
   }
   // Brand-new entry (direct connection without a prior scan emission).
-  // BleAddress is unknown here; use a synthetic placeholder derived from
-  // the NodeId so DiscoveredPeer's required `address` field is satisfied.
-  // The UI keys off NodeId in this case anyway.
   peers[nodeId] = DiscoveredPeer(
-    address: BleAddress(nodeId.value),
+    address: address,
     nodeId: nodeId,
     displayName: displayName,
     lastSeenAt: timestamp,
     status: DiscoveredPeerStatus.connected,
-    everConnected: true,
   );
 }
 
 /// Merges a PeerClosed (transport-level peer disconnected) event into the
-/// peer map. Sets status to [DiscoveredPeerStatus.unreachable] and keeps
-/// the entry; the `everConnected: true` flag (set on the prior PeerOpened)
-/// prevents prune-on-stop from evicting it.
+/// peer map. The entry is REMOVED entirely — disconnected peers do not
+/// linger in the list. SWIM-derived `unreachable` (via
+/// [mergeGossipPeerStatus]) is a different signal and DOES keep the entry,
+/// since the peer may recover.
 @visibleForTesting
 void mergePeerClosed(Map<Object, DiscoveredPeer> peers, gossip.NodeId nodeId) {
-  final existing = peers[nodeId];
-  if (existing == null) return;
-  peers[nodeId] = existing.copyWith(
-    status: DiscoveredPeerStatus.unreachable,
-  );
+  peers.remove(nodeId);
 }
 
 /// Maps a gossip [gossip.PeerStatus] update to the corresponding
@@ -182,12 +168,26 @@ void mergeGossipPeerStatus(
   peers[nodeId] = existing.copyWith(status: mapped);
 }
 
-/// Prune-on-stop: drop every peer that has never reached `connected`
-/// (i.e. `everConnected == false`). Peers that were once connected stay
-/// regardless of current status. Pure function; testable in isolation.
+/// Prune-on-stop: drop every peer that has not reached a "registered"
+/// status (i.e. that is currently in `discovered`, `connecting`, or
+/// `failed`). Peers in `connected`, `suspected`, `unreachable`, or
+/// `disconnecting` stay — they represent live or recently-live
+/// connections that may recover. Pure function; testable in isolation.
 @visibleForTesting
 void pruneUnconnected(Map<Object, DiscoveredPeer> peers) {
-  peers.removeWhere((_, peer) => !peer.everConnected);
+  peers.removeWhere(
+    (_, peer) => switch (peer.status) {
+      DiscoveredPeerStatus.discovered ||
+      DiscoveredPeerStatus.connecting ||
+      DiscoveredPeerStatus.failed =>
+        true,
+      DiscoveredPeerStatus.connected ||
+      DiscoveredPeerStatus.suspected ||
+      DiscoveredPeerStatus.unreachable ||
+      DiscoveredPeerStatus.disconnecting =>
+        false,
+    },
+  );
 }
 
 /// Composes the displayed ConnectionStatus from its inputs.
@@ -426,8 +426,8 @@ class ChatController extends ChangeNotifier {
 
   void _onPeerEvent(PeerEvent event) {
     switch (event) {
-      case PeerConnected(:final nodeId, :final displayName):
-        mergePeerOpened(_peers, nodeId, displayName: displayName);
+      case PeerConnected(:final nodeId, :final address, :final displayName):
+        mergePeerOpened(_peers, nodeId, address, displayName: displayName);
         _signalStrengthManager.updatePenalty(nodeId, 0);
         _refreshIndirectPeers();
         _updateConnectionStatus();
@@ -954,7 +954,6 @@ class ChatController extends ChangeNotifier {
           _peers[nodeId] = existing.copyWith(
             nodeId: nodeId,
             status: DiscoveredPeerStatus.connected,
-            everConnected: true,
           );
           notifyListeners();
         }
