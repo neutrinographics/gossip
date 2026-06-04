@@ -9,6 +9,7 @@ import 'package:gossip/gossip.dart' as gossip;
 import 'package:gossip_bluey/gossip_bluey.dart';
 import 'package:gossip_chat/application/services/chat_service.dart';
 import 'package:gossip_chat/application/services/connection_service.dart';
+import 'package:gossip_chat/application/services/gossip_config_service.dart';
 import 'package:gossip_chat/application/services/metrics_service.dart';
 import 'package:gossip_chat/application/services/sync_service.dart';
 import 'package:gossip_chat/domain/entities/typing_event.dart';
@@ -174,6 +175,7 @@ _Bundle _makeBundle() {
     connectionService: connection,
     syncService: sync,
     metricsService: metrics,
+    configService: GossipConfigService(),
   );
   return (controller: controller, connection: connection, sync: sync);
 }

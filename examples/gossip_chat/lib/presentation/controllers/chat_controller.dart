@@ -263,6 +263,7 @@ class ChatController extends ChangeNotifier {
   final ConnectionService _connectionService;
   final SyncService _syncService;
   final MetricsService _metricsService;
+  final GossipConfigService _configService;
   final PermissionService _permissionService = PermissionService();
   final ControllerErrorCallback? _onError;
 
@@ -316,11 +317,13 @@ class ChatController extends ChangeNotifier {
     required ConnectionService connectionService,
     required SyncService syncService,
     required MetricsService metricsService,
+    required GossipConfigService configService,
     ControllerErrorCallback? onError,
   }) : _chatService = chatService,
        _connectionService = connectionService,
        _syncService = syncService,
        _metricsService = metricsService,
+       _configService = configService,
        _indirectPeerService = IndirectPeerService(
          localNodeId: chatService.localNodeId,
        ),
@@ -357,6 +360,7 @@ class ChatController extends ChangeNotifier {
   gossip.NodeId get localNodeId => _chatService.localNodeId;
   MetricsState get metrics => _metrics;
   List<IndirectPeerState> get indirectPeers => _indirectPeers;
+  GossipConfigService get configService => _configService;
 
   // --- Event Handling ---
 

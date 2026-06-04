@@ -11,6 +11,7 @@ import '../widgets/node_avatar.dart';
 import '../widgets/peer_status_pill.dart';
 import '../widgets/signal_strength_indicator.dart';
 import '../widgets/topology_controls.dart';
+import 'settings_sheet.dart';
 
 /// Peers screen: lists nearby BLE peers and indirect peers (gossip-only),
 /// each with its own dual-indicator row (BLE signal + gossip health), plus
@@ -35,8 +36,14 @@ class PeersScreen extends StatelessWidget {
               IconButton(
                 icon: const Icon(Icons.settings_outlined),
                 tooltip: 'Settings',
-                // Phase F wires the settings screen; no-op placeholder.
-                onPressed: () {},
+                onPressed: () => SettingsSheet.show(
+                  context,
+                  config: controller.configService,
+                  networkingActive: controller.connectionStatus !=
+                          ConnectionStatus.disconnected &&
+                      controller.connectionStatus !=
+                          ConnectionStatus.bluetoothOff,
+                ),
               ),
             ],
           ),

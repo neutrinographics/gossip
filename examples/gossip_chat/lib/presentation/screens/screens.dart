@@ -5,3 +5,4 @@ export 'metrics_screen.dart';
 export 'peers_screen.dart';
 export 'qr_code_dialog.dart';
 export 'qr_scanner_screen.dart';
+export 'settings_sheet.dart';

@@ -38,6 +38,11 @@ void main() async {
   );
   final nodeId = transport.localNodeId;
 
+  // User-tunable gossip-timing knobs (gossip interval, probe interval).
+  // Defaults to all-adaptive; the SettingsSheet lets the user override.
+  // Changes take effect on the NEXT call to Coordinator.create.
+  final configService = GossipConfigService();
+
   // Create Coordinator with in-memory storage
   final coordinator = await Coordinator.create(
     localNodeRepository: localNodeRepo,
@@ -46,6 +51,7 @@ void main() async {
     entryRepository: InMemoryEntryRepository(),
     messagePort: transport.messagePort,
     timerPort: RealTimePort(),
+    config: configService.buildCoordinatorConfig(),
     onLog: _verboseLogging ? gossipLogCallback : null,
   );
 
@@ -75,6 +81,7 @@ void main() async {
     connectionService: connectionService,
     syncService: syncService,
     metricsService: metricsService,
+    configService: configService,
   );
 
   // Create and start debug logger for observability

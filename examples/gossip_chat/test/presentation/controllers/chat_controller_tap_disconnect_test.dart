@@ -8,6 +8,7 @@ import 'package:gossip/gossip.dart' as gossip;
 import 'package:gossip_bluey/gossip_bluey.dart';
 import 'package:gossip_chat/application/services/chat_service.dart';
 import 'package:gossip_chat/application/services/connection_service.dart';
+import 'package:gossip_chat/application/services/gossip_config_service.dart';
 import 'package:gossip_chat/application/services/metrics_service.dart';
 import 'package:gossip_chat/application/services/sync_service.dart';
 import 'package:gossip_chat/domain/entities/typing_event.dart';
@@ -205,6 +206,7 @@ void main() {
         connectionService: connection,
         syncService: sync,
         metricsService: metrics,
+        configService: GossipConfigService(),
       );
 
       // Seed a discovered peer (as if it had been merged from a scan
@@ -257,6 +259,7 @@ void main() {
         connectionService: connection,
         syncService: sync,
         metricsService: metrics,
+        configService: GossipConfigService(),
       );
 
       // Seed a discovered peer via a scan candidate event (so _peers
@@ -300,6 +303,7 @@ void main() {
         connectionService: connection,
         syncService: sync,
         metricsService: metrics,
+        configService: GossipConfigService(),
       );
 
       // Seed a connected peer keyed by NodeId by emitting a PeerConnected
