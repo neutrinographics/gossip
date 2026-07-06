@@ -7,6 +7,17 @@
 
 **Verification status:** all 12 HIGH findings traced and confirmed directly in source. Medium findings are auditor-reported; several spot-verified (TOCTOU dedup, entry-order tiebreak, event-clear grep, `onEntriesMerged`).
 
+> **REMEDIATION COMPLETE (2026-07-06).** All findings fixed via TDD across
+> ten workstreams — commits `2c1f6a9` (WS-A–E, core protocol) and
+> `c368a31` (WS-F–J, coordinator/materialization/gossip_bluey). Every HIGH,
+> MEDIUM, and LOW item was addressed; L21 (`discoverPeers` serviceUuid) was
+> documented rather than changed (deprecated API, bluey filters by its own
+> control service). Notable contract changes: duplicate `EntryRepository`
+> appends now throw; wire payloads are base64 (old int-list still decodes);
+> max entry payload ≈22KB derived from `CoordinatorConfig.maxDeltaResponseBytes`;
+> `ConnectionManager.connectTo` throws typed `AlreadyConnectingException`.
+> Suites after remediation: gossip 814, gossip_nearby 173, gossip_bluey 151.
+
 ---
 
 ## Summary
