@@ -40,18 +40,30 @@ class PeerRegistry {
   final Map<NodeId, Peer> _peers = {};
   final List<DomainEvent> _uncommittedEvents = [];
 
+  /// Optional sink for domain events.
+  ///
+  /// When set, events are forwarded here immediately instead of being
+  /// buffered in [uncommittedEvents]. A long-lived registry (this is a
+  /// singleton, unlike per-operation channel aggregates) MUST have a sink
+  /// in production: buffered events with no consumer grow without bound.
+  final void Function(DomainEvent)? onEvent;
+
   /// Current incarnation number for this node (for SWIM refutation).
   int _localIncarnation;
 
   /// Creates a [PeerRegistry] for the given local node.
-  PeerRegistry({required this.localNode, required int initialIncarnation})
-    : _localIncarnation = initialIncarnation;
+  PeerRegistry({
+    required this.localNode,
+    required int initialIncarnation,
+    this.onEvent,
+  }) : _localIncarnation = initialIncarnation;
 
   /// Private constructor for reconstitute — no events.
   PeerRegistry._reconstitute({
     required this.localNode,
     required int localIncarnation,
-  }) : _localIncarnation = localIncarnation;
+  }) : onEvent = null,
+       _localIncarnation = localIncarnation;
 
   /// Restores a previously persisted peer registry.
   ///
@@ -138,15 +150,32 @@ class PeerRegistry {
       )
       .toList();
 
-  /// Returns domain events emitted since last clearing.
+  /// Returns buffered domain events (only populated when no [onEvent]
+  /// sink is set).
   ///
   /// Applications can observe these events for logging, metrics, or
-  /// event sourcing. Events accumulate until explicitly cleared.
+  /// event sourcing. Events accumulate until drained via
+  /// [takeUncommittedEvents].
   List<DomainEvent> get uncommittedEvents =>
       List.unmodifiable(_uncommittedEvents);
 
+  /// Drains and returns all buffered events.
+  ///
+  /// Once taken, events are gone from the registry — this is how a
+  /// consumer without an [onEvent] sink prevents unbounded buffering.
+  List<DomainEvent> takeUncommittedEvents() {
+    final events = List<DomainEvent>.unmodifiable(_uncommittedEvents);
+    _uncommittedEvents.clear();
+    return events;
+  }
+
   void _addEvent(DomainEvent event) {
-    _uncommittedEvents.add(event);
+    final sink = onEvent;
+    if (sink != null) {
+      sink(event);
+    } else {
+      _uncommittedEvents.add(event);
+    }
   }
 
   /// Adds a new peer to the registry with reachable status.
@@ -236,17 +265,12 @@ class PeerRegistry {
   /// Resets the failed probe count and recovers the peer to reachable if
   /// suspected or unreachable, emitting a [PeerStatusChanged] event.
   ///
-  /// Emits [PeerOperationSkipped] if peer doesn't exist.
+  /// Silently no-ops if the peer doesn't exist — contact recording fires
+  /// per message, and a removed peer's transport may still deliver;
+  /// emitting an event per message would grow without bound.
   void updatePeerContact(NodeId id, int timestampMs) {
     final peer = _peers[id];
     if (peer == null) {
-      _addEvent(
-        PeerOperationSkipped(
-          id,
-          'updatePeerContact',
-          occurredAt: DateTime.now(),
-        ),
-      );
       return;
     }
 
@@ -272,17 +296,11 @@ class PeerRegistry {
   /// Records when we last performed gossip synchronization with this peer.
   /// Used for peer selection (prefer peers we haven't synced with recently).
   ///
-  /// Emits [PeerOperationSkipped] if peer doesn't exist.
+  /// Silently no-ops if the peer doesn't exist (telemetry recording for
+  /// unknown peers is routine churn, not a domain event).
   void updatePeerAntiEntropy(NodeId id, int timestampMs) {
     final peer = _peers[id];
     if (peer == null) {
-      _addEvent(
-        PeerOperationSkipped(
-          id,
-          'updatePeerAntiEntropy',
-          occurredAt: DateTime.now(),
-        ),
-      );
       return;
     }
     _peers[id] = peer.copyWith(lastAntiEntropyMs: timestampMs);
@@ -294,7 +312,9 @@ class PeerRegistry {
   /// for rate limiting. Applications can use metrics to implement
   /// throttling or detect abusive peers.
   ///
-  /// Emits [PeerOperationSkipped] if peer doesn't exist.
+  /// Silently no-ops if the peer doesn't exist — this fires for EVERY
+  /// incoming message, including from freshly removed peers whose
+  /// transport still delivers; one event per message is an unbounded leak.
   void recordMessageReceived(
     NodeId id,
     int bytes,
@@ -303,13 +323,6 @@ class PeerRegistry {
   ) {
     final peer = _peers[id];
     if (peer == null) {
-      _addEvent(
-        PeerOperationSkipped(
-          id,
-          'recordMessageReceived',
-          occurredAt: DateTime.now(),
-        ),
-      );
       return;
     }
     _peers[id] = peer.copyWith(
@@ -322,17 +335,11 @@ class PeerRegistry {
   /// Updates lifetime message and byte counts. Used for monitoring
   /// and debugging communication patterns.
   ///
-  /// Emits [PeerOperationSkipped] if peer doesn't exist.
+  /// Silently no-ops if the peer doesn't exist (per-message telemetry;
+  /// see [recordMessageReceived]).
   void recordMessageSent(NodeId id, int bytes) {
     final peer = _peers[id];
     if (peer == null) {
-      _addEvent(
-        PeerOperationSkipped(
-          id,
-          'recordMessageSent',
-          occurredAt: DateTime.now(),
-        ),
-      );
       return;
     }
     _peers[id] = peer.copyWith(metrics: peer.metrics.recordSent(bytes));
@@ -343,13 +350,11 @@ class PeerRegistry {
   /// Updates the peer's per-peer RTT estimate using EWMA smoothing.
   /// Used for per-peer probe timeouts in failure detection.
   ///
-  /// Emits [PeerOperationSkipped] if peer doesn't exist.
+  /// Silently no-ops if the peer doesn't exist (per-probe telemetry;
+  /// see [recordMessageReceived]).
   void recordPeerRtt(NodeId id, Duration sample) {
     final peer = _peers[id];
     if (peer == null) {
-      _addEvent(
-        PeerOperationSkipped(id, 'recordPeerRtt', occurredAt: DateTime.now()),
-      );
       return;
     }
     _peers[id] = peer.copyWith(metrics: peer.metrics.recordRttSample(sample));
@@ -398,17 +403,11 @@ class PeerRegistry {
   ///
   /// Typical threshold: 1-3 failed probes before suspecting.
   ///
-  /// Emits [PeerOperationSkipped] if peer doesn't exist.
+  /// Silently no-ops if the peer doesn't exist (per-probe telemetry;
+  /// see [recordMessageReceived]).
   void incrementFailedProbeCount(NodeId id) {
     final peer = _peers[id];
     if (peer == null) {
-      _addEvent(
-        PeerOperationSkipped(
-          id,
-          'incrementFailedProbeCount',
-          occurredAt: DateTime.now(),
-        ),
-      );
       return;
     }
     _peers[id] = peer.copyWith(failedProbeCount: peer.failedProbeCount + 1);

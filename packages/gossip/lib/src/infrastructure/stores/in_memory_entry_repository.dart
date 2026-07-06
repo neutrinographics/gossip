@@ -40,8 +40,14 @@ class InMemoryEntryRepository implements EntryRepository {
   /// Storage: channelId → streamId → list of entries (sorted by timestamp)
   final Map<ChannelId, Map<StreamId, List<LogEntry>>> _storage = {};
 
-  /// Cache for latest sequence per author per stream.
+  /// Monotonic high-water mark of the latest sequence per author per stream.
   /// Structure: channelId → streamId → author → maxSequence
+  ///
+  /// NEVER regresses on [removeEntries] (compaction): [latestSequence] and
+  /// [getVersionVector] must reflect everything the stream has EVER held,
+  /// or compaction would cause entry resurrection and sequence reuse.
+  /// Persistent implementations must persist this separately from the
+  /// entries themselves.
   final Map<ChannelId, Map<StreamId, Map<NodeId, int>>> _latestSequenceCache =
       {};
 
@@ -54,11 +60,18 @@ class InMemoryEntryRepository implements EntryRepository {
     final channelMap = _storage.putIfAbsent(channel, () => {});
     final entries = channelMap.putIfAbsent(stream, () => []);
 
-    // Check for duplicate entry (same author and sequence)
+    // Duplicate (author, sequence) is a contract violation, not data to
+    // drop: silently discarding it is how a sequence-allocation race
+    // loses an entry with no trace.
     final isDuplicate = entries.any(
       (e) => e.author == entry.author && e.sequence == entry.sequence,
     );
-    if (isDuplicate) return;
+    if (isDuplicate) {
+      throw StateError(
+        'Entry ${entry.author}#${entry.sequence} already exists in '
+        '$channel/$stream',
+      );
+    }
 
     _insertSorted(entries, entry);
     _updateLatestSequenceCache(channel, stream, entry);
@@ -71,18 +84,23 @@ class InMemoryEntryRepository implements EntryRepository {
       return;
     }
 
-    final insertIndex = _findInsertIndex(entries, entry.timestamp);
+    final insertIndex = _findInsertIndex(entries, entry);
     entries.insert(insertIndex, entry);
   }
 
-  /// Binary search to find insertion index for maintaining timestamp order.
-  int _findInsertIndex(List<LogEntry> entries, dynamic timestamp) {
+  /// Binary search for the insertion index using the full [LogEntry]
+  /// ordering (timestamp → author → sequence).
+  ///
+  /// Comparing timestamps alone would order HLC ties by arrival, which
+  /// differs across peers — non-commutative materializers would then
+  /// converge to different states on different devices.
+  int _findInsertIndex(List<LogEntry> entries, LogEntry entry) {
     int low = 0;
     int high = entries.length;
 
     while (low < high) {
       final mid = (low + high) ~/ 2;
-      if (entries[mid].timestamp.compareTo(timestamp) <= 0) {
+      if (entries[mid].compareTo(entry) <= 0) {
         low = mid + 1;
       } else {
         high = mid;
@@ -111,6 +129,22 @@ class InMemoryEntryRepository implements EntryRepository {
     StreamId stream,
     List<LogEntry> entries,
   ) async {
+    // Validate the whole batch first (against the store AND within the
+    // batch) so the operation is all-or-nothing per the interface
+    // contract.
+    final existing = _storage[channel]?[stream] ?? const <LogEntry>[];
+    final seen = <(NodeId, int)>{
+      for (final e in existing) (e.author, e.sequence),
+    };
+    for (final entry in entries) {
+      if (!seen.add((entry.author, entry.sequence))) {
+        throw StateError(
+          'Entry ${entry.author}#${entry.sequence} already exists in '
+          '$channel/$stream (appendAll is all-or-nothing)',
+        );
+      }
+    }
+
     for (final entry in entries) {
       await append(channel, stream, entry);
     }
@@ -179,7 +213,12 @@ class InMemoryEntryRepository implements EntryRepository {
     final idsSet = ids.toSet();
     entries.removeWhere((entry) => idsSet.contains(entry.id));
 
-    _rebuildLatestSequenceCache(channel, stream, entries);
+    // Deliberately do NOT rebuild _latestSequenceCache from survivors:
+    // it is a monotonic high-water mark. Regressing it after compaction
+    // would (a) advertise a lower version vector, making peers re-send
+    // pruned entries every round, and (b) re-issue already-used sequence
+    // numbers, making new local entries permanently invisible to peers
+    // whose version vector already covers them.
   }
 
   @override
@@ -220,22 +259,4 @@ class InMemoryEntryRepository implements EntryRepository {
         : null;
   }
 
-  /// Rebuilds the latest sequence cache for a stream after entries are removed.
-  void _rebuildLatestSequenceCache(
-    ChannelId channel,
-    StreamId stream,
-    List<LogEntry> entries,
-  ) {
-    final channelCache = _latestSequenceCache.putIfAbsent(channel, () => {});
-    final streamCache = <NodeId, int>{};
-
-    for (final entry in entries) {
-      final currentMax = streamCache[entry.author] ?? 0;
-      if (entry.sequence > currentMax) {
-        streamCache[entry.author] = entry.sequence;
-      }
-    }
-
-    channelCache[stream] = streamCache;
-  }
 }

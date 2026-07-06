@@ -109,12 +109,25 @@ class ChannelAggregate {
   /// the stream does not exist.
   RetentionPolicy? getRetentionPolicy(StreamId streamId) => _streams[streamId];
 
-  /// Returns domain events emitted since last clearing.
+  /// Returns domain events emitted since the last drain.
   ///
   /// Applications can observe these events for logging, metrics, or
-  /// event sourcing. Events accumulate until explicitly cleared.
+  /// event sourcing. Events accumulate until drained via
+  /// [takeUncommittedEvents].
   List<DomainEvent> get uncommittedEvents =>
       List.unmodifiable(_uncommittedEvents);
+
+  /// Drains and returns all uncommitted events.
+  ///
+  /// The caller takes ownership: once taken, events are gone from the
+  /// aggregate. This is how services emit each event exactly once —
+  /// without draining, every emission would replay the full history and
+  /// the buffer would grow without bound.
+  List<DomainEvent> takeUncommittedEvents() {
+    final events = List<DomainEvent>.unmodifiable(_uncommittedEvents);
+    _uncommittedEvents.clear();
+    return events;
+  }
 
   void _addEvent(DomainEvent event) {
     _uncommittedEvents.add(event);
@@ -150,7 +163,9 @@ class ChannelAggregate {
     if (peerId == localNode) {
       throw Exception('Cannot remove local node from channel');
     }
-    _memberIds.remove(peerId);
+    if (_memberIds.remove(peerId)) {
+      _addEvent(MemberRemoved(id, peerId, occurredAt: occurredAt));
+    }
   }
 
   /// Creates a new stream with the specified retention policy.

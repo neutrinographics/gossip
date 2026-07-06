@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:test/test.dart';
 import 'package:gossip/src/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/facade/coordinator_config.dart';
+import 'package:gossip/src/protocol/protocol_codec.dart';
 
 import '../../support/test_network.dart';
 
@@ -68,8 +70,12 @@ void main() {
 
         await network.setupChannel(channelId, streamId);
 
-        // Create a payload near the 32KB limit (30KB to be safe)
-        final largePayload = Uint8List(30 * 1024);
+        // Create a payload at the maximum syncable size: the largest
+        // entry that fits one delta message under the default budget.
+        final maxPayload = ProtocolCodec.maxEntryPayloadForBudget(
+          CoordinatorConfig.defaults.maxDeltaResponseBytes,
+        );
+        final largePayload = Uint8List(maxPayload);
         for (var i = 0; i < largePayload.length; i++) {
           largePayload[i] = i % 256;
         }
@@ -85,7 +91,7 @@ void main() {
 
         final entries = await network['node2'].entries(channelId, streamId);
         expect(entries.length, equals(1));
-        expect(entries[0].payload.length, equals(30 * 1024));
+        expect(entries[0].payload.length, equals(maxPayload));
 
         await network.dispose();
       });
@@ -149,7 +155,7 @@ void main() {
         await network.dispose();
       });
 
-      test('payload at 32KB limit syncs correctly', () async {
+      test('payload above the syncable maximum is rejected at append', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
         await network.connect('node1', 'node2');
 
@@ -158,19 +164,21 @@ void main() {
 
         await network.setupChannel(channelId, streamId);
 
-        // Create payload just under 32KB (32768 bytes)
-        // Account for protocol overhead
-        final largePayload = List.generate(32000, (i) => i % 256);
-        await network['node1'].write(channelId, streamId, largePayload);
+        // One byte past the largest payload that can ever fit a delta
+        // message: it could never sync, so append must fail loudly
+        // instead of storing an entry that livelocks the stream.
+        final maxPayload = ProtocolCodec.maxEntryPayloadForBudget(
+          CoordinatorConfig.defaults.maxDeltaResponseBytes,
+        );
+        final oversized = List.generate(maxPayload + 1, (i) => i % 256);
 
-        await network.startAll();
-        await network.runRounds(10);
+        await expectLater(
+          () => network['node1'].write(channelId, streamId, oversized),
+          throwsArgumentError,
+        );
 
-        expect(await network.hasConverged(channelId, streamId), isTrue);
-
-        final entries = await network['node2'].entries(channelId, streamId);
-        expect(entries.length, equals(1));
-        expect(entries[0].payload.length, equals(32000));
+        final entries = await network['node1'].entries(channelId, streamId);
+        expect(entries, isEmpty, reason: 'rejected payloads are not stored');
 
         await network.dispose();
       });

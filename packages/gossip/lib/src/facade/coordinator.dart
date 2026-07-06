@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:meta/meta.dart';
 import 'dart:math';
 import '../application/observability/log_level.dart';
 import '../application/services/channel_service.dart';
@@ -29,6 +30,7 @@ import '../infrastructure/ports/message_port.dart';
 import '../infrastructure/ports/time_port.dart';
 import '../protocol/gossip_engine.dart';
 import '../protocol/failure_detector.dart';
+import '../protocol/protocol_codec.dart';
 import 'adaptive_timing_status.dart';
 import 'channel.dart';
 import 'coordinator_config.dart';
@@ -230,9 +232,19 @@ class Coordinator {
     // Restore incarnation from LocalNodeRepository
     final incarnation = await localNodeRepository.getIncarnation();
 
+    // Create event controller before the registry so peer lifecycle
+    // events can be sinked into it. Without a sink the long-lived
+    // registry would buffer events forever (nothing drains it).
+    final eventsController = StreamController<DomainEvent>.broadcast();
+
     final peerRegistry = PeerRegistry(
       localNode: localNode,
       initialIncarnation: incarnation,
+      onEvent: (event) {
+        if (!eventsController.isClosed) {
+          eventsController.add(event);
+        }
+      },
     );
 
     // Create HlcClock if TimePort is provided for proper timestamp generation
@@ -255,9 +267,6 @@ class Coordinator {
     // assumption that channel aggregates are mutated in-place.
     final cachedChannelRepo = CachingChannelRepository(channelRepository);
 
-    // Create event controller to capture in closure before coordinator is created
-    final eventsController = StreamController<DomainEvent>.broadcast();
-
     final materializationService = MaterializationService(
       entryRepository: entryRepository,
     );
@@ -268,6 +277,9 @@ class Coordinator {
       channelRepository: cachedChannelRepo,
       entryRepository: entryRepository,
       localNodeRepository: localNodeRepository,
+      maxPayloadBytes: ProtocolCodec.maxEntryPayloadForBudget(
+        cfg.maxDeltaResponseBytes,
+      ),
       materializationService: materializationService,
       onEvent: (event) {
         if (!eventsController.isClosed) {
@@ -318,6 +330,7 @@ class Coordinator {
         random: random,
         adaptiveTimingEnabled: cfg.adaptiveTimingEnabled,
         gossipInterval: cfg.gossipInterval,
+        maxDeltaResponseBytes: cfg.maxDeltaResponseBytes,
       );
 
       coordinator._failureDetector = FailureDetector(
@@ -593,8 +606,14 @@ class Coordinator {
   /// The peer will no longer participate in gossip or failure detection.
   /// Any pending operations with this peer will be cancelled.
   Future<void> removePeer(NodeId id) async {
+    // Drop any probing hold so entries don't accumulate under peer churn.
+    _failureDetector?.clearProbingHold(id);
     await _peerService.removePeer(id);
   }
+
+  /// The internal failure detector, exposed for tests only.
+  @visibleForTesting
+  FailureDetector? get failureDetectorForTesting => _failureDetector;
 
   /// Returns all registered peers.
   ///

@@ -139,7 +139,7 @@ void main() {
       });
     });
 
-    test('records per-peer RTT against probe target, not Ack sender', () async {
+    test('rejects a direct-probe Ack from a peer other than the target', () async {
       final hCustom = FailureDetectorTestHarness(
         pingTimeout: const Duration(milliseconds: 500),
       );
@@ -154,28 +154,31 @@ void main() {
 
       await hCustom.timePort.advance(const Duration(milliseconds: 100));
 
-      // Respond with Ack from peerB (simulating forwarded indirect Ack)
+      // Ack from the WRONG peer with a colliding sequence. Direct probes
+      // require sender == target (forwarded Acks are only legal in the
+      // indirect phase); accepting this would mark a possibly-dead peerA
+      // alive and pollute its RTT estimate with peerB's sample.
       final ack = Ack(sender: peerB.id, sequence: ping.sequence);
       final peerBPort = InMemoryMessagePort(peerB.id, hCustom.bus);
       await peerBPort.send(hCustom.localNode, hCustom.codec.encode(ack));
       await hCustom.flush();
 
-      await probeFuture;
+      // The foreign Ack must not confirm the probe.
+      await hCustom.timePort.advance(const Duration(milliseconds: 401));
+      expect(await probeFuture, isFalse);
 
-      // RTT should be attributed to peerA (the target), not peerB (the sender)
       final peerAMetrics = hCustom.peerRegistry.getPeer(peerA.id)!.metrics;
       expect(
         peerAMetrics.rttEstimate,
-        isNotNull,
-        reason: 'RTT should be attributed to probe target (peerA)',
+        isNull,
+        reason: 'a foreign Ack must not feed the target\'s RTT estimate',
       );
-      expect(peerAMetrics.rttEstimate!.smoothedRtt.inMilliseconds, 100);
 
       final peerBMetrics = hCustom.peerRegistry.getPeer(peerB.id)!.metrics;
       expect(
         peerBMetrics.rttEstimate,
         isNull,
-        reason: 'RTT should NOT be attributed to Ack sender (peerB)',
+        reason: 'an unmatched Ack sender gets contact credit, not RTT',
       );
 
       await peerBPort.close();

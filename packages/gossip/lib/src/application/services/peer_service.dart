@@ -59,6 +59,15 @@ class PeerService {
     this.onError,
   });
 
+  /// Per-peer chain of pending persistence writes.
+  ///
+  /// Saves for the same peer are serialized, and each save snapshots the
+  /// registry state at WRITE time (inside the chain). Without this, two
+  /// overlapping mutations each snapshot at call time and race their I/O
+  /// — a slow older save landing after a fast newer one persists a stale
+  /// snapshot that surfaces on restart.
+  final Map<NodeId, Future<void>> _saveQueue = {};
+
   /// Emits an error through the callback if one is registered.
   void _emitError(SyncError error) {
     onError?.call(error);
@@ -194,7 +203,10 @@ class PeerService {
   }
 
   /// Persists peer to repository if repository exists and peer is found.
-  Future<void> _persistPeer(NodeId peerId) async {
+  ///
+  /// Writes for the same peer are chained so they hit storage in order,
+  /// each persisting the freshest registry snapshot at write time.
+  Future<void> _persistPeer(NodeId peerId) {
     if (repository == null) {
       _emitError(
         StorageSyncError(
@@ -203,12 +215,24 @@ class PeerService {
           occurredAt: DateTime.now(),
         ),
       );
-      return;
+      return Future.value();
     }
-    final peer = registry.getPeer(peerId);
-    if (peer != null) {
-      await repository!.save(peer);
-    }
+
+    final previous = _saveQueue[peerId] ?? Future<void>.value();
+    final task = previous.catchError((_) {}).then((_) async {
+      // Snapshot inside the chain: by the time this runs, the registry
+      // holds the newest state, so the last write always wins.
+      final peer = registry.getPeer(peerId);
+      if (peer != null) {
+        await repository!.save(peer);
+      }
+    });
+    _saveQueue[peerId] = task;
+    return task.whenComplete(() {
+      if (identical(_saveQueue[peerId], task)) {
+        _saveQueue.remove(peerId);
+      }
+    });
   }
 
   /// Deletes peer from repository if repository exists.

@@ -109,6 +109,7 @@ class GossipEngineTestHarness {
     bool adaptiveTimingEnabled = false,
     bool withHlcClock = false,
     MessagePort? messagePort,
+    int? maxDeltaResponseBytes,
   }) {
     final localNode = NodeId(localName);
     final peerRegistry = PeerRegistry(
@@ -149,6 +150,7 @@ class GossipEngineTestHarness {
       hlcClock: hlcClock,
       gossipInterval: gossipInterval,
       adaptiveTimingEnabled: adaptiveTimingEnabled,
+      maxDeltaResponseBytes: maxDeltaResponseBytes ?? 30 * 1024,
     );
 
     return GossipEngineTestHarness._(

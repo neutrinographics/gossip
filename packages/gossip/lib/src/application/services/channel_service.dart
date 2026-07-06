@@ -14,6 +14,7 @@ import '../../domain/interfaces/entry_repository.dart';
 import '../../domain/interfaces/local_node_repository.dart';
 import '../../domain/interfaces/state_materializer.dart';
 import '../../domain/services/hlc_clock.dart';
+import '../../domain/value_objects/version_vector.dart';
 import 'materialization_service.dart';
 
 /// Application service orchestrating channel and stream operations.
@@ -65,6 +66,14 @@ class ChannelService {
   /// When null, entries are not persisted (in-memory only).
   final EntryRepository? _entryRepository;
 
+  /// Maximum entry payload size in bytes accepted by [appendEntry].
+  ///
+  /// Derived by the Coordinator from the gossip engine's delta budget: a
+  /// payload above this limit can never be transmitted to peers, so it is
+  /// rejected loudly at write time instead of silently failing to sync.
+  /// When null, no limit is enforced (local-only / testing setups).
+  final int? maxPayloadBytes;
+
   /// Optional callback for reporting synchronization errors.
   ///
   /// When provided, errors that would otherwise be silent are reported
@@ -90,6 +99,7 @@ class ChannelService {
     ChannelRepository? channelRepository,
     EntryRepository? entryRepository,
     MaterializationService? materializationService,
+    this.maxPayloadBytes,
     this.onError,
     this.onEvent,
   }) : _hlcClock = hlcClock,
@@ -127,7 +137,10 @@ class ChannelService {
     if (_channelRepository != null) {
       await _channelRepository.save(channel);
     }
-    final events = channel.uncommittedEvents;
+    // Drain rather than read: the aggregate instance is long-lived via the
+    // caching repository, so un-drained events would be replayed (and
+    // accumulate) on every later mutation.
+    final events = channel.takeUncommittedEvents();
     _emitEvents(events);
     return events;
   }
@@ -282,7 +295,8 @@ class ChannelService {
 
     operation(channel);
     await _channelRepository.save(channel);
-    final events = channel.uncommittedEvents;
+    // Drain rather than read — see createChannel.
+    final events = channel.takeUncommittedEvents();
     _emitEvents(events);
     return events;
   }
@@ -299,7 +313,45 @@ class ChannelService {
   /// Used when: Application writes new data to a stream.
   ///
   /// Transaction: Query latest sequence → create entry → append to store.
+  ///
+  /// Appends to the same stream are serialized: there are awaits between
+  /// reading the latest sequence and storing the entry, so unserialized
+  /// concurrent appends would allocate colliding sequence numbers.
   Future<void> appendEntry(
+    ChannelId channelId,
+    StreamId streamId,
+    Uint8List payload,
+  ) {
+    final limit = maxPayloadBytes;
+    if (limit != null && payload.length > limit) {
+      // A payload that can never fit a delta message would sync-livelock;
+      // reject it at the source (contract violation, not a runtime error).
+      throw ArgumentError.value(
+        payload.length,
+        'payload',
+        'exceeds the maximum entry payload of $limit bytes '
+            '(derived from the gossip delta budget); '
+            'larger payloads can never be synced to peers',
+      );
+    }
+
+    final key = (channelId, streamId);
+    final previous = _appendQueue[key] ?? Future<void>.value();
+    final task = previous
+        .catchError((_) {})
+        .then((_) => _appendEntryNow(channelId, streamId, payload));
+    _appendQueue[key] = task;
+    return task.whenComplete(() {
+      if (identical(_appendQueue[key], task)) {
+        _appendQueue.remove(key);
+      }
+    });
+  }
+
+  /// Per-stream chain of pending appends (see [appendEntry]).
+  final Map<(ChannelId, StreamId), Future<void>> _appendQueue = {};
+
+  Future<void> _appendEntryNow(
     ChannelId channelId,
     StreamId streamId,
     Uint8List payload,
@@ -521,5 +573,14 @@ class ChannelService {
     List<LogEntryId> ids,
   ) async {
     await _entryRepository?.removeEntries(channelId, streamId, ids);
+  }
+
+  /// Returns the stream's version vector (empty if no entry store).
+  Future<VersionVector> getVersionVector(
+    ChannelId channelId,
+    StreamId streamId,
+  ) async {
+    if (_entryRepository == null) return VersionVector.empty;
+    return _entryRepository.getVersionVector(channelId, streamId);
   }
 }

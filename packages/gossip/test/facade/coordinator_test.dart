@@ -660,6 +660,59 @@ void main() {
       expect(() => coordinator.addPeer(localNode), throwsException);
     });
 
+    test('peer lifecycle events are emitted on the events stream', () async {
+      final coordinator = await Coordinator.create(
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+        channelRepository: InMemoryChannelRepository(),
+        peerRepository: InMemoryPeerRepository(),
+        entryRepository: InMemoryEntryRepository(),
+      );
+
+      final events = <DomainEvent>[];
+      final sub = coordinator.events.listen(events.add);
+
+      await coordinator.addPeer(NodeId('peer1'));
+      await Future.delayed(Duration.zero);
+      expect(
+        events.whereType<PeerAdded>().length,
+        equals(1),
+        reason: 'apps need peer lifecycle observability via events',
+      );
+
+      await coordinator.removePeer(NodeId('peer1'));
+      await Future.delayed(Duration.zero);
+      expect(events.whereType<PeerRemoved>().length, equals(1));
+
+      await sub.cancel();
+      await coordinator.dispose();
+    });
+
+    test('removePeer clears the peer\'s probing hold', () async {
+      final bus = InMemoryMessageBus();
+      final coordinator = await Coordinator.create(
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+        channelRepository: InMemoryChannelRepository(),
+        peerRepository: InMemoryPeerRepository(),
+        entryRepository: InMemoryEntryRepository(),
+        messagePort: InMemoryMessagePort(localNode, bus),
+        timerPort: InMemoryTimePort(),
+      );
+
+      final peerId = NodeId('peer1');
+      await coordinator.addPeer(peerId); // sets the startup grace hold
+      final detector = coordinator.failureDetectorForTesting!;
+      expect(detector.hasProbingHold(peerId), isTrue);
+
+      await coordinator.removePeer(peerId);
+      expect(
+        detector.hasProbingHold(peerId),
+        isFalse,
+        reason: 'stale holds accumulate unbounded under peer churn',
+      );
+
+      await coordinator.dispose();
+    });
+
     test('removePeer removes peer from registry', () async {
       final coordinator = await Coordinator.create(
         localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),

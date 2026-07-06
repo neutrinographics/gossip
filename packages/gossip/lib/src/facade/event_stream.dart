@@ -7,7 +7,6 @@ import '../domain/results/compaction_result.dart';
 import '../domain/value_objects/channel_id.dart';
 import '../domain/value_objects/log_entry.dart';
 import '../domain/value_objects/stream_id.dart';
-import '../domain/value_objects/version_vector.dart';
 
 /// Public API for stream-level read/write operations.
 ///
@@ -73,9 +72,13 @@ import '../domain/value_objects/version_vector.dart';
 ///
 /// ## Payload Size Limit
 ///
-/// Payloads must not exceed 32KB to maintain compatibility with
-/// transport layers like Android Nearby Connections. Larger payloads
-/// should be chunked at the application level.
+/// [append] rejects payloads that cannot fit a single gossip delta
+/// message (~22KB at the default 30KB delta budget, configurable via
+/// `CoordinatorConfig.maxDeltaResponseBytes`). The wire encoding adds
+/// ~1.33x base64 overhead plus a JSON envelope, and the resulting
+/// message must stay under the 32KB transport limit shared by Android
+/// Nearby Connections and the BLE frame codec. Larger payloads should
+/// be chunked at the application level.
 ///
 /// See also:
 /// - [Channel] for stream creation
@@ -208,18 +211,25 @@ class EventStream {
 
     if (toPrune.isEmpty) return null;
 
+    final oldVersion = await channelService.getVersionVector(channelId, id);
+
     await channelService.removeEntries(
       channelId,
       id,
       toPrune.map((e) => e.id).toList(),
     );
 
+    // The repository's version vector is a monotonic high-water mark, so
+    // these two are equal by design — compaction must never regress the
+    // advertised version (that would resurrect pruned entries via gossip).
+    final newVersion = await channelService.getVersionVector(channelId, id);
+
     final result = CompactionResult(
       entriesRemoved: toPrune.length,
       entriesRetained: survivors.length,
       bytesFreed: toPrune.fold(0, (sum, e) => sum + e.payload.length),
-      oldBaseVersion: VersionVector({}),
-      newBaseVersion: VersionVector({}),
+      oldBaseVersion: oldVersion,
+      newBaseVersion: newVersion,
     );
 
     if (resetState) {

@@ -65,6 +65,10 @@ class TimeBasedRetention implements RetentionPolicy {
 
   @override
   List<LogEntry> compact(List<LogEntry> entries, Hlc now) {
+    // Clock younger than maxAge: the cutoff would precede the epoch
+    // (Hlc.subtract throws on negative results). Nothing can be older
+    // than maxAge yet — retain everything.
+    if (now.physicalMs < maxAge.inMilliseconds) return entries;
     final cutoff = now.subtract(maxAge);
     return entries.where((e) => e.timestamp >= cutoff).toList();
   }

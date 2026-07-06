@@ -329,7 +329,8 @@ void main() {
     });
 
     test(
-      'emits PeerOperationSkipped for updatePeerContact on unknown peer',
+      'updatePeerContact on unknown peer is a silent no-op (per-message '
+      'telemetry must not emit events)',
       () {
         final localNode = NodeId('local');
         final unknownPeer = NodeId('unknown');
@@ -343,16 +344,18 @@ void main() {
           DateTime.now().millisecondsSinceEpoch,
         );
 
-        final events = registry.uncommittedEvents;
-        expect(events, hasLength(1));
-        expect(events.first, isA<PeerOperationSkipped>());
-        final skippedEvent = events.first as PeerOperationSkipped;
-        expect(skippedEvent.operation, equals('updatePeerContact'));
+        expect(
+          registry.uncommittedEvents,
+          isEmpty,
+          reason: 'one event per message from a removed peer is an '
+              'unbounded leak',
+        );
       },
     );
 
     test(
-      'emits PeerOperationSkipped for incrementFailedProbeCount on unknown peer',
+      'incrementFailedProbeCount on unknown peer is a silent no-op '
+      '(per-probe telemetry must not emit events)',
       () {
         final localNode = NodeId('local');
         final unknownPeer = NodeId('unknown');
@@ -363,11 +366,7 @@ void main() {
 
         registry.incrementFailedProbeCount(unknownPeer);
 
-        final events = registry.uncommittedEvents;
-        expect(events, hasLength(1));
-        expect(events.first, isA<PeerOperationSkipped>());
-        final skippedEvent = events.first as PeerOperationSkipped;
-        expect(skippedEvent.operation, equals('incrementFailedProbeCount'));
+        expect(registry.uncommittedEvents, isEmpty);
       },
     );
   });

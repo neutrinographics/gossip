@@ -181,7 +181,7 @@ void main() {
     });
 
     test(
-      'append ignores duplicate entries with same author and sequence',
+      'append rejects duplicate entries with same author and sequence',
       () async {
         final store = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
@@ -204,7 +204,12 @@ void main() {
         );
 
         await store.append(channelId, streamId, entry1);
-        await store.append(channelId, streamId, duplicate);
+        // Silently dropping the duplicate is how a sequence collision
+        // loses data with no trace — the contract is to throw.
+        await expectLater(
+          () => store.append(channelId, streamId, duplicate),
+          throwsA(isA<StateError>()),
+        );
 
         final entries = await store.getAll(channelId, streamId);
         expect(entries, hasLength(1));
@@ -214,7 +219,8 @@ void main() {
       },
     );
 
-    test('appendAll ignores duplicate entries', () async {
+    test('appendAll rejects batches containing duplicates (all-or-nothing)',
+        () async {
       final store = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
       final streamId = StreamId('stream-1');
@@ -237,19 +243,30 @@ void main() {
       await store.appendAll(channelId, streamId, [entry1, entry2]);
       expect(await store.entryCount(channelId, streamId), equals(2));
 
-      // Append same entries again (simulating gossip re-sync)
-      await store.appendAll(channelId, streamId, [entry1, entry2]);
+      // Re-appending the same entries violates the contract. Callers
+      // (the gossip engine) filter already-known entries before calling.
+      await expectLater(
+        () => store.appendAll(channelId, streamId, [entry1, entry2]),
+        throwsA(isA<StateError>()),
+      );
       expect(await store.entryCount(channelId, streamId), equals(2));
 
-      // Append mix of new and duplicate
+      // A mixed batch is rejected wholesale: none of it lands.
       final entry3 = LogEntry(
         author: author,
         sequence: 3,
         timestamp: Hlc(3000, 0),
         payload: Uint8List.fromList([3]),
       );
-      await store.appendAll(channelId, streamId, [entry1, entry3]);
-      expect(await store.entryCount(channelId, streamId), equals(3));
+      await expectLater(
+        () => store.appendAll(channelId, streamId, [entry1, entry3]),
+        throwsA(isA<StateError>()),
+      );
+      expect(
+        await store.entryCount(channelId, streamId),
+        equals(2),
+        reason: 'all-or-nothing: the new entry must not land either',
+      );
     });
 
     group('getVersionVector', () {

@@ -34,6 +34,22 @@ void main() {
     });
 
     group('TimeBasedRetention', () {
+      test('retains everything when the clock is younger than maxAge', () {
+        // now=1s, maxAge=1h: the cutoff would be negative. Hlc.subtract
+        // throws on negative results — compaction must retain all entries
+        // instead of blowing up (common with test clocks starting at 0).
+        const policy = TimeBasedRetention(Duration(hours: 1));
+        final entries = [
+          makeEntry(author1, 1, 500),
+          makeEntry(author1, 2, 800),
+        ];
+        final now = Hlc(1000, 0);
+
+        final result = policy.compact(entries, now);
+
+        expect(result, equals(entries));
+      });
+
       test('filters entries older than maxAge', () {
         const policy = TimeBasedRetention(Duration(seconds: 5));
         final entries = [

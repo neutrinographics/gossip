@@ -113,6 +113,18 @@ class GossipEngine {
   /// When provided, logs message types, sizes, and other protocol details.
   final LogCallback? onLog;
 
+  /// Maximum encoded size (in bytes) of a single [DeltaResponse].
+  ///
+  /// [handleDeltaRequest] truncates the delta to a prefix that fits this
+  /// budget; the remainder is delivered by subsequent anti-entropy rounds
+  /// as the requester's version vector advances. Without a budget, a large
+  /// backlog produces one giant message that the transport can never send,
+  /// livelocking sync (the 32KB Android Nearby limit is the design target).
+  ///
+  /// Defaults to 30KB, leaving envelope headroom under the 32KB transport
+  /// limit.
+  final int maxDeltaResponseBytes;
+
   /// Codec for serializing/deserializing protocol messages.
   final ProtocolCodec _codec = ProtocolCodec();
 
@@ -122,6 +134,14 @@ class GossipEngine {
 
   /// Whether gossip rounds are currently running.
   bool _isRunning = false;
+
+  /// Generation token for the gossip round loop.
+  ///
+  /// Incremented on every [start] and [stop] so that delay callbacks
+  /// scheduled by a previous run become stale and cannot fork a second
+  /// concurrent round loop when the engine is restarted within one
+  /// interval (e.g. Coordinator pause()/resume()).
+  int _generation = 0;
 
   /// Subscription to incoming messages (for cleanup on stop).
   StreamSubscription<IncomingMessage>? _messageSubscription;
@@ -199,6 +219,7 @@ class GossipEngine {
     Random? random,
     Duration? gossipInterval,
     bool adaptiveTimingEnabled = false,
+    this.maxDeltaResponseBytes = 30 * 1024,
   }) : _hlcClock = hlcClock,
        _localNodeRepository = localNodeRepository,
        _random = random ?? Random(),
@@ -281,19 +302,41 @@ class GossipEngine {
   void start() {
     if (_isRunning) return;
     _isRunning = true;
-    _scheduleNextGossipRound();
+    _generation++;
+    _scheduleNextGossipRound(_generation);
   }
 
   /// Schedules the next gossip round using the current effective interval.
   ///
   /// Uses [delay] instead of periodic timer to allow the interval to adapt
   /// based on RTT measurements collected during operation.
-  void _scheduleNextGossipRound() {
-    if (!_isRunning) return;
+  ///
+  /// [generation] identifies the run that scheduled this callback; if it
+  /// no longer matches [_generation] when the delay fires, the engine was
+  /// stopped (and possibly restarted) in the meantime and this stale
+  /// callback must not run a round or reschedule itself.
+  void _scheduleNextGossipRound(int generation) {
+    if (!_isRunning || generation != _generation) return;
     timePort.delay(effectiveGossipInterval).then((_) {
-      if (_isRunning) {
-        _gossipRound();
+      if (_isRunning && generation == _generation) {
+        _gossipRound(generation);
       }
+    }).catchError((Object error, StackTrace stackTrace) {
+      // A broken timer must not kill the loop silently: surface the error
+      // and stop so isRunning reflects reality.
+      if (generation == _generation) {
+        _isRunning = false;
+        _generation++;
+      }
+      _emitError(
+        PeerSyncError(
+          localNode,
+          SyncErrorType.protocolError,
+          'Gossip round scheduling failed: $error',
+          occurredAt: DateTime.now(),
+          cause: error,
+        ),
+      );
     });
   }
 
@@ -304,6 +347,7 @@ class GossipEngine {
   void stop() {
     if (!_isRunning) return;
     _isRunning = false;
+    _generation++;
   }
 
   /// Starts listening to incoming gossip protocol messages.
@@ -424,7 +468,15 @@ class GossipEngine {
           '${protocolMessage.digests.length} channels',
         );
         final deltaRequests = await handleDigestResponse(protocolMessage);
-        await _sendMessages(message.sender, deltaRequests);
+        for (final request in deltaRequests) {
+          final sent = await _sendMessage(message.sender, request);
+          if (!sent) {
+            // The peer can never answer a request it didn't receive;
+            // holding the pending flag would block re-requesting for the
+            // full timeout. Release it so the next round can retry.
+            _pendingDeltaRequests.remove((request.channelId, request.streamId));
+          }
+        }
       } else if (protocolMessage is DeltaRequest) {
         _log(
           LogLevel.debug,
@@ -462,12 +514,17 @@ class GossipEngine {
   }
 
   /// Encodes and sends a single protocol message to a peer.
-  Future<void> _sendMessage(NodeId recipient, ProtocolMessage message) async {
+  ///
+  /// Returns true on success. Send failures are emitted via [ErrorCallback]
+  /// and reported as false so callers can roll back optimistic state
+  /// (e.g. the pending-delta-request flag).
+  Future<bool> _sendMessage(NodeId recipient, ProtocolMessage message) async {
     final bytes = _codec.encode(message);
     _logOutgoingMessage(recipient, message, bytes.length);
     try {
       await messagePort.send(recipient, bytes);
       peerRegistry.recordMessageSent(recipient, bytes.length);
+      return true;
     } catch (e) {
       _emitError(
         PeerSyncError(
@@ -478,6 +535,7 @@ class GossipEngine {
           cause: e,
         ),
       );
+      return false;
     }
   }
 
@@ -526,16 +584,6 @@ class GossipEngine {
     return id.length > 8 ? id.substring(0, 8) : id;
   }
 
-  /// Encodes and sends multiple protocol messages to a peer.
-  Future<void> _sendMessages(
-    NodeId recipient,
-    List<ProtocolMessage> messages,
-  ) async {
-    for (final message in messages) {
-      await _sendMessage(recipient, message);
-    }
-  }
-
   /// Handle digest request using the current channel map.
   Future<DigestResponse> _handleDigestRequest(DigestRequest request) {
     final requestedChannels = request.digests
@@ -547,7 +595,7 @@ class GossipEngine {
     return handleDigestRequest(request, requestedChannels);
   }
 
-  void _gossipRound() {
+  void _gossipRound(int generation) {
     performGossipRound()
         .catchError((error, stackTrace) {
           _emitError(
@@ -563,7 +611,7 @@ class GossipEngine {
         .whenComplete(() {
           // Schedule next gossip round with adaptive interval
           // (interval may have changed based on new RTT samples)
-          _scheduleNextGossipRound();
+          _scheduleNextGossipRound(generation);
         });
   }
 
@@ -686,6 +734,13 @@ class GossipEngine {
           _pendingDeltaRequests.remove(key);
         }
 
+        // Mark pending BEFORE the await below. The incoming-message
+        // listener doesn't await handlers, so two queued DigestResponses
+        // interleave here; setting the flag synchronously after the check
+        // is what makes the dedup effective (otherwise both pass the
+        // check above and emit duplicate DeltaRequests).
+        _pendingDeltaRequests[key] = timePort.nowMs;
+
         final ourVersion = await _computeVersionVector(
           channelDigest.channelId,
           streamDigest.streamId,
@@ -693,7 +748,6 @@ class GossipEngine {
 
         // Only request delta if peer has entries we don't have
         if (!ourVersion.dominates(streamDigest.version)) {
-          _pendingDeltaRequests[key] = timePort.nowMs;
           deltaRequests.add(
             DeltaRequest(
               sender: localNode,
@@ -702,6 +756,9 @@ class GossipEngine {
               since: ourVersion,
             ),
           );
+        } else {
+          // Nothing to request after all — release the flag.
+          _pendingDeltaRequests.remove(key);
         }
       }
     }
@@ -712,8 +769,12 @@ class GossipEngine {
   /// Handles delta request from a peer (Step 4).
   ///
   /// Computes the entries the peer is missing via [computeDelta] and
-  /// returns them in a [DeltaResponse]. The peer will merge these entries
-  /// into their [EntryRepository].
+  /// returns them in a [DeltaResponse], truncated so the encoded message
+  /// fits [maxDeltaResponseBytes]. Truncation keeps a prefix of the
+  /// repository's timestamp order — per-author HLC monotonicity means a
+  /// prefix is per-author sequence-contiguous, so the requester's version
+  /// vector never develops holes. The requester obtains the remainder in
+  /// subsequent anti-entropy rounds as its version vector advances.
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
   Future<DeltaResponse> handleDeltaRequest(DeltaRequest request) async {
@@ -727,8 +788,67 @@ class GossipEngine {
       sender: localNode,
       channelId: request.channelId,
       streamId: request.streamId,
-      entries: delta,
+      entries: _fitDeltaToBudget(request, delta),
     );
+  }
+
+  /// Selects the prefix of [delta] whose encoded [DeltaResponse] fits
+  /// [maxDeltaResponseBytes].
+  ///
+  /// An entry too large to ever fit (even alone in an empty message) can
+  /// never be synced: it is reported via [ErrorCallback] and its author's
+  /// remaining entries are excluded from this response to preserve
+  /// per-author sequence contiguity — but other authors keep syncing.
+  List<LogEntry> _fitDeltaToBudget(DeltaRequest request, List<LogEntry> delta) {
+    if (delta.isEmpty) return delta;
+
+    final baseSize = _codec
+        .encode(
+          DeltaResponse(
+            sender: localNode,
+            channelId: request.channelId,
+            streamId: request.streamId,
+            entries: const [],
+          ),
+        )
+        .length;
+
+    final selected = <LogEntry>[];
+    final blockedAuthors = <NodeId>{};
+    // +1 per entry for the JSON array separator.
+    var size = baseSize;
+    for (final entry in delta) {
+      if (blockedAuthors.contains(entry.author)) continue;
+      final cost = _codec.encodedEntrySize(entry) + 1;
+
+      if (baseSize + cost > maxDeltaResponseBytes) {
+        // Undeliverable: no message can ever carry this entry.
+        _emitError(
+          ChannelSyncError(
+            request.channelId,
+            SyncErrorType.protocolError,
+            'Entry ${entry.author}#${entry.sequence} in '
+            '${request.channelId}/${request.streamId} encodes to '
+            '$cost bytes and can never fit '
+            'maxDeltaResponseBytes=$maxDeltaResponseBytes; '
+            'it cannot be synced to peers',
+            occurredAt: DateTime.now(),
+          ),
+        );
+        blockedAuthors.add(entry.author);
+        continue;
+      }
+
+      if (size + cost > maxDeltaResponseBytes) {
+        // Page full. Later rounds deliver the rest once the requester's
+        // version vector advances past this page.
+        break;
+      }
+
+      size += cost;
+      selected.add(entry);
+    }
+    return selected;
   }
 
   /// Handles delta response from a peer (final step).
@@ -751,6 +871,20 @@ class GossipEngine {
 
     _updateHlcFromEntries(response.entries);
 
+    // Keep only entries we don't already have. Duplicate or stale
+    // DeltaResponses (a slow peer answering after the pending timeout,
+    // overlap between two peers' responses) must not be handed to the
+    // repository — whose contract rejects duplicates — nor re-reported
+    // via onEntriesMerged as if they were new.
+    final ourVersion = await _computeVersionVector(
+      response.channelId,
+      response.streamId,
+    );
+    final newEntries = response.entries
+        .where((e) => e.sequence > ourVersion[e.author])
+        .toList();
+    if (newEntries.isEmpty) return;
+
     // Snapshot the current tail HLC before appending to detect out-of-order
     final previousTailHlc = await entryRepository.getTailTimestamp(
       response.channelId,
@@ -760,18 +894,18 @@ class GossipEngine {
     await entryRepository.appendAll(
       response.channelId,
       response.streamId,
-      response.entries,
+      newEntries,
     );
 
     // Out-of-order: any merged entry sorts before the previous tail
     final containsOutOfOrderEntries =
         previousTailHlc != null &&
-        response.entries.any((e) => e.timestamp < previousTailHlc);
+        newEntries.any((e) => e.timestamp < previousTailHlc);
 
     await onEntriesMerged?.call(
       response.channelId,
       response.streamId,
-      response.entries,
+      newEntries,
       containsOutOfOrderEntries,
     );
   }

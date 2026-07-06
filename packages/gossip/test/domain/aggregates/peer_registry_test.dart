@@ -373,78 +373,50 @@ void main() {
         expect(event.operation, equals('updatePeerStatus'));
       });
 
-      test('updatePeerContact emits PeerOperationSkipped for unknown peer', () {
+      test('updatePeerContact on unknown peer is a silent no-op', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
           initialIncarnation: 0,
         );
-        final unknownPeerId = NodeId('unknown');
 
-        registry.updatePeerContact(unknownPeerId, 1000);
+        registry.updatePeerContact(NodeId('unknown'), 1000);
 
-        final events = registry.uncommittedEvents;
-        expect(events.length, equals(1));
-        expect(events.last, isA<PeerOperationSkipped>());
-        final event = events.last as PeerOperationSkipped;
-        expect(event.peerId, equals(unknownPeerId));
-        expect(event.operation, equals('updatePeerContact'));
+        // Per-message telemetry: emitting an event for every message from
+        // an unknown/removed peer would grow without bound.
+        expect(registry.uncommittedEvents, isEmpty);
       });
 
-      test(
-        'updatePeerAntiEntropy emits PeerOperationSkipped for unknown peer',
-        () {
-          final registry = PeerRegistry(
-            localNode: NodeId('local'),
-            initialIncarnation: 0,
-          );
-          final unknownPeerId = NodeId('unknown');
-
-          registry.updatePeerAntiEntropy(unknownPeerId, 1000);
-
-          final events = registry.uncommittedEvents;
-          expect(events.length, equals(1));
-          expect(events.last, isA<PeerOperationSkipped>());
-          final event = events.last as PeerOperationSkipped;
-          expect(event.peerId, equals(unknownPeerId));
-          expect(event.operation, equals('updatePeerAntiEntropy'));
-        },
-      );
-
-      test(
-        'recordMessageReceived emits PeerOperationSkipped for unknown peer',
-        () {
-          final registry = PeerRegistry(
-            localNode: NodeId('local'),
-            initialIncarnation: 0,
-          );
-          final unknownPeerId = NodeId('unknown');
-
-          registry.recordMessageReceived(unknownPeerId, 100, 1000, 60000);
-
-          final events = registry.uncommittedEvents;
-          expect(events.length, equals(1));
-          expect(events.last, isA<PeerOperationSkipped>());
-          final event = events.last as PeerOperationSkipped;
-          expect(event.peerId, equals(unknownPeerId));
-          expect(event.operation, equals('recordMessageReceived'));
-        },
-      );
-
-      test('recordMessageSent emits PeerOperationSkipped for unknown peer', () {
+      test('updatePeerAntiEntropy on unknown peer is a silent no-op', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
           initialIncarnation: 0,
         );
-        final unknownPeerId = NodeId('unknown');
 
-        registry.recordMessageSent(unknownPeerId, 100);
+        registry.updatePeerAntiEntropy(NodeId('unknown'), 1000);
 
-        final events = registry.uncommittedEvents;
-        expect(events.length, equals(1));
-        expect(events.last, isA<PeerOperationSkipped>());
-        final event = events.last as PeerOperationSkipped;
-        expect(event.peerId, equals(unknownPeerId));
-        expect(event.operation, equals('recordMessageSent'));
+        expect(registry.uncommittedEvents, isEmpty);
+      });
+
+      test('recordMessageReceived on unknown peer is a silent no-op', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+
+        registry.recordMessageReceived(NodeId('unknown'), 100, 1000, 60000);
+
+        expect(registry.uncommittedEvents, isEmpty);
+      });
+
+      test('recordMessageSent on unknown peer is a silent no-op', () {
+        final registry = PeerRegistry(
+          localNode: NodeId('local'),
+          initialIncarnation: 0,
+        );
+
+        registry.recordMessageSent(NodeId('unknown'), 100);
+
+        expect(registry.uncommittedEvents, isEmpty);
       });
 
       test(
@@ -468,22 +440,17 @@ void main() {
       );
 
       test(
-        'incrementFailedProbeCount emits PeerOperationSkipped for unknown peer',
+        'incrementFailedProbeCount on unknown peer is a silent no-op',
         () {
           final registry = PeerRegistry(
             localNode: NodeId('local'),
             initialIncarnation: 0,
           );
-          final unknownPeerId = NodeId('unknown');
 
-          registry.incrementFailedProbeCount(unknownPeerId);
+          registry.incrementFailedProbeCount(NodeId('unknown'));
 
-          final events = registry.uncommittedEvents;
-          expect(events.length, equals(1));
-          expect(events.last, isA<PeerOperationSkipped>());
-          final event = events.last as PeerOperationSkipped;
-          expect(event.peerId, equals(unknownPeerId));
-          expect(event.operation, equals('incrementFailedProbeCount'));
+          // Per-probe telemetry: no event for unknown peers.
+          expect(registry.uncommittedEvents, isEmpty);
         },
       );
     });
@@ -696,7 +663,7 @@ void main() {
         );
       });
 
-      test('emits PeerOperationSkipped for unknown peer', () {
+      test('is a silent no-op for unknown peer', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
           initialIncarnation: 0,
@@ -707,10 +674,8 @@ void main() {
           const Duration(milliseconds: 100),
         );
 
-        expect(
-          registry.uncommittedEvents,
-          contains(isA<PeerOperationSkipped>()),
-        );
+        // Per-probe telemetry: no event for unknown peers.
+        expect(registry.uncommittedEvents, isEmpty);
       });
 
       test('does not affect other peers', () {

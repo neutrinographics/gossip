@@ -108,6 +108,20 @@ class CoordinatorConfig {
   /// fallback constants instead of adaptive computation.
   final bool adaptiveTimingEnabled;
 
+  /// Maximum encoded size (bytes) of a single gossip DeltaResponse message.
+  ///
+  /// Large entry backlogs are paginated across gossip rounds so no single
+  /// message exceeds this budget. It also determines the maximum entry
+  /// payload accepted by `EventStream.append` (roughly 3/4 of the budget
+  /// after envelope overhead — ~22KB at the default): a payload that
+  /// can't fit one delta message can never be synced.
+  ///
+  /// **Default: 30KB**, leaving envelope headroom under the 32KB message
+  /// limit shared by Android Nearby Connections and the BLE frame codec.
+  /// Only raise this if every transport in your deployment carries larger
+  /// messages.
+  final int maxDeltaResponseBytes;
+
   /// Creates a [CoordinatorConfig] with the specified options.
   const CoordinatorConfig({
     this.suspicionThreshold = 5,
@@ -118,6 +132,7 @@ class CoordinatorConfig {
     this.probeInterval,
     this.pingTimeout,
     this.adaptiveTimingEnabled = true,
+    this.maxDeltaResponseBytes = 30 * 1024,
   });
 
   /// Default configuration with standard values.

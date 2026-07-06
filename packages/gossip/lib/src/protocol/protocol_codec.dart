@@ -225,8 +225,38 @@ class ProtocolCodec {
         'physicalMs': entry.timestamp.physicalMs,
         'logical': entry.timestamp.logical,
       },
-      'payload': entry.payload.toList(),
+      // base64 (~1.33 chars/byte) instead of a JSON int list
+      // (~3.6 chars/byte): payload size dominates DeltaResponse size,
+      // which must fit the 32KB transport limit.
+      'payload': base64Encode(entry.payload),
     };
+  }
+
+  /// Returns the encoded size in bytes of a single log entry as it would
+  /// appear inside a message's `entries` array.
+  ///
+  /// Used by the gossip engine to budget [DeltaResponse] messages against
+  /// the transport size limit without repeatedly encoding whole messages.
+  int encodedEntrySize(LogEntry entry) {
+    return utf8.encode(jsonEncode(_encodeLogEntry(entry))).length;
+  }
+
+  /// Conservative per-entry overhead in bytes: message envelope (sender,
+  /// channelId, streamId) plus entry envelope (author, sequence, timestamp,
+  /// JSON keys/punctuation). Sized for long node IDs and maximal HLC values.
+  static const int _entryEnvelopeOverhead = 512;
+
+  /// Largest entry payload (raw bytes) guaranteed to fit a [DeltaResponse]
+  /// whose encoded size may not exceed [budgetBytes].
+  ///
+  /// Inverts the wire encoding: base64 turns 3 payload bytes into 4
+  /// characters, and [_entryEnvelopeOverhead] covers the JSON envelope.
+  /// A payload larger than this can never be synced under the given
+  /// budget — reject it at write time instead of livelocking at sync time.
+  static int maxEntryPayloadForBudget(int budgetBytes) {
+    final usable = budgetBytes - _entryEnvelopeOverhead;
+    if (usable <= 0) return 0;
+    return (usable ~/ 4) * 3;
   }
 
   ProtocolMessage _decodeMessageData(int messageType, Uint8List data) {
@@ -350,7 +380,31 @@ class ProtocolCodec {
         timestampJson['physicalMs'] as int,
         timestampJson['logical'] as int,
       ),
-      payload: Uint8List.fromList((json['payload'] as List).cast<int>()),
+      payload: _decodePayload(json['payload']),
     );
+  }
+
+  /// Decodes an entry payload from its wire representation.
+  ///
+  /// Accepts the current base64 string format and the legacy JSON int-list
+  /// format (for messages from older nodes). Legacy bytes outside 0-255
+  /// are corruption and are rejected rather than silently truncated
+  /// mod 256.
+  Uint8List _decodePayload(Object? payload) {
+    if (payload is String) {
+      return base64Decode(payload);
+    }
+    if (payload is List) {
+      final bytes = Uint8List(payload.length);
+      for (var i = 0; i < payload.length; i++) {
+        final b = payload[i];
+        if (b is! int || b < 0 || b > 255) {
+          throw ArgumentError('Invalid payload byte at index $i: $b');
+        }
+        bytes[i] = b;
+      }
+      return bytes;
+    }
+    throw ArgumentError('Invalid payload type: ${payload.runtimeType}');
   }
 }
