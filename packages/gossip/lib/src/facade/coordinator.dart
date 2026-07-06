@@ -156,6 +156,14 @@ class Coordinator {
   /// Current state of the coordinator.
   SyncState _state = SyncState.stopped;
 
+  /// Lifecycle epoch, incremented by [stop] and [dispose].
+  ///
+  /// [start] captures it before its internal awaits and aborts if it
+  /// changed — so a stop() issued while start() was loading channels wins,
+  /// instead of the resumed start() leaving engines running behind a
+  /// coordinator that reports itself stopped.
+  int _lifecycleEpoch = 0;
+
   /// Stream controller for domain events (provided during construction).
   final StreamController<DomainEvent> _eventsController;
 
@@ -404,6 +412,10 @@ class Coordinator {
       streamId,
     );
 
+    // Re-check after the awaits above: dispose() may have closed the
+    // controller while the fold / version-vector reads were in flight.
+    if (_eventsController.isClosed) return;
+
     _eventsController.add(
       EntriesMerged(
         channelId,
@@ -511,7 +523,8 @@ class Coordinator {
   Future<List<ChannelId>> channelsForPeer(NodeId peerId) async {
     final result = <ChannelId>[];
 
-    for (final channelId in _channelFacades.keys) {
+    // Snapshot the keys — the loop body awaits (see getResourceUsage).
+    for (final channelId in _channelFacades.keys.toList()) {
       final channel = await _channelRepository.findById(channelId);
       if (channel != null && channel.hasMember(peerId)) {
         result.add(channelId);
@@ -615,6 +628,10 @@ class Coordinator {
   @visibleForTesting
   FailureDetector? get failureDetectorForTesting => _failureDetector;
 
+  /// The internal gossip engine, exposed for tests only.
+  @visibleForTesting
+  GossipEngine? get gossipEngineForTesting => _gossipEngine;
+
   /// Returns all registered peers.
   ///
   /// This includes peers in any status (reachable, suspected, unreachable).
@@ -663,8 +680,10 @@ class Coordinator {
     int totalEntries = 0;
     int totalStorageBytes = 0;
 
-    // Iterate through all channels and streams to count entries and bytes
-    for (final channelId in _channelFacades.keys) {
+    // Snapshot the keys: the loop body awaits, and a createChannel/
+    // removeChannel completing in between would throw
+    // ConcurrentModificationError on the live keys view.
+    for (final channelId in _channelFacades.keys.toList()) {
       final channel = await _channelRepository.findById(channelId);
       if (channel != null) {
         for (final streamId in channel.streamIds) {
@@ -811,11 +830,28 @@ class Coordinator {
       throw StateError('Cannot start a disposed coordinator');
     }
 
+    // Do all awaited work BEFORE transitioning, so there is no window in
+    // which the state says running while the engines aren't started (or
+    // vice versa after an interleaved stop()).
+    final epoch = _lifecycleEpoch;
+    var channels = const <ChannelId, ChannelAggregate>{};
+    if (_gossipEngine != null) {
+      channels = await _loadChannels();
+    }
+
+    if (_state == SyncState.disposed) {
+      throw StateError('Cannot start a disposed coordinator');
+    }
+    if (epoch != _lifecycleEpoch || _state == SyncState.running) {
+      // A stop() (epoch bump) or a concurrent start() interleaved with
+      // the channel load — the later call wins; do not start engines.
+      return;
+    }
+
     _transitionTo(SyncState.running);
 
     // Start GossipEngine if available
     if (_gossipEngine != null) {
-      final channels = await _loadChannels();
       _gossipEngine!.startListening(channels);
       _gossipEngine!.start();
     }
@@ -836,6 +872,9 @@ class Coordinator {
   /// Returns immediately if already stopped (idempotent).
   /// Throws [StateError] if disposed.
   Future<void> stop() async {
+    // Invalidate any in-flight start() even if we early-return below —
+    // "stop" is the caller's latest intent.
+    _lifecycleEpoch++;
     if (_state == SyncState.stopped) return;
     if (_state == SyncState.disposed) {
       throw StateError('Cannot stop a disposed coordinator');
@@ -893,6 +932,15 @@ class Coordinator {
       throw StateError('Can only resume a paused coordinator');
     }
 
+    // Reload the channel map: createChannel/removeChannel only push
+    // updates to the engine while running, so channels created or removed
+    // during the pause would otherwise never (or forever) be gossiped.
+    if (_gossipEngine != null) {
+      final channels = await _loadChannels();
+      if (_state != SyncState.paused) return; // interleaved stop/dispose
+      _gossipEngine!.setChannels(channels);
+    }
+
     _transitionTo(SyncState.running);
 
     // Resume GossipEngine if available
@@ -933,6 +981,9 @@ class Coordinator {
     }
 
     _transitionTo(SyncState.disposed);
+
+    // Close materializer state streams so their listeners get onDone.
+    await _channelService.disposeAllMaterializers();
 
     // Close stream controllers
     await _eventsController.close();

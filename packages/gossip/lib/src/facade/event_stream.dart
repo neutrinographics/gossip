@@ -201,7 +201,7 @@ class EventStream {
     final entries = await getAll();
     if (entries.isEmpty) return null;
 
-    final now = channelService.currentTimestamp;
+    final now = await channelService.takeTimestamp();
     final survivors = retention.compact(entries.cast<LogEntry>(), now);
     final survivorIds = survivors.map((e) => e.id).toSet();
     final toPrune = entries

@@ -15,6 +15,40 @@ import '../../domain/value_objects/scan_candidate.dart';
 import '../../domain/value_objects/service_uuid.dart';
 import 'gossip_gatt_service.dart';
 
+/// A central-role link: we initiated, the peer is the GATT server.
+///
+/// Carries a unique [id] and owns its subscriptions so cleanup handlers
+/// can verify they are tearing down THIS link and not a replacement that
+/// arrived after a fast reconnect.
+class _CentralLink {
+  final int id;
+  final bluey.PeerConnection peer;
+  // Cancelled in _cleanupCentral, registration rollback, and dispose.
+  // ignore: cancel_subscriptions
+  StreamSubscription<Uint8List>? notifSub;
+  // ignore: cancel_subscriptions
+  StreamSubscription<bluey.ConnectionState>? stateSub;
+  int? writePayload;
+
+  _CentralLink(this.id, this.peer);
+}
+
+/// A peripheral-role link: the peer initiated, we are the GATT server.
+class _PeripheralLink {
+  final int id;
+  final bluey.PeerClient peerClient;
+  final int writePayload;
+
+  /// Set on duplicate rejection. bluey has no per-client disconnect, so
+  /// the physical link stays up; a rejected link is excluded from
+  /// outbound sends but its inbound writes must still resolve.
+  bool rejected = false;
+
+  _PeripheralLink(this.id, this.peerClient, this.writePayload);
+
+  bluey.ClientAddress get clientAddress => peerClient.client.address;
+}
+
 /// Real adapter that wraps bluey's `Bluey` instance, satisfying
 /// [BlueyPort].
 ///
@@ -59,16 +93,16 @@ class BlueyPortImpl implements BlueyPort {
   ServiceUuid? _serviceUuid;
   final String _localNodeIdValue;
 
-  /// Central-role connections — we initiated, peer is the GATT server.
-  final Map<NodeId, bluey.PeerConnection> _centralConnections = {};
-  final Map<NodeId, StreamSubscription<Uint8List>> _centralNotifSubs = {};
-  final Map<NodeId, StreamSubscription<bluey.ConnectionState>>
-  _centralStateSubs = {};
+  /// Monotonic id source for [_CentralLink]/[_PeripheralLink] identity.
+  int _nextLinkId = 0;
 
-  /// Peripheral-role peer clients — they initiated, we are the GATT
-  /// server. Keyed by the central's real `ServerId` (now exposed by
+  /// Central-role links — we initiated, peer is the GATT server.
+  final Map<NodeId, _CentralLink> _centralLinks = {};
+
+  /// Peripheral-role links — they initiated, we are the GATT server.
+  /// Keyed by the central's real `ServerId` (now exposed by
   /// [bluey.PeerClient]).
-  final Map<NodeId, bluey.PeerClient> _peripheralClients = {};
+  final Map<NodeId, _PeripheralLink> _peripheralLinks = {};
 
   /// Reverse lookup: platform client address → NodeId. Populated when
   /// `peerConnections` fires; used to resolve `disconnections` events
@@ -76,15 +110,10 @@ class BlueyPortImpl implements BlueyPort {
   /// Keyed by [bluey.ClientAddress] — the same value bluey emits on
   /// `Server.disconnections`, fixing the I337 cross-stream identifier
   /// mismatch.
+  ///
+  /// Entries survive duplicate rejection: the physical link stays up
+  /// (no per-client disconnect API) and its writes must keep resolving.
   final Map<bluey.ClientAddress, NodeId> _clientAddressToNodeId = {};
-
-  /// Largest single ATT write payload per peer. Populated by
-  /// [_registerCentralConnection] (central role, via
-  /// `Connection.maxWritePayload`) and by `peerConnections`
-  /// (peripheral role, from `Client.mtu` minus ATT overhead). Used by
-  /// [chunkSizeFor]. Value semantics are uniform on both sides: this
-  /// IS the max chunk size; no further arithmetic at the read site.
-  final Map<NodeId, int> _writePayloadByNode = {};
 
   /// Cached bluey.Device handles for scan emissions, keyed by address.
   /// Looked up by [connectAndIdentify].
@@ -257,22 +286,33 @@ class BlueyPortImpl implements BlueyPort {
           final nodeId = NodeId(peerClient.serverId.value);
           final clientAddress = peerClient.client.address;
           final address = BleAddress(clientAddress.value);
-          _peripheralClients[nodeId] = peerClient;
-          _clientAddressToNodeId[clientAddress] = nodeId;
+          // A previous link for this peer (fast reconnect with a new
+          // platform address) is superseded: drop its stale address
+          // mapping so late disconnections for it resolve to nothing.
+          final previous = _peripheralLinks[nodeId];
+          if (previous != null && previous.clientAddress != clientAddress) {
+            _clientAddressToNodeId.remove(previous.clientAddress);
+          }
           // Peripheral side has no Connection.maxWritePayload — only the
           // Client.mtu raw value. Convert to a write-payload limit here
-          // so the map's value semantics stay uniform with the central
-          // path. On iOS, Client.mtu is always the BLE-default 23
-          // (bluey limitation — see I325) which would compute to an
-          // overly conservative 19-byte chunk; substitute the iOS
-          // fallback directly so chunkSizeFor stays trivial.
+          // so the value semantics stay uniform with the central path.
+          // On iOS, Client.mtu is always the BLE-default 23 (bluey
+          // limitation — see I325) which would compute to an overly
+          // conservative 19-byte chunk; substitute the iOS fallback
+          // directly so chunkSizeFor stays trivial.
           final clientMtu = peerClient.client.mtu;
           final isIosDefaultMtu =
               clientMtu == _bleDefaultMtu &&
               _bluey.capabilities.platformKind.name == 'ios';
-          _writePayloadByNode[nodeId] = isIosDefaultMtu
+          final writePayload = isIosDefaultMtu
               ? _iosFallbackChunkSize
               : clientMtu - 3 - _safetyMargin;
+          _peripheralLinks[nodeId] = _PeripheralLink(
+            _nextLinkId++,
+            peerClient,
+            writePayload,
+          );
+          _clientAddressToNodeId[clientAddress] = nodeId;
           _events.add(
             PortPeerConnected(
               nodeId: nodeId,
@@ -285,18 +325,26 @@ class BlueyPortImpl implements BlueyPort {
 
       _serverSubs.add(
         server.disconnections.listen((clientAddress) {
-          final nodeId = _clientAddressToNodeId.remove(clientAddress);
-          if (nodeId != null) {
-            _peripheralClients.remove(nodeId);
-            _writePayloadByNode.remove(nodeId);
-            _events.add(
-              PortPeerDisconnected(
-                nodeId: nodeId,
-                role: ConnectionRole.peripheral,
-                reason: 'peer disconnected',
-              ),
-            );
+          final nodeId = _clientAddressToNodeId[clientAddress];
+          if (nodeId == null) return;
+          final link = _peripheralLinks[nodeId];
+          if (link == null || link.clientAddress != clientAddress) {
+            // Stale event for a superseded link (the peer already
+            // reconnected under a new address). Tearing down by NodeId
+            // here would unregister the LIVE client. Drop only the old
+            // address mapping.
+            _clientAddressToNodeId.remove(clientAddress);
+            return;
           }
+          _clientAddressToNodeId.remove(clientAddress);
+          _peripheralLinks.remove(nodeId);
+          _events.add(
+            PortPeerDisconnected(
+              nodeId: nodeId,
+              role: ConnectionRole.peripheral,
+              reason: 'peer disconnected',
+            ),
+          );
         }),
       );
 
@@ -315,11 +363,16 @@ class BlueyPortImpl implements BlueyPort {
           }
           _events.add(PortPeerData(nodeId: senderNodeId, data: req.value));
           if (req.responseNeeded) {
+            // Guarded: a failed GATT response otherwise becomes an
+            // unhandled zone error. The sender's write times out and the
+            // frame is re-sent by gossip anti-entropy.
             unawaited(
-              server.respondToWrite(
-                req,
-                status: bluey.GattResponseStatus.success,
-              ),
+              server
+                  .respondToWrite(
+                    req,
+                    status: bluey.GattResponseStatus.success,
+                  )
+                  .catchError((Object _) {}),
             );
           }
         }),
@@ -429,6 +482,13 @@ class BlueyPortImpl implements BlueyPort {
   /// connected [peerConnection]. Negotiates MTU, subscribes to the
   /// gossip data characteristic for incoming notifications, watches for
   /// state-change disconnects, and emits PortPeerConnected.
+  ///
+  /// If a live central link for [target] already exists (iOS address
+  /// rotation can yield two scan candidates for one peer), the new
+  /// physical connection is dropped and the established link kept.
+  ///
+  /// Rolls back on failure: a throw mid-registration must not leave a
+  /// stranded live connection with no state watcher.
   Future<void> _registerCentralConnection(
     NodeId target,
     BleAddress address,
@@ -436,57 +496,80 @@ class BlueyPortImpl implements BlueyPort {
   ) async {
     final serviceUuid = _serviceUuid;
     if (serviceUuid == null) {
+      await _disconnectQuietly(peerConnection);
       throw StateError(
         '_registerCentralConnection requires startAdvertising first',
       );
     }
-    _centralConnections[target] = peerConnection;
 
-    // Query the platform-authoritative write payload limit. On Android
-    // this reflects the cached negotiated MTU; on iOS it comes from
-    // CBPeripheral.maximumWriteValueLength(for:). Either way the value
-    // IS the largest single ATT write — no MTU-minus-3 arithmetic needed
-    // on our side (I325). Best-effort: failure leaves us with no entry
-    // and chunkSizeFor falls back to the BLE-safe default.
+    if (_centralLinks.containsKey(target)) {
+      // Duplicate central connection for a live NodeId — keep the
+      // established link, drop the newcomer. No events: the registered
+      // link is unaffected.
+      await _disconnectQuietly(peerConnection);
+      return;
+    }
+
+    final link = _CentralLink(_nextLinkId++, peerConnection);
+    _centralLinks[target] = link;
     try {
-      final limit = await peerConnection.connection.maxWritePayload(
-        withResponse: false,
-      );
-      _writePayloadByNode[target] = limit.value;
-    } catch (_) {
-      // Leave _writePayloadByNode unset — chunkSizeFor's default takes over.
-    }
-
-    final charUuid = GossipCharacteristicUuids.derive(
-      serviceUuid,
-    ).dataCharacteristic;
-    final services = await peerConnection.services();
-    final gossipService = services.firstWhere(
-      (s) => s.uuid.toString().toLowerCase() == serviceUuid.value,
-      orElse: () => throw StateError(
-        'connected peer $target does not host the gossip service',
-      ),
-    );
-    final dataCharCandidates = gossipService.characteristics().where(
-      (c) => c.uuid.toString().toLowerCase() == charUuid.toLowerCase(),
-    );
-    if (dataCharCandidates.isEmpty) {
-      throw StateError(
-        'connected peer $target does not host the gossip data characteristic',
-      );
-    }
-    final dataChar = dataCharCandidates.first;
-    _centralNotifSubs[target] = dataChar.notifications.listen((bytes) {
-      _events.add(PortPeerData(nodeId: target, data: bytes));
-    });
-
-    final raw = peerConnection.connection;
-    _centralStateSubs[target] = raw.stateChanges.listen((state) {
-      if (state == bluey.ConnectionState.disconnected &&
-          _centralConnections.containsKey(target)) {
-        _cleanupCentral(target, reason: 'connection dropped');
+      // Query the platform-authoritative write payload limit. On Android
+      // this reflects the cached negotiated MTU; on iOS it comes from
+      // CBPeripheral.maximumWriteValueLength(for:). Either way the value
+      // IS the largest single ATT write — no MTU-minus-3 arithmetic
+      // needed on our side (I325). Best-effort: failure leaves the link
+      // without a value and chunkSizeFor falls back to the BLE default.
+      try {
+        final limit = await peerConnection.connection.maxWritePayload(
+          withResponse: false,
+        );
+        link.writePayload = limit.value;
+      } catch (_) {
+        // chunkSizeFor's default takes over.
       }
-    });
+
+      final charUuid = GossipCharacteristicUuids.derive(
+        serviceUuid,
+      ).dataCharacteristic;
+      final services = await peerConnection.services();
+      final gossipService = services.firstWhere(
+        (s) => s.uuid.toString().toLowerCase() == serviceUuid.value,
+        orElse: () => throw StateError(
+          'connected peer $target does not host the gossip service',
+        ),
+      );
+      final dataCharCandidates = gossipService.characteristics().where(
+        (c) => c.uuid.toString().toLowerCase() == charUuid.toLowerCase(),
+      );
+      if (dataCharCandidates.isEmpty) {
+        throw StateError(
+          'connected peer $target does not host the gossip data '
+          'characteristic',
+        );
+      }
+      final dataChar = dataCharCandidates.first;
+      link.notifSub = dataChar.notifications.listen((bytes) {
+        _events.add(PortPeerData(nodeId: target, data: bytes));
+      });
+
+      link.stateSub = peerConnection.connection.stateChanges.listen((state) {
+        if (state == bluey.ConnectionState.disconnected) {
+          // _cleanupCentral verifies this link is still the current one,
+          // so a stale event from a superseded link is a no-op.
+          _cleanupCentral(target, link, reason: 'connection dropped');
+        }
+      });
+    } catch (e) {
+      // Roll back: remove the entry, cancel any subscriptions, and
+      // physically disconnect so nothing is stranded.
+      if (identical(_centralLinks[target], link)) {
+        _centralLinks.remove(target);
+      }
+      unawaited(link.notifSub?.cancel());
+      unawaited(link.stateSub?.cancel());
+      await _disconnectQuietly(peerConnection);
+      rethrow;
+    }
 
     _events.add(
       PortPeerConnected(
@@ -497,13 +580,17 @@ class BlueyPortImpl implements BlueyPort {
     );
   }
 
-  void _cleanupCentral(NodeId target, {required String reason}) {
-    _centralConnections.remove(target);
-    _writePayloadByNode.remove(target);
-    final notifSub = _centralNotifSubs.remove(target);
-    if (notifSub != null) unawaited(notifSub.cancel());
-    final stateSub = _centralStateSubs.remove(target);
-    if (stateSub != null) unawaited(stateSub.cancel());
+  /// Tears down [link]'s bookkeeping — only if it is still the current
+  /// link for [target]. Late events from superseded links are no-ops.
+  void _cleanupCentral(
+    NodeId target,
+    _CentralLink link, {
+    required String reason,
+  }) {
+    if (!identical(_centralLinks[target], link)) return;
+    _centralLinks.remove(target);
+    unawaited(link.notifSub?.cancel());
+    unawaited(link.stateSub?.cancel());
     _events.add(
       PortPeerDisconnected(
         nodeId: target,
@@ -513,9 +600,24 @@ class BlueyPortImpl implements BlueyPort {
     );
   }
 
+  Future<void> _disconnectQuietly(bluey.PeerConnection connection) async {
+    try {
+      await connection.disconnect();
+    } catch (_) {
+      // Best-effort teardown of an unwanted connection.
+    }
+  }
+
   @override
   int chunkSizeFor(NodeId nodeId) {
-    final size = _writePayloadByNode[nodeId];
+    // Mirror sendData's link preference: central first, then a live
+    // (non-rejected) peripheral link.
+    final peripheral = _peripheralLinks[nodeId];
+    final size =
+        _centralLinks[nodeId]?.writePayload ??
+        (peripheral != null && !peripheral.rejected
+            ? peripheral.writePayload
+            : null);
     if (size == null) return _defaultChunkSize;
     return size < _defaultChunkSize ? _defaultChunkSize : size;
   }
@@ -523,31 +625,16 @@ class BlueyPortImpl implements BlueyPort {
   @override
   Future<void> disconnect(NodeId nodeId) async {
     _requireAdapterEnabled(nodeId);
-    final central = _centralConnections[nodeId];
+    final central = _centralLinks[nodeId];
     if (central != null) {
       try {
-        await central.disconnect();
+        await central.peer.disconnect();
       } finally {
-        _cleanupCentral(nodeId, reason: 'local request');
+        _cleanupCentral(nodeId, central, reason: 'local request');
       }
       return;
     }
-    final peripheral = _peripheralClients.remove(nodeId);
-    if (peripheral != null) {
-      _clientAddressToNodeId.remove(peripheral.client.address);
-      _writePayloadByNode.remove(nodeId);
-      // bluey.Server has no per-client disconnect API. Drop our local
-      // reference and emit the disconnect event; the actual link will
-      // be torn down by the lifecycle heartbeat protocol or by the
-      // central side.
-      _events.add(
-        PortPeerDisconnected(
-          nodeId: nodeId,
-          role: ConnectionRole.peripheral,
-          reason: 'local request',
-        ),
-      );
-    }
+    _rejectPeripheral(nodeId, reason: 'local request');
   }
 
   @override
@@ -563,9 +650,9 @@ class BlueyPortImpl implements BlueyPort {
       serviceUuid,
     ).dataCharacteristic;
 
-    final central = _centralConnections[nodeId];
+    final central = _centralLinks[nodeId];
     if (central != null) {
-      final services = await central.services(cache: true);
+      final services = await central.peer.services(cache: true);
       final gossipService = services.firstWhere(
         (s) => s.uuid.toString().toLowerCase() == serviceUuid.value,
         orElse: () => throw StateError('gossip service missing on $nodeId'),
@@ -580,14 +667,14 @@ class BlueyPortImpl implements BlueyPort {
       return;
     }
 
-    final peripheralClient = _peripheralClients[nodeId];
-    if (peripheralClient != null) {
+    final peripheral = _peripheralLinks[nodeId];
+    if (peripheral != null && !peripheral.rejected) {
       final server = _server;
       if (server == null) {
         throw StateError('no server — startAdvertising not called?');
       }
       await server.notifyTo(
-        peripheralClient.client,
+        peripheral.peerClient.client,
         bluey.UUID(charUuid),
         data: data,
       );
@@ -646,13 +733,20 @@ class BlueyPortImpl implements BlueyPort {
     // underlying scan has already been cleared by _invalidateLiveState).
     // Bluey I335 wires scan()'s controller with onCancel: () => stop(),
     // so cancelling _scanSubscription is what stops the platform scan.
+    //
+    // ALL field mutations happen synchronously before the first await:
+    // scanForCandidates fires this via unawaited() right before starting
+    // a new scan, and a post-await mutation would clobber the NEW scan's
+    // subscriptions/state (leaking its state sub and force-setting
+    // scanState to stopped while scanning).
     final sub = _scanSubscription;
     _scanSubscription = null;
     final controller = _scanController;
     _scanController = null;
-    await _scanStateSub?.cancel();
+    final stateSub = _scanStateSub;
     _scanStateSub = null;
     _setScanState(bluey.ScanState.stopped);
+    await stateSub?.cancel();
     await sub?.cancel();
     if (controller != null && !controller.isClosed) {
       await controller.close();
@@ -674,6 +768,19 @@ class BlueyPortImpl implements BlueyPort {
       peerConn = await _bluey.connectAsPeer(device);
     } on bluey.NotABlueyPeerException {
       throw domain.NotABlueyPeerException(candidate.address);
+    } catch (e) {
+      // Surface transient GATT connect failures on the event stream so
+      // failure accounting (metrics) sees them; the throw still reaches
+      // the caller for backoff.
+      if (!_events.isClosed) {
+        _events.add(
+          PortConnectFailed(
+            nodeId: NodeId(candidate.address.value),
+            reason: 'connectAsPeer failed: $e',
+          ),
+        );
+      }
+      rethrow;
     }
     final nodeId = NodeId(peerConn.serverId.value);
     await _registerCentralConnection(nodeId, candidate.address, peerConn);
@@ -685,26 +792,41 @@ class BlueyPortImpl implements BlueyPort {
     _requireAdapterEnabled(nodeId);
     switch (role) {
       case ConnectionRole.central:
-        final central = _centralConnections[nodeId];
+        final central = _centralLinks[nodeId];
         if (central == null) return;
         try {
-          await central.disconnect();
+          await central.peer.disconnect();
         } finally {
-          _cleanupCentral(nodeId, reason: 'local request (role)');
+          _cleanupCentral(nodeId, central, reason: 'local request (role)');
         }
       case ConnectionRole.peripheral:
-        final peripheral = _peripheralClients.remove(nodeId);
-        if (peripheral == null) return;
-        _clientAddressToNodeId.remove(peripheral.client.address);
-        _writePayloadByNode.remove(nodeId);
-        _events.add(
-          PortPeerDisconnected(
-            nodeId: nodeId,
-            role: ConnectionRole.peripheral,
-            reason: 'local request (role)',
-          ),
-        );
+        _rejectPeripheral(nodeId, reason: 'local request (role)');
     }
+  }
+
+  /// "Disconnects" a peripheral-role link as far as we are able to.
+  ///
+  /// bluey.Server has no per-client disconnect API: the physical link
+  /// STAYS UP until the central side or the lifecycle heartbeat tears it
+  /// down. Critically, the address→NodeId mapping and the link record
+  /// are KEPT — destroying them while the link is up would silently drop
+  /// every inbound write from this peer. In a simultaneous mesh connect
+  /// both sides duplicate-reject their peripheral role and keep sending
+  /// on their central link, so the peer's gossip arrives HERE; dropping
+  /// the mapping black-holes 100% of traffic in both directions.
+  ///
+  /// The link is marked rejected so outbound sends stop using it.
+  void _rejectPeripheral(NodeId nodeId, {required String reason}) {
+    final link = _peripheralLinks[nodeId];
+    if (link == null || link.rejected) return;
+    link.rejected = true;
+    _events.add(
+      PortPeerDisconnected(
+        nodeId: nodeId,
+        role: ConnectionRole.peripheral,
+        reason: reason,
+      ),
+    );
   }
 
   @override
@@ -715,25 +837,18 @@ class BlueyPortImpl implements BlueyPort {
       await s.cancel();
     }
     _serverSubs.clear();
-    for (final s in _centralNotifSubs.values) {
-      await s.cancel();
-    }
-    _centralNotifSubs.clear();
-    for (final s in _centralStateSubs.values) {
-      await s.cancel();
-    }
-    _centralStateSubs.clear();
-    for (final c in _centralConnections.values) {
+    for (final link in _centralLinks.values) {
+      await link.notifSub?.cancel();
+      await link.stateSub?.cancel();
       try {
-        await c.disconnect();
+        await link.peer.disconnect();
       } catch (_) {
         // best-effort
       }
     }
-    _centralConnections.clear();
-    _peripheralClients.clear();
+    _centralLinks.clear();
+    _peripheralLinks.clear();
     _clientAddressToNodeId.clear();
-    _writePayloadByNode.clear();
     await stopScan();
     _devicesByAddress.clear();
     await _server?.dispose();
@@ -804,17 +919,18 @@ class BlueyPortImpl implements BlueyPort {
   /// subscription, fire PortPeerDisconnected for every active peer.
   /// Idempotent. Called on adapter-off and on dispose.
   void _invalidateLiveState() {
-    final centralPeers = _centralConnections.keys.toList();
-    final peripheralPeers = _peripheralClients.keys.toList();
+    final centralPeers = _centralLinks.keys.toList();
+    // Rejected peripheral links were already reported as disconnected;
+    // only live ones get a PortPeerDisconnected below.
+    final peripheralPeers = _peripheralLinks.entries
+        .where((e) => !e.value.rejected)
+        .map((e) => e.key)
+        .toList();
 
-    for (final sub in _centralNotifSubs.values) {
-      unawaited(sub.cancel());
+    for (final link in _centralLinks.values) {
+      unawaited(link.notifSub?.cancel());
+      unawaited(link.stateSub?.cancel());
     }
-    _centralNotifSubs.clear();
-    for (final sub in _centralStateSubs.values) {
-      unawaited(sub.cancel());
-    }
-    _centralStateSubs.clear();
     for (final sub in _serverSubs) {
       unawaited(sub.cancel());
     }
@@ -832,10 +948,9 @@ class BlueyPortImpl implements BlueyPort {
     }
     _scanController = null;
 
-    _centralConnections.clear();
-    _peripheralClients.clear();
+    _centralLinks.clear();
+    _peripheralLinks.clear();
     _clientAddressToNodeId.clear();
-    _writePayloadByNode.clear();
     _devicesByAddress.clear();
     _server = null;
     _serviceUuid = null;

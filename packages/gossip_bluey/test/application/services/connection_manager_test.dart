@@ -5,6 +5,7 @@ import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/src/application/observability/bluey_metrics.dart';
 import 'package:gossip_bluey/src/application/services/connection_manager.dart';
 import 'package:gossip_bluey/src/domain/aggregates/connection_registry.dart';
+import 'package:gossip_bluey/src/domain/errors/already_connecting_exception.dart';
 import 'package:gossip_bluey/src/domain/errors/connection_error.dart';
 import 'package:gossip_bluey/src/domain/events/connection_event.dart';
 import 'package:gossip_bluey/src/domain/interfaces/bluey_port.dart';
@@ -492,7 +493,8 @@ void main() {
       });
 
       test(
-        'reentrant connectTo for the same address throws StateError',
+        'reentrant connectTo for the same address throws '
+        'AlreadyConnectingException',
         () async {
           final network = FakeBlueyNetwork();
           final localPort = FakeBlueyPort(
@@ -524,7 +526,10 @@ void main() {
             lastSeen: _t0,
           );
           final f1 = svc.connectTo(candidate);
-          expect(() => svc.connectTo(candidate), throwsStateError);
+          expect(
+            () => svc.connectTo(candidate),
+            throwsA(isA<AlreadyConnectingException>()),
+          );
 
           // Drain the first call to clean up.
           await f1;

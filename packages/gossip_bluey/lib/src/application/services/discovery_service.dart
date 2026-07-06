@@ -59,7 +59,29 @@ class DiscoveryService {
     if (_sub != null || _disposed) return;
     _sub = _port
         .scanForCandidates(serviceUuid: _serviceUuid)
-        .listen(_onCandidate);
+        .listen(
+          _onCandidate,
+          onError: (Object error, StackTrace stackTrace) {
+            if (!_events.isClosed) _events.addError(error, stackTrace);
+          },
+          // The port closes the scan stream when the adapter goes off.
+          // Without this reset, isRunning stays true and start() after
+          // the adapter comes back silently no-ops — discovery is
+          // permanently wedged. Stale candidates would also keep feeding
+          // auto-connect with devices the port no longer knows.
+          onDone: _onScanEnded,
+        );
+  }
+
+  void _onScanEnded() {
+    if (_disposed) return;
+    _sub = null;
+    if (_current.isNotEmpty) {
+      _current.clear();
+      if (!_snapshotChanges.isClosed) {
+        _snapshotChanges.add(const []);
+      }
+    }
   }
 
   Future<void> stop() async {

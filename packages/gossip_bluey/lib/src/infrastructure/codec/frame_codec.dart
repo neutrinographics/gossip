@@ -149,13 +149,21 @@ class FrameDecoder {
           final all = _buffer.takeBytes();
           final view = ByteData.view(all.buffer, all.offsetInBytes);
           final len = view.getUint32(0, Endian.big);
-          if (len > kMaxFramePayload || len < 0) {
-            // Implausible length — magic was a false positive. Discard
-            // those 4 length bytes (already consumed) and re-scan.
-            totalDiscarded += kLengthPrefixSize;
-            if (all.length > kLengthPrefixSize) {
-              _buffer.add(all.sublist(kLengthPrefixSize));
-            }
+          // len == 0 is implausible too: the encoder rejects empty
+          // payloads, so a zero-length frame is corruption — emitting an
+          // empty message would blow up gossip deserialization.
+          if (len > kMaxFramePayload || len == 0) {
+            // Implausible length — the magic was a false positive.
+            // Re-scan from ONE byte past the false magic's start: a real
+            // magic may begin inside the bytes we consumed (e.g. a stray
+            // "GSP1" in garbage immediately followed by a real frame,
+            // whose own magic IS this false frame's "length" bytes).
+            // Discarding all 4 length bytes would destroy that frame.
+            totalDiscarded += 1;
+            _buffer.clear();
+            _buffer.add(
+              Uint8List.fromList([...kMagicBytes.sublist(1), ...all]),
+            );
             _state = _DecoderState.seekingMagic;
             continue;
           }

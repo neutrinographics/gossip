@@ -26,3 +26,9 @@ dev_dependencies:
     sdk: flutter
   lints: ^6.0.0
   mocktail: ^1.0.4
+  # For PlatformKind in port-impl tests. Version resolved by the
+  # workspace dependency_overrides (same git ref as bluey itself).
+  bluey_platform_interface:
+    git:
+      url: https://github.com/neutrinographics/bluey.git
+      path: bluey_platform_interface

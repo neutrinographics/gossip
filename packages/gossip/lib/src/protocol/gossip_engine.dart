@@ -364,7 +364,22 @@ class GossipEngine {
   void startListening(Map<ChannelId, ChannelAggregate> channels) {
     _channels = channels;
     _messageSubscription?.cancel();
-    _messageSubscription = messagePort.incoming.listen(_handleIncomingMessage);
+    _messageSubscription = messagePort.incoming.listen(
+      _handleIncomingMessage,
+      // Without onError, one transport stream error becomes an uncaught
+      // zone error and permanently cancels gossip message handling.
+      onError: (Object error, StackTrace stackTrace) {
+        _emitError(
+          PeerSyncError(
+            localNode,
+            SyncErrorType.protocolError,
+            'Transport stream error: $error',
+            occurredAt: DateTime.now(),
+            cause: error,
+          ),
+        );
+      },
+    );
   }
 
   /// Stops listening to incoming messages.
@@ -718,8 +733,18 @@ class GossipEngine {
       }
 
       for (final streamDigest in channelDigest.streams) {
-        // Skip streams we don't have locally
-        if (!channel.hasStream(streamDigest.streamId)) continue;
+        // Skip streams we don't have locally. Stream creation is a local
+        // operation (by design — apps coordinate stream names), so a
+        // peer's stream we never created is invisible here FOREVER; log
+        // it so the situation is diagnosable in the field.
+        if (!channel.hasStream(streamDigest.streamId)) {
+          _log(
+            LogLevel.trace,
+            'ignoring digest for ${channelDigest.channelId}/'
+            '${streamDigest.streamId}: stream not created locally',
+          );
+          continue;
+        }
 
         final key = (channelDigest.channelId, streamDigest.streamId);
 
@@ -932,7 +957,24 @@ class GossipEngine {
 
     _hlcClock.receive(maxHlc);
 
-    // Persist clock state for restart recovery (fire-and-forget)
-    _localNodeRepository.saveClockState(_hlcClock.current);
+    // Persist clock state for restart recovery. Fire-and-forget for
+    // latency, but never silent: a persistent store failing (disk full)
+    // must surface via ErrorCallback instead of becoming an unhandled
+    // zone error.
+    unawaited(
+      _localNodeRepository.saveClockState(_hlcClock.current).catchError((
+        Object error,
+        StackTrace stackTrace,
+      ) {
+        _emitError(
+          StorageSyncError(
+            SyncErrorType.storageFailure,
+            'Failed to persist HLC clock state: $error',
+            occurredAt: DateTime.now(),
+            cause: error,
+          ),
+        );
+      }),
+    );
   }
 }

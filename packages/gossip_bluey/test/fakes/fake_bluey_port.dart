@@ -306,8 +306,15 @@ class FakeBlueyPort implements BlueyPort {
     );
   }
 
+  /// Records every [disconnect] call (role-blind).
+  final List<NodeId> disconnectCalls = [];
+
+  /// Records every [disconnectRole] call as (nodeId, role).
+  final List<(NodeId, ConnectionRole)> disconnectRoleCalls = [];
+
   @override
   Future<void> disconnect(NodeId nodeId) async {
+    disconnectCalls.add(nodeId);
     final remote = network.lookup(nodeId);
     final wasCentral = _connectedAsCentral.remove(nodeId);
     final wasPeripheral = _connectedAsPeripheral.remove(nodeId);
@@ -369,8 +376,18 @@ class FakeBlueyPort implements BlueyPort {
   @override
   Stream<String> get diagnosticEvents => const Stream.empty();
 
+  /// Records every payload passed to [sendData].
+  final List<Uint8List> sentData = [];
+
+  /// Test hook: awaited at the START of every [sendData] call, before
+  /// any delivery. Lets tests pause a chunked send mid-message.
+  Future<void> Function(NodeId target, Uint8List data)? sendGate;
+
   @override
   Future<void> sendData(NodeId nodeId, Uint8List data) async {
+    final gate = sendGate;
+    if (gate != null) await gate(nodeId, data);
+    sentData.add(data);
     final remote = network.lookup(nodeId);
     if (remote == null ||
         (!_connectedAsCentral.contains(nodeId) &&
@@ -456,6 +473,7 @@ class FakeBlueyPort implements BlueyPort {
 
   @override
   Future<void> disconnectRole(NodeId nodeId, ConnectionRole role) async {
+    disconnectRoleCalls.add((nodeId, role));
     // Tear down only the requested role on this side, mirroring the
     // remote's view of that role. The other role (if any) stays intact.
     final remote = network.lookup(nodeId);

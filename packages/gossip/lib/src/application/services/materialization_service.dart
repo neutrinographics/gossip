@@ -27,15 +27,20 @@ class MaterializationService {
   ///
   /// Multiple materializers with different state types can coexist on the
   /// same stream. Registering a materializer with the same state type
-  /// replaces (and disposes) the previous one.
-  void register<T>(
+  /// replaces (and disposes) the previous one — awaited, so its stream
+  /// listeners get onDone and a dispose failure surfaces to the caller.
+  Future<void> register<T>(
     ChannelId channelId,
     StreamId streamId,
     StateMaterializer<T> materializer,
-  ) {
+  ) async {
     final key = (channelId, streamId, T);
-    _states[key]?.dispose();
+    // Insert synchronously (callers may not await), then dispose the
+    // replaced state — awaited so its listeners get onDone and a dispose
+    // failure surfaces here rather than as an unhandled async error.
+    final previous = _states[key];
     _states[key] = MaterializerState<T>(materializer);
+    await previous?.dispose();
   }
 
   /// Returns the materialized state, initializing on first call.
@@ -47,10 +52,29 @@ class MaterializationService {
     final typed = matState as MaterializerState<T>;
 
     if (!typed.isInitialized) {
-      await _initialize<T>(typed, channelId, streamId);
+      await _enqueue(typed, () async {
+        // Re-check inside the chain: a queued-ahead operation may have
+        // initialized already.
+        if (!typed.isInitialized) {
+          await _initialize<T>(typed, channelId, streamId);
+        }
+      });
     }
 
     return typed.cachedState;
+  }
+
+  /// Runs [op] serialized behind all previous operations for [matState].
+  ///
+  /// A failed predecessor doesn't block the chain; its error surfaces to
+  /// its own awaiter.
+  Future<void> _enqueue(
+    MaterializerState<dynamic> matState,
+    Future<void> Function() op,
+  ) {
+    final task = matState.opChain.catchError((_) {}).then((_) => op());
+    matState.opChain = task;
+    return task;
   }
 
   /// Returns the broadcast stream of state updates.
@@ -72,21 +96,27 @@ class MaterializationService {
     List<LogEntry> entries, {
     bool containsOutOfOrderEntries = false,
   }) async {
-    for (final matState in _statesForStream(channelId, streamId)) {
-      await _foldForState(
+    for (final matState in _statesForStream(channelId, streamId).toList()) {
+      await _enqueue(
         matState,
-        channelId,
-        streamId,
-        entries,
-        containsOutOfOrderEntries: containsOutOfOrderEntries,
+        () => _foldForState(
+          matState,
+          channelId,
+          streamId,
+          entries,
+          containsOutOfOrderEntries: containsOutOfOrderEntries,
+        ),
       );
     }
   }
 
   /// Forces a full rebuild of all materializers for the stream.
   Future<void> reset(ChannelId channelId, StreamId streamId) async {
-    for (final matState in _statesForStream(channelId, streamId)) {
-      await _fullRebuild(matState, channelId, streamId);
+    for (final matState in _statesForStream(channelId, streamId).toList()) {
+      await _enqueue(
+        matState,
+        () => _fullRebuild(matState, channelId, streamId),
+      );
     }
   }
 
@@ -136,6 +166,9 @@ class MaterializationService {
     bool containsOutOfOrderEntries = false,
   }) async {
     if (!matState.isInitialized) {
+      // Operations are serialized per materializer and entries are stored
+      // before foldEntries is called, so initialization's getAll() is
+      // guaranteed to include [newEntries] — no separate fold needed.
       await _initialize<T>(matState, channelId, streamId);
       return;
     }
@@ -178,9 +211,6 @@ class MaterializationService {
       }
     }
 
-    matState.cachedState = state;
-    matState.cursor = cursor;
-
     // Fold entries beyond the cursor
     final allEntries = await _entryRepository.getAll(channelId, streamId);
     final c = cursor; // promote to non-nullable
@@ -188,25 +218,24 @@ class MaterializationService {
         ? allEntries
         : allEntries.where((e) => e.timestamp > c).toList();
 
-    T currentState = matState.cachedState as T;
+    T currentState = state;
     for (final entry in entriesToFold) {
       currentState = matState.materializer.fold(currentState, entry);
     }
 
-    // Update cursor to tail
-    if (allEntries.isNotEmpty) {
-      matState.cursor = allEntries.last.timestamp;
+    final newCursor = allEntries.isNotEmpty
+        ? allEntries.last.timestamp
+        : cursor;
+
+    if (newCursor != null) {
+      await matState.materializer.save(currentState, newCursor.toString());
     }
+
+    // Publish only after the save so a failed save leaves the state
+    // unpublished (the next operation retries initialization).
+    matState.cursor = newCursor;
     matState.cachedState = currentState;
     matState.isInitialized = true;
-
-    if (matState.cursor != null) {
-      await matState.materializer.save(
-        currentState,
-        matState.cursor!.toString(),
-      );
-    }
-
     matState.emit(currentState);
   }
 

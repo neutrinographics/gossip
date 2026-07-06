@@ -486,38 +486,28 @@ void main() {
       peer = h.addPeer('peer1');
     });
 
-    test('records received message metrics for incoming Ping', () async {
-      h.startListening();
+    test(
+      'does NOT record received message metrics (GossipEngine is the '
+      'single recording point)',
+      () async {
+        h.startListening();
 
-      final before = h.peerRegistry.getPeer(peer.id)!.metrics;
-      expect(before.messagesReceived, equals(0));
+        final ping = Ping(sender: peer.id, sequence: 1);
+        await peer.port.send(h.localNode, codec.encode(ping));
+        await h.flush();
 
-      final ping = Ping(sender: peer.id, sequence: 1);
-      final pingBytes = codec.encode(ping);
-      await peer.port.send(h.localNode, pingBytes);
-      await h.flush();
+        final after = h.peerRegistry.getPeer(peer.id)!.metrics;
+        expect(
+          after.messagesReceived,
+          equals(0),
+          reason:
+              'both engines subscribe to the same incoming stream; if '
+              'both recorded, every rate metric would be doubled',
+        );
 
-      final after = h.peerRegistry.getPeer(peer.id)!.metrics;
-      expect(after.messagesReceived, equals(1));
-      expect(after.bytesReceived, equals(pingBytes.length));
-
-      h.stopListening();
-    });
-
-    test('records received message metrics for incoming Ack', () async {
-      h.startListening();
-
-      final ack = Ack(sender: peer.id, sequence: 1);
-      final ackBytes = codec.encode(ack);
-      await peer.port.send(h.localNode, ackBytes);
-      await h.flush();
-
-      final after = h.peerRegistry.getPeer(peer.id)!.metrics;
-      expect(after.messagesReceived, equals(1));
-      expect(after.bytesReceived, equals(ackBytes.length));
-
-      h.stopListening();
-    });
+        h.stopListening();
+      },
+    );
 
     test('records sent message metrics when sending Ping', () async {
       h.startListening();
@@ -537,16 +527,12 @@ void main() {
       h.stopListening();
     });
 
-    test('records metrics even for malformed messages', () async {
+    test('emits an error for malformed messages', () async {
       h.startListening();
 
       final garbageBytes = Uint8List.fromList([255, 0, 1, 2, 3]);
       await peer.port.send(h.localNode, garbageBytes);
       await h.flush();
-
-      final after = h.peerRegistry.getPeer(peer.id)!.metrics;
-      expect(after.messagesReceived, equals(1));
-      expect(after.bytesReceived, equals(garbageBytes.length));
 
       expect(h.errors, hasLength(1));
 

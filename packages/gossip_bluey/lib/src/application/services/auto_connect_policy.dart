@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:gossip/gossip.dart';
 
 import '../../domain/aggregates/connection_registry.dart';
+import '../../domain/errors/already_connecting_exception.dart';
 import '../../domain/errors/not_a_bluey_peer_exception.dart';
 import '../../domain/value_objects/ble_address.dart';
 import '../../domain/value_objects/connection_mode.dart';
@@ -110,6 +111,12 @@ class AutoConnectPolicy {
     }
   }
 
+  /// Connect attempts currently in flight. Counted toward the
+  /// target-connections cap so a burst of scan candidates (which all
+  /// pass the registry-count check before any connect lands) cannot
+  /// overshoot it.
+  int _inFlightAttempts = 0;
+
   Future<void> _tryConnect(ScanCandidate c) async {
     // Re-check on every event because we may be in the middle of
     // tearing down the subscription on a mode switch.
@@ -125,16 +132,28 @@ class AutoConnectPolicy {
     final entry = _backoff[c.address];
     if (entry != null && _now().isBefore(entry.nextAttempt)) return;
 
-    // Target-connections cap.
+    // Target-connections cap, including attempts still in flight.
     final cap = _targetConnections;
-    if (cap != null && _registry.connectionCount >= cap) {
+    if (cap != null && _registry.connectionCount + _inFlightAttempts >= cap) {
       return;
     }
 
+    _inFlightAttempts++;
     try {
       final nodeId = await _connections.connectTo(c);
       _knownAddressToNode[c.address] = nodeId;
       _backoff.remove(c.address);
+    } on AlreadyConnectingException catch (e) {
+      // ConnectionManager.connectTo's reentrancy guard fired: another
+      // attempt for this address is already in flight. Benign — no
+      // backoff; the in-flight call will resolve normally. (This is a
+      // TYPED exception on purpose: a generic StateError from the
+      // connect path — e.g. a stale candidate after an adapter cycle —
+      // is a real failure and falls through to the backoff branch.)
+      onLog?.call(
+        LogLevel.debug,
+        'auto-connect skipped reentrant attempt for ${c.address}: $e',
+      );
     } on NotABlueyPeerException {
       onLog?.call(
         LogLevel.debug,
@@ -143,14 +162,6 @@ class AutoConnectPolicy {
       _backoff[c.address] = (
         delay: _longBackoff,
         nextAttempt: _now().add(_longBackoff),
-      );
-    } on StateError catch (e) {
-      // ConnectionManager.connectTo's reentrancy guard fired: another
-      // attempt for this address is already in flight. Benign — no
-      // backoff; the in-flight call will resolve normally.
-      onLog?.call(
-        LogLevel.debug,
-        'auto-connect skipped reentrant attempt for ${c.address}: $e',
       );
     } catch (e, st) {
       onLog?.call(
@@ -169,6 +180,8 @@ class AutoConnectPolicy {
               ),
             );
       _backoff[c.address] = (delay: next, nextAttempt: _now().add(next));
+    } finally {
+      _inFlightAttempts--;
     }
   }
 

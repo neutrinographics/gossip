@@ -39,6 +39,12 @@ abstract interface class BlueyPort {
 
   /// Run a single discovery round. Returns peers that advertised our
   /// gossip service, deduplicated by `NodeId`.
+  ///
+  /// Note: the real implementation delegates to bluey's peer discovery,
+  /// which filters by bluey's own control service — [serviceUuid] is NOT
+  /// applied as an additional filter and peers advertising other gossip
+  /// services may be returned. The replacement path (scanForCandidates)
+  /// filters correctly.
   @Deprecated('Use scanForCandidates + connectAndIdentify instead')
   Future<List<DiscoveredPeer>> discoverPeers({
     required ServiceUuid serviceUuid,

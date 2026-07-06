@@ -479,10 +479,21 @@ class ChannelService {
     return channel?.getRetentionPolicy(streamId);
   }
 
-  /// Returns the current HLC timestamp from the clock, or a wall-clock
-  /// fallback if no clock is configured.
-  Hlc get currentTimestamp =>
-      _hlcClock?.now() ?? Hlc(DateTime.now().millisecondsSinceEpoch, 0);
+  /// Takes a fresh HLC timestamp (or a wall-clock fallback if no clock
+  /// is configured) and persists the advanced clock state.
+  ///
+  /// Reading the clock advances it; persisting immediately means a crash
+  /// never restores a clock older than one an external observer has
+  /// already seen. (Deliberately a method, not a getter — a getter with
+  /// state-mutating side effects is a trap.)
+  Future<Hlc> takeTimestamp() async {
+    final timestamp =
+        _hlcClock?.now() ?? Hlc(DateTime.now().millisecondsSinceEpoch, 0);
+    if (_hlcClock != null) {
+      await _localNodeRepository.saveClockState(_hlcClock.current);
+    }
+    return timestamp;
+  }
 
   /// Checks if a stream exists in a channel.
   ///
@@ -510,7 +521,7 @@ class ChannelService {
     StreamId streamId,
     StateMaterializer<T> materializer,
   ) async {
-    _materializationService?.register(channelId, streamId, materializer);
+    await _materializationService?.register(channelId, streamId, materializer);
     return [];
   }
 
@@ -582,5 +593,13 @@ class ChannelService {
   ) async {
     if (_entryRepository == null) return VersionVector.empty;
     return _entryRepository.getVersionVector(channelId, streamId);
+  }
+
+  /// Disposes all materializer state (closes their state streams).
+  ///
+  /// Called by the Coordinator on dispose so `stateStream` listeners get
+  /// onDone instead of leaking for the process lifetime.
+  Future<void> disposeAllMaterializers() async {
+    await _materializationService?.disposeAll();
   }
 }

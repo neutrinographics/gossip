@@ -5,6 +5,7 @@ import 'package:gossip/gossip.dart';
 
 import '../../domain/aggregates/connection_registry.dart';
 import '../../domain/entities/connection_handle.dart';
+import '../../domain/errors/already_connecting_exception.dart';
 import '../../domain/errors/connection_error.dart';
 import '../../domain/events/connection_event.dart';
 import '../../domain/interfaces/bluey_port.dart';
@@ -68,27 +69,53 @@ class ConnectionManager implements MessageDispatcher {
   Stream<ConnectionEvent> get events => _events.stream;
   Stream<ConnectionError> get errors => _errors.stream;
 
+  // Emissions guarded against closed controllers: an in-flight send or a
+  // late port event failing AFTER dispose() must not throw StateError
+  // into its awaiter.
+  void _emitError(ConnectionError error) {
+    if (!_errors.isClosed) _errors.add(error);
+  }
+
+  void _emitEvent(ConnectionEvent event) {
+    if (!_events.isClosed) _events.add(event);
+  }
+
+  void _emitIncoming(IncomingMessage message) {
+    if (!_incoming.isClosed) _incoming.add(message);
+  }
+
   @override
   Stream<IncomingMessage> get incomingMessages => _incoming.stream;
 
   /// Initiate a connection to [candidate]. The candidate's address is
   /// passed through to [BlueyPort.connectAndIdentify], which performs the
   /// GATT-level connect plus Bluey-protocol identification and returns
-  /// the resolved [NodeId]. The caller can then send to that NodeId.
+  /// the resolved [NodeId]. When this future resolves, the connection is
+  /// registered — the caller can send to that NodeId immediately.
   ///
   /// Reentrancy-protected via [_connectingAddresses]: a second call for
-  /// the same address while one is in flight throws [StateError].
+  /// the same address while one is in flight throws
+  /// [AlreadyConnectingException] (a typed exception so policies can
+  /// distinguish it from real connect failures).
   ///
   /// Does NOT add backoff or dedup against the connection registry; those
   /// are the responsibility of `AutoConnectPolicy` in auto mode. In
   /// manual mode the consumer makes the policy decision.
   Future<NodeId> connectTo(ScanCandidate candidate) async {
     if (_connectingAddresses.contains(candidate.address)) {
-      throw StateError('already connecting to ${candidate.address}');
+      throw AlreadyConnectingException(candidate.address);
     }
     _connectingAddresses.add(candidate.address);
     try {
-      return await port.connectAndIdentify(candidate);
+      final nodeId = await port.connectAndIdentify(candidate);
+      // The PortPeerConnected event is dispatched asynchronously on the
+      // port's broadcast stream; wait (bounded) until the registry
+      // reflects it so a caller that sends immediately doesn't get
+      // ConnectionNotFoundError despite the connect having succeeded.
+      for (var i = 0; i < 16 && !registry.contains(nodeId); i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      return nodeId;
     } finally {
       _connectingAddresses.remove(candidate.address);
     }
@@ -102,16 +129,31 @@ class ConnectionManager implements MessageDispatcher {
         :final address,
         :final displayName,
       ):
+        // Duplicate check BEFORE the cap check: a duplicate role for an
+        // already-registered peer doesn't consume a slot, and letting it
+        // hit the cap branch would tear down the ACTIVE link via a
+        // role-blind disconnect.
+        if (registry.contains(nodeId)) {
+          onLog?.call(
+            LogLevel.info,
+            'duplicate connection for $nodeId arrived as $role; dropping',
+          );
+          _disconnectRoleGuarded(nodeId, role);
+          return;
+        }
         if (maxConnections != null &&
             registry.connectionCount >= maxConnections!) {
-          _errors.add(
+          _emitError(
             ConnectionLimitReachedError(
               message: 'rejected $nodeId: at maxConnections',
               occurredAt: _clock.now(),
               nodeId: nodeId,
             ),
           );
-          unawaited(port.disconnect(nodeId));
+          // Tear down exactly the role that just connected — never the
+          // role-blind disconnect(), which prefers central and could hit
+          // an unrelated link.
+          _disconnectRoleGuarded(nodeId, role);
           return;
         }
         final handle = ConnectionHandle(
@@ -122,17 +164,15 @@ class ConnectionManager implements MessageDispatcher {
         );
         switch (registry.tryRegister(handle)) {
           case DuplicateRejected():
-            onLog?.call(
-              LogLevel.info,
-              'duplicate connection for $nodeId arrived as $role; dropping',
-            );
-            unawaited(port.disconnectRole(nodeId, role));
+            // Unreachable in practice (contains() checked above) but the
+            // registry contract requires handling it.
+            _disconnectRoleGuarded(nodeId, role);
             return;
           case Registered():
             _decoders[nodeId] = FrameDecoder();
             metrics.recordConnectionEstablished();
             metrics.setConnectedPeerCount(registry.connectionCount);
-            _events.add(
+            _emitEvent(
               PeerOpened(
                 nodeId: nodeId,
                 address: address,
@@ -160,7 +200,7 @@ class ConnectionManager implements MessageDispatcher {
         // on its next dispatch and fail cleanly.
         unawaited(_sendQueue.remove(nodeId) ?? Future<void>.value());
         metrics.setConnectedPeerCount(registry.connectionCount);
-        _events.add(PeerClosed(nodeId: nodeId, reason: reason));
+        _emitEvent(PeerClosed(nodeId: nodeId, reason: reason));
       case PortPeerData(:final nodeId, :final data):
         final decoder = _decoders[nodeId];
         if (decoder == null) {
@@ -180,13 +220,16 @@ class ConnectionManager implements MessageDispatcher {
         }
         for (final m in result.messages) {
           metrics.recordMessageReceived();
-          _incoming.add(
+          _emitIncoming(
             IncomingMessage(sender: nodeId, bytes: m, receivedAt: _clock.now()),
           );
         }
-      case PortConnectFailed():
-        // TODO(C4): forward to AutoConnectPolicy backoff bookkeeping
-        break;
+      case PortConnectFailed(:final nodeId, :final reason):
+        metrics.recordConnectionFailed();
+        onLog?.call(
+          LogLevel.info,
+          'connect to $nodeId failed: $reason',
+        );
     }
   }
 
@@ -197,7 +240,7 @@ class ConnectionManager implements MessageDispatcher {
     MessagePriority priority = MessagePriority.normal,
   }) async {
     if (!registry.contains(destination)) {
-      _errors.add(
+      _emitError(
         ConnectionNotFoundError(
           message: 'no active connection to $destination',
           occurredAt: _clock.now(),
@@ -227,9 +270,10 @@ class ConnectionManager implements MessageDispatcher {
   }
 
   Future<void> _sendChunked(NodeId destination, Uint8List bytes) async {
-    if (!registry.contains(destination)) {
+    final handle = registry.get(destination);
+    if (handle == null) {
       // Connection dropped while we were queued behind a previous send.
-      _errors.add(
+      _emitError(
         ConnectionNotFoundError(
           message: 'no active connection to $destination',
           occurredAt: _clock.now(),
@@ -243,12 +287,28 @@ class ConnectionManager implements MessageDispatcher {
       mtuPayloadSize: port.chunkSizeFor(destination),
     );
     for (final chunk in chunks) {
+      // Re-check per chunk against the SAME handle: a disconnect + fast
+      // reconnect mid-message swaps the registry entry, and writing this
+      // frame's remaining chunks to the new link would corrupt the
+      // receiver's byte-stream alignment.
+      if (!identical(registry.get(destination), handle)) {
+        _emitError(
+          SendFailedError(
+            message:
+                'send to $destination aborted: connection replaced '
+                'mid-message',
+            occurredAt: _clock.now(),
+            nodeId: destination,
+          ),
+        );
+        return;
+      }
       try {
         await port.sendData(destination, chunk);
         metrics.recordFrameSent();
         metrics.recordBytesSent(chunk.length);
       } catch (e, st) {
-        _errors.add(
+        _emitError(
           SendFailedError(
             message: 'send failed to $destination',
             occurredAt: _clock.now(),
@@ -257,11 +317,28 @@ class ConnectionManager implements MessageDispatcher {
           ),
         );
         onLog?.call(LogLevel.warning, 'send failed', e, st);
-        unawaited(port.disconnect(destination));
+        // Tear down only the link this send was using — if it was
+        // already replaced, the new connection is innocent.
+        if (identical(registry.get(destination), handle)) {
+          _disconnectRoleGuarded(destination, handle.role);
+        }
         return;
       }
     }
     metrics.recordMessageSent();
+  }
+
+  /// Fire-and-forget role-specific disconnect with error containment.
+  ///
+  /// `port.disconnectRole` can throw (e.g. BluetoothUnavailableException
+  /// when the adapter turned off); an unhandled failed future from
+  /// `unawaited(...)` would surface as an uncaught zone error.
+  void _disconnectRoleGuarded(NodeId nodeId, ConnectionRole role) {
+    unawaited(
+      port.disconnectRole(nodeId, role).catchError((Object e, StackTrace st) {
+        onLog?.call(LogLevel.warning, 'disconnectRole($nodeId, $role) failed', e, st);
+      }),
+    );
   }
 
   @override
@@ -292,6 +369,7 @@ class ConnectionManager implements MessageDispatcher {
   Future<void> dispose() async {
     _connectingAddresses.clear();
     _sendQueue.clear();
+    _decoders.clear();
     await _portSub.cancel();
     await _events.close();
     await _errors.close();

@@ -206,6 +206,48 @@ void main() {
       expect(r2.bytesDiscarded, equals(0));
     });
 
+    test('a false magic does not destroy an immediately following real '
+        'frame', () {
+      final dec = FrameDecoder();
+      final payload = Uint8List.fromList([0xAA, 0xBB, 0xCC]);
+      final realFrame = FrameEncoder.encode(
+        payload,
+        mtuPayloadSize: 512,
+      ).expand<int>((c) => c).toList();
+      // A stray magic sequence in garbage, immediately followed by a
+      // real frame: the false magic's "length" bytes ARE the real magic.
+      // Discarding all 4 length bytes destroys the real frame; recovery
+      // must rescan from one byte past the false magic.
+      final stream = Uint8List.fromList([...kMagicBytes, ...realFrame]);
+
+      final result = dec.feed(stream);
+
+      expect(
+        result.messages,
+        hasLength(1),
+        reason: 'the real frame must survive false-magic recovery',
+      );
+      expect(result.messages.first, equals(payload));
+    });
+
+    test('a zero length prefix is treated as corruption, not an empty '
+        'message', () {
+      final dec = FrameDecoder();
+      final zeroLength = Uint8List.fromList([
+        ...kMagicBytes,
+        0, 0, 0, 0, // length 0 — the encoder never produces this
+      ]);
+
+      final result = dec.feed(zeroLength);
+
+      expect(
+        result.messages,
+        isEmpty,
+        reason: 'an empty IncomingMessage would blow up deserialization '
+            'in the gossip layer',
+      );
+    });
+
     test('bounded buffer prevents unbounded growth on garbage stream', () {
       final dec = FrameDecoder();
       // Feed 100 KB of garbage that doesn't contain the magic anywhere.

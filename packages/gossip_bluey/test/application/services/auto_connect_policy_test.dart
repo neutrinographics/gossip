@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
+import 'package:gossip_bluey/src/domain/errors/already_connecting_exception.dart';
 import 'package:gossip_bluey/src/application/observability/bluey_metrics.dart';
 import 'package:gossip_bluey/src/application/services/auto_connect_policy.dart';
 import 'package:gossip_bluey/src/application/services/connection_manager.dart';
@@ -326,7 +327,8 @@ void main() {
     });
 
     test(
-      'auto mode: StateError from connectTo is swallowed without backoff',
+      'auto mode: AlreadyConnectingException from connectTo is swallowed '
+      'without backoff',
       () async {
         final policy = AutoConnectPolicy(
           discovery: discovery,
@@ -337,13 +339,14 @@ void main() {
         );
         policy.setMode(ConnectionMode.auto);
 
-        // Simulate ConnectionManager.connectTo's reentrancy guard
-        // firing by throwing StateError from connectAndIdentify for the
-        // target address. The policy should swallow it without
-        // recording backoff.
+        // Simulate ConnectionManager.connectTo's reentrancy guard firing
+        // via its TYPED exception. The policy should swallow it without
+        // recording backoff. (A generic StateError — e.g. a stale
+        // candidate after an adapter cycle — must record backoff; see
+        // resilience_test.dart.)
         port.injectConnectAndIdentifyError(
           const BleAddress('AA:BB:CC:DD:EE:01'),
-          StateError('already connecting'),
+          AlreadyConnectingException(const BleAddress('AA:BB:CC:DD:EE:01')),
         );
         port.emitCandidate(_candidate('AA:BB:CC:DD:EE:01'));
         await _pump();

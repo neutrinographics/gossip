@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/application/observability/log_level.dart';
 import 'package:gossip/src/domain/errors/sync_error.dart';
+import 'package:gossip/src/domain/interfaces/local_node_repository.dart';
 import 'package:gossip/src/domain/interfaces/retention_policy.dart';
 import 'package:gossip/src/domain/services/hlc_clock.dart';
 import 'package:gossip/src/domain/services/time_source.dart';
@@ -165,6 +167,55 @@ class GossipEngineTestHarness {
       errors: errors,
       mergedEntries: mergedEntries,
     );
+  }
+
+  // -------------------------------------------------------------------------
+  // Standalone builders (for tests needing custom dependencies)
+  // -------------------------------------------------------------------------
+
+  /// Builds a bare [GossipEngine] with injectable dependencies, for tests
+  /// that need a custom repository or callbacks the harness doesn't expose.
+  static GossipEngine buildEngine({
+    required NodeId localNode,
+    required PeerRegistry peerRegistry,
+    required InMemoryTimePort timePort,
+    required LocalNodeRepository localNodeRepository,
+    ErrorCallback? onError,
+    LogCallback? onLog,
+    bool withHlcClock = false,
+  }) {
+    final bus = InMemoryMessageBus();
+    return GossipEngine(
+      localNode: localNode,
+      peerRegistry: peerRegistry,
+      entryRepository: InMemoryEntryRepository(),
+      timePort: timePort,
+      messagePort: InMemoryMessagePort(localNode, bus),
+      localNodeRepository: localNodeRepository,
+      onError: onError,
+      onLog: onLog,
+      hlcClock: withHlcClock ? HlcClock(TimeSource(timePort)) : null,
+    );
+  }
+
+  /// Registers a channel with the given streams directly on [engine].
+  static void registerChannel(
+    GossipEngine engine,
+    ChannelId channelId,
+    List<StreamId> streamIds,
+  ) {
+    final channel = ChannelAggregate(
+      id: channelId,
+      localNode: engine.localNode,
+    );
+    for (final sid in streamIds) {
+      channel.createStream(
+        sid,
+        const KeepAllRetention(),
+        occurredAt: DateTime.now(),
+      );
+    }
+    engine.setChannels({channelId: channel});
   }
 
   // -------------------------------------------------------------------------

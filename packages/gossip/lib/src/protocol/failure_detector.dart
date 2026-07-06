@@ -129,7 +129,6 @@ class FailureDetector {
   // Constants
   // ---------------------------------------------------------------------------
 
-  static const int _metricsWindowDurationMs = 10000;
   static const Duration _minPingTimeout = Duration(milliseconds: 500);
   static const Duration _maxPingTimeout = Duration(seconds: 10);
   static const Duration _minProbeInterval = Duration(milliseconds: 500);
@@ -272,7 +271,22 @@ class FailureDetector {
   /// first so messages are never processed twice.
   void startListening() {
     _messageSubscription?.cancel();
-    _messageSubscription = messagePort.incoming.listen(_handleIncomingMessage);
+    _messageSubscription = messagePort.incoming.listen(
+      _handleIncomingMessage,
+      // Without onError, one transport stream error becomes an uncaught
+      // zone error and permanently cancels SWIM message handling.
+      onError: (Object error, StackTrace stackTrace) {
+        _emitError(
+          PeerSyncError(
+            localNode,
+            SyncErrorType.protocolError,
+            'Transport stream error: $error',
+            occurredAt: DateTime.now(),
+            cause: error,
+          ),
+        );
+      },
+    );
   }
 
   /// Stops listening to incoming messages.
@@ -660,8 +674,10 @@ class FailureDetector {
   // ---------------------------------------------------------------------------
 
   Future<void> _handleIncomingMessage(IncomingMessage message) async {
-    _recordIncomingMetrics(message);
-
+    // Deliberately NOT recording receive metrics here: GossipEngine
+    // subscribes to the same incoming stream and is the single
+    // designated recording point — both engines recording would double
+    // every rate/byte metric applications throttle on.
     try {
       final protocolMessage = _codec.decode(message.bytes);
 
@@ -683,15 +699,6 @@ class FailureDetector {
         ),
       );
     }
-  }
-
-  void _recordIncomingMetrics(IncomingMessage message) {
-    peerRegistry.recordMessageReceived(
-      message.sender,
-      message.bytes.length,
-      timePort.nowMs,
-      _metricsWindowDurationMs,
-    );
   }
 
   Future<void> _handleIncomingPing(Ping ping, NodeId sender) async {
