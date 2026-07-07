@@ -592,6 +592,14 @@ class Coordinator {
       final detector = _failureDetector!;
       unawaited(_probeNewPeerWithRetry(detector, id));
     }
+
+    // Kick off anti-entropy with the new peer immediately (sync-on-connect)
+    // rather than waiting for the random periodic round to select it — the
+    // gossip analogue of the immediate probe above. Fast reconciliation on
+    // a fresh join or a healed partition.
+    if (_gossipEngine != null && _state == SyncState.running) {
+      unawaited(_gossipEngine!.syncWithPeer(id));
+    }
   }
 
   /// Probes a newly added peer with retry to bootstrap per-peer RTT.

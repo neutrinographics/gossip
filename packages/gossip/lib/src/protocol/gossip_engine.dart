@@ -526,14 +526,40 @@ class GossipEngine {
     }
 
     final peer = candidates[_random.nextInt(candidates.length)];
+    await _sendMessage(peer.id, await _buildDigestRequest());
+  }
 
+  /// Builds a [DigestRequest] carrying this node's version vectors for every
+  /// stream of every channel it participates in.
+  Future<DigestRequest> _buildDigestRequest() async {
     final digests = <ChannelDigest>[];
     for (final channel in _channels.values) {
       digests.add(await generateDigest(channel));
     }
+    return DigestRequest(sender: localNode, digests: digests);
+  }
 
-    final request = DigestRequest(sender: localNode, digests: digests);
-    await _sendMessage(peer.id, request);
+  /// Immediately starts anti-entropy with [peerId] by sending it a
+  /// DigestRequest, rather than waiting for the random periodic round to
+  /// select it. The gossip analogue of `FailureDetector.probeNewPeer`:
+  /// called when a peer connects/reconnects so a fresh join or a healed
+  /// partition reconciles right away. With push-pull reciprocation (M1) the
+  /// single exchange syncs both directions. No-op when not running.
+  Future<void> syncWithPeer(NodeId peerId) async {
+    if (!_isRunning) return;
+    try {
+      await _sendMessage(peerId, await _buildDigestRequest());
+    } catch (e) {
+      _emitError(
+        PeerSyncError(
+          peerId,
+          SyncErrorType.protocolError,
+          'Initial sync with $peerId failed: $e',
+          occurredAt: DateTime.now(),
+          cause: e,
+        ),
+      );
+    }
   }
 
   /// Handles incoming gossip protocol messages.
