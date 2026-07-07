@@ -34,6 +34,7 @@ import '../protocol/protocol_codec.dart';
 import 'adaptive_timing_status.dart';
 import 'channel.dart';
 import 'coordinator_config.dart';
+import 'gossip_sync_activity.dart';
 import 'health_status.dart';
 import 'resource_usage.dart';
 import 'sync_state.dart';
@@ -786,6 +787,14 @@ class Coordinator {
       totalStorageBytes: totalStorageBytes,
     );
   }
+
+  /// A coarse snapshot of gossip sync activity for "syncing…" vs "up to
+  /// date" UI. See [GossipSyncActivity]. In local-only mode (no gossip
+  /// engine) it reports quiescent with zero activity.
+  GossipSyncActivity get gossipSyncActivity => GossipSyncActivity(
+    outstandingPulls: _gossipEngine?.outstandingPullCount ?? 0,
+    mergedBatches: _gossipEngine?.mergedBatchCount ?? 0,
+  );
 
   /// Returns the current health status of the coordinator.
   ///

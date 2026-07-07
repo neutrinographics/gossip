@@ -196,6 +196,11 @@ class GossipEngine {
   /// ~1-2 orders of magnitude longer than a 66-byte ping).
   final RttTracker _deltaRttTracker = RttTracker();
 
+  /// Monotonic count of delta batches that merged at least one new entry.
+  /// Exposed via [mergedBatchCount] as a coarse "recent sync activity"
+  /// signal for applications (G5).
+  int _mergedBatchCount = 0;
+
   /// Default pending-delta timeout used before any delta round-trip has been
   /// observed. Sized to comfortably exceed one ~30KB page over a slow BLE
   /// link (~7.5s at a few KB/s) so a request is never deemed stale
@@ -341,6 +346,17 @@ class GossipEngine {
       maxTimeout: _maxPendingTimeout,
     );
   }
+
+  /// Number of delta requests currently in flight (pulls we are awaiting a
+  /// response for). A coarse "am I mid-sync?" signal for applications (G5):
+  /// non-zero means we are actively pulling data from a peer.
+  int get outstandingPullCount => _pendingDeltaRequests.length;
+
+  /// Monotonic count of delta batches that merged at least one new entry
+  /// since construction. Poll it to detect recent sync activity: a value
+  /// that stops advancing (together with [outstandingPullCount] == 0)
+  /// indicates the node has gone quiescent / caught up (G5).
+  int get mergedBatchCount => _mergedBatchCount;
 
   /// Starts periodic gossip rounds.
   ///
@@ -1332,6 +1348,8 @@ class GossipEngine {
     final containsOutOfOrderEntries =
         previousTailHlc != null &&
         newEntries.any((e) => e.timestamp < previousTailHlc);
+
+    _mergedBatchCount++;
 
     await onEntriesMerged?.call(
       response.channelId,

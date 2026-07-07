@@ -89,6 +89,7 @@ export 'src/facade/coordinator.dart';
 export 'src/facade/coordinator_config.dart';
 export 'src/facade/channel.dart';
 export 'src/facade/event_stream.dart';
+export 'src/facade/gossip_sync_activity.dart';
 export 'src/facade/health_status.dart';
 export 'src/facade/resource_usage.dart';
 export 'src/facade/sync_state.dart';
