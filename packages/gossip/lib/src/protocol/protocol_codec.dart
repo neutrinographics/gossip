@@ -242,6 +242,23 @@ class ProtocolCodec {
     return utf8.encode(jsonEncode(_encodeLogEntry(entry))).length;
   }
 
+  /// Returns the encoded JSON size in bytes of a single [StreamDigest] as it
+  /// appears inside a digest message's `streams` array.
+  ///
+  /// Used by the gossip engine to budget DigestRequest/DigestResponse
+  /// messages against the transport limit without repeatedly encoding whole
+  /// messages.
+  int encodedStreamDigestSize(StreamDigest digest) {
+    return utf8
+        .encode(
+          jsonEncode({
+            'streamId': digest.streamId.value,
+            'version': _encodeVersionVector(digest.version),
+          }),
+        )
+        .length;
+  }
+
   /// Conservative per-entry overhead in bytes: message envelope (sender,
   /// channelId, streamId) plus entry envelope (author, sequence, timestamp,
   /// JSON keys/punctuation). Sized for long node IDs and maximal HLC values.

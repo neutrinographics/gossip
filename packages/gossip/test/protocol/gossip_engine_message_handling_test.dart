@@ -60,8 +60,14 @@ void main() {
         occurredAt: DateTime.now(),
       );
 
-      // Peer sends empty digest
-      final peerDigest = ChannelDigest(channelId: channelId, streams: []);
+      // Peer advertises the shared stream (as a real DigestRequest does —
+      // the responder scopes its reply to the requested streams).
+      final peerDigest = ChannelDigest(
+        channelId: channelId,
+        streams: [
+          StreamDigest(streamId: streamId, version: VersionVector.empty),
+        ],
+      );
       final request = DigestRequest(sender: peerNode, digests: [peerDigest]);
 
       final response = await engine.handleDigestRequest(request, [channel]);
@@ -70,7 +76,53 @@ void main() {
       expect(response.digests, hasLength(1));
       expect(response.digests[0].channelId, equals(channelId));
       expect(response.digests[0].streams, hasLength(1));
+      expect(response.digests[0].streams[0].streamId, equals(streamId));
     });
+
+    test(
+      'handleDigestRequest scopes its reply to the requested streams',
+      () async {
+        final localNode = NodeId('local');
+        final peerNode = NodeId('peer-1');
+        final registry = PeerRegistry(
+          localNode: localNode,
+          initialIncarnation: 0,
+        );
+        final entryRepo = InMemoryEntryRepository();
+        final engine = createEngine(localNode, registry, entryRepo);
+
+        final channelId = ChannelId('channel-1');
+        final channel = ChannelAggregate(id: channelId, localNode: localNode);
+        for (final s in ['s1', 's2']) {
+          channel.createStream(
+            StreamId(s),
+            KeepAllRetention(),
+            occurredAt: DateTime.now(),
+          );
+        }
+
+        // Peer asks only about s1 — the reply must not include s2.
+        final request = DigestRequest(
+          sender: peerNode,
+          digests: [
+            ChannelDigest(
+              channelId: channelId,
+              streams: [
+                StreamDigest(streamId: StreamId('s1'), version: VersionVector.empty),
+              ],
+            ),
+          ],
+        );
+
+        final response = await engine.handleDigestRequest(request, [channel]);
+
+        expect(response.digests, hasLength(1));
+        expect(
+          response.digests[0].streams.map((s) => s.streamId.value),
+          equals(['s1']),
+        );
+      },
+    );
 
     test(
       'handleDigestResponse generates delta requests for missing entries',

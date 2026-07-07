@@ -210,6 +210,13 @@ class GossipEngine {
   /// one flush).
   bool _pushFlushScheduled = false;
 
+  /// Round-robin cursor over the flattened (channel, stream) digest list.
+  /// Used only when a full digest exceeds the transport budget: each round
+  /// advertises a byte-budgeted window, and the cursor advances so every
+  /// stream is covered across successive rounds (otherwise the streams past
+  /// the truncation point would never sync).
+  int _digestRotation = 0;
+
   /// Per-peer congestion threshold for backpressure.
   ///
   /// Peers with more than this many pending messages are excluded from
@@ -529,14 +536,105 @@ class GossipEngine {
     await _sendMessage(peer.id, await _buildDigestRequest());
   }
 
-  /// Builds a [DigestRequest] carrying this node's version vectors for every
-  /// stream of every channel it participates in.
+  /// Builds a [DigestRequest] carrying this node's version vectors.
+  ///
+  /// Sends the full digest when it fits the transport budget (the common
+  /// case). When it doesn't, sends a byte-budgeted, round-robin-rotated
+  /// subset of streams so no message is oversized and every stream is
+  /// covered across rounds — instead of a giant message the transport can
+  /// never carry (which would livelock sync entirely, H4).
   Future<DigestRequest> _buildDigestRequest() async {
-    final digests = <ChannelDigest>[];
+    final all = <ChannelDigest>[];
     for (final channel in _channels.values) {
-      digests.add(await generateDigest(channel));
+      all.add(await generateDigest(channel));
+    }
+
+    final full = DigestRequest(sender: localNode, digests: all);
+    if (_codec.encode(full).length <= maxDeltaResponseBytes) {
+      return full;
+    }
+
+    final flat = _flattenDigests(all);
+    final (digests, consumed) = _fitDigests(flat, _digestRotation);
+    if (flat.isNotEmpty) {
+      _digestRotation = (_digestRotation + consumed) % flat.length;
     }
     return DigestRequest(sender: localNode, digests: digests);
+  }
+
+  /// Flattens grouped channel digests into a `(channel, stream digest)` list
+  /// for byte-budgeted selection.
+  List<({ChannelId channel, StreamDigest digest})> _flattenDigests(
+    List<ChannelDigest> all,
+  ) {
+    final flat = <({ChannelId channel, StreamDigest digest})>[];
+    for (final channelDigest in all) {
+      for (final streamDigest in channelDigest.streams) {
+        flat.add((channel: channelDigest.channelId, digest: streamDigest));
+      }
+    }
+    return flat;
+  }
+
+  /// Selects the largest prefix of [flat] (starting at [startIndex], wrapping)
+  /// whose encoded digest message fits [maxDeltaResponseBytes], regrouped by
+  /// channel. Returns the selected digests and the number of items consumed
+  /// (for advancing the rotation cursor).
+  ///
+  /// A single stream digest that alone exceeds the budget can never be sent;
+  /// it is skipped with a distinct error rather than silently blocking the
+  /// whole message every round.
+  (List<ChannelDigest>, int) _fitDigests(
+    List<({ChannelId channel, StreamDigest digest})> flat,
+    int startIndex,
+  ) {
+    final n = flat.length;
+    if (n == 0) return (const <ChannelDigest>[], 0);
+
+    final base = _codec
+        .encode(DigestRequest(sender: localNode, digests: const []))
+        .length;
+
+    final selected = <ChannelId, List<StreamDigest>>{};
+    var size = base;
+    var consumed = 0;
+
+    for (var i = 0; i < n; i++) {
+      final item = flat[(startIndex + i) % n];
+      // Conservative cost: the stream digest plus a full channel envelope
+      // (channelId + structural JSON), so we never exceed the budget even
+      // when a stream is the first of its channel.
+      final cost = _codec.encodedStreamDigestSize(item.digest) +
+          item.channel.value.length +
+          40;
+
+      if (base + cost > maxDeltaResponseBytes) {
+        _emitError(
+          ChannelSyncError(
+            item.channel,
+            SyncErrorType.protocolError,
+            'Digest for ${item.channel}/${item.digest.streamId} is ~$cost '
+            'bytes and cannot fit maxDeltaResponseBytes=$maxDeltaResponseBytes; '
+            'that stream has too many authors to sync (consider compaction '
+            'or sharding the channel)',
+            occurredAt: DateTime.now(),
+          ),
+        );
+        consumed = i + 1;
+        continue;
+      }
+
+      if (size + cost > maxDeltaResponseBytes) break; // window full
+
+      size += cost;
+      selected.putIfAbsent(item.channel, () => []).add(item.digest);
+      consumed = i + 1;
+    }
+
+    final digests = selected.entries
+        .map((e) => ChannelDigest(channelId: e.key, streams: e.value))
+        .toList();
+    return (digests, consumed);
   }
 
   /// Immediately starts anti-entropy with [peerId] by sending it a
@@ -842,12 +940,35 @@ class GossipEngine {
     DigestRequest request,
     List<ChannelAggregate> channels,
   ) async {
-    final responseDigests = <ChannelDigest>[];
-    for (final channel in channels) {
-      responseDigests.add(await generateDigest(channel));
+    // Respond only for the (channel, stream) pairs the initiator asked about
+    // and that we also have, budgeted to the transport limit. Scoping the
+    // response to the request keeps it bounded — the initiator already
+    // budgeted/rotated the request, and our own version vectors may be
+    // larger, so the response is fitted independently.
+    final byId = {for (final channel in channels) channel.id: channel};
+
+    final flat = <({ChannelId channel, StreamDigest digest})>[];
+    for (final channelDigest in request.digests) {
+      final channel = byId[channelDigest.channelId];
+      if (channel == null) continue;
+      for (final streamDigest in channelDigest.streams) {
+        if (!channel.hasStream(streamDigest.streamId)) continue;
+        final version = await _computeVersionVector(
+          channelDigest.channelId,
+          streamDigest.streamId,
+        );
+        flat.add((
+          channel: channelDigest.channelId,
+          digest: StreamDigest(
+            streamId: streamDigest.streamId,
+            version: version,
+          ),
+        ));
+      }
     }
 
-    return DigestResponse(sender: localNode, digests: responseDigests);
+    final (digests, _) = _fitDigests(flat, 0);
+    return DigestResponse(sender: localNode, digests: digests);
   }
 
   /// Handles digest response from a peer (Step 3).
