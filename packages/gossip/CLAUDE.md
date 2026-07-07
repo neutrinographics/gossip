@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Dart library (`gossip`) for synchronizing event streams across devices using gossip protocols. It's designed for mobile-first, offline-capable applications with sub-second convergence.
+This is a Dart library (`gossip`) for synchronizing event streams across devices using gossip protocols. It's designed for mobile-first, offline-capable applications with fast, eventually-consistent convergence.
 
 ## Build & Development Commands
 
@@ -117,4 +117,5 @@ test/
 
 - Up to 8 devices per channel (configurable)
 - 32KB payload limit (Android Nearby Connections compatibility)
-- Sub-second convergence (~150ms typical)
+- Convergence in O(log n) rounds (sub-second at n=2; ~seconds at larger n /
+  typical intervals — new local writes are pushed reactively)

@@ -16,8 +16,9 @@ import '../../domain/value_objects/version_vector.dart';
 ///
 /// ## Efficiency
 /// A digest is typically 10-100 bytes (depending on number of authors),
-/// while the actual stream might contain megabytes of entries. This enables
-/// sub-second convergence even with large datasets.
+/// while the actual stream might contain megabytes of entries. This keeps
+/// the digest exchange cheap even with large datasets, so only the missing
+/// entries are ever transferred.
 @immutable
 class StreamDigest {
   /// The stream being summarized.

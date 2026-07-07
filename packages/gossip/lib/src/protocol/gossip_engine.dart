@@ -55,10 +55,18 @@ import 'messages/delta_response.dart';
 ///
 /// ## Convergence Characteristics
 ///
-/// - **Sub-second convergence**: Typically 150ms for small networks (< 8 peers)
-/// - **Bidirectional sync**: Each round can sync in both directions
-/// - **Probabilistic guarantee**: Random peer selection ensures eventual
-///   consistency across all peers
+/// - **Convergence time**: O(log n) rounds. At n=2 with a fast interval this
+///   can be sub-second; at larger n it is roughly log2(n) × the gossip
+///   interval — a few seconds at the 1s default, longer on a slow BLE mesh
+///   (fan-out is 1). Reactive push-on-write disseminates new *local* writes
+///   faster than this periodic anti-entropy sweep.
+/// - **Bidirectional sync**: Each round reciprocates (push-pull), so a single
+///   exchange syncs in both directions.
+/// - **Probabilistic, preconditioned guarantee**: peers converge *provided*
+///   both created the same channel+stream locally (stream creation does not
+///   propagate), each entry fits the delta budget, and digests fit the
+///   transport limit. Given those, selection (least-recently-synced with a
+///   random tiebreak) drives all pairs to eventual consistency.
 ///
 /// ## Channel Management
 ///

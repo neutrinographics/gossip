@@ -49,27 +49,31 @@ Implement RTT-adaptive timing (Option 3). The library automatically adapts to ne
 4. **Backpressure signaling**: `MessagePort` exposes `pendingSendCount()` so the library can throttle when transport is congested
 5. **Priority queues**: SWIM protocol messages (ping/ack) get high priority to prevent RTT measurement noise during gossip congestion
 
-### Timing Configuration Removed
+### Timing Configuration Made Optional
 
-All timing parameters have been removed from `CoordinatorConfig`:
+Timing parameters are no longer *required*. They default to `null`, which
+engages adaptive timing, but remain available as explicit overrides for
+tests or unusual transports:
 
 ```dart
-// Before: 5 timing parameters requiring SWIM expertise
 class CoordinatorConfig {
-  final Duration gossipInterval;
-  final Duration probeInterval;
-  final Duration pingTimeout;
-  final Duration indirectPingTimeout;
-  final int suspicionThreshold;
-}
+  // Adaptive by default (null); set only to override:
+  final Duration? gossipInterval;
+  final Duration? probeInterval;
+  final Duration? pingTimeout;
+  final bool adaptiveTimingEnabled;   // default: true
 
-// After: Only policy configuration remains
-class CoordinatorConfig {
-  final int suspicionThreshold;  // Default: 5
+  // Policy configuration:
+  final int suspicionThreshold;       // default: 5
+  final int unreachableThreshold;     // default: 15
+  // ... startupGracePeriod, maxDeltaResponseBytes, compactionInterval, etc.
 }
 ```
 
-Users no longer need to understand SWIM timing to use the library correctly.
+Users no longer *need* to understand SWIM timing to use the library correctly,
+but the knobs are still there when needed. Each knob gates independently: a
+static `pingTimeout` or `probeInterval` overrides only that value — the others
+stay adaptive.
 
 ### Hardcoded Bounds
 
@@ -77,9 +81,12 @@ To prevent extreme values while allowing adaptation:
 
 | Parameter | Minimum | Maximum |
 |-----------|---------|---------|
-| Ping timeout | 200ms | 10s |
+| Ping timeout | 500ms | 10s |
 | Probe interval | 500ms | 30s |
 | Gossip interval | 100ms | 5s |
+
+(Ping-timeout minimum is 500ms — not 200ms — because BLE links routinely sit
+at 100–500ms RTT, and a sub-500ms floor false-positives healthy peers.)
 
 ### MessagePort Extensions
 

@@ -1,7 +1,8 @@
 /// A Dart library for synchronizing event streams across devices using gossip protocols.
 ///
 /// This library provides a mobile-first, offline-capable event stream synchronization
-/// system with sub-second convergence using gossip protocols and SWIM failure detection.
+/// system with fast, eventually-consistent convergence (O(log n) rounds) using
+/// gossip protocols and SWIM failure detection.
 ///
 /// ## Quick Start
 ///

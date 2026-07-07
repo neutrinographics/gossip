@@ -8,7 +8,12 @@ Accepted
 
 The library needs to synchronize event streams across multiple peers in a distributed system. Key requirements:
 
-1. **Eventual consistency**: All peers should converge to the same state
+1. **Eventual consistency**: All peers converge to the same state, *provided*
+   they independently created the same channel + stream (creation is
+   local-only and does not propagate), each entry fits the delta budget, and
+   digests fit the transport limit. Streams a peer never created, oversized
+   entries, or a channel whose lifetime author set overflows the digest are
+   outside this guarantee.
 2. **Efficient bandwidth**: Minimize data transfer, especially for large streams
 3. **Resilience**: Handle message loss, peer failures, network partitions
 4. **Scalability**: Work with varying peer counts (1-8 devices typical)
@@ -88,7 +93,9 @@ Step 4: Delta Response (peer → initiator)
 
 ### Positive
 
-- **Sub-second convergence**: Typically 150ms for small networks (< 8 peers)
+- **Fast convergence**: O(log n) rounds — sub-second at n=2 with a fast
+  interval, ~a few seconds at larger n / typical intervals. New *local*
+  writes are pushed reactively, ahead of the periodic anti-entropy sweep.
 - **Bandwidth efficient**: Only missing entries are transferred
 - **Resilient**: Handles message loss, peer failures gracefully
 - **Simple**: No complex coordination or consensus protocols

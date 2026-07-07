@@ -2,7 +2,8 @@
 
 A Dart library for synchronizing event streams across devices using gossip protocols.
 
-Designed for mobile-first, offline-capable applications with sub-second convergence.
+Designed for mobile-first, offline-capable applications with fast,
+eventually-consistent convergence.
 
 ## Features
 
@@ -240,7 +241,9 @@ The library is optimized for:
 
 - **Small peer groups**: Best performance with < 10 peers per channel
 - **Payload size**: 32KB max recommended (Android Nearby Connections compatibility)
-- **Convergence time**: ~150ms typical for small networks
+- **Convergence time**: O(log n) rounds — sub-second at n=2 with a fast
+  interval, ~a few seconds at larger n / typical intervals (new local writes
+  are pushed reactively, faster than the periodic sweep)
 
 ## Development
 

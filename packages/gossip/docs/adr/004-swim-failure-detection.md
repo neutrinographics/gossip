@@ -85,6 +85,13 @@ configurable — only the policy thresholds below are tunable.
 
 #### Failure detection timeline (defaults, ~1.5s probe interval)
 
+**This timeline assumes n=2** (one probable peer, so every round probes the
+dead peer). Probe selection is round-robin over a shuffled order, so a
+specific dead peer is probed roughly once every (n−1) rounds; multiply the
+times below by ~(n−1) for larger groups. In practice, on the BLE transport a
+closed connection removes the peer immediately, so this timeline mainly
+governs half-open links.
+
 1. **0–7.5s**: First 5 probes fail → peer becomes **suspected**
 2. **7.5–22.5s**: 10 more probes fail → peer becomes **unreachable**
 3. **Every ~7.5s thereafter**: One unreachable probe fires. If the peer responds
