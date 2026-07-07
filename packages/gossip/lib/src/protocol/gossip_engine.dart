@@ -284,12 +284,14 @@ class GossipEngine {
   /// Returns the effective gossip interval based on per-peer RTT measurements.
   ///
   /// If a static [gossipInterval] was provided at construction, uses that value.
-  /// Otherwise computes from the minimum per-peer smoothed RTT across all
+  /// Otherwise computes from the *median* per-peer smoothed RTT across all
   /// reachable peers, multiplied by [_gossipIntervalMultiplier] (2x).
   ///
-  /// This ensures gossip runs at the rate of the fastest link. A slow peer
-  /// doesn't hold back the whole mesh — per-peer probe timeouts in
-  /// FailureDetector prevent false SWIM suspicion for slow peers.
+  /// Median (not min) pacing keeps a single fast peer from pinning the loop
+  /// to a fast cadence that over-drives slower links, while a single very
+  /// slow peer can't stall the whole mesh either. Latency-sensitive delivery
+  /// is handled by reactive push-on-write; this is the anti-entropy safety
+  /// net, so a steadier median cadence is the right trade-off.
   ///
   /// Falls back to a conservative default (1000ms) when no peers have
   /// RTT estimates yet.
@@ -299,23 +301,25 @@ class GossipEngine {
       return _staticGossipInterval;
     }
 
-    // Find minimum per-peer SRTT across reachable peers
-    Duration? minSrtt;
+    // Pace off the MEDIAN per-peer SRTT across reachable peers, not the min.
+    // The min let a single fast peer pin the whole loop to a fast cadence,
+    // over-driving slower links — and each uniform-random round is ~(n-1)/n
+    // likely to target a slower-than-fastest peer with a potentially large
+    // payload. The median is robust to a single outlier at either end.
+    final srtts = <Duration>[];
     for (final peer in peerRegistry.reachablePeers) {
       final rttEstimate = peer.metrics.rttEstimate;
-      if (rttEstimate != null) {
-        if (minSrtt == null || rttEstimate.smoothedRtt < minSrtt) {
-          minSrtt = rttEstimate.smoothedRtt;
-        }
-      }
+      if (rttEstimate != null) srtts.add(rttEstimate.smoothedRtt);
     }
 
     // Fall back to conservative default when no peers have RTT estimates
-    if (minSrtt == null) {
+    if (srtts.isEmpty) {
       return _defaultConservativeInterval;
     }
 
-    final computed = minSrtt * _gossipIntervalMultiplier;
+    srtts.sort();
+    final medianSrtt = srtts[srtts.length ~/ 2];
+    final computed = medianSrtt * _gossipIntervalMultiplier;
     if (computed < _minGossipInterval) return _minGossipInterval;
     if (computed > _maxGossipInterval) return _maxGossipInterval;
     return computed;

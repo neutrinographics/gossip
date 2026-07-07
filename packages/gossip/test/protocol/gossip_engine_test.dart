@@ -563,7 +563,7 @@ void main() {
       });
 
       test(
-        'computes interval from minimum per-peer SRTT when peers have RTT estimates',
+        'computes interval from median per-peer SRTT when peers have RTT estimates',
         () {
           final localNode = NodeId('local');
           final fastPeer = NodeId('fast');
@@ -595,11 +595,11 @@ void main() {
             adaptiveTimingEnabled: true,
           );
 
-          // Interval should be based on the FAST peer (100ms * 2 = 200ms)
-          // but clamped to minimum 100ms
+          // Median of {100ms, 3000ms} is the upper element (3000ms), so the
+          // interval is 3000ms * 2 = 6000ms clamped to the 5000ms max — NOT
+          // pinned to the fast peer's 200ms (the old min-based behaviour).
           final interval = engine.effectiveGossipInterval;
-          // Should be much less than what the slow peer would produce (6000ms)
-          expect(interval.inMilliseconds, lessThan(1000));
+          expect(interval, equals(const Duration(seconds: 5)));
         },
       );
 
