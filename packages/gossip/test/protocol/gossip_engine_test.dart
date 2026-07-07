@@ -1022,9 +1022,13 @@ void main() {
           localNodeRepository: InMemoryLocalNodeRepository(nodeId: nodeB),
         );
 
-        // Both nodes start listening
+        // Both nodes start listening and running (in real usage the two are
+        // paired; only pause() keeps listening without running, and a
+        // paused engine deliberately does not ingest/pull).
         engineA.startListening({channelId: channelA});
         engineB.startListening({channelId: channelB});
+        engineA.start();
+        engineB.start();
 
         // Node A initiates gossip round → sends DigestRequest to B
         await engineA.performGossipRound();
@@ -1040,6 +1044,8 @@ void main() {
         expect(stored[0].sequence, equals(1));
         expect(stored[1].sequence, equals(2));
 
+        engineA.stop();
+        engineB.stop();
         engineA.stopListening();
         engineB.stopListening();
       });

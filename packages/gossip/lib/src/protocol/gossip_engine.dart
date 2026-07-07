@@ -198,6 +198,18 @@ class GossipEngine {
   /// Used to track message rates within a fixed time window for rate limiting.
   static const int _metricsWindowDurationMs = 10000;
 
+  /// Debounce window for coalescing a burst of local writes into a single
+  /// reactive push (rumor mongering — see [notifyLocalWrite]).
+  static const Duration _pushDebounce = Duration(milliseconds: 150);
+
+  /// Locally-written entries pending a reactive push, buffered per stream so
+  /// a burst of writes within the debounce window coalesces into one push.
+  final Map<(ChannelId, StreamId), List<LogEntry>> _pendingPush = {};
+
+  /// True while a debounced push flush is scheduled (coalesces a burst into
+  /// one flush).
+  bool _pushFlushScheduled = false;
+
   /// Per-peer congestion threshold for backpressure.
   ///
   /// Peers with more than this many pending messages are excluded from
@@ -348,6 +360,85 @@ class GossipEngine {
     if (!_isRunning) return;
     _isRunning = false;
     _generation++;
+    // Drop any buffered reactive push — the periodic anti-entropy loop is
+    // also stopping, and a stale delay callback checks the generation.
+    _pendingPush.clear();
+    _pushFlushScheduled = false;
+    // Drop outstanding delta-request flags: while stopped we don't ingest
+    // responses, so a resumed engine should be free to re-request
+    // immediately rather than waiting out the pending-request timeout.
+    _pendingDeltaRequests.clear();
+  }
+
+  /// Reactive dissemination (rumor mongering): notify the engine of a local
+  /// write so it pushes the new entry to reachable peers immediately —
+  /// debounced to coalesce bursts — instead of waiting for the next periodic
+  /// anti-entropy round. The periodic round remains the completeness safety
+  /// net that catches anything a push missed.
+  ///
+  /// No-op when the engine is not running: a paused/listen-only engine
+  /// disseminates nothing (consistent with push-pull reciprocation).
+  ///
+  /// Safe against out-of-order delivery: the push is applied by the receiver
+  /// through the same per-author contiguity guard as any delta, so a peer
+  /// that isn't caught up simply drops it and relies on anti-entropy.
+  void notifyLocalWrite(
+    ChannelId channelId,
+    StreamId streamId,
+    LogEntry entry,
+  ) {
+    if (!_isRunning) return;
+    _pendingPush.putIfAbsent((channelId, streamId), () => []).add(entry);
+    if (_pushFlushScheduled) return;
+    _pushFlushScheduled = true;
+    final generation = _generation;
+    timePort
+        .delay(_pushDebounce)
+        .then((_) {
+          if (generation != _generation) return; // stale run — do nothing
+          _pushFlushScheduled = false;
+          if (_isRunning) unawaited(_flushPendingPushes());
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          if (generation != _generation) return;
+          _pushFlushScheduled = false;
+          _pendingPush.clear();
+          _emitError(
+            PeerSyncError(
+              localNode,
+              SyncErrorType.protocolError,
+              'Reactive push scheduling failed: $error',
+              occurredAt: DateTime.now(),
+              cause: error,
+            ),
+          );
+        });
+  }
+
+  /// Pushes buffered local writes to all reachable peers as unsolicited
+  /// DeltaResponses. Oversized bursts (rare — the debounce window is short)
+  /// fall back to paginated anti-entropy rather than a doomed oversized send.
+  Future<void> _flushPendingPushes() async {
+    if (_pendingPush.isEmpty) return;
+    final batches = Map.of(_pendingPush);
+    _pendingPush.clear();
+
+    final peers = peerRegistry.reachablePeers;
+    if (peers.isEmpty) return;
+
+    for (final batch in batches.entries) {
+      final (channelId, streamId) = batch.key;
+      final push = DeltaResponse(
+        sender: localNode,
+        channelId: channelId,
+        streamId: streamId,
+        entries: batch.value,
+      );
+      if (_codec.encode(push).length > maxDeltaResponseBytes) continue;
+      for (final peer in peers) {
+        await _sendMessage(peer.id, push);
+      }
+    }
   }
 
   /// Starts listening to incoming gossip protocol messages.
@@ -501,10 +592,15 @@ class GossipEngine {
           'RECV DigestResponse from ${_shortId(message.sender.value)}: '
           '${protocolMessage.digests.length} channels',
         );
-        await _sendDeltaRequests(
-          message.sender,
-          await handleDigestResponse(protocolMessage),
-        );
+        // Pulling is active sync — a paused/listen-only engine serves but
+        // does not pull. (A DigestResponse is only ever a reply to our own
+        // request, which we make only while running.)
+        if (_isRunning) {
+          await _sendDeltaRequests(
+            message.sender,
+            await handleDigestResponse(protocolMessage),
+          );
+        }
       } else if (protocolMessage is DeltaRequest) {
         _log(
           LogLevel.debug,
@@ -525,7 +621,12 @@ class GossipEngine {
           'stream=${protocolMessage.streamId.value} '
           'entries=${protocolMessage.entries.length}',
         );
-        await handleDeltaResponse(protocolMessage);
+        // Ingesting new data is active sync — a paused/listen-only engine
+        // drops incoming deltas (including unsolicited reactive pushes) and
+        // relies on anti-entropy to re-fetch them after resume.
+        if (_isRunning) {
+          await handleDeltaResponse(protocolMessage);
+        }
       }
     } catch (e) {
       // Emit error for observability (intentionally non-fatal for DoS prevention)

@@ -279,6 +279,11 @@ class Coordinator {
       entryRepository: entryRepository,
     );
 
+    // Declared ahead of the services so their event callbacks can delegate
+    // to coordinator instance methods (assigned below, invoked only at
+    // runtime once construction has completed).
+    late final Coordinator coordinator;
+
     final channelService = ChannelService(
       localNode: localNode,
       hlcClock: hlcClock,
@@ -289,11 +294,7 @@ class Coordinator {
         cfg.maxDeltaResponseBytes,
       ),
       materializationService: materializationService,
-      onEvent: (event) {
-        if (!eventsController.isClosed) {
-          eventsController.add(event);
-        }
-      },
+      onEvent: (event) => coordinator._onChannelServiceEvent(event),
     );
     final peerService = PeerService(
       registry: peerRegistry,
@@ -301,7 +302,7 @@ class Coordinator {
       repository: peerRepository,
     );
 
-    final coordinator = Coordinator._(
+    coordinator = Coordinator._(
       localNode: localNode,
       peerRegistry: peerRegistry,
       channelService: channelService,
@@ -386,6 +387,23 @@ class Coordinator {
   void _handleError(SyncError error) {
     if (!_errorsController.isClosed) {
       _errorsController.add(error);
+    }
+  }
+
+  /// Fans a domain event from [ChannelService] out to the app's event stream
+  /// and drives reactive dissemination: a local write ([EntryAppended]) is
+  /// handed to the gossip engine so it can push the new entry to peers
+  /// immediately (debounced) instead of waiting for the next periodic round.
+  void _onChannelServiceEvent(DomainEvent event) {
+    if (!_eventsController.isClosed) {
+      _eventsController.add(event);
+    }
+    if (event is EntryAppended) {
+      _gossipEngine?.notifyLocalWrite(
+        event.channelId,
+        event.streamId,
+        event.entry,
+      );
     }
   }
 
