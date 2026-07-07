@@ -21,12 +21,12 @@
 
 The through-line: the adaptive/backpressure/priority machinery is well-shaped *in the abstract* but is fed by the wrong signal (tiny pings pacing large payloads), neutralized by the real transport, and accidentally switched off by config.
 
-**Dissemination: only half the canonical design is present.** The library runs periodic anti-entropy (the completeness safety net) but has **no reactive push-on-write** (rumor mongering — the fast path). New writes wait for the next timer tick, and — compounded by pull-only (M1) — for another peer to pull from the writer, so a sent chat message can take several seconds to appear. This is an intentional scope choice, not a defect, but it is the biggest perceived-latency gap for interactive use (G1).
+**Dissemination: only half the canonical design is present, and the engine is purely timer-driven.** The library runs periodic anti-entropy (the completeness safety net) but the gossip engine **never reacts to events** — not to a local write (G1), not to a peer connecting/reconnecting (G2), not to a known-incomplete backlog after a truncated page (G4). Everything waits for the next random timer tick. Compounded by pull-only (M1), a sent chat message can take several seconds to appear; a reconnecting peer isn't reconciled until randomly selected; a large backlog drains at ~1 page per *n* intervals. Separately, retention policies are declared per stream but **nothing ever enforces them** (G3), so storage grows unbounded. These are scope choices, not defects, but collectively they are the biggest gap between the library and a production offline-first sync engine.
 
 | Severity | Count | Themes |
 |----------|-------|--------|
 | HIGH | 4 | Transport neutralizes backpressure+priority; static-timeout config regression; O(n·threshold) detection latency; unbounded digest sync-death |
-| GAP | 1 | No reactive dissemination (rumor mongering) — new writes wait for the periodic sweep |
+| GAP | 5 | Engine is purely timer-driven — no reaction to write (G1), peer connect (G2), or known backlog (G4); retention declared but never enforced (G3); no in-sync signal (G5) |
 | MEDIUM | 6 | Pull-only (not push-pull); gossip doesn't reset SWIM liveness; sub-page pending timeout; min-SRTT pacing; dead incarnation subsystem; fixed intermediary timeout |
 | LOW | 5 | Dead partner-rotation; no jitter; stale convergence claim; unqualified convergence guarantee; ADR drift |
 
@@ -90,6 +90,8 @@ The through-line: the adaptive/backpressure/priority machinery is well-shaped *i
 
 ## 🟣 DESIGN GAP
 
+**Unifying root cause for G1/G2/G4: the gossip engine is purely timer-driven and reacts to no events.** `performGossipRound` fires only from `_scheduleNextGossipRound`'s timer (verified). It never reacts to a local write, a peer connecting, or a known-incomplete backlog — all three just wait for the next random tick. G3 (retention) and G5 (in-sync signal) are separate absences. None of these are defects in what exists; they are standard capabilities of an offline-first sync engine that are simply not present.
+
 ### G1. No reactive dissemination (rumor mongering) — new writes wait for the periodic sweep
 **Impact: HIGH for interactive/chat use. Verified: the write path has zero coupling to the gossip engine; `performGossipRound` fires only from the timer loop.**
 
@@ -104,6 +106,38 @@ So a local write sits in the repository until the next timer tick. **Compounded 
 
 **Severity:** design gap (intentional scope choice, not a defect), but HIGH-impact for interactive use. It is the single biggest thing between the chat app and instant-feeling delivery.
 **Recommendation:** add a debounced reactive push (design sketch in the appendix). De-risked by M2 (so extra traffic can't false-evict peers) and cleanest after H1 (priority lane); composes with M1.
+
+### G2. No sync-on-connect — a newly connected/reconnected peer isn't reconciled until the timer randomly selects it
+**Impact: HIGH for partition healing / reconnect. Verified: `addPeer` triggers a SWIM probe but no gossip round.**
+
+`Coordinator.addPeer` (`coordinator.dart:551-577`) fires an immediate `probeNewPeer` for *SWIM RTT bootstrap* — and its own comment notes why ("could take ~45s with 5 peers" to be selected by the random probe loop otherwise). But the identical problem for **gossip** is not solved: nothing triggers an anti-entropy round when a peer arrives. So after a peer connects (a fresh join, or a reconnect after a partition), the two nodes don't reconcile until the random gossip timer happens to select that peer — expected ~(n−1) intervals for a *specific* peer, and worse under pull-only (M1) since the reconnecting peer's own round pulls toward itself. This is precisely the scenario anti-entropy exists to handle well (partition heal), yet the *trigger* is slow. The SWIM path already demonstrates the fix pattern (react to `addPeer`); gossip just doesn't use it.
+
+**Severity:** design gap, HIGH-impact for reconnect/partition-heal latency.
+**Recommendation:** on `addPeer` (and on transport `PeerOpened`/reconnect), trigger one immediate gossip round targeted at the new peer — the direct analogue of `probeNewPeer`. Cheap; reuses `performGossipRound` with a forced target. Composes with M1 (so the exchange is push-pull) and the G1 machinery (an expedited round with an explicit target).
+
+### G3. Retention policies are declared but never enforced — storage grows unbounded
+**Impact: MEDIUM (a silent storage leak over time). Verified: `compact()` is only the public facade method; no scheduler or example ever calls it.**
+
+`Channel.getOrCreateStream(retention: ...)` attaches a `RetentionPolicy` per stream, which reads as set-and-forget. But `EventStream.compact()` (`event_stream.dart:198`) is the *only* thing that applies retention, it is **app-invoked**, and nothing in the library (no timer, no lifecycle hook) ever calls it — nor does any example (`grep` of `examples/`: zero `.compact()` calls). So retention policies are inert unless the app builds its own compaction scheduler. For a long-running chat app that means the entry log grows without bound (which also feeds the digest-size cliff, H4), while the declared `TimeBasedRetention`/`CountBasedRetention` does nothing.
+
+**Severity:** design gap + API-implication mismatch (a real footgun).
+**Recommendation:** either (a) have the library run a low-priority periodic compaction pass that applies each stream's retention policy (opt-out), or (b) if compaction is deliberately app-driven, make that explicit in the API/docs (e.g. rename toward `manualCompact()`, document that retention is not auto-enforced, and ship a ready-made periodic-compaction helper). Today the API promises retention it doesn't deliver.
+
+### G4. No catch-up acceleration — a truncated delta page triggers no continuation; backlog drains at gossip cadence
+**Impact: MEDIUM-HIGH for cold-join / post-offline catch-up. Verified: `DeltaResponse` has no "hasMore" field; `handleDeltaResponse` merges and stops.**
+
+The pagination design (per-author-contiguous prefix under a 30KB budget) is correct and was praised — but the *drain trigger* is missing. `DeltaResponse` carries no truncated/hasMore signal (`delta_response.dart`), and `handleDeltaResponse` merges the page, clears the pending flag, and returns without requesting the remainder. So the next page is pulled only when the random timer next selects that same peer, re-runs a full digest exchange, and re-detects the gap — ~1 page per (interval × peer-selection odds) ≈ **1 page per *n* intervals**. At n=8 / 2s that is ~1 page (≤30KB) per 16s; a 300KB backlog (a device joining a channel with modest history, or returning after an outage) takes minutes, even on an otherwise idle link that could carry it in seconds. Catch-up throughput is coupled to steady-state gossip cadence with no fast path, and no priority for peers known to have a backlog (compounded by dead partner-rotation, L1).
+
+**Severity:** design gap, MEDIUM-HIGH for initial sync / rejoin.
+**Recommendation:** add a `hasMore` flag to `DeltaResponse` (or infer truncation from budget) and, when set, immediately issue the next `DeltaRequest` to the same peer — a continuation loop that drains the backlog at link speed instead of gossip cadence, bounded by the same congestion gate. Decouples catch-up from the anti-entropy interval.
+
+### G5. No convergence / "in-sync" signal for applications
+**Impact: LOW (missing observability). Verified: no `isSynced`/convergence API — all "convergence" mentions are doc prose.**
+
+An app cannot ask "am I caught up with my peers?" — there is no API surfacing whether the local version vectors have caught up to peers' last-advertised digests, so a chat UI can't show "syncing…" vs "up to date," and initial-sync completion is unobservable. The library can't fully answer this today anyway because it retains no per-peer digest state (it recomputes on demand). A partial signal (last-merge time, pending-delta count, per-peer VV lag) would cover the common UX need.
+
+**Severity:** design gap, LOW (nice-to-have observability).
+**Recommendation:** expose a coarse per-peer sync-status (e.g. "have an outstanding delta request" / "last digest showed peer ahead") or at least a "quiescent" signal (no pending requests + last N rounds produced no new entries). Optional; scope to the interactive use case.
 
 ---
 
@@ -166,17 +200,19 @@ No `Suspicion`/`Suspect` message type exists; incarnation is **never serialized*
 
 ## Suggested priority
 
-Ordered to get the interactive-latency win (G1) safely and early rather than last:
+Ordered to get the interactive/reconnect responsiveness wins (G1/G2) safely and early rather than last:
 
-1. **H2 + M2 (+ M1)** — an afternoon; pure wins. H2 decouples the static-timeout flag; M2 feeds gossip receipt into `updatePeerContact` (one line) and is the specific de-risker that lets G1 add traffic without false-evicting peers; M1 adds push-pull reciprocation (cheap; composes with G1).
-2. **G1** — the reactive push-on-write path (design sketch below). The biggest perceived-latency win; safe to land here once M2 is in.
-3. **H1** — real priority queue + `pendingSendCount` in the BLE transport (highest robustness value, most involved; worth a design discussion). No longer a blocker for G1 once M2 is done, but still needed for scale/robustness.
-4. **H4** — bound/paginate digest and `DeltaRequest.since` size (prevents silent sync-death on long-lived channels).
-5. **M5** — delete the dead incarnation subsystem.
-6. **H3 / M3 / M4 / M6** — scheduling refinements (round-robin probe, adaptive pending timeout, per-selected-peer pacing, adaptive intermediary timeout).
-7. **L1–L5** — doc reconciliation and jitter.
+1. **H2 + M2 (+ M1)** — an afternoon; pure wins. H2 decouples the static-timeout flag; M2 feeds gossip receipt into `updatePeerContact` (one line) and is the specific de-risker that lets the reactive gaps add traffic without false-evicting peers; M1 adds push-pull reciprocation (cheap; composes with G1/G2).
+2. **G1 + G2** — the event-driven triggers: reactive push-on-write (G1) and sync-on-connect (G2). Same root cause and same machinery (an expedited round with a target); land them together. Biggest perceived-latency + reconnect wins; safe once M2 is in.
+3. **G4** — catch-up continuation (`hasMore` + drain-to-completion). Turns cold-join / rejoin from minutes into seconds; small change to `DeltaResponse` + `handleDeltaResponse`.
+4. **H1** — real priority queue + `pendingSendCount` in the BLE transport (highest robustness value, most involved; worth a design discussion). No longer a blocker for the reactive gaps once M2 is done, but still needed for scale/robustness and now more relevant since G1/G2/G4 add traffic.
+5. **H4** — bound/paginate digest and `DeltaRequest.since` size (prevents silent sync-death on long-lived channels).
+6. **G3** — enforce retention automatically (or make non-enforcement explicit + ship a helper). Prevents unbounded storage growth, which also feeds H4.
+7. **M5** — delete the dead incarnation subsystem.
+8. **H3 / M3 / M4 / M6** — scheduling refinements (round-robin probe, adaptive pending timeout, per-selected-peer pacing, adaptive intermediary timeout).
+9. **G5 / L1–L5** — in-sync signal, doc reconciliation, jitter.
 
-Items G1, H1–H3, and M2 are the ones that change real BLE behavior today; the rest are latent, doc, or scale-dependent.
+Items G1, G2, G4, H1–H3, and M2 are the ones that change real BLE behavior today; the rest are latent, doc, or scale-dependent.
 
 ---
 
