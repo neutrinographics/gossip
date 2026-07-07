@@ -5,7 +5,6 @@ import 'package:gossip/src/domain/interfaces/peer_repository.dart';
 import 'package:gossip/src/domain/entities/peer.dart';
 import 'package:gossip/src/domain/events/domain_event.dart';
 import 'package:gossip/src/application/services/peer_service.dart';
-import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 
 class FakePeerRepository implements PeerRepository {
   final Map<NodeId, Peer> _peers = {};
@@ -49,11 +48,9 @@ void main() {
       final repository = FakePeerRepository();
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       final service = PeerService(
         registry: registry,
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         repository: repository,
       );
       final peerId = NodeId('peer-1');
@@ -74,11 +71,9 @@ void main() {
         final repository = FakePeerRepository();
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final service = PeerService(
           registry: registry,
-          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           repository: repository,
         );
         final peerId = NodeId('peer-1');
@@ -103,11 +98,9 @@ void main() {
         final repository = FakePeerRepository();
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final service = PeerService(
           registry: registry,
-          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           repository: repository,
         );
         final peerId = NodeId('peer-1');
@@ -132,11 +125,9 @@ void main() {
         final repository = FakePeerRepository();
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final service = PeerService(
           registry: registry,
-          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           repository: repository,
         );
         final peerId = NodeId('peer-1');
@@ -161,11 +152,9 @@ void main() {
         final repository = FakePeerRepository();
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final service = PeerService(
           registry: registry,
-          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           repository: repository,
         );
         final peerId = NodeId('peer-1');
@@ -190,11 +179,9 @@ void main() {
         final repository = FakePeerRepository();
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final service = PeerService(
           registry: registry,
-          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           repository: repository,
         );
         final peerId = NodeId('peer-1');
@@ -219,11 +206,9 @@ void main() {
         final repository = FakePeerRepository();
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final service = PeerService(
           registry: registry,
-          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           repository: repository,
         );
         final peerId = NodeId('peer-1');

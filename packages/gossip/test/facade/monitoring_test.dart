@@ -153,21 +153,6 @@ void main() {
       expect(health.state, equals(SyncState.running));
     });
 
-    test('reports correct incarnation', () async {
-      final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(
-          nodeId: NodeId('local'),
-        ),
-        channelRepository: InMemoryChannelRepository(),
-        peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
-      );
-
-      final health = await coordinator.getHealth();
-
-      expect(health.incarnation, equals(0));
-    });
-
     test('includes resource usage', () async {
       final coordinator = await Coordinator.create(
         localNodeRepository: InMemoryLocalNodeRepository(

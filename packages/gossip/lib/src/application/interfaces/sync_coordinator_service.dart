@@ -15,9 +15,6 @@ abstract interface class SyncCoordinatorService {
   /// Returns the local node identifier.
   NodeId get localNode;
 
-  /// Returns the local node's current incarnation number.
-  int get localIncarnation;
-
   /// Returns all reachable peers for gossip/probe selection.
   List<Peer> get reachablePeers;
 

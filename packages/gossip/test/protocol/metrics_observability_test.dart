@@ -84,7 +84,7 @@ void main() {
     test('a failing saveClockState is emitted via ErrorCallback, not '
         'dropped as an unhandled future', () async {
       final localNode = NodeId('local');
-      final registry = PeerRegistry(localNode: localNode, initialIncarnation: 0);
+      final registry = PeerRegistry(localNode: localNode);
       final errors = <SyncError>[];
       final timePort = InMemoryTimePort();
       final engine = GossipEngineTestHarness.buildEngine(
@@ -128,7 +128,7 @@ void main() {
   group('L8: locally-missing streams are logged, not silently skipped', () {
     test('a digest for an unknown stream produces a log line', () async {
       final localNode = NodeId('local');
-      final registry = PeerRegistry(localNode: localNode, initialIncarnation: 0);
+      final registry = PeerRegistry(localNode: localNode);
       final logs = <String>[];
       final engine = GossipEngineTestHarness.buildEngine(
         localNode: localNode,

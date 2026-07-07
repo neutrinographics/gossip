@@ -472,7 +472,6 @@ void main() {
         // Node ID should be cleared so next create generates a new one
         expect(await localNodeRepo.getNodeId(), isNull);
         expect(await localNodeRepo.getClockState(), equals(Hlc.zero));
-        expect(await localNodeRepo.getIncarnation(), equals(0));
       });
 
       test('is idempotent', () async {
@@ -760,17 +759,6 @@ void main() {
 
       expect(coordinator.reachablePeers.length, equals(1));
       expect(coordinator.reachablePeers.first.id, equals(peer1));
-    });
-
-    test('localIncarnation returns peer registry incarnation', () async {
-      final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: InMemoryChannelRepository(),
-        peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
-      );
-
-      expect(coordinator.localIncarnation, equals(0));
     });
 
     test('getPeerMetrics returns metrics for peer', () async {
@@ -1162,36 +1150,9 @@ void main() {
         );
       });
 
-      group('incarnation restoration', () {
-        test('restores incarnation from LocalNodeRepository', () async {
-          final localNodeRepo = InMemoryLocalNodeRepository(nodeId: localNode);
-          await localNodeRepo.saveIncarnation(5);
-
-          final coordinator = await Coordinator.create(
-            channelRepository: InMemoryChannelRepository(),
-            peerRepository: InMemoryPeerRepository(),
-            entryRepository: InMemoryEntryRepository(),
-            localNodeRepository: localNodeRepo,
-          );
-
-          expect(coordinator.localIncarnation, equals(5));
-        });
-
-        test('defaults incarnation to 0 without LocalNodeRepository', () async {
-          final coordinator = await Coordinator.create(
-            localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-            channelRepository: InMemoryChannelRepository(),
-            peerRepository: InMemoryPeerRepository(),
-            entryRepository: InMemoryEntryRepository(),
-          );
-
-          expect(coordinator.localIncarnation, equals(0));
-        });
-      });
-
       group('round-trip persistence', () {
         test(
-          'clock and incarnation survive across coordinator creates',
+          'clock survives across coordinator creates',
           () async {
             final bus = InMemoryMessageBus();
             final channelRepo = InMemoryChannelRepository();
@@ -1217,7 +1178,6 @@ void main() {
             await stream.append(Uint8List.fromList([1, 2, 3]));
 
             final savedClock = coord1.currentClockState;
-            final savedIncarnation = coord1.localIncarnation;
 
             // Second session: restore from same repositories
             final coord2 = await Coordinator.create(
@@ -1230,7 +1190,6 @@ void main() {
             );
 
             expect(coord2.currentClockState, equals(savedClock));
-            expect(coord2.localIncarnation, equals(savedIncarnation));
           },
         );
       });

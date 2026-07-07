@@ -291,7 +291,6 @@ void main() {
       final peerNode = NodeId('peer1');
       final peerRegistry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
 
@@ -328,7 +327,6 @@ void main() {
       final peerNode = NodeId('peer1');
       final peerRegistry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
 
@@ -365,7 +363,6 @@ void main() {
       final peerNode = NodeId('peer1');
       final peerRegistry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
 

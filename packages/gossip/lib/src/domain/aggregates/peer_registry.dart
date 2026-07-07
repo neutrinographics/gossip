@@ -14,7 +14,6 @@ import '../events/domain_event.dart';
 /// ## Responsibilities
 /// - **Membership management**: Add/remove peers, prevent duplicate entries
 /// - **SWIM failure detection**: Track probe failures, status transitions
-/// - **Incarnation tracking**: Manage local incarnation for refuting suspicions
 /// - **Contact tracking**: Record last message and anti-entropy timestamps
 /// - **Metrics collection**: Track communication statistics per peer
 ///
@@ -22,13 +21,12 @@ import '../events/domain_event.dart';
 /// Peers progress through these states:
 /// 1. **reachable** → **suspected**: After probe failures exceed threshold
 /// 2. **suspected** → **unreachable**: After indirect probe also fails
-/// 3. **suspected** → **reachable**: On higher incarnation number (refutation)
+/// 3. **suspected** → **reachable**: On successful contact (probe response)
 ///
 /// ## Invariants
 /// - Local node cannot be added as a peer
 /// - Peer IDs are unique within the registry
 /// - Status transitions are managed through updatePeerStatus()
-/// - Incarnation numbers are monotonically increasing
 ///
 /// ## Domain Events
 /// Emits events for observability and event sourcing:
@@ -48,22 +46,16 @@ class PeerRegistry {
   /// in production: buffered events with no consumer grow without bound.
   final void Function(DomainEvent)? onEvent;
 
-  /// Current incarnation number for this node (for SWIM refutation).
-  int _localIncarnation;
-
   /// Creates a [PeerRegistry] for the given local node.
   PeerRegistry({
     required this.localNode,
-    required int initialIncarnation,
     this.onEvent,
-  }) : _localIncarnation = initialIncarnation;
+  });
 
   /// Private constructor for reconstitute — no events.
   PeerRegistry._reconstitute({
     required this.localNode,
-    required int localIncarnation,
-  }) : onEvent = null,
-       _localIncarnation = localIncarnation;
+  }) : onEvent = null;
 
   /// Restores a previously persisted peer registry.
   ///
@@ -72,24 +64,17 @@ class PeerRegistry {
   /// existing state, not creating new state.
   ///
   /// The caller provides the full list of [peers] with all their state
-  /// (status, incarnation, metrics, etc.) as previously persisted.
+  /// (status, metrics, etc.) as previously persisted.
   factory PeerRegistry.reconstitute({
     required NodeId localNode,
-    required int localIncarnation,
     required List<Peer> peers,
   }) {
-    final registry = PeerRegistry._reconstitute(
-      localNode: localNode,
-      localIncarnation: localIncarnation,
-    );
+    final registry = PeerRegistry._reconstitute(localNode: localNode);
     for (final peer in peers) {
       registry._peers[peer.id] = peer;
     }
     return registry;
   }
-
-  /// Returns the local node's current incarnation number.
-  int get localIncarnation => _localIncarnation;
 
   /// Returns true if a peer with the given ID is registered.
   bool isKnown(NodeId id) => _peers.containsKey(id);
@@ -224,7 +209,7 @@ class PeerRegistry {
   /// Used by SWIM failure detection to transition peers through states:
   /// - reachable → suspected (after probe failures)
   /// - suspected → unreachable (after indirect probe fails)
-  /// - suspected → reachable (on refutation via incarnation)
+  /// - suspected → reachable (on successful contact)
   ///
   /// No-op if peer doesn't exist or status is unchanged.
   ///
@@ -247,16 +232,6 @@ class PeerRegistry {
     _addEvent(
       PeerStatusChanged(id, oldStatus, newStatus, occurredAt: occurredAt),
     );
-  }
-
-  /// Increments the local incarnation number.
-  ///
-  /// Called when this node refutes a false suspicion. The incremented
-  /// incarnation is broadcast to peers to override their suspected state.
-  ///
-  /// Used by: SWIM failure detection when receiving a suspicion about self.
-  void incrementLocalIncarnation() {
-    _localIncarnation++;
   }
 
   /// Updates the last contact timestamp for a peer.
@@ -360,41 +335,6 @@ class PeerRegistry {
     _peers[id] = peer.copyWith(metrics: peer.metrics.recordRttSample(sample));
   }
 
-  /// Updates a peer's incarnation number from a received message.
-  ///
-  /// If the new incarnation is higher than the current one:
-  /// - Updates the incarnation number
-  /// - If peer was suspected, transitions to reachable (refutation)
-  /// - Resets failed probe count
-  ///
-  /// This is how SWIM allows peers to refute false suspicions by
-  /// broadcasting a higher incarnation number.
-  ///
-  /// Emits [PeerOperationSkipped] if peer doesn't exist. No-op if incarnation is not higher.
-  void updatePeerIncarnation(NodeId id, int incarnation) {
-    final peer = _peers[id];
-    if (peer == null) {
-      _addEvent(
-        PeerOperationSkipped(
-          id,
-          'updatePeerIncarnation',
-          occurredAt: DateTime.now(),
-        ),
-      );
-      return;
-    }
-    if (peer.incarnation != null && incarnation <= peer.incarnation!) return;
-
-    final newStatus = peer.status == PeerStatus.suspected
-        ? PeerStatus.reachable
-        : peer.status;
-
-    _peers[id] = peer.copyWith(
-      incarnation: incarnation,
-      status: newStatus,
-      failedProbeCount: 0,
-    );
-  }
 
   /// Increments the failed probe count for a peer.
   ///

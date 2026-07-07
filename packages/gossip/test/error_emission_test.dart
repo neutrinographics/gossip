@@ -80,7 +80,6 @@ void main() {
       final remoteNode = NodeId('remote');
       final peerRegistry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       peerRegistry.addPeer(remoteNode, occurredAt: DateTime.now());
 
@@ -114,7 +113,6 @@ void main() {
       final remoteNode = NodeId('remote');
       final peerRegistry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
 
       final entryRepo = InMemoryEntryRepository();
@@ -161,7 +159,6 @@ void main() {
       final remoteNode = NodeId('remote');
       final peerRegistry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
 
       final messagePort = ThrowingMessagePort(Exception('unused'));
@@ -282,13 +279,11 @@ void main() {
       final peerId = NodeId('peer');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
 
       final errors = <SyncError>[];
       final service = PeerService(
         registry: registry,
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         repository: null, // No repository
         onError: (e) => errors.add(e),
       );
@@ -311,7 +306,6 @@ void main() {
       final unknownPeer = NodeId('unknown');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
 
       registry.updatePeerStatus(
@@ -336,7 +330,6 @@ void main() {
         final unknownPeer = NodeId('unknown');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
 
         registry.updatePeerContact(
@@ -361,7 +354,6 @@ void main() {
         final unknownPeer = NodeId('unknown');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
 
         registry.incrementFailedProbeCount(unknownPeer);

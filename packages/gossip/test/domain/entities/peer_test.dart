@@ -8,11 +8,10 @@ void main() {
   group('Peer', () {
     final nodeId = NodeId('node-1');
 
-    test('Peer has id, status, incarnation, lastContactMs, metrics', () {
+    test('Peer has id, status, lastContactMs, metrics', () {
       final peer = Peer(
         id: nodeId,
         status: PeerStatus.reachable,
-        incarnation: 5,
         lastContactMs: 1000,
         lastAntiEntropyMs: 2000,
         failedProbeCount: 0,
@@ -21,7 +20,6 @@ void main() {
 
       expect(peer.id, equals(nodeId));
       expect(peer.status, equals(PeerStatus.reachable));
-      expect(peer.incarnation, equals(5));
       expect(peer.lastContactMs, equals(1000));
       expect(peer.lastAntiEntropyMs, equals(2000));
       expect(peer.failedProbeCount, equals(0));
@@ -32,18 +30,15 @@ void main() {
       final peer = Peer(
         id: nodeId,
         status: PeerStatus.reachable,
-        incarnation: 5,
         lastContactMs: 1000,
       );
 
       final updated = peer.copyWith(
         status: PeerStatus.suspected,
-        incarnation: 6,
       );
 
       expect(updated.id, equals(nodeId));
       expect(updated.status, equals(PeerStatus.suspected));
-      expect(updated.incarnation, equals(6));
       expect(updated.lastContactMs, equals(1000)); // Unchanged
     });
 

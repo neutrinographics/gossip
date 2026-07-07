@@ -29,10 +29,6 @@ void main() {
       expect(service.localNode, equals(localNode));
     });
 
-    test('localIncarnation returns coordinator incarnation', () {
-      expect(service.localIncarnation, equals(0));
-    });
-
     test('reachablePeers returns coordinator reachable peers', () async {
       final peerId = NodeId('peer1');
       await coordinator.addPeer(peerId);

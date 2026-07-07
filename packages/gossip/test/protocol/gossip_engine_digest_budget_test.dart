@@ -270,9 +270,9 @@ void main() {
       () async {
         final nodeA = NodeId('nodeA');
         final nodeB = NodeId('nodeB');
-        final registryA = PeerRegistry(localNode: nodeA, initialIncarnation: 0)
+        final registryA = PeerRegistry(localNode: nodeA)
           ..addPeer(nodeB, occurredAt: DateTime.now());
-        final registryB = PeerRegistry(localNode: nodeB, initialIncarnation: 0)
+        final registryB = PeerRegistry(localNode: nodeB)
           ..addPeer(nodeA, occurredAt: DateTime.now());
         final entryRepoA = InMemoryEntryRepository();
         final entryRepoB = InMemoryEntryRepository();

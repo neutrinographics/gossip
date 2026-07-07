@@ -6,7 +6,6 @@ import 'package:gossip/src/domain/entities/peer.dart';
 import 'package:gossip/src/domain/events/domain_event.dart' show PeerStatus;
 import 'package:gossip/src/domain/interfaces/peer_repository.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
-import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 import 'package:test/test.dart';
 
 /// A repository whose save latency is scripted per call, to model a
@@ -61,7 +60,6 @@ void main() {
         final peerId = NodeId('peer1');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         // Call 0 = addPeer's save (instant). Call 1 (status change) is
         // SLOW; call 2 (contact) is instant — so without ordering, the
@@ -73,7 +71,6 @@ void main() {
         ]);
         final service = PeerService(
           registry: registry,
-          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           repository: repository,
         );
 

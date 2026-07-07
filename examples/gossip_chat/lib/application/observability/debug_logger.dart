@@ -211,7 +211,6 @@ class DebugLogger {
       buffer.writeln('Sync State: ${health.state}');
       buffer.writeln('Is Healthy: ${health.isHealthy}');
       buffer.writeln('Reachable Peers: ${health.reachablePeerCount}');
-      buffer.writeln('Incarnation: ${health.incarnation}');
     } catch (e) {
       buffer.writeln('Sync state unavailable: $e');
     }
@@ -464,7 +463,6 @@ class DebugLogger {
         'METRICS',
         '  Local node: ${_shortId(health.localNode.value)}',
       );
-      _logVerbose('METRICS', '  Incarnation: ${health.incarnation}');
       _logVerbose('METRICS', '  Is healthy: ${health.isHealthy}');
       _logVerbose('METRICS', '  Reachable peers: ${health.reachablePeerCount}');
       _logVerbose('METRICS', '=== Resource Usage ===');
@@ -584,10 +582,6 @@ class DebugLogger {
       final metrics = _syncService.getPeerMetrics(peer.id);
       _logVerbose('METRICS', '  Peer ${_shortId(peer.id.value)}:');
       _logVerbose('METRICS', '    Status: ${peer.status}');
-      _logVerbose(
-        'METRICS',
-        '    Incarnation: ${peer.incarnation ?? 'unknown'}',
-      );
       _logVerbose(
         'METRICS',
         '    Failed probe count: ${peer.failedProbeCount}',

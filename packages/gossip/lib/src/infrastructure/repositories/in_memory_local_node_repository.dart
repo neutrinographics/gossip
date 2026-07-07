@@ -25,7 +25,6 @@ import '../../domain/interfaces/local_node_repository.dart';
 class InMemoryLocalNodeRepository implements LocalNodeRepository {
   NodeId? _nodeId;
   Hlc _clockState = Hlc.zero;
-  int _incarnation = 0;
 
   /// Creates an in-memory local node repository.
   ///
@@ -54,17 +53,8 @@ class InMemoryLocalNodeRepository implements LocalNodeRepository {
   }
 
   @override
-  Future<int> getIncarnation() async => _incarnation;
-
-  @override
-  Future<void> saveIncarnation(int incarnation) async {
-    _incarnation = incarnation;
-  }
-
-  @override
   Future<void> reset() async {
     _nodeId = null;
     _clockState = Hlc.zero;
-    _incarnation = 0;
   }
 }

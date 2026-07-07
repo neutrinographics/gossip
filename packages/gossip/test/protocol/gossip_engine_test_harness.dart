@@ -116,7 +116,6 @@ class GossipEngineTestHarness {
     final localNode = NodeId(localName);
     final peerRegistry = PeerRegistry(
       localNode: localNode,
-      initialIncarnation: 0,
     );
     final timePort = InMemoryTimePort();
     final bus = InMemoryMessageBus();

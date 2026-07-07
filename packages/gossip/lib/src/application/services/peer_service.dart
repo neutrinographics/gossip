@@ -1,7 +1,6 @@
 import '../../domain/errors/sync_error.dart';
 import '../../domain/value_objects/node_id.dart';
 import '../../domain/aggregates/peer_registry.dart';
-import '../../domain/interfaces/local_node_repository.dart';
 import '../../domain/interfaces/peer_repository.dart';
 import '../../domain/events/domain_event.dart';
 
@@ -43,9 +42,6 @@ class PeerService {
   /// When null, peers are not persisted (in-memory only).
   final PeerRepository? repository;
 
-  /// Repository for persisting local node state (incarnation).
-  final LocalNodeRepository localNodeRepository;
-
   /// Optional callback for reporting synchronization errors.
   ///
   /// When provided, errors that would otherwise be silent are reported
@@ -54,7 +50,6 @@ class PeerService {
 
   PeerService({
     required this.registry,
-    required this.localNodeRepository,
     this.repository,
     this.onError,
   });
@@ -75,8 +70,8 @@ class PeerService {
 
   /// Adds a new peer to the registry.
   ///
-  /// Creates a new [Peer] entity in [reachable] status with incarnation 0
-  /// and persists it. Fires [PeerAdded] domain event.
+  /// Creates a new [Peer] entity in [reachable] status and persists it.
+  /// Fires [PeerAdded] domain event.
   ///
   /// If [displayName] is not provided, defaults to a truncated form of the
   /// node ID.
@@ -107,23 +102,6 @@ class PeerService {
     await _deletePeer(peerId);
   }
 
-  /// Increments the local incarnation number and persists it.
-  ///
-  /// Called when this node refutes a false SWIM suspicion. The incremented
-  /// incarnation is broadcast to peers to override their suspected state.
-  ///
-  /// Transaction: Increment in registry → save to LocalNodeRepository.
-  ///
-  // TODO: Wire this into FailureDetector's SWIM refutation flow. When a
-  // Suspicion message about the local node is received, FailureDetector
-  // should call this method (via a callback or by accepting PeerService as
-  // a dependency instead of PeerRegistry directly) to refute the suspicion
-  // and persist the new incarnation number.
-  Future<void> incrementLocalIncarnation() async {
-    registry.incrementLocalIncarnation();
-    await localNodeRepository.saveIncarnation(registry.localIncarnation);
-  }
-
   /// Updates a peer's SWIM status (reachable/suspected/unreachable).
   ///
   /// Transitions peer through SWIM failure detection states and persists
@@ -133,7 +111,7 @@ class PeerService {
   /// - **reachable → suspected**: Direct probe failed
   /// - **suspected → unreachable**: Indirect probe failed
   /// - **suspected → reachable**: Probe response received
-  /// - **unreachable → reachable**: Peer recovered (via refutation)
+  /// - **unreachable → reachable**: Peer recovered (via contact)
   ///
   /// Used when: FailureDetector processes probe results.
   ///

@@ -4,7 +4,7 @@ import '../entities/peer.dart';
 /// Repository for peer state.
 ///
 /// [PeerRepository] stores the state of known peers, including their
-/// reachability status, incarnation numbers, and communication metrics.
+/// reachability status and communication metrics.
 ///
 /// ## Persistence is not required
 ///

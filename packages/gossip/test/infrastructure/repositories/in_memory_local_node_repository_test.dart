@@ -82,48 +82,17 @@ void main() {
       });
     });
 
-    group('incarnation', () {
-      test('returns 0 initially', () async {
-        final repository = InMemoryLocalNodeRepository();
-
-        final incarnation = await repository.getIncarnation();
-
-        expect(incarnation, equals(0));
-      });
-
-      test('save and get round-trips incarnation', () async {
-        final repository = InMemoryLocalNodeRepository();
-
-        await repository.saveIncarnation(7);
-        final retrieved = await repository.getIncarnation();
-
-        expect(retrieved, equals(7));
-      });
-
-      test('overwrites previous incarnation', () async {
-        final repository = InMemoryLocalNodeRepository();
-
-        await repository.saveIncarnation(3);
-        await repository.saveIncarnation(5);
-        final retrieved = await repository.getIncarnation();
-
-        expect(retrieved, equals(5));
-      });
-    });
-
     group('reset', () {
-      test('clears node ID, clock state, and incarnation', () async {
+      test('clears node ID and clock state', () async {
         final repository = InMemoryLocalNodeRepository(
           nodeId: NodeId('test-node'),
         );
         await repository.saveClockState(Hlc(5000, 42));
-        await repository.saveIncarnation(7);
 
         await repository.reset();
 
         expect(await repository.getNodeId(), isNull);
         expect(await repository.getClockState(), equals(Hlc.zero));
-        expect(await repository.getIncarnation(), equals(0));
       });
 
       test('resolveNodeId generates new ID after reset', () async {

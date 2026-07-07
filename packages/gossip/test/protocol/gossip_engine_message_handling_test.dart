@@ -46,7 +46,6 @@ void main() {
       final peerNode = NodeId('peer-1');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       final entryRepo = InMemoryEntryRepository();
       final engine = createEngine(localNode, registry, entryRepo);
@@ -86,7 +85,6 @@ void main() {
         final peerNode = NodeId('peer-1');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final entryRepo = InMemoryEntryRepository();
         final engine = createEngine(localNode, registry, entryRepo);
@@ -132,7 +130,6 @@ void main() {
         final author1 = NodeId('author-1');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
@@ -191,7 +188,6 @@ void main() {
       final author1 = NodeId('author-1');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       final entryRepo = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
@@ -240,7 +236,6 @@ void main() {
       final author1 = NodeId('author-1');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       final entryRepo = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
@@ -288,7 +283,6 @@ void main() {
         final author1 = NodeId('author-1');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
@@ -345,7 +339,6 @@ void main() {
         final author1 = NodeId('author-1');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
@@ -404,7 +397,6 @@ void main() {
         final author1 = NodeId('author-1');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
@@ -487,7 +479,6 @@ void main() {
         final author1 = NodeId('author-1');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
@@ -545,7 +536,6 @@ void main() {
         final author1 = NodeId('author-1');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
@@ -633,7 +623,6 @@ void main() {
         final author1 = NodeId('author-1');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
@@ -706,7 +695,6 @@ void main() {
         final author1 = NodeId('author-1');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
@@ -779,7 +767,6 @@ void main() {
         final author1 = NodeId('author-1');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final entryRepo = InMemoryEntryRepository();
         final channelId1 = ChannelId('channel-1');
@@ -868,7 +855,6 @@ void main() {
         final author1 = NodeId('author-1');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');

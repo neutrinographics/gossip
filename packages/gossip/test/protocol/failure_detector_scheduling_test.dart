@@ -81,7 +81,6 @@ void main() {
           localNode: localNode,
           peerRegistry: PeerRegistry(
             localNode: localNode,
-            initialIncarnation: 0,
           ),
           timePort: timePort,
           messagePort: InMemoryMessagePort(localNode, InMemoryMessageBus()),

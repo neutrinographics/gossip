@@ -39,9 +39,6 @@ class HealthStatus {
   /// Local node identifier.
   final NodeId localNode;
 
-  /// SWIM incarnation number.
-  final int incarnation;
-
   /// Resource usage statistics.
   final ResourceUsage resourceUsage;
 
@@ -51,7 +48,6 @@ class HealthStatus {
   const HealthStatus({
     required this.state,
     required this.localNode,
-    required this.incarnation,
     required this.resourceUsage,
     required this.reachablePeerCount,
   });

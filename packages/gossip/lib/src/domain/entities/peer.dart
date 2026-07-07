@@ -10,7 +10,6 @@ import 'peer_metrics.dart';
 /// gossip, including:
 /// - **Identity**: Unique node identifier
 /// - **Reachability**: Current status from SWIM failure detection
-/// - **Incarnation**: Version number for refuting false failure suspicions
 /// - **Contact tracking**: Last communication and anti-entropy timestamps
 /// - **Failure detection**: Consecutive probe failure count
 /// - **Metrics**: Communication statistics for rate limiting
@@ -34,13 +33,6 @@ class Peer {
   ///
   /// Lifecycle: reachable → suspected → unreachable
   final PeerStatus status;
-
-  /// Incarnation number for refuting false failure suspicions.
-  ///
-  /// When a peer suspects itself as failed, it increments its incarnation
-  /// number and broadcasts it to refute the suspicion. Null until first
-  /// incarnation message is received.
-  final int? incarnation;
 
   /// Last time we received any message from this peer (milliseconds since epoch).
   final int lastContactMs;
@@ -71,7 +63,6 @@ class Peer {
     required this.id,
     String? displayName,
     this.status = PeerStatus.reachable,
-    this.incarnation,
     this.lastContactMs = 0,
     this.lastAntiEntropyMs,
     this.failedProbeCount = 0,
@@ -90,7 +81,6 @@ class Peer {
     NodeId? id,
     String? displayName,
     PeerStatus? status,
-    int? incarnation,
     int? lastContactMs,
     int? lastAntiEntropyMs,
     int? failedProbeCount,
@@ -100,7 +90,6 @@ class Peer {
       id: id ?? this.id,
       displayName: displayName ?? this.displayName,
       status: status ?? this.status,
-      incarnation: incarnation ?? this.incarnation,
       lastContactMs: lastContactMs ?? this.lastContactMs,
       lastAntiEntropyMs: lastAntiEntropyMs ?? this.lastAntiEntropyMs,
       failedProbeCount: failedProbeCount ?? this.failedProbeCount,
@@ -115,7 +104,6 @@ class Peer {
         other.id == id &&
         other.displayName == displayName &&
         other.status == status &&
-        other.incarnation == incarnation &&
         other.lastContactMs == lastContactMs &&
         other.lastAntiEntropyMs == lastAntiEntropyMs &&
         other.failedProbeCount == failedProbeCount &&
@@ -127,7 +115,6 @@ class Peer {
     id,
     displayName,
     status,
-    incarnation,
     lastContactMs,
     lastAntiEntropyMs,
     failedProbeCount,
@@ -137,5 +124,5 @@ class Peer {
   @override
   String toString() =>
       'Peer($id, displayName: $displayName, status: $status, '
-      'incarnation: $incarnation, failedProbes: $failedProbeCount)';
+      'failedProbes: $failedProbeCount)';
 }

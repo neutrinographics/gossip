@@ -41,9 +41,6 @@ class SyncService {
   /// Current sync state.
   SyncState get state => _coordinator.state;
 
-  /// Local node incarnation number.
-  int get localIncarnation => _coordinator.localIncarnation;
-
   // ─────────────────────────────────────────────────────────────
   // Health & Metrics
   // ─────────────────────────────────────────────────────────────

@@ -248,9 +248,6 @@ class Coordinator {
     // Resolve localNode from repository — single source of truth
     final localNode = await localNodeRepository.resolveNodeId();
 
-    // Restore incarnation from LocalNodeRepository
-    final incarnation = await localNodeRepository.getIncarnation();
-
     // Create event controller before the registry so peer lifecycle
     // events can be sinked into it. Without a sink the long-lived
     // registry would buffer events forever (nothing drains it).
@@ -258,7 +255,6 @@ class Coordinator {
 
     final peerRegistry = PeerRegistry(
       localNode: localNode,
-      initialIncarnation: incarnation,
       onEvent: (event) {
         if (!eventsController.isClosed) {
           eventsController.add(event);
@@ -309,7 +305,6 @@ class Coordinator {
     );
     final peerService = PeerService(
       registry: peerRegistry,
-      localNodeRepository: localNodeRepository,
       repository: peerRepository,
     );
 
@@ -740,14 +735,6 @@ class Coordinator {
     return _peerRegistry.reachablePeers;
   }
 
-  /// Returns the local node's current incarnation number.
-  ///
-  /// The incarnation is incremented when this node refutes a false
-  /// failure suspicion in SWIM protocol.
-  int get localIncarnation {
-    return _peerRegistry.localIncarnation;
-  }
-
   /// Returns the current HLC clock state, or null if no clock is configured.
   ///
   /// When a [LocalNodeRepository] is provided to [create], the clock state
@@ -810,7 +797,6 @@ class Coordinator {
     return HealthStatus(
       state: _state,
       localNode: localNode,
-      incarnation: _peerRegistry.localIncarnation,
       resourceUsage: resourceUsage,
       reachablePeerCount: _peerRegistry.reachablePeers.length,
     );
@@ -1096,7 +1082,7 @@ class Coordinator {
   /// This method:
   /// 1. Disposes the coordinator (stops protocols, closes streams)
   /// 2. Clears all channels, entries, and peers from their repositories
-  /// 3. Resets the local node identity (node ID, clock, incarnation)
+  /// 3. Resets the local node identity (node ID, clock)
   ///
   /// After destruction, the coordinator cannot be reused. Call
   /// [Coordinator.create] with the same repositories to start fresh

@@ -15,15 +15,10 @@ import '../value_objects/node_id.dart';
 ///   Restoring this on startup preserves timestamp monotonicity even if the
 ///   system clock regresses between restarts.
 ///
-/// - **Incarnation number**: The SWIM protocol incarnation counter. Restoring
-///   this prevents peers from treating the restarted node as stale when it
-///   had previously incremented its incarnation to refute false suspicions.
-///
 /// ## Default Values
 /// When no state has been persisted, implementations should return:
 /// - `null` for node ID (triggers [generateNodeId] on first run)
 /// - [Hlc.zero] for clock state
-/// - `0` for incarnation
 ///
 /// ## Implementation Guidance
 /// - Use key-value storage (SharedPreferences, localStorage) for simple cases
@@ -69,17 +64,11 @@ abstract interface class LocalNodeRepository {
   /// Persists the current HLC clock state.
   Future<void> saveClockState(Hlc state);
 
-  /// Returns the persisted incarnation number, or 0 if none exists.
-  Future<int> getIncarnation();
-
-  /// Persists the current incarnation number.
-  Future<void> saveIncarnation(int incarnation);
-
-  /// Resets all local node state: node ID, clock state, and incarnation.
+  /// Resets all local node state: node ID and clock state.
   ///
-  /// After reset, [getNodeId] returns null, [getClockState] returns
-  /// [Hlc.zero], and [getIncarnation] returns 0. The next call to
-  /// [resolveNodeId] will generate a fresh identity.
+  /// After reset, [getNodeId] returns null and [getClockState] returns
+  /// [Hlc.zero]. The next call to [resolveNodeId] will generate a fresh
+  /// identity.
   ///
   /// Used when resetting all sync state (e.g., user logout). A new node
   /// ID is required because peers track version vectors keyed by node ID.

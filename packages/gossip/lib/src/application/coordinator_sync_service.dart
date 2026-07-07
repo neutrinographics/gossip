@@ -21,9 +21,6 @@ class CoordinatorSyncService implements SyncCoordinatorService {
   NodeId get localNode => _coordinator.localNode;
 
   @override
-  int get localIncarnation => _coordinator.localIncarnation;
-
-  @override
   List<Peer> get reachablePeers => _coordinator.reachablePeers;
 
   @override

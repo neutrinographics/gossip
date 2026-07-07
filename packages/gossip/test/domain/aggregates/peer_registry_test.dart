@@ -6,21 +6,18 @@ import 'package:gossip/src/domain/events/domain_event.dart';
 
 void main() {
   group('PeerRegistry', () {
-    test('can be constructed with localNode and initialIncarnation', () {
+    test('can be constructed with localNode', () {
       final localNode = NodeId('local');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
 
       expect(registry.localNode, equals(localNode));
-      expect(registry.localIncarnation, equals(0));
     });
 
     test('addPeer adds a peer', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
 
@@ -34,7 +31,6 @@ void main() {
       final localNode = NodeId('local');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
 
       expect(
@@ -46,7 +42,6 @@ void main() {
     test('getPeer retrieves added peer', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
       registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -60,7 +55,6 @@ void main() {
     test('removePeer removes a peer', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
       registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -74,7 +68,6 @@ void main() {
     test('updatePeerStatus changes peer status', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
       registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -92,7 +85,6 @@ void main() {
     test('isReachable returns true for reachable peers', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
       registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -110,7 +102,6 @@ void main() {
     test('allPeers returns all peers', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       registry.addPeer(NodeId('peer-1'), occurredAt: DateTime(2024, 1, 1));
       registry.addPeer(NodeId('peer-2'), occurredAt: DateTime(2024, 1, 1));
@@ -125,7 +116,6 @@ void main() {
     test('reachablePeers filters by reachable status', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       registry.addPeer(NodeId('peer-1'), occurredAt: DateTime(2024, 1, 1));
       registry.addPeer(NodeId('peer-2'), occurredAt: DateTime(2024, 1, 1));
@@ -144,7 +134,6 @@ void main() {
     test('unreachablePeers returns only unreachable peers', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       registry.addPeer(NodeId('peer-1'), occurredAt: DateTime(2024, 1, 1));
       registry.addPeer(NodeId('peer-2'), occurredAt: DateTime(2024, 1, 1));
@@ -173,21 +162,9 @@ void main() {
       expect(unreachable.first.id, equals(NodeId('peer-3')));
     });
 
-    test('incrementLocalIncarnation increases incarnation', () {
-      final registry = PeerRegistry(
-        localNode: NodeId('local'),
-        initialIncarnation: 0,
-      );
-
-      registry.incrementLocalIncarnation();
-
-      expect(registry.localIncarnation, equals(1));
-    });
-
     test('updatePeerContact updates lastContactMs', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
       registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -201,7 +178,6 @@ void main() {
     test('updatePeerAntiEntropy updates lastAntiEntropyMs', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
       registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -215,7 +191,6 @@ void main() {
     test('recordMessageReceived updates peer metrics', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
       registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -230,7 +205,6 @@ void main() {
     test('recordMessageSent updates peer metrics', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
       registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -245,7 +219,6 @@ void main() {
     test('getMetrics returns peer metrics', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
       registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -260,7 +233,6 @@ void main() {
     test('addPeer emits PeerAdded event', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
 
@@ -273,7 +245,6 @@ void main() {
     test('removePeer emits PeerRemoved event', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
       registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -287,7 +258,6 @@ void main() {
     test('updatePeerStatus emits PeerStatusChanged event', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
       registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -302,44 +272,9 @@ void main() {
       expect(registry.uncommittedEvents.last, isA<PeerStatusChanged>());
     });
 
-    test('updatePeerIncarnation updates incarnation', () {
-      final registry = PeerRegistry(
-        localNode: NodeId('local'),
-        initialIncarnation: 0,
-      );
-      final peerId = NodeId('peer-1');
-      registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
-
-      registry.updatePeerIncarnation(peerId, 5);
-
-      final peer = registry.getPeer(peerId);
-      expect(peer!.incarnation, equals(5));
-    });
-
-    test('updatePeerIncarnation changes suspected peer to reachable', () {
-      final registry = PeerRegistry(
-        localNode: NodeId('local'),
-        initialIncarnation: 0,
-      );
-      final peerId = NodeId('peer-1');
-      registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
-      registry.updatePeerStatus(
-        peerId,
-        PeerStatus.suspected,
-        occurredAt: DateTime(2024, 1, 1),
-      );
-
-      registry.updatePeerIncarnation(peerId, 5);
-
-      final peer = registry.getPeer(peerId);
-      expect(peer!.status, equals(PeerStatus.reachable));
-      expect(peer.incarnation, equals(5));
-    });
-
     test('incrementFailedProbeCount increments the failed probe count', () {
       final registry = PeerRegistry(
         localNode: NodeId('local'),
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
       registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -355,7 +290,6 @@ void main() {
       test('updatePeerStatus emits PeerOperationSkipped for unknown peer', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
-          initialIncarnation: 0,
         );
         final unknownPeerId = NodeId('unknown');
 
@@ -376,7 +310,6 @@ void main() {
       test('updatePeerContact on unknown peer is a silent no-op', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
-          initialIncarnation: 0,
         );
 
         registry.updatePeerContact(NodeId('unknown'), 1000);
@@ -389,7 +322,6 @@ void main() {
       test('updatePeerAntiEntropy on unknown peer is a silent no-op', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
-          initialIncarnation: 0,
         );
 
         registry.updatePeerAntiEntropy(NodeId('unknown'), 1000);
@@ -400,7 +332,6 @@ void main() {
       test('recordMessageReceived on unknown peer is a silent no-op', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
-          initialIncarnation: 0,
         );
 
         registry.recordMessageReceived(NodeId('unknown'), 100, 1000, 60000);
@@ -411,7 +342,6 @@ void main() {
       test('recordMessageSent on unknown peer is a silent no-op', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
-          initialIncarnation: 0,
         );
 
         registry.recordMessageSent(NodeId('unknown'), 100);
@@ -420,31 +350,10 @@ void main() {
       });
 
       test(
-        'updatePeerIncarnation emits PeerOperationSkipped for unknown peer',
-        () {
-          final registry = PeerRegistry(
-            localNode: NodeId('local'),
-            initialIncarnation: 0,
-          );
-          final unknownPeerId = NodeId('unknown');
-
-          registry.updatePeerIncarnation(unknownPeerId, 5);
-
-          final events = registry.uncommittedEvents;
-          expect(events.length, equals(1));
-          expect(events.last, isA<PeerOperationSkipped>());
-          final event = events.last as PeerOperationSkipped;
-          expect(event.peerId, equals(unknownPeerId));
-          expect(event.operation, equals('updatePeerIncarnation'));
-        },
-      );
-
-      test(
         'incrementFailedProbeCount on unknown peer is a silent no-op',
         () {
           final registry = PeerRegistry(
             localNode: NodeId('local'),
-            initialIncarnation: 0,
           );
 
           registry.incrementFailedProbeCount(NodeId('unknown'));
@@ -462,19 +371,16 @@ void main() {
         final peer2 = Peer(
           id: NodeId('peer-2'),
           status: PeerStatus.suspected,
-          incarnation: 3,
           lastContactMs: 5000,
           failedProbeCount: 2,
         );
 
         final registry = PeerRegistry.reconstitute(
           localNode: localNode,
-          localIncarnation: 7,
           peers: [peer1, peer2],
         );
 
         expect(registry.localNode, equals(localNode));
-        expect(registry.localIncarnation, equals(7));
         expect(registry.peerCount, equals(2));
         expect(registry.getPeer(NodeId('peer-1')), equals(peer1));
         expect(registry.getPeer(NodeId('peer-2')), equals(peer2));
@@ -482,13 +388,11 @@ void main() {
           registry.getPeer(NodeId('peer-2'))!.status,
           equals(PeerStatus.suspected),
         );
-        expect(registry.getPeer(NodeId('peer-2'))!.incarnation, equals(3));
       });
 
       test('emits no domain events', () {
         final registry = PeerRegistry.reconstitute(
           localNode: NodeId('local'),
-          localIncarnation: 0,
           peers: [
             Peer(id: NodeId('peer-1')),
             Peer(id: NodeId('peer-2')),
@@ -501,7 +405,6 @@ void main() {
       test('does not auto-add localNode as a peer', () {
         final registry = PeerRegistry.reconstitute(
           localNode: NodeId('local'),
-          localIncarnation: 0,
           peers: [],
         );
 
@@ -512,7 +415,6 @@ void main() {
       test('reconstituted registry supports normal operations', () {
         final registry = PeerRegistry.reconstitute(
           localNode: NodeId('local'),
-          localIncarnation: 5,
           peers: [Peer(id: NodeId('peer-1'))],
         );
 
@@ -532,10 +434,6 @@ void main() {
           equals(PeerStatus.suspected),
         );
 
-        // Can increment incarnation
-        registry.incrementLocalIncarnation();
-        expect(registry.localIncarnation, equals(6));
-
         // Events only from operations after reconstitution
         expect(registry.uncommittedEvents, hasLength(2));
         expect(registry.uncommittedEvents[0], isA<PeerAdded>());
@@ -547,7 +445,6 @@ void main() {
       test('emits PeerStatusChanged when recovering from suspected', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
-          initialIncarnation: 0,
         );
         final peerId = NodeId('peer-1');
         registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -575,7 +472,6 @@ void main() {
       test('emits PeerStatusChanged when recovering from unreachable', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
-          initialIncarnation: 0,
         );
         final peerId = NodeId('peer-1');
         registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -608,7 +504,6 @@ void main() {
       test('does not emit PeerStatusChanged when already reachable', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
-          initialIncarnation: 0,
         );
         final peerId = NodeId('peer-1');
         registry.addPeer(peerId, occurredAt: DateTime(2024, 1, 1));
@@ -628,7 +523,6 @@ void main() {
       test('records RTT sample on known peer', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
-          initialIncarnation: 0,
         );
         final peerId = NodeId('peer1');
         registry.addPeer(peerId, occurredAt: DateTime.now());
@@ -646,7 +540,6 @@ void main() {
       test('accumulates multiple RTT samples', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
-          initialIncarnation: 0,
         );
         final peerId = NodeId('peer1');
         registry.addPeer(peerId, occurredAt: DateTime.now());
@@ -666,7 +559,6 @@ void main() {
       test('is a silent no-op for unknown peer', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
-          initialIncarnation: 0,
         );
 
         registry.recordPeerRtt(
@@ -681,7 +573,6 @@ void main() {
       test('does not affect other peers', () {
         final registry = PeerRegistry(
           localNode: NodeId('local'),
-          initialIncarnation: 0,
         );
         final peer1 = NodeId('peer1');
         final peer2 = NodeId('peer2');

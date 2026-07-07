@@ -49,7 +49,6 @@ void main() {
       final localNode = NodeId('local');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
 
       final entryRepo = InMemoryEntryRepository();
@@ -62,7 +61,6 @@ void main() {
       final localNode = NodeId('local');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       final entryRepo = InMemoryEntryRepository();
       final engine = createEngine(localNode, registry, entryRepo);
@@ -76,7 +74,6 @@ void main() {
       final localNode = NodeId('local');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       final peerId = NodeId('peer-1');
       registry.addPeer(peerId, occurredAt: DateTime.now());
@@ -94,7 +91,6 @@ void main() {
       final localNode = NodeId('local');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       final entryRepo = InMemoryEntryRepository();
       final engine = createEngine(localNode, registry, entryRepo);
@@ -111,7 +107,6 @@ void main() {
       final localNode = NodeId('local');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       final entryRepo = InMemoryEntryRepository();
       final engine = createEngine(localNode, registry, entryRepo);
@@ -137,7 +132,6 @@ void main() {
       final author2 = NodeId('author-2');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       final entryRepo = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
@@ -198,7 +192,6 @@ void main() {
       final author2 = NodeId('author-2');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       final entryRepo = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
@@ -243,7 +236,6 @@ void main() {
       final peerNode = NodeId('peer1');
       final registry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
 
       // Add a reachable peer
@@ -302,7 +294,6 @@ void main() {
         final peerNode = NodeId('peer1');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final entryRepo = InMemoryEntryRepository();
         final timer = InMemoryTimePort();
@@ -369,7 +360,6 @@ void main() {
       final localNode = NodeId('local');
       final peerRegistry = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
       );
       final entryRepo = InMemoryEntryRepository();
       final port = InMemoryMessagePort(localNode, InMemoryMessageBus());
@@ -411,7 +401,6 @@ void main() {
         final localNode = NodeId('local');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final entryRepo = InMemoryEntryRepository();
         final timerPort = InMemoryTimePort();
@@ -443,7 +432,6 @@ void main() {
         final peer = NodeId('peer');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         registry.addPeer(peer, occurredAt: DateTime.now());
         final entryRepo = InMemoryEntryRepository();
@@ -483,7 +471,6 @@ void main() {
         final peer = NodeId('peer');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         registry.addPeer(peer, occurredAt: DateTime.now());
         final entryRepo = InMemoryEntryRepository();
@@ -519,7 +506,6 @@ void main() {
         final peer = NodeId('peer');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         registry.addPeer(peer, occurredAt: DateTime.now());
         final entryRepo = InMemoryEntryRepository();
@@ -551,7 +537,6 @@ void main() {
         final localNode = NodeId('local');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         final entryRepo = InMemoryEntryRepository();
         final timerPort = InMemoryTimePort();
@@ -585,7 +570,6 @@ void main() {
           final slowPeer = NodeId('slow');
           final registry = PeerRegistry(
             localNode: localNode,
-            initialIncarnation: 0,
           );
           registry.addPeer(fastPeer, occurredAt: DateTime.now());
           registry.addPeer(slowPeer, occurredAt: DateTime.now());
@@ -626,7 +610,6 @@ void main() {
           final peer = NodeId('peer');
           final registry = PeerRegistry(
             localNode: localNode,
-            initialIncarnation: 0,
           );
           registry.addPeer(peer, occurredAt: DateTime.now());
           // No RTT recorded for peer
@@ -663,7 +646,6 @@ void main() {
         final slowPeer = NodeId('slow');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         registry.addPeer(fastPeer1, occurredAt: DateTime.now());
         registry.addPeer(fastPeer2, occurredAt: DateTime.now());
@@ -704,7 +686,6 @@ void main() {
         final peerId = NodeId('peer');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         registry.addPeer(peerId, occurredAt: DateTime.now());
 
@@ -745,7 +726,6 @@ void main() {
         final peerId = NodeId('peer');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         registry.addPeer(peerId, occurredAt: DateTime.now());
 
@@ -790,7 +770,6 @@ void main() {
         final peerId = NodeId('peer');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         registry.addPeer(peerId, occurredAt: DateTime.now());
 
@@ -844,7 +823,6 @@ void main() {
           final healthyPeerId = NodeId('healthy-peer');
           final registry = PeerRegistry(
             localNode: localNode,
-            initialIncarnation: 0,
           );
           registry.addPeer(congestedPeerId, occurredAt: DateTime.now());
           registry.addPeer(healthyPeerId, occurredAt: DateTime.now());
@@ -901,7 +879,6 @@ void main() {
         final peer2 = NodeId('peer2');
         final registry = PeerRegistry(
           localNode: localNode,
-          initialIncarnation: 0,
         );
         registry.addPeer(peer1, occurredAt: DateTime.now());
         registry.addPeer(peer2, occurredAt: DateTime.now());
@@ -959,10 +936,10 @@ void main() {
         final streamId = StreamId('stream-1');
         final author = NodeId('author-1');
 
-        final registryA = PeerRegistry(localNode: nodeA, initialIncarnation: 0);
+        final registryA = PeerRegistry(localNode: nodeA);
         registryA.addPeer(nodeB, occurredAt: DateTime.now());
 
-        final registryB = PeerRegistry(localNode: nodeB, initialIncarnation: 0);
+        final registryB = PeerRegistry(localNode: nodeB);
         registryB.addPeer(nodeA, occurredAt: DateTime.now());
 
         final entryRepoA = InMemoryEntryRepository();

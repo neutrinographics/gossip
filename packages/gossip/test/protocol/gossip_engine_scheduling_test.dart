@@ -168,7 +168,6 @@ void main() {
           localNode: localNode,
           peerRegistry: PeerRegistry(
             localNode: localNode,
-            initialIncarnation: 0,
           ),
           entryRepository: InMemoryEntryRepository(),
           timePort: timePort,

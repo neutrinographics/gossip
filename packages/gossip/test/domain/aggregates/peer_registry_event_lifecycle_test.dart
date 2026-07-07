@@ -10,7 +10,7 @@ void main() {
     final unknown = NodeId('never-added');
 
     setUp(() {
-      registry = PeerRegistry(localNode: localNode, initialIncarnation: 0);
+      registry = PeerRegistry(localNode: localNode);
     });
 
     test(
@@ -52,7 +52,6 @@ void main() {
       final forwarded = <DomainEvent>[];
       final sinked = PeerRegistry(
         localNode: localNode,
-        initialIncarnation: 0,
         onEvent: forwarded.add,
       );
 
