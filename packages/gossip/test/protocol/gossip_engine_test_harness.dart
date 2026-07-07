@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
@@ -112,6 +113,7 @@ class GossipEngineTestHarness {
     bool withHlcClock = false,
     MessagePort? messagePort,
     int? maxDeltaResponseBytes,
+    Random? random,
   }) {
     final localNode = NodeId(localName);
     final peerRegistry = PeerRegistry(
@@ -152,6 +154,7 @@ class GossipEngineTestHarness {
       gossipInterval: gossipInterval,
       adaptiveTimingEnabled: adaptiveTimingEnabled,
       maxDeltaResponseBytes: maxDeltaResponseBytes ?? 30 * 1024,
+      random: random,
     );
 
     return GossipEngineTestHarness._(

@@ -551,7 +551,8 @@ class GossipEngine {
   ///
   /// Implements Step 1 of the anti-entropy protocol:
   /// 1. Get reachable peers and filter out congested ones (per-peer backpressure)
-  /// 2. Select random peer from uncongested candidates
+  /// 2. Select the least-recently-gossiped uncongested candidate (bounded
+  ///    coverage; random tiebreak) and mark it gossiped
   /// 3. Generate digests for all channels via [generateDigest]
   /// 4. Send [DigestRequest] to peer
   ///
@@ -580,8 +581,33 @@ class GossipEngine {
       return;
     }
 
-    final peer = candidates[_random.nextInt(candidates.length)];
+    final peer = _selectGossipPartner(candidates);
+    // Record that we're gossiping with this peer now, so the next rounds
+    // prefer peers we haven't synced with recently (bounded coverage).
+    peerRegistry.updatePeerAntiEntropy(peer.id, timePort.nowMs);
     await _sendMessage(peer.id, await _buildDigestRequest());
+  }
+
+  /// Selects the gossip partner from [candidates], preferring the
+  /// least-recently-gossiped peer (a peer we have never gossiped with —
+  /// null timestamp — counts as the most stale), with a random tiebreak
+  /// among equally-stale peers.
+  ///
+  /// This bounds gossip coverage to ~(n-1) rounds instead of pure-random
+  /// selection's geometric distribution (the same win H3 gave SWIM probing),
+  /// while the tiebreak keeps selection decorrelated across nodes — each node
+  /// holds its own per-peer anti-entropy timestamps.
+  Peer _selectGossipPartner(List<Peer> candidates) {
+    // Never-gossiped (null) sorts before any real timestamp: -1 < 0 <= nowMs.
+    int staleKey(Peer p) => p.lastAntiEntropyMs ?? -1;
+
+    var minKey = staleKey(candidates.first);
+    for (final p in candidates.skip(1)) {
+      final k = staleKey(p);
+      if (k < minKey) minKey = k;
+    }
+    final stalest = candidates.where((p) => staleKey(p) == minKey).toList();
+    return stalest[_random.nextInt(stalest.length)];
   }
 
   /// Builds a [DigestRequest] carrying this node's version vectors.
