@@ -678,8 +678,9 @@ void main() {
         final secondRequests = await engine.handleDigestResponse(response);
         expect(secondRequests, isEmpty);
 
-        // Advance time past the timeout (default 5 seconds)
-        timePort.advance(const Duration(seconds: 6));
+        // Advance time past the timeout (default 8s before any delta
+        // round-trip has been observed).
+        timePort.advance(const Duration(seconds: 9));
 
         // Now the pending request should have expired, allowing a new one
         final thirdRequests = await engine.handleDigestResponse(response);
