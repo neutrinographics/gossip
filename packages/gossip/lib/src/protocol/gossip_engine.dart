@@ -465,6 +465,13 @@ class GossipEngine {
       _metricsWindowDurationMs,
     );
 
+    // Receiving gossip from a peer is unambiguous proof of life. Feed it
+    // into SWIM liveness so an actively-syncing peer is never suspected or
+    // evicted from the gossip set just because its (lower-frequency) pings
+    // were starved behind gossip traffic on a slow transport. No-op for
+    // unknown/removed peers.
+    peerRegistry.updatePeerContact(message.sender, nowMs);
+
     try {
       final protocolMessage = _codec.decode(message.bytes);
 
