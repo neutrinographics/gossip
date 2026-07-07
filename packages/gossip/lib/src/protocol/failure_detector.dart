@@ -141,7 +141,6 @@ class FailureDetector {
   static const Duration _minProbeInterval = Duration(milliseconds: 500);
   static const Duration _maxProbeInterval = Duration(seconds: 30);
   static const int _probeIntervalMultiplier = 3;
-  static const Duration _intermediaryTimeout = Duration(milliseconds: 500);
 
   // ---------------------------------------------------------------------------
   // State
@@ -775,10 +774,15 @@ class FailureDetector {
       final ping = Ping(sender: localNode, sequence: localSeq);
       await _safeSend(pingReq.target, _codec.encode(ping), 'Ping');
 
+      // Adaptive per-target timeout, not a fixed 500ms: on BLE a target's
+      // RTT can exceed 500ms, and a fixed timeout made the intermediary
+      // abandon the relay before the target could answer — wasting the
+      // whole indirect phase while the requester still waited out its own
+      // (longer) timeout.
       gotAck = await _awaitAckWithTimeout(
         pending,
         localSeq,
-        _intermediaryTimeout,
+        effectivePingTimeoutForPeer(pingReq.target),
       );
     } finally {
       _cleanupPendingPing(localSeq);
