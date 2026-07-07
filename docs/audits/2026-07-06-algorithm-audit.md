@@ -16,7 +16,8 @@
 - ✅ **G2** — sync-on-connect: `addPeer` kicks off an immediate targeted DigestRequest (`708575c`).
 - ✅ **G4** — catch-up continuation: `DeltaResponse.hasMore` drives an immediate continuation request, draining a backlog at link speed (`62aa4c9`).
 - ✅ **H4** — digests budgeted with round-robin stream rotation; responder scopes/budgets its reply; single oversized stream skipped with a distinct error (`f2eba32`).
-- ⏳ Remaining: H1 (transport priority queue — port from nearby), H3, G3, M3–M6, G5, L1–L5.
+- ✅ **G3** — periodic auto-compaction enforces retention policies (`CoordinatorConfig.compactionInterval`, default 5 min); fixes the chat presence-stream leak (`b483f1d`).
+- ⏳ Remaining: H1 (transport priority queue — port from nearby), H3, M3–M6, G5, L1–L5.
 
 ---
 
