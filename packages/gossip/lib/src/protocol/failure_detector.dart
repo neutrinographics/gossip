@@ -159,6 +159,18 @@ class FailureDetector {
   int _nextSequence = 1;
   int _unreachableProbeCounter = 0;
   int _unreachableProbeIndex = 0;
+
+  /// Shuffled round-robin order for main probe selection, with a cursor.
+  ///
+  /// Rebuilt (reshuffled) from the current probable set whenever the cursor
+  /// exhausts it. This guarantees every probable peer is probed once per
+  /// cycle — worst-case time-to-probe a specific peer is ~(n-1) rounds —
+  /// instead of pure-random selection's geometric coverage (which makes
+  /// SWIM detection latency scale O(n · threshold)). Ids no longer probable
+  /// (removed, held, gone unreachable) are skipped; newly probable peers
+  /// join at the next reshuffle.
+  final List<NodeId> _probeOrder = [];
+  int _probeOrderIndex = 0;
   StreamSubscription<IncomingMessage>? _messageSubscription;
   final Map<int, _PendingPing> _pendingPings = {};
   int _acksReceived = 0;
@@ -449,13 +461,19 @@ class FailureDetector {
     }
   }
 
-  /// Selects a random peer to probe (reachable or suspected).
+  /// Selects the next peer to probe (reachable or suspected), round-robin
+  /// over a shuffled order.
   ///
-  /// Includes suspected peers so they can recover by responding to probes
-  /// (SWIM's incarnation refutation mechanism).
-  ///
+  /// Includes suspected peers so they can recover by responding to probes.
   /// Peers with an active probing hold are excluded to prevent false
   /// positives during connection startup.
+  ///
+  /// Selection cycles through a shuffled permutation of the probable set:
+  /// every peer is probed exactly once per cycle, then the set is
+  /// reshuffled. This bounds the worst-case time to probe a specific
+  /// (e.g. silently-dead) peer to ~(n-1) rounds — pure-random selection
+  /// would give a geometric distribution with a long tail, the root of
+  /// H3's O(n · threshold) detection latency.
   Peer? selectRandomPeer() {
     final nowMs = timePort.nowMs;
     final probable = peerRegistry.probablePeers.where((p) {
@@ -464,7 +482,24 @@ class FailureDetector {
       return nowMs >= holdUntil;
     }).toList();
     if (probable.isEmpty) return null;
-    return probable[_random.nextInt(probable.length)];
+
+    final byId = {for (final p in probable) p.id: p};
+
+    // Advance the cursor, skipping ids that are no longer probable
+    // (removed / held / gone unreachable since the last reshuffle).
+    while (_probeOrderIndex < _probeOrder.length) {
+      final peer = byId[_probeOrder[_probeOrderIndex++]];
+      if (peer != null) return peer;
+    }
+
+    // Cycle exhausted (or first call / membership changed): reshuffle the
+    // current probable set and begin a fresh cycle.
+    _probeOrder
+      ..clear()
+      ..addAll(byId.keys)
+      ..shuffle(_random);
+    _probeOrderIndex = 0;
+    return byId[_probeOrder[_probeOrderIndex++]];
   }
 
   // ---------------------------------------------------------------------------
