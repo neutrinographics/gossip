@@ -30,6 +30,8 @@
 
 **All audit findings remediated.** The core `gossip` package is 865 tests green; `gossip_bluey` 155; chat example 193; analyzer clean across the board.
 
+**Deferred follow-ups** (non-correctness, tracked under the *Sync engine* track in [`../roadmap.md`](../roadmap.md)): frame-multiplexing to fully eliminate BLE head-of-line blocking (H1), a depth ceiling on the send queues (H1), and a data-driven revisit of the 5/15 SWIM thresholds (H3). Suspicion dissemination / SWIM refutation is a **deliberate non-goal** (the deployment relies on the transport's fast membership oracle), not deferred work.
+
 ---
 
 ## Bottom line
