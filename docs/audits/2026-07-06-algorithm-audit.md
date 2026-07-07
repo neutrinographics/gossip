@@ -17,7 +17,8 @@
 - ✅ **G4** — catch-up continuation: `DeltaResponse.hasMore` drives an immediate continuation request, draining a backlog at link speed (`62aa4c9`).
 - ✅ **H4** — digests budgeted with round-robin stream rotation; responder scopes/budgets its reply; single oversized stream skipped with a distinct error (`f2eba32`).
 - ✅ **G3** — periodic auto-compaction enforces retention policies (`CoordinatorConfig.compactionInterval`, default 5 min); fixes the chat presence-stream leak (`b483f1d`).
-- ⏳ Remaining: H1 (transport priority queue — port from nearby), H3, M3–M6, G5, L1–L5.
+- ✅ **H1** — `gossip_bluey`'s `ConnectionManager` now uses a per-peer two-lane priority send queue (SWIM pings/acks jump ahead of queued gossip) and reports real `pendingSendCount`/`totalPendingSendCount`, so the core's per-peer congestion gate and high-priority pings actually work on BLE. Whole-message granularity (no mid-frame preemption); ping wait bounded to ≤1 in-flight delta (`c982d57`). Full HOL elimination would need frame-level multiplexing (follow-up); queues remain depth-unbounded — natural backpressure now comes from the engine's congestion gate (minor follow-up: hard ceiling).
+- ⏳ Remaining: H3, M3–M6, G5, L1–L5.
 
 ---
 
