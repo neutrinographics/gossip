@@ -14,7 +14,8 @@
 - ✅ **Contiguity guard** — `handleDeltaResponse` applies only the per-author contiguous run, hardening the merge path and making unsolicited pushes safe (`7526336`).
 - ✅ **G1** — reactive push-on-write: a local write is debounced and pushed directly to peers; paused engines serve but don't ingest/pull (`52a6d25`).
 - ✅ **G2** — sync-on-connect: `addPeer` kicks off an immediate targeted DigestRequest (`708575c`).
-- ⏳ Remaining: G4 (catch-up continuation), H1 (transport priority queue — port from nearby), H3/H4, G3, M3–M6, G5, L1–L5.
+- ✅ **G4** — catch-up continuation: `DeltaResponse.hasMore` drives an immediate continuation request, draining a backlog at link speed (`62aa4c9`).
+- ⏳ Remaining: H1 (transport priority queue — port from nearby), H3, H4, G3, M3–M6, G5, L1–L5.
 
 ---
 
