@@ -101,7 +101,13 @@ class FailureDetector {
   final Duration _pingTimeout;
   final Duration _probeInterval;
   final RttTracker _rttTracker;
-  final bool _staticTimeoutsProvided;
+
+  /// Whether a static ping timeout / probe interval was supplied. Tracked
+  /// independently: passing one static knob must NOT disable adaptive
+  /// timing on the other (a static `probeInterval` must not pin the ping
+  /// timeout at its 500ms fallback — the ADR-013 regression).
+  final bool _staticPingTimeoutProvided;
+  final bool _staticProbeIntervalProvided;
   final Random _random;
   final ProtocolCodec _codec = ProtocolCodec();
 
@@ -123,7 +129,8 @@ class FailureDetector {
        _probeInterval = probeInterval ?? const Duration(milliseconds: 1000),
        _random = random ?? Random(),
        _rttTracker = rttTracker ?? RttTracker(),
-       _staticTimeoutsProvided = pingTimeout != null || probeInterval != null;
+       _staticPingTimeoutProvided = pingTimeout != null,
+       _staticProbeIntervalProvided = probeInterval != null;
 
   // ---------------------------------------------------------------------------
   // Constants
@@ -210,7 +217,7 @@ class FailureDetector {
   ///
   /// Falls back to static timeout if one was provided at construction.
   Duration get effectivePingTimeout {
-    if (_staticTimeoutsProvided) return _pingTimeout;
+    if (_staticPingTimeoutProvided) return _pingTimeout;
     return _rttTracker.suggestedTimeout(
       minTimeout: _minPingTimeout,
       maxTimeout: _maxPingTimeout,
@@ -223,7 +230,7 @@ class FailureDetector {
   /// global [effectivePingTimeout]. This lets fast peers use shorter
   /// timeouts while slow peers get longer ones.
   Duration effectivePingTimeoutForPeer(NodeId peerId) {
-    if (_staticTimeoutsProvided) return _pingTimeout;
+    if (_staticPingTimeoutProvided) return _pingTimeout;
     final peerRtt = peerRegistry.getPeer(peerId)?.metrics.rttEstimate;
     if (peerRtt != null) {
       return peerRtt.suggestedTimeout(
@@ -239,7 +246,7 @@ class FailureDetector {
   /// Computed as 3× the effective ping timeout to allow time for both
   /// direct and indirect probes within each interval.
   Duration get effectiveProbeInterval {
-    if (_staticTimeoutsProvided) return _probeInterval;
+    if (_staticProbeIntervalProvided) return _probeInterval;
     final baseInterval = effectivePingTimeout * _probeIntervalMultiplier;
     if (baseInterval < _minProbeInterval) return _minProbeInterval;
     if (baseInterval > _maxProbeInterval) return _maxProbeInterval;

@@ -210,4 +210,66 @@ void main() {
       h.stopListening();
     });
   });
+
+  group('FailureDetector per-knob static timing (H2)', () {
+    test(
+      'a static probeInterval does NOT disable adaptive ping timeout',
+      () {
+        // The chat config passes a static probeInterval but leaves
+        // pingTimeout null — ping timeout must stay adaptive, not snap to
+        // the 500ms static default.
+        final rttTracker = RttTracker(
+          initialEstimate: RttEstimate(
+            smoothedRtt: const Duration(milliseconds: 300),
+            rttVariance: const Duration(milliseconds: 75),
+          ),
+        );
+        final h = FailureDetectorTestHarness(
+          probeInterval: const Duration(seconds: 3),
+          rttTracker: rttTracker,
+        );
+
+        // Adaptive: 300 + 4*75 = 600ms — NOT the 500ms static fallback.
+        expect(
+          h.detector.effectivePingTimeout,
+          equals(const Duration(milliseconds: 600)),
+          reason:
+              'setting probeInterval must not pin ping timeout at 500ms',
+        );
+      },
+    );
+
+    test(
+      'a static pingTimeout does NOT disable adaptive probe interval',
+      () {
+        final h = FailureDetectorTestHarness(
+          pingTimeout: const Duration(milliseconds: 800),
+        );
+
+        // Adaptive probe interval = 3 * effectivePingTimeout = 3 * 800ms,
+        // NOT the 1000ms static default the all-or-nothing flag produced.
+        expect(
+          h.detector.effectiveProbeInterval,
+          equals(const Duration(milliseconds: 2400)),
+          reason:
+              'setting pingTimeout must not pin probe interval at 1000ms',
+        );
+      },
+    );
+
+    test('both static → both static (unchanged behaviour)', () {
+      final h = FailureDetectorTestHarness(
+        pingTimeout: const Duration(milliseconds: 700),
+        probeInterval: const Duration(seconds: 4),
+      );
+      expect(
+        h.detector.effectivePingTimeout,
+        equals(const Duration(milliseconds: 700)),
+      );
+      expect(
+        h.detector.effectiveProbeInterval,
+        equals(const Duration(seconds: 4)),
+      );
+    });
+  });
 }
