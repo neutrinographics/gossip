@@ -732,6 +732,50 @@ class GossipEngine {
     return _computeDeltaRequests(response.digests);
   }
 
+  /// Selects the entries that can be applied without leaving a per-author
+  /// sequence gap: for each author, the contiguous run starting at
+  /// `ourVersion[author] + 1`. Entries beyond a gap are dropped (anti-entropy
+  /// backfills them contiguously later); entries at or below our version are
+  /// skipped as already held. Preserves the original entry order.
+  ///
+  /// This upholds the version-vector high-water-mark invariant: applying a
+  /// gapped entry would advance the vector past entries we don't actually
+  /// hold, so no peer would ever return them again — a permanent silent gap.
+  /// Matters most for unsolicited pushes (reactive dissemination), which can
+  /// deliver an arbitrary suffix; the request/response path is already
+  /// contiguous by construction, so this is also defense-in-depth there.
+  List<LogEntry> _selectContiguousEntries(
+    List<LogEntry> entries,
+    VersionVector ourVersion,
+  ) {
+    final byAuthor = <NodeId, List<LogEntry>>{};
+    for (final entry in entries) {
+      byAuthor.putIfAbsent(entry.author, () => []).add(entry);
+    }
+
+    final acceptUpTo = <NodeId, int>{};
+    for (final authorEntry in byAuthor.entries) {
+      final author = authorEntry.key;
+      final authorEntries = authorEntry.value
+        ..sort((a, b) => a.sequence.compareTo(b.sequence));
+      var next = ourVersion[author] + 1;
+      for (final entry in authorEntries) {
+        if (entry.sequence < next) continue; // already held
+        if (entry.sequence != next) break; // gap — stop accepting this author
+        next++;
+      }
+      acceptUpTo[author] = next - 1;
+    }
+
+    return entries
+        .where(
+          (e) =>
+              e.sequence > ourVersion[e.author] &&
+              e.sequence <= acceptUpTo[e.author]!,
+        )
+        .toList();
+  }
+
   /// Sends the given [requests] to [recipient], releasing the pending flag
   /// for any that fail to transmit (the peer can never answer a request it
   /// didn't receive, so holding the flag would block re-requesting for the
@@ -948,9 +992,7 @@ class GossipEngine {
       response.channelId,
       response.streamId,
     );
-    final newEntries = response.entries
-        .where((e) => e.sequence > ourVersion[e.author])
-        .toList();
+    final newEntries = _selectContiguousEntries(response.entries, ourVersion);
     if (newEntries.isEmpty) return;
 
     // Snapshot the current tail HLC before appending to detect out-of-order
