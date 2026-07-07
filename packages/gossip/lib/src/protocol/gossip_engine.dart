@@ -483,22 +483,28 @@ class GossipEngine {
         );
         final response = await _handleDigestRequest(protocolMessage);
         await _sendMessage(message.sender, response);
+        // Push-pull: the request already carries the initiator's version
+        // vectors, so reciprocate by pulling anything they advertised that
+        // we lack — making each exchange bidirectional instead of pulling
+        // only toward the initiator. Reciprocation is *active* sync, so
+        // gate it on running: a paused/listen-only engine still answers
+        // digests (serves data) but must not initiate new pulls.
+        if (_isRunning) {
+          await _sendDeltaRequests(
+            message.sender,
+            await _computeDeltaRequests(protocolMessage.digests),
+          );
+        }
       } else if (protocolMessage is DigestResponse) {
         _log(
           LogLevel.trace,
           'RECV DigestResponse from ${_shortId(message.sender.value)}: '
           '${protocolMessage.digests.length} channels',
         );
-        final deltaRequests = await handleDigestResponse(protocolMessage);
-        for (final request in deltaRequests) {
-          final sent = await _sendMessage(message.sender, request);
-          if (!sent) {
-            // The peer can never answer a request it didn't receive;
-            // holding the pending flag would block re-requesting for the
-            // full timeout. Release it so the next round can retry.
-            _pendingDeltaRequests.remove((request.channelId, request.streamId));
-          }
-        }
+        await _sendDeltaRequests(
+          message.sender,
+          await handleDigestResponse(protocolMessage),
+        );
       } else if (protocolMessage is DeltaRequest) {
         _log(
           LogLevel.debug,
@@ -722,10 +728,40 @@ class GossipEngine {
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
   Future<List<DeltaRequest>> handleDigestResponse(
     DigestResponse response,
+  ) {
+    return _computeDeltaRequests(response.digests);
+  }
+
+  /// Sends the given [requests] to [recipient], releasing the pending flag
+  /// for any that fail to transmit (the peer can never answer a request it
+  /// didn't receive, so holding the flag would block re-requesting for the
+  /// full timeout).
+  Future<void> _sendDeltaRequests(
+    NodeId recipient,
+    List<DeltaRequest> requests,
+  ) async {
+    for (final request in requests) {
+      final sent = await _sendMessage(recipient, request);
+      if (!sent) {
+        _pendingDeltaRequests.remove((request.channelId, request.streamId));
+      }
+    }
+  }
+
+  /// Compares a peer's advertised [peerDigests] against our own state and
+  /// returns the [DeltaRequest]s needed to pull entries we are missing.
+  ///
+  /// Shared by both directions of anti-entropy: the DigestResponse path
+  /// (we initiated; pull from the responder) and the DigestRequest path
+  /// (they initiated; reciprocate using the digests they already sent us,
+  /// i.e. push-pull). Streams with a non-expired pending request are
+  /// skipped for dedup.
+  Future<List<DeltaRequest>> _computeDeltaRequests(
+    List<ChannelDigest> peerDigests,
   ) async {
     final deltaRequests = <DeltaRequest>[];
 
-    for (final channelDigest in response.digests) {
+    for (final channelDigest in peerDigests) {
       final channel = _channels[channelDigest.channelId];
       if (channel == null) {
         _emitError(
