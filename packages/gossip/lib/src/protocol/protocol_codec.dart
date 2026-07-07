@@ -180,6 +180,7 @@ class ProtocolCodec {
       'channelId': message.channelId.value,
       'streamId': message.streamId.value,
       'entries': _encodeLogEntries(message.entries),
+      'hasMore': message.hasMore,
     };
   }
 
@@ -337,6 +338,8 @@ class ProtocolCodec {
       channelId: ChannelId(json['channelId'] as String),
       streamId: StreamId(json['streamId'] as String),
       entries: _decodeLogEntries(json['entries'] as List),
+      // Absent on legacy senders → defaults to false (no continuation).
+      hasMore: json['hasMore'] as bool? ?? false,
     );
   }
 

@@ -70,6 +70,35 @@ void main() {
       expect(encoded.length, lessThan(12 * 1024));
     });
 
+    test('round-trips the DeltaResponse hasMore flag', () {
+      final encoded = codec.encode(
+        DeltaResponse(
+          sender: NodeId('sender'),
+          channelId: ChannelId('ch1'),
+          streamId: StreamId('s1'),
+          entries: const [],
+          hasMore: true,
+        ),
+      );
+      final decoded = codec.decode(encoded) as DeltaResponse;
+      expect(decoded.hasMore, isTrue);
+    });
+
+    test('a legacy DeltaResponse without hasMore decodes to false', () {
+      final legacyJson = {
+        'sender': 'sender',
+        'channelId': 'ch1',
+        'streamId': 's1',
+        'entries': <dynamic>[],
+      };
+      final bytes = Uint8List.fromList([
+        6, // DeltaResponse type byte
+        ...utf8.encode(jsonEncode(legacyJson)),
+      ]);
+      final decoded = codec.decode(bytes) as DeltaResponse;
+      expect(decoded.hasMore, isFalse);
+    });
+
     test('still decodes legacy int-list payloads', () {
       final legacyJson = {
         'sender': 'sender',

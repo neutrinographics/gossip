@@ -651,7 +651,11 @@ class GossipEngine {
         // drops incoming deltas (including unsolicited reactive pushes) and
         // relies on anti-entropy to re-fetch them after resume.
         if (_isRunning) {
-          await handleDeltaResponse(protocolMessage);
+          final continuation = await handleDeltaResponse(protocolMessage);
+          if (continuation != null) {
+            // Drain the rest of a truncated backlog immediately.
+            await _sendDeltaRequests(message.sender, [continuation]);
+          }
         }
       }
     } catch (e) {
@@ -1023,11 +1027,13 @@ class GossipEngine {
       request.since,
     );
 
+    final (fitted, hasMore) = _fitDeltaToBudget(request, delta);
     return DeltaResponse(
       sender: localNode,
       channelId: request.channelId,
       streamId: request.streamId,
-      entries: _fitDeltaToBudget(request, delta),
+      entries: fitted,
+      hasMore: hasMore,
     );
   }
 
@@ -1038,8 +1044,15 @@ class GossipEngine {
   /// never be synced: it is reported via [ErrorCallback] and its author's
   /// remaining entries are excluded from this response to preserve
   /// per-author sequence contiguity — but other authors keep syncing.
-  List<LogEntry> _fitDeltaToBudget(DeltaRequest request, List<LogEntry> delta) {
-    if (delta.isEmpty) return delta;
+  /// Returns the fitted prefix plus a `hasMore` flag: true when the page was
+  /// cut short by the byte budget (deliverable entries remain for a future
+  /// page). A truncation caused only by undeliverable "poison" entries does
+  /// NOT set hasMore — continuing would make no progress and loop forever.
+  (List<LogEntry>, bool) _fitDeltaToBudget(
+    DeltaRequest request,
+    List<LogEntry> delta,
+  ) {
+    if (delta.isEmpty) return (delta, false);
 
     final baseSize = _codec
         .encode(
@@ -1054,6 +1067,7 @@ class GossipEngine {
 
     final selected = <LogEntry>[];
     final blockedAuthors = <NodeId>{};
+    var truncated = false;
     // +1 per entry for the JSON array separator.
     var size = baseSize;
     for (final entry in delta) {
@@ -1079,15 +1093,16 @@ class GossipEngine {
       }
 
       if (size + cost > maxDeltaResponseBytes) {
-        // Page full. Later rounds deliver the rest once the requester's
-        // version vector advances past this page.
+        // Page full and this entry is deliverable in a future page — signal
+        // the requester to continue immediately.
+        truncated = true;
         break;
       }
 
       size += cost;
       selected.add(entry);
     }
-    return selected;
+    return (selected, truncated);
   }
 
   /// Handles delta response from a peer (final step).
@@ -1102,25 +1117,33 @@ class GossipEngine {
   /// this stream.
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
-  Future<void> handleDeltaResponse(DeltaResponse response) async {
+  /// Merges a [DeltaResponse] into the entry store.
+  ///
+  /// Returns a continuation [DeltaRequest] (for the dispatcher to send) when
+  /// the sender truncated the response to the size budget ([hasMore]) AND we
+  /// applied new entries — draining a backlog at link speed instead of one
+  /// page per periodic round. Returns null otherwise (no more, or no
+  /// progress — the latter guards against an infinite continuation loop).
+  Future<DeltaRequest?> handleDeltaResponse(DeltaResponse response) async {
+    final key = (response.channelId, response.streamId);
     // Clear pending flag to allow future requests for this stream
-    _pendingDeltaRequests.remove((response.channelId, response.streamId));
+    _pendingDeltaRequests.remove(key);
 
-    if (response.entries.isEmpty) return;
+    if (response.entries.isEmpty) return null;
 
     _updateHlcFromEntries(response.entries);
 
-    // Keep only entries we don't already have. Duplicate or stale
-    // DeltaResponses (a slow peer answering after the pending timeout,
-    // overlap between two peers' responses) must not be handed to the
-    // repository — whose contract rejects duplicates — nor re-reported
-    // via onEntriesMerged as if they were new.
+    // Keep only entries we don't already have, in per-author contiguous
+    // order. Duplicate/stale DeltaResponses (a slow peer answering after the
+    // pending timeout, overlap between two peers' responses) must not be
+    // handed to the repository — whose contract rejects duplicates — nor
+    // re-reported via onEntriesMerged as if they were new.
     final ourVersion = await _computeVersionVector(
       response.channelId,
       response.streamId,
     );
     final newEntries = _selectContiguousEntries(response.entries, ourVersion);
-    if (newEntries.isEmpty) return;
+    if (newEntries.isEmpty) return null;
 
     // Snapshot the current tail HLC before appending to detect out-of-order
     final previousTailHlc = await entryRepository.getTailTimestamp(
@@ -1145,6 +1168,22 @@ class GossipEngine {
       newEntries,
       containsOutOfOrderEntries,
     );
+
+    if (response.hasMore) {
+      // Continue draining from the same peer at our advanced version.
+      final advanced = await _computeVersionVector(
+        response.channelId,
+        response.streamId,
+      );
+      _pendingDeltaRequests[key] = timePort.nowMs;
+      return DeltaRequest(
+        sender: localNode,
+        channelId: response.channelId,
+        streamId: response.streamId,
+        since: advanced,
+      );
+    }
+    return null;
   }
 
   /// Clears all pending delta requests.

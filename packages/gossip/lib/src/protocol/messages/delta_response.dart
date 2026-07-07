@@ -35,10 +35,18 @@ class DeltaResponse extends ProtocolMessage {
   /// for each author. May be empty if the requester is already up-to-date.
   final List<LogEntry> entries;
 
+  /// Whether the sender truncated this response to fit the size budget and
+  /// still has more deliverable entries for this stream. When true, the
+  /// requester immediately issues a continuation [DeltaRequest] with its
+  /// advanced version vector, draining a backlog at link speed instead of
+  /// one page per periodic round.
+  final bool hasMore;
+
   const DeltaResponse({
     required NodeId sender,
     required this.channelId,
     required this.streamId,
     required this.entries,
+    this.hasMore = false,
   }) : super(sender);
 }
