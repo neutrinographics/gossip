@@ -7,6 +7,12 @@
 
 **Verification status:** every HIGH finding traced and confirmed directly in source (transport `pendingSendCount`/priority, static-timeout flag, pull-only responder, unbounded digest). MEDIUM/LOW are auditor-reported; the load-bearing ones (dead incarnation subsystem, gossip-never-resets-SWIM-contact, dead partner-rotation, fixed intermediary timeout) are spot-verified by grep.
 
+**Remediation status (updated as fixes land):**
+- ✅ **H2** — static ping-timeout / probe-interval flags decoupled (`8b8ab80`). Chat now gets adaptive per-peer ping timeouts.
+- ✅ **M2** — gossip receipt feeds `updatePeerContact`, so an actively-syncing peer isn't false-evicted (`0ed2c58`).
+- ✅ **M1** — push-pull reciprocation on `DigestRequest`, gated on running so pause semantics hold (`f8c2e1c`).
+- ⏳ Remaining: G1, G2, G4 (event-driven triggers), H1 (transport priority queue), H3/H4, G3, M3–M6, L1–L5.
+
 ---
 
 ## Bottom line
