@@ -122,6 +122,20 @@ class CoordinatorConfig {
   /// messages.
   final int maxDeltaResponseBytes;
 
+  /// How often the library applies each stream's retention policy, pruning
+  /// entries the policy no longer keeps.
+  ///
+  /// Retention policies attached at stream creation are declarative; this is
+  /// what actually enforces them. Without periodic compaction a stream with a
+  /// pruning policy (e.g. [TimeBasedRetention]) would grow without bound.
+  /// Streams with a retain-all policy are skipped cheaply.
+  ///
+  /// **Default: 5 minutes.** Set to `null` (or [Duration.zero]) to disable
+  /// auto-compaction, in which case the application must call
+  /// `EventStream.compact()` itself. Requires a `timerPort` (auto-compaction
+  /// is inactive in local-only mode).
+  final Duration? compactionInterval;
+
   /// Creates a [CoordinatorConfig] with the specified options.
   const CoordinatorConfig({
     this.suspicionThreshold = 5,
@@ -133,6 +147,7 @@ class CoordinatorConfig {
     this.pingTimeout,
     this.adaptiveTimingEnabled = true,
     this.maxDeltaResponseBytes = 30 * 1024,
+    this.compactionInterval = const Duration(minutes: 5),
   });
 
   /// Default configuration with standard values.

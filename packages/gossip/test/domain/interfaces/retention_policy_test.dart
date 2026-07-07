@@ -17,6 +17,35 @@ void main() {
       payload: Uint8List.fromList([1, 2, 3]),
     );
 
+    group('retainsAll', () {
+      test('KeepAllRetention.retainsAll is true (auto-compaction skips it)',
+          () {
+        expect(const KeepAllRetention().retainsAll, isTrue);
+      });
+
+      test('pruning policies report retainsAll false', () {
+        expect(const TimeBasedRetention(Duration(seconds: 5)).retainsAll,
+            isFalse);
+        expect(const CountBasedRetention(1).retainsAll, isFalse);
+        expect(
+          const CompositeRetention([CountBasedRetention(1)]).retainsAll,
+          isFalse,
+        );
+      });
+
+      test('a composite containing a retain-all policy retains all (union)',
+          () {
+        // Union semantics: if any sub-policy keeps everything, nothing prunes.
+        expect(
+          const CompositeRetention([
+            KeepAllRetention(),
+            CountBasedRetention(1),
+          ]).retainsAll,
+          isTrue,
+        );
+      });
+    });
+
     group('KeepAllRetention', () {
       test('returns all entries unchanged', () {
         const policy = KeepAllRetention();

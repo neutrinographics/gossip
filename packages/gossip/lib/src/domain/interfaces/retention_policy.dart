@@ -33,6 +33,12 @@ abstract interface class RetentionPolicy {
   /// - [entries]: All current entries in the stream (ordered by timestamp)
   /// - [now]: Current hybrid logical clock time
   List<LogEntry> compact(List<LogEntry> entries, Hlc now);
+
+  /// Whether this policy never prunes anything (retains all entries).
+  ///
+  /// Lets auto-compaction skip loading and scanning streams that can never
+  /// shrink (e.g. [KeepAllRetention]), avoiding needless work on large logs.
+  bool get retainsAll;
 }
 
 /// Retains all entries indefinitely.
@@ -46,6 +52,9 @@ class KeepAllRetention implements RetentionPolicy {
 
   @override
   List<LogEntry> compact(List<LogEntry> entries, Hlc now) => entries;
+
+  @override
+  bool get retainsAll => true;
 }
 
 /// Retains entries newer than a specified age.
@@ -72,6 +81,9 @@ class TimeBasedRetention implements RetentionPolicy {
     final cutoff = now.subtract(maxAge);
     return entries.where((e) => e.timestamp >= cutoff).toList();
   }
+
+  @override
+  bool get retainsAll => false;
 }
 
 /// Retains the most recent N entries per author.
@@ -110,6 +122,9 @@ class CountBasedRetention implements RetentionPolicy {
     retained.sort((a, b) => a.timestamp.compareTo(b.timestamp));
     return retained;
   }
+
+  @override
+  bool get retainsAll => false;
 }
 
 /// Combines multiple retention policies with union semantics.
@@ -141,4 +156,9 @@ class CompositeRetention implements RetentionPolicy {
     }
     return entries.where((e) => retained.contains(e.id)).toList();
   }
+
+  /// Union semantics: if any sub-policy retains everything, the composite
+  /// retains everything (nothing is ever pruned).
+  @override
+  bool get retainsAll => policies.any((p) => p.retainsAll);
 }

@@ -194,54 +194,13 @@ class EventStream {
   /// If [resetState] is `true` (the default), forces a full rebuild of
   /// the materialized state after compaction so it reflects only the
   /// surviving entries.
-  Future<CompactionResult?> compact({bool resetState = true}) async {
-    final retention = await retentionPolicy;
-    if (retention == null) return null;
-
-    final entries = await getAll();
-    if (entries.isEmpty) return null;
-
-    final now = await channelService.takeTimestamp();
-    final survivors = retention.compact(entries.cast<LogEntry>(), now);
-    final survivorIds = survivors.map((e) => e.id).toSet();
-    final toPrune = entries
-        .cast<LogEntry>()
-        .where((e) => !survivorIds.contains(e.id))
-        .toList();
-
-    if (toPrune.isEmpty) return null;
-
-    final oldVersion = await channelService.getVersionVector(channelId, id);
-
-    await channelService.removeEntries(
+  Future<CompactionResult?> compact({bool resetState = true}) {
+    // Delegates to the application layer, which also drives the library's
+    // periodic auto-compaction (`CoordinatorConfig.compactionInterval`).
+    return channelService.compactStream(
       channelId,
       id,
-      toPrune.map((e) => e.id).toList(),
+      resetMaterializers: resetState,
     );
-
-    // The repository's version vector is a monotonic high-water mark, so
-    // these two are equal by design — compaction must never regress the
-    // advertised version (that would resurrect pruned entries via gossip).
-    final newVersion = await channelService.getVersionVector(channelId, id);
-
-    final result = CompactionResult(
-      entriesRemoved: toPrune.length,
-      entriesRetained: survivors.length,
-      bytesFreed: toPrune.fold(0, (sum, e) => sum + e.payload.length),
-      oldBaseVersion: oldVersion,
-      newBaseVersion: newVersion,
-    );
-
-    if (resetState) {
-      await this.resetState();
-    }
-
-    // TODO(compaction): Emit a StreamCompacted domain event here once the
-    // event emission infrastructure is extended to support it from the facade.
-    // Currently, domain events are emitted via ChannelService._emitEvents()
-    // which is private. Compaction would need to be moved into ChannelService
-    // (or a new public emit hook added) to wire this up cleanly.
-
-    return result;
   }
 }

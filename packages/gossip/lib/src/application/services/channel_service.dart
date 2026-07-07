@@ -10,6 +10,7 @@ import '../../domain/value_objects/hlc.dart';
 import '../../domain/aggregates/channel_aggregate.dart';
 import '../../domain/interfaces/channel_repository.dart';
 import '../../domain/interfaces/retention_policy.dart';
+import '../../domain/results/compaction_result.dart';
 import '../../domain/interfaces/entry_repository.dart';
 import '../../domain/interfaces/local_node_repository.dart';
 import '../../domain/interfaces/state_materializer.dart';
@@ -601,5 +602,74 @@ class ChannelService {
   /// onDone instead of leaking for the process lifetime.
   Future<void> disposeAllMaterializers() async {
     await _materializationService?.disposeAll();
+  }
+
+  /// Applies a stream's retention policy, pruning entries it no longer keeps.
+  ///
+  /// Returns a [CompactionResult] describing what was removed, or null if
+  /// there was nothing to prune (no entry store, no policy, a retain-all
+  /// policy, empty stream, or all entries survive). When [resetMaterializers]
+  /// is true (the default) the stream's materialized state is rebuilt so it
+  /// reflects only the surviving entries.
+  ///
+  /// The version vector is a monotonic high-water mark, so it never regresses
+  /// on compaction — pruned entries are not re-advertised (which would
+  /// resurrect them via gossip).
+  Future<CompactionResult?> compactStream(
+    ChannelId channelId,
+    StreamId streamId, {
+    bool resetMaterializers = true,
+  }) async {
+    if (_entryRepository == null) return null;
+
+    final retention = await getRetentionPolicy(channelId, streamId);
+    if (retention == null || retention.retainsAll) return null;
+
+    final entries = await getEntries(channelId, streamId);
+    if (entries.isEmpty) return null;
+
+    final now = await takeTimestamp();
+    final survivors = retention.compact(entries, now);
+    final survivorIds = survivors.map((e) => e.id).toSet();
+    final toPrune =
+        entries.where((e) => !survivorIds.contains(e.id)).toList();
+    if (toPrune.isEmpty) return null;
+
+    final oldVersion = await getVersionVector(channelId, streamId);
+    await removeEntries(
+      channelId,
+      streamId,
+      toPrune.map((e) => e.id).toList(),
+    );
+    final newVersion = await getVersionVector(channelId, streamId);
+
+    if (resetMaterializers) {
+      await resetState(channelId, streamId);
+    }
+
+    return CompactionResult(
+      entriesRemoved: toPrune.length,
+      entriesRetained: survivors.length,
+      bytesFreed: toPrune.fold(0, (sum, e) => sum + e.payload.length),
+      oldBaseVersion: oldVersion,
+      newBaseVersion: newVersion,
+    );
+  }
+
+  /// Applies every stream's retention policy across all channels. Retain-all
+  /// streams are skipped without loading their entries. Called by the
+  /// Coordinator's periodic auto-compaction.
+  Future<void> compactAll() async {
+    if (_channelRepository == null || _entryRepository == null) return;
+
+    for (final channelId in await _channelRepository.listIds()) {
+      final channel = await _channelRepository.findById(channelId);
+      if (channel == null) continue;
+      for (final streamId in channel.streamIds) {
+        final retention = channel.getRetentionPolicy(streamId);
+        if (retention == null || retention.retainsAll) continue;
+        await compactStream(channelId, streamId);
+      }
+    }
   }
 }

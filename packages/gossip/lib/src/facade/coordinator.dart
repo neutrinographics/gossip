@@ -144,6 +144,15 @@ class Coordinator {
   /// HLC clock for reading current clock state. Null in local-only mode.
   final HlcClock? _hlcClock;
 
+  /// Timer port, used for the periodic auto-compaction loop. Null in
+  /// local-only mode (no auto-compaction).
+  final TimePort? _timerPort;
+
+  /// Generation token for the auto-compaction loop, bumped on every
+  /// stop/pause/dispose so a scheduled tick from a previous run becomes
+  /// stale (same pattern as the engine schedulers).
+  int _compactionGeneration = 0;
+
   /// Gossip engine for anti-entropy synchronization.
   GossipEngine? _gossipEngine;
 
@@ -187,6 +196,7 @@ class Coordinator {
     required EntryRepository entryRepository,
     required CoordinatorConfig config,
     required HlcClock? hlcClock,
+    required TimePort? timerPort,
     required GossipEngine? gossipEngine,
     required FailureDetector? failureDetector,
     required StreamController<DomainEvent> eventsController,
@@ -199,6 +209,7 @@ class Coordinator {
        _entryRepository = entryRepository,
        _config = config,
        _hlcClock = hlcClock,
+       _timerPort = timerPort,
        _gossipEngine = gossipEngine,
        _failureDetector = failureDetector,
        _eventsController = eventsController;
@@ -313,6 +324,7 @@ class Coordinator {
       entryRepository: entryRepository,
       config: cfg,
       hlcClock: hlcClock,
+      timerPort: timerPort,
       gossipEngine: null, // Set below after coordinator is created
       failureDetector: null, // Set below after coordinator is created
       eventsController: eventsController,
@@ -405,6 +417,61 @@ class Coordinator {
         event.entry,
       );
     }
+  }
+
+  /// Starts the periodic auto-compaction loop (applies each stream's
+  /// retention policy). No-op without a timer port or when the interval is
+  /// disabled (null / non-positive).
+  void _startCompaction() {
+    final timerPort = _timerPort;
+    final interval = _config.compactionInterval;
+    if (timerPort == null || interval == null || interval <= Duration.zero) {
+      return;
+    }
+    _compactionGeneration++;
+    _scheduleNextCompaction(_compactionGeneration, timerPort, interval);
+  }
+
+  /// Invalidates any scheduled compaction tick (stop/pause/dispose).
+  void _stopCompaction() {
+    _compactionGeneration++;
+  }
+
+  void _scheduleNextCompaction(
+    int generation,
+    TimePort timerPort,
+    Duration interval,
+  ) {
+    if (_state != SyncState.running || generation != _compactionGeneration) {
+      return;
+    }
+    timerPort.delay(interval).then((_) async {
+      if (_state != SyncState.running || generation != _compactionGeneration) {
+        return;
+      }
+      try {
+        await _channelService.compactAll();
+      } catch (error) {
+        _handleError(
+          StorageSyncError(
+            SyncErrorType.storageFailure,
+            'Auto-compaction failed: $error',
+            occurredAt: DateTime.now(),
+            cause: error,
+          ),
+        );
+      }
+      _scheduleNextCompaction(generation, timerPort, interval);
+    }).catchError((Object error, StackTrace stackTrace) {
+      _handleError(
+        StorageSyncError(
+          SyncErrorType.storageFailure,
+          'Auto-compaction scheduling failed: $error',
+          occurredAt: DateTime.now(),
+          cause: error,
+        ),
+      );
+    });
   }
 
   /// Handles entries merged from peers and emits EntriesMerged events.
@@ -887,6 +954,8 @@ class Coordinator {
       _failureDetector!.startListening();
       _failureDetector!.start();
     }
+
+    _startCompaction();
   }
 
   /// Stops the coordinator and ceases all synchronization.
@@ -918,6 +987,7 @@ class Coordinator {
       _failureDetector!.stopListening();
     }
 
+    _stopCompaction();
     _transitionTo(SyncState.stopped);
   }
 
@@ -945,6 +1015,7 @@ class Coordinator {
       // Keep listening to handle incoming messages
     }
 
+    _stopCompaction();
     _transitionTo(SyncState.paused);
   }
 
@@ -978,6 +1049,8 @@ class Coordinator {
     if (_failureDetector != null) {
       _failureDetector!.start();
     }
+
+    _startCompaction();
   }
 
   /// Disposes the coordinator and releases all resources.
@@ -1006,6 +1079,7 @@ class Coordinator {
       }
     }
 
+    _stopCompaction();
     _transitionTo(SyncState.disposed);
 
     // Close materializer state streams so their listeners get onDone.
