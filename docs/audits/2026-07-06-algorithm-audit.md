@@ -21,9 +21,12 @@
 
 The through-line: the adaptive/backpressure/priority machinery is well-shaped *in the abstract* but is fed by the wrong signal (tiny pings pacing large payloads), neutralized by the real transport, and accidentally switched off by config.
 
+**Dissemination: only half the canonical design is present.** The library runs periodic anti-entropy (the completeness safety net) but has **no reactive push-on-write** (rumor mongering — the fast path). New writes wait for the next timer tick, and — compounded by pull-only (M1) — for another peer to pull from the writer, so a sent chat message can take several seconds to appear. This is an intentional scope choice, not a defect, but it is the biggest perceived-latency gap for interactive use (G1).
+
 | Severity | Count | Themes |
 |----------|-------|--------|
 | HIGH | 4 | Transport neutralizes backpressure+priority; static-timeout config regression; O(n·threshold) detection latency; unbounded digest sync-death |
+| GAP | 1 | No reactive dissemination (rumor mongering) — new writes wait for the periodic sweep |
 | MEDIUM | 6 | Pull-only (not push-pull); gossip doesn't reset SWIM liveness; sub-page pending timeout; min-SRTT pacing; dead incarnation subsystem; fixed intermediary timeout |
 | LOW | 5 | Dead partner-rotation; no jitter; stale convergence claim; unqualified convergence guarantee; ADR drift |
 
@@ -82,6 +85,25 @@ The through-line: the adaptive/backpressure/priority machinery is well-shaped *i
 
 **Severity:** design-flaw, correctness-adjacent (a genuine liveness hole). Latent at ≤8 *concurrent* devices; real for long-lived channels whose *lifetime* membership exceeds a few dozen.
 **Recommendation:** paginate digests under a byte budget the way `DeltaResponse` is paginated (split by channel/stream across rounds), and/or cap/rotate the author set, and/or delta-encode VVs. At minimum, detect oversize before send and emit a distinct fatal error instead of silent per-round send failures. Apply the same to `DeltaRequest.since`.
+
+---
+
+## 🟣 DESIGN GAP
+
+### G1. No reactive dissemination (rumor mongering) — new writes wait for the periodic sweep
+**Impact: HIGH for interactive/chat use. Verified: the write path has zero coupling to the gossip engine; `performGossipRound` fires only from the timer loop.**
+
+Canonical epidemic replication (Demers et al. 1987) combines **two** mechanisms: *rumor mongering* (on a new update, actively push it to peers right away — the fast path, O(log n) rounds) and *anti-entropy* (a periodic background digest/delta sweep — the completeness safety net). The recommended design runs both: rumor mongering for speed, anti-entropy for completeness.
+
+This library implements **only the anti-entropy safety net** (intentional per ADR-008's framing). There is no reactive path:
+- `GossipEngine` has no "trigger a round now" method (grep-verified).
+- `EventStream.append` → `ChannelService.appendEntry` → repository has **zero coupling to the gossip engine** (grep-verified).
+- `performGossipRound` is driven solely by the timer (`gossip_engine.dart:614`).
+
+So a local write sits in the repository until the next timer tick. **Compounded by pull-only (M1):** a round the writer *initiates* pulls data *toward* the writer — it does not push the write outward. The write propagates only when some *other* peer independently selects the writer; each node runs its own timer, so on average ~1 peer picks the writer per interval, then it spreads O(log n) intervals. Net for the chat app at its 2 s interval: **a sent message can take from ~2 s up to several seconds to appear on peers** — a very visible latency on the product's core action.
+
+**Severity:** design gap (intentional scope choice, not a defect), but HIGH-impact for interactive use. It is the single biggest thing between the chat app and instant-feeling delivery.
+**Recommendation:** add a debounced reactive push (design sketch in the appendix). De-risked by M2 (so extra traffic can't false-evict peers) and cleanest after H1 (priority lane); composes with M1.
 
 ---
 
@@ -144,12 +166,36 @@ No `Suspicion`/`Suspect` message type exists; incarnation is **never serialized*
 
 ## Suggested priority
 
-1. **H1** — real priority queue + `pendingSendCount` in the BLE transport (highest value, most involved; worth a design discussion first).
-2. **H2** — decouple the static-timeout config flag (small, high impact).
-3. **M2** — feed gossip receipt into `updatePeerContact` (one line; stops false eviction of syncing peers).
+Ordered to get the interactive-latency win (G1) safely and early rather than last:
+
+1. **H2 + M2 (+ M1)** — an afternoon; pure wins. H2 decouples the static-timeout flag; M2 feeds gossip receipt into `updatePeerContact` (one line) and is the specific de-risker that lets G1 add traffic without false-evicting peers; M1 adds push-pull reciprocation (cheap; composes with G1).
+2. **G1** — the reactive push-on-write path (design sketch below). The biggest perceived-latency win; safe to land here once M2 is in.
+3. **H1** — real priority queue + `pendingSendCount` in the BLE transport (highest robustness value, most involved; worth a design discussion). No longer a blocker for G1 once M2 is done, but still needed for scale/robustness.
 4. **H4** — bound/paginate digest and `DeltaRequest.since` size (prevents silent sync-death on long-lived channels).
-5. **M5** — delete the dead incarnation subsystem (removes complexity + misleading docs).
-6. **H3 / M1 / M3 / M4 / M6** — scheduling refinements (round-robin probe, push-pull reciprocation, adaptive pending timeout, per-selected-peer pacing, adaptive intermediary timeout).
+5. **M5** — delete the dead incarnation subsystem.
+6. **H3 / M3 / M4 / M6** — scheduling refinements (round-robin probe, adaptive pending timeout, per-selected-peer pacing, adaptive intermediary timeout).
 7. **L1–L5** — doc reconciliation and jitter.
 
-Items H1–H3 and M2 are the ones that change real BLE behavior today; the rest are latent, doc, or scale-dependent.
+Items G1, H1–H3, and M2 are the ones that change real BLE behavior today; the rest are latent, doc, or scale-dependent.
+
+---
+
+## Appendix — reactive push-on-write design sketch (G1)
+
+Goal: disseminate a local write within ~sub-second, without write storms, on a few-KB/s transport. The periodic anti-entropy loop is left **unchanged** as the completeness safety net.
+
+**1. Write hook (the missing coupling).** After a successful `ChannelService.appendEntry`, the coordinator notifies the engine: `GossipEngine.notifyLocalWrite(channelId, streamId)` (or a coarser `notifyLocalActivity()`).
+
+**2. Debounce / coalesce.** On `notifyLocalWrite`, the engine schedules an *expedited* round after a short delay `D` (~100–200 ms) unless one is already scheduled or a periodic round is imminent. A burst of N writes within `D` collapses to one expedited round. Rate-cap expedited rounds (e.g. ≥250 ms apart) to bound amplification. This keeps human-paced chat gentle and protects against programmatic write bursts.
+
+**3. Direction — two options.**
+- **Option A (reuses M1):** the expedited round sends a `DigestRequest`; with M1's push-pull reciprocation the peer sees the writer is ahead and pulls. Pure anti-entropy, reuses the 4-step machinery, but costs a full round-trip and *requires M1*.
+- **Option B (push rumor mongering, standalone) — recommended for chat:** on write, push the *new entries* directly as an unsolicited `DeltaResponse` to selected peers. `handleDeltaResponse` already merges unsolicited deltas idempotently (dupes filtered), so no new receive path is needed. One small message, no round-trip — sharpest latency for tiny chat payloads. Independent of M1 (though M1 still helps the periodic path).
+
+**4. Fan-out.** At n≤8, push to **all reachable peers** (≤7 small messages) for deterministic one-hop dissemination. (Classic rumor mongering pushes to a random subset and relies on re-spread + "infect and die"; unnecessary complexity at this scale.)
+
+**5. Priority (H1 interaction).** Pushes ride the normal gossip lane and must not starve SWIM pings. On today's transport (no priority) they compete with pings — which is why **M2 is the prerequisite** (gossip receipt keeps the peer reachable even if a ping is starved), and why H1's priority lane makes it fully clean. Debounce + rate-cap + small payloads keep it bounded before H1 lands.
+
+**6. Safety net unchanged.** The periodic loop still catches anything a push missed (lost message; peer congested/suspected/disconnected at push time; a peer that had no reachable status when the write happened). This is the "safety net" half — already present and correct.
+
+Recommended concrete plan: **Option B**, debounced (~150 ms) + rate-capped, fan-out to all reachable peers, gated behind M2; periodic anti-entropy untouched.
