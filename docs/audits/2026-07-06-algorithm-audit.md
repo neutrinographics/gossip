@@ -11,7 +11,10 @@
 - ✅ **H2** — static ping-timeout / probe-interval flags decoupled (`8b8ab80`). Chat now gets adaptive per-peer ping timeouts.
 - ✅ **M2** — gossip receipt feeds `updatePeerContact`, so an actively-syncing peer isn't false-evicted (`0ed2c58`).
 - ✅ **M1** — push-pull reciprocation on `DigestRequest`, gated on running so pause semantics hold (`f8c2e1c`).
-- ⏳ Remaining: G1, G2, G4 (event-driven triggers), H1 (transport priority queue), H3/H4, G3, M3–M6, L1–L5.
+- ✅ **Contiguity guard** — `handleDeltaResponse` applies only the per-author contiguous run, hardening the merge path and making unsolicited pushes safe (`7526336`).
+- ✅ **G1** — reactive push-on-write: a local write is debounced and pushed directly to peers; paused engines serve but don't ingest/pull (`52a6d25`).
+- ✅ **G2** — sync-on-connect: `addPeer` kicks off an immediate targeted DigestRequest (`708575c`).
+- ⏳ Remaining: G4 (catch-up continuation), H1 (transport priority queue — port from nearby), H3/H4, G3, M3–M6, G5, L1–L5.
 
 ---
 
