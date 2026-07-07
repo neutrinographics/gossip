@@ -106,6 +106,7 @@ This library implements **only the anti-entropy safety net** (intentional per AD
 
 So a local write sits in the repository until the next timer tick. **Compounded by pull-only (M1):** a round the writer *initiates* pulls data *toward* the writer — it does not push the write outward. The write propagates only when some *other* peer independently selects the writer; each node runs its own timer, so on average ~1 peer picks the writer per interval, then it spreads O(log n) intervals. Net for the chat app at its 2 s interval: **a sent message can take from ~2 s up to several seconds to appear on peers** — a very visible latency on the product's core action.
 
+**Concrete chat impact.** Both `messages` and `presence` (typing) rely on this path. A sent message appears on a 2-peer link in ~0–2 s (avg ~1 s); at n=8 a message takes ~8–10 s to reach all peers (see the network-numbers note below). Worse, the **typing indicator** is an ephemeral `presence` event on the same path, so "user is typing…" also carries ~2 s+ latency — usually too late to be useful (the message often arrives before the indicator).
 **Severity:** design gap (intentional scope choice, not a defect), but HIGH-impact for interactive use. It is the single biggest thing between the chat app and instant-feeling delivery.
 **Recommendation:** add a debounced reactive push (design sketch in the appendix). De-risked by M2 (so extra traffic can't false-evict peers) and cleanest after H1 (priority lane); composes with M1.
 
@@ -122,6 +123,7 @@ So a local write sits in the repository until the next timer tick. **Compounded 
 
 `Channel.getOrCreateStream(retention: ...)` attaches a `RetentionPolicy` per stream, which reads as set-and-forget. But `EventStream.compact()` (`event_stream.dart:198`) is the *only* thing that applies retention, it is **app-invoked**, and nothing in the library (no timer, no lifecycle hook) ever calls it — nor does any example (`grep` of `examples/`: zero `.compact()` calls). So retention policies are inert unless the app builds its own compaction scheduler. For a long-running chat app that means the entry log grows without bound (which also feeds the digest-size cliff, H4), while the declared `TimeBasedRetention`/`CountBasedRetention` does nothing.
 
+**Concrete chat impact.** The chat's `presence` stream declares `TimeBasedRetention(30 s)` (`chat_service.dart:25,64`) — but nothing ever compacts it, so every typing event (2 per typing episode: start + stop) accumulates **forever**. `getTypingUsers` then does a `getAll()` scan over that ever-growing log on every read (`chat_service.dart:235`). The 30 s retention is pure fiction today; over a long session the presence stream is an unbounded memory + scan-cost leak. (`messages`/`metadata` also never compact, but KeepAll/rare-write make them less acute.)
 **Severity:** design gap + API-implication mismatch (a real footgun).
 **Recommendation:** either (a) have the library run a low-priority periodic compaction pass that applies each stream's retention policy (opt-out), or (b) if compaction is deliberately app-driven, make that explicit in the API/docs (e.g. rename toward `manualCompact()`, document that retention is not auto-enforced, and ship a ready-made periodic-compaction helper). Today the API promises retention it doesn't deliver.
 
@@ -237,3 +239,22 @@ Goal: disseminate a local write within ~sub-second, without write storms, on a f
 **6. Safety net unchanged.** The periodic loop still catches anything a push missed (lost message; peer congested/suspected/disconnected at push time; a peer that had no reachable status when the write happened). This is the "safety net" half — already present and correct.
 
 Recommended concrete plan: **Option B**, debounced (~150 ms) + rate-capped, fan-out to all reachable peers, gated behind M2; periodic anti-entropy untouched.
+
+---
+
+## Appendix — network numbers (chat config: 2 s gossip / 3 s probe, 3 streams, full mesh)
+
+Calculated estimates (not measured). Digest ≈ one version vector per stream; ~44 B per author-entry (UUID keys in JSON); fan-out = 1, each node runs its own timers.
+
+| Metric | 2 peers | 8-peer mesh (steady) | 8-peer start (cold) |
+|---|---|---|---|
+| Digest size / message | ~0.5 KB (2 authors) | ~1.3 KB (8 authors × 3 streams) | ramps as authors appear |
+| Idle traffic, per node | ~0.5 KB/s | ~1.3 KB/s each way | spikes with delta bursts |
+| Idle traffic, whole mesh | ~1 KB/s | ~10–11 KB/s | higher during convergence |
+| BLE connections / node | 1 | 7 (near radio ceiling) | 7, forming over first seconds |
+| 1 message → all peers | ~1–2 s | ~8–10 s | ~8–10 s once converged |
+| Cold-start trigger delay (G2) | up to +2 s | — | up to +2 s (no sync-on-connect) |
+| Backlog catch-up, new joiner (G4) | 1 page / 2 s | — | 1 page / ~14 s → 300 KB ≈ ~2.5 min |
+| SWIM time-to-suspected | ~20 s | ~2 min | ~2 min |
+
+Key shifts 2 → 8: per-node overhead grows only ~2.6× (bigger digest, not more rounds — fan-out is 1), but mesh **aggregate** grows ~10× (n × digest) and **message-propagation latency grows ~8–10×** (fan-out 1 + pull-only means a rumor crawls ~5 hops × 2 s). Steady state is fine on bandwidth; the **cold start** is where it hurts, gated by G2 (no trigger) and G4 (slow catch-up). Digest size tracks *lifetime* authors (H4), so it keeps rising past 8 as devices churn.
