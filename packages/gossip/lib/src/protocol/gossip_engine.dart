@@ -4,6 +4,7 @@ import '../application/observability/log_level.dart';
 import '../domain/errors/sync_error.dart';
 import '../domain/interfaces/local_node_repository.dart';
 import '../domain/services/hlc_clock.dart';
+import '../domain/services/jitter.dart';
 import '../domain/services/rtt_tracker.dart';
 
 import '../domain/value_objects/node_id.dart';
@@ -384,7 +385,9 @@ class GossipEngine {
   /// callback must not run a round or reschedule itself.
   void _scheduleNextGossipRound(int generation) {
     if (!_isRunning || generation != _generation) return;
-    timePort.delay(effectiveGossipInterval).then((_) {
+    // ±20% jitter decorrelates gossip loops across nodes so they don't
+    // phase-lock into correlated request/response bursts.
+    timePort.delay(applyJitter(effectiveGossipInterval, _random)).then((_) {
       if (_isRunning && generation == _generation) {
         _gossipRound(generation);
       }

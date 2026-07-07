@@ -76,8 +76,9 @@ void main() {
 
       h.engine.start();
 
-      // First gossip interval fires → round runs and fails
-      await h.timePort.advance(const Duration(milliseconds: 201));
+      // First gossip interval fires → round runs and fails. 250ms covers the
+      // 200ms interval plus its max +20% scheduling jitter.
+      await h.timePort.advance(const Duration(milliseconds: 250));
       await h.flush();
 
       expect(h.errors, isNotEmpty);

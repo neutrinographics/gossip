@@ -27,7 +27,9 @@ void main() {
 
         // Fire both. Only the live loop may run a round and reschedule;
         // the stale pre-stop callback must not spawn a second chain.
-        await h.timePort.advance(const Duration(milliseconds: 100));
+        // 130ms > the 100ms interval + its max +20% jitter, so the round
+        // always fires (but not far enough to fire the reschedule too).
+        await h.timePort.advance(const Duration(milliseconds: 130));
         await flushMicrotasks();
 
         expect(
@@ -57,7 +59,9 @@ void main() {
         // Let several intervals elapse; a single loop reschedules itself
         // exactly once per interval.
         for (var i = 0; i < 3; i++) {
-          await h.timePort.advance(const Duration(milliseconds: 100));
+          // 130ms > the 100ms interval + its max +20% jitter, so the round
+        // always fires (but not far enough to fire the reschedule too).
+        await h.timePort.advance(const Duration(milliseconds: 130));
           await flushMicrotasks();
           expect(
             h.timePort.pendingDelayCount,

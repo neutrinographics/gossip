@@ -1240,7 +1240,8 @@ void main() {
         if (decoded is Ping) pingsReceived.add(decoded);
       });
 
-      await h.timePort.advance(const Duration(milliseconds: 501));
+      // 650ms covers the 500ms interval plus its max +20% scheduling jitter.
+      await h.timePort.advance(const Duration(milliseconds: 650));
       await h.flush();
 
       expect(

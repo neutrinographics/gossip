@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:gossip/src/application/observability/log_level.dart';
 import 'package:gossip/src/domain/errors/sync_error.dart';
+import 'package:gossip/src/domain/services/jitter.dart';
 import 'package:gossip/src/domain/services/rtt_tracker.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
@@ -603,7 +604,9 @@ class FailureDetector {
   /// callback must not run a round or reschedule itself.
   void _scheduleNextProbeRound(int generation) {
     if (!_isRunning || generation != _generation) return;
-    timePort.delay(effectiveProbeInterval).then((_) {
+    // ±20% jitter decorrelates probe loops across nodes so they don't
+    // phase-lock into correlated bursts (and correlated false suspicions).
+    timePort.delay(applyJitter(effectiveProbeInterval, _random)).then((_) {
       if (_isRunning && generation == _generation) _probeRound(generation);
     }).catchError((Object error, StackTrace stackTrace) {
       // A broken timer must not kill the loop silently: surface the error
