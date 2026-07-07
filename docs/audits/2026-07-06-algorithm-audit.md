@@ -18,7 +18,17 @@
 - ✅ **H4** — digests budgeted with round-robin stream rotation; responder scopes/budgets its reply; single oversized stream skipped with a distinct error (`f2eba32`).
 - ✅ **G3** — periodic auto-compaction enforces retention policies (`CoordinatorConfig.compactionInterval`, default 5 min); fixes the chat presence-stream leak (`b483f1d`).
 - ✅ **H1** — `gossip_bluey`'s `ConnectionManager` now uses a per-peer two-lane priority send queue (SWIM pings/acks jump ahead of queued gossip) and reports real `pendingSendCount`/`totalPendingSendCount`, so the core's per-peer congestion gate and high-priority pings actually work on BLE. Whole-message granularity (no mid-frame preemption); ping wait bounded to ≤1 in-flight delta (`c982d57`). Full HOL elimination would need frame-level multiplexing (follow-up); queues remain depth-unbounded — natural backpressure now comes from the engine's congestion gate (minor follow-up: hard ceiling).
-- ⏳ Remaining: H3, M3–M6, G5, L1–L5.
+- ✅ **H3** — main SWIM probe selection is now shuffle-based round-robin, bounding worst-case time-to-probe a specific dead peer to ~(n−1) rounds instead of pure-random's geometric tail (`d5c50bf`).
+- ✅ **M5** — deleted the entirely dead incarnation/refutation subsystem end to end (`Peer.incarnation`, `updatePeerIncarnation`, `incrementLocalIncarnation`, `LocalNodeRepository.get/saveIncarnation`, `HealthStatus.incarnation`, etc.) (`3024214`).
+- ✅ **M3** — pending-delta requests keyed per-(peer, channel, stream) and the timeout is adaptive (EWMA of observed delta round-trips, RFC-6298 style), so a slow peer no longer blocks a faster one and a page in flight isn't re-requested mid-transmission (`a441ef9`).
+- ✅ **M4** — gossip interval paces off the *median* peer SRTT, not the global min, so one fast peer can't pin the loop to a cadence that over-drives slow links (`adc799a`).
+- ✅ **M6** — the intermediary probes a target with an adaptive per-target timeout (`effectivePingTimeoutForPeer`) instead of a fixed 500ms, so it no longer abandons a slow-but-alive target mid-relay (`f06a477`).
+- ✅ **G5** — coarse in-sync signal: `Coordinator.gossipSyncActivity` → `{outstandingPulls, mergedBatches, isQuiescent}` for "syncing…" vs "up to date" UI (`7b5afd4`).
+- ✅ **L1** — wired up least-recently-synced gossip partner selection (the previously-dead `lastAntiEntropyMs`), bounding gossip coverage to ~(n−1) rounds (`5d63e78`).
+- ✅ **L2** — ±20% jitter on both scheduler loops via a shared `applyJitter` helper, decorrelating timers across nodes (`e7eb77f`).
+- ✅ **L3–L5** — reconciled convergence/timing docs to code: corrected the sub-second/150ms claim (O(log n), sub-second only at n=2), scoped ADR-008's convergence guarantee with its preconditions, added ADR-004's n=2 timeline assumption, and fixed ADR-013's false "timing params removed" + 200ms→500ms min ping timeout (`49d5fb9`).
+
+**All audit findings remediated.** The core `gossip` package is 865 tests green; `gossip_bluey` 155; chat example 193; analyzer clean across the board.
 
 ---
 
