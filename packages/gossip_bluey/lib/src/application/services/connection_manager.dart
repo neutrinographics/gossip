@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:typed_data';
 
 import 'package:gossip/gossip.dart';
@@ -51,11 +52,20 @@ class ConnectionManager implements MessageDispatcher {
   /// reentrant [connectTo] for the same address.
   final Set<BleAddress> _connectingAddresses = {};
 
-  /// Per-peer send queue. Each peer's chunked sends are serialized so
-  /// concurrent `sendGossipMessage` calls to the same peer don't
-  /// interleave their chunks on the wire (which would corrupt the
-  /// receiver's FrameDecoder byte-stream alignment).
-  final Map<NodeId, Future<void>> _sendQueue = {};
+  /// Per-peer, two-lane (high/normal) send queue.
+  ///
+  /// Each peer's chunked sends are serialized so concurrent
+  /// `sendGossipMessage` calls to the same peer don't interleave their
+  /// chunks on the wire (which would corrupt the receiver's FrameDecoder
+  /// byte-stream alignment). Within a peer, the high-priority lane (SWIM
+  /// pings/acks) drains ahead of the normal lane (bulk gossip) so failure
+  /// detection isn't delayed behind a large delta during congestion.
+  ///
+  /// Queues are per-peer — not one global queue like `gossip_nearby`'s
+  /// transport — because each peer is an independent framed link: sends
+  /// to different peers may proceed concurrently, but a single peer's
+  /// frame stream must stay contiguous.
+  final Map<NodeId, _PeerSendQueue> _sendQueues = {};
 
   late final StreamSubscription<BlueyPortEvent> _portSub;
   final StreamController<ConnectionEvent> _events =
@@ -194,11 +204,13 @@ class ConnectionManager implements MessageDispatcher {
         }
         registry.remove(nodeId);
         _decoders.remove(nodeId);
-        // Drop any in-flight send chain. The chain's Future will
-        // resolve on its own; we just stop tracking it for new sends.
-        // sendGossipMessage will see registry.contains(...) == false
-        // on its next dispatch and fail cleanly.
-        unawaited(_sendQueue.remove(nodeId) ?? Future<void>.value());
+        // Leave the peer's send queue in place: its drain loop owns the
+        // map entry and removes it once emptied. Any in-flight send
+        // aborts via the per-chunk `identical(registry.get, handle)`
+        // check in `_sendChunked`, and queued sends fail cleanly (the
+        // registry entry is gone). Removing the entry here instead would
+        // risk a second drain loop for the same peer on a fast reconnect,
+        // interleaving two messages' chunks on one link.
         metrics.setConnectedPeerCount(registry.connectionCount);
         _emitEvent(PeerClosed(nodeId: nodeId, reason: reason));
       case PortPeerData(:final nodeId, :final data):
@@ -238,7 +250,7 @@ class ConnectionManager implements MessageDispatcher {
     NodeId destination,
     Uint8List bytes, {
     MessagePriority priority = MessagePriority.normal,
-  }) async {
+  }) {
     if (!registry.contains(destination)) {
       _emitError(
         ConnectionNotFoundError(
@@ -247,24 +259,54 @@ class ConnectionManager implements MessageDispatcher {
           nodeId: destination,
         ),
       );
-      return;
+      return Future<void>.value();
     }
-    // Chain this send behind the previous send to the same peer so
-    // chunked frames don't interleave on the wire. Without this,
-    // concurrent calls each get their own for-loop and the receiver's
-    // FrameDecoder loses byte-stream alignment.
-    final previous = _sendQueue[destination] ?? Future<void>.value();
-    final task = previous
-        .catchError((_) {})
-        .then((_) => _sendChunked(destination, bytes));
-    _sendQueue[destination] = task;
+    // Enqueue on the peer's high or normal lane, then ensure its drain
+    // loop is running. The loop serializes this peer's chunked sends
+    // (no frame interleaving) and drains high-priority ahead of normal.
+    final queue = _sendQueues.putIfAbsent(destination, _PeerSendQueue.new);
+    final queued = _QueuedSend(bytes);
+    if (priority == MessagePriority.high) {
+      queue.high.add(queued);
+    } else {
+      queue.normal.add(queued);
+    }
+    unawaited(_drainQueue(destination, queue));
+    return queued.completer.future;
+  }
+
+  /// Drains a peer's send queue — high-priority lane first — one whole
+  /// message at a time. Only one loop runs per peer (guarded by
+  /// [_PeerSendQueue.processing]).
+  ///
+  /// A message's chunks are sent contiguously via [_sendChunked], so a
+  /// high-priority message can jump ahead of *queued* messages but never
+  /// preempts one already mid-transmission — interleaving two messages'
+  /// frames on a single link would corrupt the receiver's decoder. This
+  /// still bounds a ping's wait to at most one in-flight delta instead of
+  /// the whole backlog.
+  Future<void> _drainQueue(NodeId destination, _PeerSendQueue queue) async {
+    if (queue.processing) return;
+    queue.processing = true;
     try {
-      await task;
+      while (!queue.isEmpty) {
+        final next = queue.removeNext();
+        try {
+          await _sendChunked(destination, next.bytes);
+          if (!next.completer.isCompleted) next.completer.complete();
+        } catch (e, st) {
+          // `_sendChunked` contains its own send failures; this guards
+          // the rare case it throws (e.g. framing) so the awaiter isn't
+          // left hanging and later queued messages still drain.
+          if (!next.completer.isCompleted) next.completer.completeError(e, st);
+        }
+      }
     } finally {
-      // Drop the entry only if we're still the tail. A later send may
-      // have chained behind us; that one becomes the new tail.
-      if (identical(_sendQueue[destination], task)) {
-        _sendQueue.remove(destination);
+      queue.processing = false;
+      // Reclaim the entry once drained, but only if we're still the
+      // tracked queue for this peer (defensive against replacement).
+      if (queue.isEmpty && identical(_sendQueues[destination], queue)) {
+        _sendQueues.remove(destination);
       }
     }
   }
@@ -342,10 +384,11 @@ class ConnectionManager implements MessageDispatcher {
   }
 
   @override
-  int pendingSendCount(NodeId peer) => 0;
+  int pendingSendCount(NodeId peer) => _sendQueues[peer]?.length ?? 0;
 
   @override
-  int get totalPendingSendCount => 0;
+  int get totalPendingSendCount =>
+      _sendQueues.values.fold(0, (sum, q) => sum + q.length);
 
   @override
   Future<void> close() async => dispose();
@@ -368,11 +411,46 @@ class ConnectionManager implements MessageDispatcher {
 
   Future<void> dispose() async {
     _connectingAddresses.clear();
-    _sendQueue.clear();
+    // Complete any still-queued sends so their awaiters don't hang past
+    // dispose. An in-flight message (already dequeued) is completed by
+    // its own drain loop.
+    for (final queue in _sendQueues.values) {
+      while (!queue.isEmpty) {
+        final s = queue.removeNext();
+        if (!s.completer.isCompleted) s.completer.complete();
+      }
+    }
+    _sendQueues.clear();
     _decoders.clear();
     await _portSub.cancel();
     await _events.close();
     await _errors.close();
     await _incoming.close();
   }
+}
+
+/// A single gossip message waiting in a peer's send queue, with a
+/// completer resolved when the message has been sent (or dropped).
+class _QueuedSend {
+  _QueuedSend(this.bytes);
+
+  final Uint8List bytes;
+  final Completer<void> completer = Completer<void>();
+}
+
+/// Two-lane (high/normal) FIFO send queue for one peer, plus a
+/// re-entrancy flag so only one drain loop runs at a time.
+class _PeerSendQueue {
+  final Queue<_QueuedSend> high = Queue<_QueuedSend>();
+  final Queue<_QueuedSend> normal = Queue<_QueuedSend>();
+  bool processing = false;
+
+  bool get isEmpty => high.isEmpty && normal.isEmpty;
+
+  int get length => high.length + normal.length;
+
+  /// Removes the next message to send: high-priority lane first.
+  /// Caller must ensure the queue is non-empty.
+  _QueuedSend removeNext() =>
+      high.isNotEmpty ? high.removeFirst() : normal.removeFirst();
 }
