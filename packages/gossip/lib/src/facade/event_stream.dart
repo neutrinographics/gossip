@@ -106,6 +106,11 @@ class EventStream {
   /// Creates a [LogEntry] with the given payload, authored by the local node.
   /// The entry is assigned the next sequence number and current timestamp.
   ///
+  /// Throws [ArgumentError] if the payload exceeds the configured size limit,
+  /// and [StateError] if the stream was never created (use
+  /// `Channel.getOrCreateStream` first). Both are caller misuse — silently
+  /// dropping the payload would be invisible data loss.
+  ///
   /// Used when: Application writes new data to the stream.
   Future<void> append(Uint8List payload) async {
     await channelService.appendEntry(channelId, id, payload);

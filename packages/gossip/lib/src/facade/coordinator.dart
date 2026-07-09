@@ -303,10 +303,14 @@ class Coordinator {
       ),
       materializationService: materializationService,
       onEvent: (event) => coordinator._onChannelServiceEvent(event),
+      // Without this the services' emitted errors go to a null callback
+      // and vanish, violating the no-silent-errors rule (audit COR3-3).
+      onError: (error) => coordinator._handleError(error),
     );
     final peerService = PeerService(
       registry: peerRegistry,
       repository: peerRepository,
+      onError: (error) => coordinator._handleError(error),
     );
 
     coordinator = Coordinator._(

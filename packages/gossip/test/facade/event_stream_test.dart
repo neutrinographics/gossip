@@ -237,7 +237,7 @@ void main() {
     });
 
     group('stream existence checks', () {
-      test('append returns empty list when stream does not exist', () async {
+      test('append throws StateError when stream does not exist', () async {
         // Create facade for non-existent stream
         final nonExistentStreamId = StreamId('nonexistent');
         final facade = EventStream(
@@ -246,8 +246,13 @@ void main() {
           channelService: channelService,
         );
 
-        // append should not throw - should handle gracefully
-        await facade.append(Uint8List.fromList([1, 2, 3]));
+        // Appending to a stream that was never created is caller misuse:
+        // silently dropping the payload would be permanent, invisible data
+        // loss (audit COR3-3).
+        await expectLater(
+          facade.append(Uint8List.fromList([1, 2, 3])),
+          throwsStateError,
+        );
 
         // Verify no entries were created (stream doesn't exist)
         final entries = await facade.getAll();

@@ -368,17 +368,16 @@ class ChannelService {
       return;
     }
 
-    // Check if stream exists before appending
+    // Appending to a stream that was never created is caller misuse, like
+    // an oversized payload: silently dropping the payload would be
+    // permanent, invisible data loss. Throw so the failure hits the
+    // append() call site.
     final streamExists = await hasStream(channelId, streamId);
     if (!streamExists) {
-      _emitError(
-        StorageSyncError(
-          SyncErrorType.storageFailure,
-          'Entry append skipped: stream $streamId does not exist in channel $channelId',
-          occurredAt: DateTime.now(),
-        ),
+      throw StateError(
+        'Cannot append: stream $streamId does not exist in channel '
+        '$channelId (create it with getOrCreateStream first)',
       );
-      return;
     }
 
     final sequence =
