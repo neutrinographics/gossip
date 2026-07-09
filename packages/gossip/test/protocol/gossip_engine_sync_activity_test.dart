@@ -60,6 +60,22 @@ void main() {
       expect(h.engine.outstandingPullCount, equals(0));
     });
 
+    test('outstandingPullCount excludes expired pending pulls', () async {
+      final h = GossipEngineTestHarness();
+      final peer = h.addPeer('peerA');
+      h.createChannel('ch1', streamIds: ['s1']);
+
+      await h.engine.handleDigestResponse(digestFrom(peer.id));
+      expect(h.engine.outstandingPullCount, equals(1));
+
+      // The peer never answers. Once the pending timeout elapses the pull
+      // is dead — it must not report "syncing…" forever (COR3-12).
+      await h.timePort.advance(
+        h.engine.effectivePendingRequestTimeout + const Duration(seconds: 1),
+      );
+      expect(h.engine.outstandingPullCount, equals(0));
+    });
+
     test('mergedBatchCount increments only when new entries are merged',
         () async {
       final h = GossipEngineTestHarness();

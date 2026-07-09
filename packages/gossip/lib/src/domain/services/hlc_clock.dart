@@ -35,8 +35,20 @@ class HlcClock {
   int _lastPhysicalMs = 0;
   int _logicalCounter = 0;
 
+  /// Maximum amount a remote timestamp may drag this clock ahead of the
+  /// local wall clock.
+  ///
+  /// Without a bound, a single peer with an insane wall clock (e.g. a
+  /// device with its date set years ahead) permanently poisons this clock
+  /// — monotonicity forbids going back — and transitively every peer's,
+  /// inverting time-based retention (all sanely-timestamped entries look
+  /// ancient and get pruned). The default of one hour comfortably covers
+  /// benign phone-clock skew, so normal HLC causality is unaffected, while
+  /// capping the damage a broken clock can do.
+  final Duration maxDrift;
+
   /// Creates an [HlcClock] using the given time source.
-  HlcClock(this._timeSource);
+  HlcClock(this._timeSource, {this.maxDrift = const Duration(hours: 1)});
 
   /// Generates a new timestamp for a local event.
   ///
@@ -81,16 +93,28 @@ class HlcClock {
   /// 3. Handle counter overflow if needed
   ///
   /// Use when: Receiving messages from peers (to update local causality).
+  ///
+  /// The strictly-greater-than-remote guarantee holds only for remote
+  /// timestamps within [maxDrift] of the local wall clock; beyond that the
+  /// remote clock is considered broken and its time is clamped rather than
+  /// adopted (the result is still strictly greater than all previously
+  /// returned local timestamps).
   Hlc receive(Hlc remote) {
     final physical = _timeSource.nowMillis();
-    final maxPhysical = max(physical, max(_lastPhysicalMs, remote.physicalMs));
+    // Clamp adoption of remote physical time to now + maxDrift; a clamped
+    // remote's logical counter is meaningless at the clamped time.
+    final maxAdoptableMs = physical + maxDrift.inMilliseconds;
+    final clamped = remote.physicalMs > maxAdoptableMs;
+    final remotePhysical = clamped ? maxAdoptableMs : remote.physicalMs;
+    final remoteLogical = clamped ? 0 : remote.logical;
+    final maxPhysical = max(physical, max(_lastPhysicalMs, remotePhysical));
 
-    if (maxPhysical == _lastPhysicalMs && maxPhysical == remote.physicalMs) {
-      _logicalCounter = max(_logicalCounter, remote.logical) + 1;
+    if (maxPhysical == _lastPhysicalMs && maxPhysical == remotePhysical) {
+      _logicalCounter = max(_logicalCounter, remoteLogical) + 1;
     } else if (maxPhysical == _lastPhysicalMs) {
       _logicalCounter++;
-    } else if (maxPhysical == remote.physicalMs) {
-      _logicalCounter = remote.logical + 1;
+    } else if (maxPhysical == remotePhysical) {
+      _logicalCounter = remoteLogical + 1;
     } else {
       _logicalCounter = 0;
     }

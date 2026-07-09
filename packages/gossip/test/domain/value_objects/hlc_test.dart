@@ -144,6 +144,22 @@ void main() {
         expect(hlc.physicalMs, equals(0));
         expect(hlc.logical, equals(0));
       });
+
+      test('constructor accepts maximum valid 48-bit physical value', () {
+        final maxPhysical = (1 << 48) - 1;
+        final hlc = Hlc(maxPhysical, 0);
+        expect(hlc.physicalMs, equals(maxPhysical));
+      });
+
+      test(
+        'constructor throws ArgumentError when physicalMs exceeds 48-bit max',
+        () {
+          // The documented wire/storage format packs physical time into 48
+          // bits; an unbounded value would silently corrupt any packing
+          // implementation (COR3-10).
+          expect(() => Hlc(1 << 48, 0), throwsA(isA<ArgumentError>()));
+        },
+      );
     });
   });
 }

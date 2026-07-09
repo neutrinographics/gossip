@@ -359,7 +359,17 @@ class GossipEngine {
   /// Number of delta requests currently in flight (pulls we are awaiting a
   /// response for). A coarse "am I mid-sync?" signal for applications (G5):
   /// non-zero means we are actively pulling data from a peer.
-  int get outstandingPullCount => _pendingDeltaRequests.length;
+  ///
+  /// Excludes expired entries: a pull whose peer never answered is dead,
+  /// not "syncing…" — counting it would wedge the quiescence signal until
+  /// the same (peer, stream) key happens to be re-evaluated.
+  int get outstandingPullCount {
+    final timeoutMs = effectivePendingRequestTimeout.inMilliseconds;
+    final nowMs = timePort.nowMs;
+    return _pendingDeltaRequests.values
+        .where((since) => nowMs - since < timeoutMs)
+        .length;
+  }
 
   /// Monotonic count of delta batches that merged at least one new entry
   /// since construction. Poll it to detect recent sync activity: a value
@@ -790,12 +800,27 @@ class GossipEngine {
         // gate it on running: a paused/listen-only engine still answers
         // digests (serves data) but must not initiate new pulls.
         if (_isRunning) {
+          // A DigestRequest by design carries ALL the sender's channels, so
+          // ones we don't share are routine under partial channel overlap —
+          // filter them out here rather than letting _computeDeltaRequests
+          // emit a protocolError per non-shared channel per round. (On the
+          // DigestResponse path the digests are scoped to our own request,
+          // so an unknown channel there stays an anomaly worth reporting.)
+          final sharedDigests = <ChannelDigest>[];
+          for (final digest in protocolMessage.digests) {
+            if (_channels.containsKey(digest.channelId)) {
+              sharedDigests.add(digest);
+            } else {
+              _log(
+                LogLevel.trace,
+                'ignoring reciprocal digest for non-shared channel '
+                '${digest.channelId}',
+              );
+            }
+          }
           await _sendDeltaRequests(
             message.sender,
-            await _computeDeltaRequests(
-              message.sender,
-              protocolMessage.digests,
-            ),
+            await _computeDeltaRequests(message.sender, sharedDigests),
           );
         }
       } else if (protocolMessage is DigestResponse) {
@@ -1355,8 +1380,6 @@ class GossipEngine {
 
     if (response.entries.isEmpty) return null;
 
-    _updateHlcFromEntries(response.entries);
-
     // Keep only entries we don't already have, in per-author contiguous
     // order. Duplicate/stale DeltaResponses (a slow peer answering after the
     // pending timeout, overlap between two peers' responses) must not be
@@ -1368,6 +1391,11 @@ class GossipEngine {
     );
     final newEntries = _selectContiguousEntries(response.entries, ourVersion);
     if (newEntries.isEmpty) return null;
+
+    // Only entries we actually merge drive the clock: a rejected entry
+    // (gapped, duplicate) must not be able to touch local causality state
+    // (COR3-10).
+    _updateHlcFromEntries(newEntries);
 
     // Snapshot the current tail HLC before appending to detect out-of-order
     final previousTailHlc = await entryRepository.getTailTimestamp(
@@ -1419,6 +1447,15 @@ class GossipEngine {
   /// new delta requests until they expire.
   void clearPendingRequests() {
     _pendingDeltaRequests.clear();
+  }
+
+  /// Clears pending delta requests addressed to [peer].
+  ///
+  /// Called when a peer is removed: its in-flight pulls can never complete,
+  /// so leaving them would block re-requesting after a fast reconnect and
+  /// hold [outstandingPullCount] above zero until expiry.
+  void clearPendingRequestsForPeer(NodeId peer) {
+    _pendingDeltaRequests.removeWhere((key, _) => key.$1 == peer);
   }
 
   /// Updates the local HLC clock from received entries.

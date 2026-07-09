@@ -120,17 +120,20 @@ void main() {
 
       await h.engine.handleDeltaResponse(response);
 
-      // HLC should have advanced past the remote timestamp
+      // The clock advances (causal ordering attempt) but a remote clock
+      // ~11 days ahead of local time is beyond any plausible skew: it must
+      // be clamped to now + maxDrift, not adopted (COR3-10) — adoption is
+      // permanent and would invert time-based retention mesh-wide.
       final clockAfter = h.hlcClock!.current;
-      expect(
-        clockAfter.physicalMs,
-        greaterThanOrEqualTo(remoteHlc.physicalMs),
-        reason: 'HLC should advance to at least the remote timestamp',
-      );
       expect(
         clockAfter.compareTo(clockBefore),
         greaterThan(0),
         reason: 'HLC should have advanced',
+      );
+      expect(
+        clockAfter.physicalMs,
+        lessThan(remoteHlc.physicalMs),
+        reason: 'a far-future remote clock must be clamped, not adopted',
       );
     });
 

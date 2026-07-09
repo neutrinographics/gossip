@@ -78,6 +78,27 @@ void main() {
       expect(all.map((e) => e.sequence), equals([1, 2, 3, 4, 5, 6]));
     });
 
+    test(
+      'entries rejected by the guard do not advance the HLC clock (COR3-10)',
+      () async {
+        final h = GossipEngineTestHarness(withHlcClock: true);
+        h.addPeer('peer1');
+        h.createChannel('ch1', streamIds: ['s1']);
+
+        final before = h.hlcClock!.current;
+
+        // Empty local VV, so seq 5 is non-contiguous → whole batch dropped.
+        await h.engine.handleDeltaResponse(deltaOf([entryOf(authorA, 5, 2000)]));
+
+        expect(h.mergedEntries, isEmpty);
+        expect(
+          h.hlcClock!.current,
+          equals(before),
+          reason: 'rejected entries must not drive the local clock',
+        );
+      },
+    );
+
     test('accepts the contiguous prefix and drops entries past a gap',
         () async {
       final h = await harnessAt({authorA: 5});

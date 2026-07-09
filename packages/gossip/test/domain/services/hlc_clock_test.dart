@@ -135,6 +135,60 @@ void main() {
       expect(result.logical, equals(0));
     });
 
+    group('drift bound (COR3-10)', () {
+      test('defaults maxDrift to one hour', () {
+        final helper = TestTimeHelper(1000);
+        final clock = HlcClock(helper.timeSource);
+        expect(clock.maxDrift, equals(const Duration(hours: 1)));
+      });
+
+      test('receive() clamps a far-future remote to now + maxDrift', () {
+        final helper = TestTimeHelper(1000);
+        final clock = HlcClock(
+          helper.timeSource,
+          maxDrift: const Duration(seconds: 30),
+        );
+
+        // A peer with an insane wall clock (years ahead). Adopting it
+        // would be permanent (monotonicity) and would invert time-based
+        // retention mesh-wide.
+        final poisoned = Hlc(999999999999, 7);
+        final result = clock.receive(poisoned);
+
+        expect(result.physicalMs, lessThanOrEqualTo(1000 + 30000));
+        expect(clock.current, equals(result));
+      });
+
+      test('receive() within the drift bound merges normally', () {
+        final helper = TestTimeHelper(1000);
+        final clock = HlcClock(
+          helper.timeSource,
+          maxDrift: const Duration(seconds: 30),
+        );
+
+        final remote = Hlc(5000, 3);
+        final result = clock.receive(remote);
+
+        expect(result.physicalMs, equals(5000));
+        expect(result.logical, equals(4));
+        expect(result > remote, isTrue);
+      });
+
+      test('clock stays monotonic through a clamped receive', () {
+        final helper = TestTimeHelper(1000);
+        final clock = HlcClock(
+          helper.timeSource,
+          maxDrift: const Duration(seconds: 30),
+        );
+
+        final before = clock.now();
+        final clamped = clock.receive(Hlc(999999999999, 0));
+        expect(clamped > before, isTrue);
+        final after = clock.now();
+        expect(after > clamped, isTrue);
+      });
+    });
+
     test('current returns last generated timestamp', () {
       final helper = TestTimeHelper(1000);
       final clock = HlcClock(helper.timeSource);

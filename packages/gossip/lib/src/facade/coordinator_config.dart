@@ -136,6 +136,18 @@ class CoordinatorConfig {
   /// is inactive in local-only mode).
   final Duration? compactionInterval;
 
+  /// Maximum amount a remote peer's timestamp may drag the local HLC ahead
+  /// of the local wall clock.
+  ///
+  /// Bounds the damage a peer with a broken clock (e.g. date set years
+  /// ahead) can do: without a bound its timestamp is adopted permanently
+  /// and propagates mesh-wide, inverting time-based retention. Should
+  /// comfortably exceed realistic device clock skew — remote timestamps
+  /// within the bound merge with normal HLC causality semantics.
+  ///
+  /// **Default: 1 hour.**
+  final Duration hlcMaxDrift;
+
   /// Creates a [CoordinatorConfig] with the specified options.
   const CoordinatorConfig({
     this.suspicionThreshold = 5,
@@ -148,6 +160,7 @@ class CoordinatorConfig {
     this.adaptiveTimingEnabled = true,
     this.maxDeltaResponseBytes = 30 * 1024,
     this.compactionInterval = const Duration(minutes: 5),
+    this.hlcMaxDrift = const Duration(hours: 1),
   });
 
   /// Default configuration with standard values.

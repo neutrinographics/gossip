@@ -28,5 +28,17 @@ void main() {
 
       expect(config.startupGracePeriod, equals(Duration.zero));
     });
+
+    test('hlcMaxDrift defaults to one hour and is overridable', () {
+      expect(
+        CoordinatorConfig.defaults.hlcMaxDrift,
+        equals(const Duration(hours: 1)),
+      );
+
+      final config = CoordinatorConfig(
+        hlcMaxDrift: const Duration(minutes: 5),
+      );
+      expect(config.hlcMaxDrift, equals(const Duration(minutes: 5)));
+    });
   });
 }

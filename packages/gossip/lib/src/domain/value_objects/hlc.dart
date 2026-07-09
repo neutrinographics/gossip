@@ -84,7 +84,20 @@ class Hlc implements Comparable<Hlc> {
         'Logical counter must fit in 16 bits (0-65535)',
       );
     }
+    if (physicalMs > maxPhysicalMs) {
+      throw ArgumentError.value(
+        physicalMs,
+        'physicalMs',
+        'Physical time must fit in 48 bits (0-$maxPhysicalMs)',
+      );
+    }
   }
+
+  /// Maximum representable physical time (48 bits, ~year 10889).
+  ///
+  /// The wire/storage format packs physical time into 48 bits; an
+  /// unbounded value would silently corrupt any packing implementation.
+  static const int maxPhysicalMs = (1 << 48) - 1;
 
   /// Private const constructor for zero constant.
   const Hlc._internal(this.physicalMs, this.logical);

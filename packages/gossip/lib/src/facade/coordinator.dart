@@ -267,7 +267,7 @@ class Coordinator {
     HlcClock? hlcClock;
     if (timerPort != null) {
       final timeSource = TimeSource(timerPort);
-      hlcClock = HlcClock(timeSource);
+      hlcClock = HlcClock(timeSource, maxDrift: cfg.hlcMaxDrift);
 
       // Restore clock state from LocalNodeRepository
       final clockState = await localNodeRepository.getClockState();
@@ -714,6 +714,10 @@ class Coordinator {
   Future<void> removePeer(NodeId id) async {
     // Drop any probing hold so entries don't accumulate under peer churn.
     _failureDetector?.clearProbingHold(id);
+    // Drop in-flight pulls to this peer: they can never complete, and a
+    // stale flag would both block re-requesting after a fast reconnect and
+    // wedge gossipSyncActivity.isQuiescent (COR3-12).
+    _gossipEngine?.clearPendingRequestsForPeer(id);
     await _peerService.removePeer(id);
   }
 

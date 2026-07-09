@@ -743,6 +743,14 @@ void main() {
           ],
         );
 
+        final otherPeer = NodeId('peer-2');
+        final otherResponse = DigestResponse(
+          sender: otherPeer,
+          digests: [
+            ChannelDigest(channelId: channelId, streams: [peerDigest]),
+          ],
+        );
+
         // First request goes through
         final firstRequests = await engine.handleDigestResponse(response);
         expect(firstRequests, hasLength(1));
@@ -751,12 +759,21 @@ void main() {
         final secondRequests = await engine.handleDigestResponse(response);
         expect(secondRequests, isEmpty);
 
-        // Simulate peer disconnect - clear pending requests
-        engine.clearPendingRequests();
+        // A pending request to a different peer for the same stream
+        // (pending flags are keyed per peer).
+        final otherFirst = await engine.handleDigestResponse(otherResponse);
+        expect(otherFirst, hasLength(1));
 
-        // Now should allow new request
+        // Peer-1 disconnects: only ITS pending requests are cleared.
+        engine.clearPendingRequestsForPeer(peerNode);
+
+        // Peer-1 can be re-requested immediately after a fast reconnect.
         final thirdRequests = await engine.handleDigestResponse(response);
         expect(thirdRequests, hasLength(1));
+
+        // Peer-2's pending request survives and still dedups.
+        final otherSecond = await engine.handleDigestResponse(otherResponse);
+        expect(otherSecond, isEmpty);
       },
     );
 
