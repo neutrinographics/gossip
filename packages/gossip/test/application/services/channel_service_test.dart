@@ -141,6 +141,21 @@ class FakeEntryRepository implements EntryRepository {
   }
 
   @override
+  Future<VersionVector> getCompactionFloor(
+    ChannelId channel,
+    StreamId stream,
+  ) async {
+    return VersionVector.empty;
+  }
+
+  @override
+  Future<void> adoptVersionFloor(
+    ChannelId channel,
+    StreamId stream,
+    VersionVector floor,
+  ) async {}
+
+  @override
   Future<VersionVector> getVersionVector(
     ChannelId channel,
     StreamId stream,

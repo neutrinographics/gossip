@@ -667,7 +667,22 @@ class ChannelService {
       for (final streamId in channel.streamIds) {
         final retention = channel.getRetentionPolicy(streamId);
         if (retention == null || retention.retainsAll) continue;
-        await compactStream(channelId, streamId);
+        // Isolate failures per stream: retention policies and
+        // materializers are app code, and the pass repeats on a timer —
+        // one poison stream must not starve every stream after it on
+        // every pass, forever.
+        try {
+          await compactStream(channelId, streamId);
+        } catch (e) {
+          _emitError(
+            StorageSyncError(
+              SyncErrorType.storageFailure,
+              'Compaction failed for $channelId/$streamId: $e',
+              occurredAt: DateTime.now(),
+              cause: e,
+            ),
+          );
+        }
       }
     }
   }

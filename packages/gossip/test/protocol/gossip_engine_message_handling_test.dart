@@ -18,6 +18,8 @@ import 'package:gossip/src/protocol/messages/digest_request.dart';
 import 'package:gossip/src/protocol/messages/digest_response.dart';
 import 'package:gossip/src/protocol/messages/delta_request.dart';
 import 'package:gossip/src/protocol/messages/delta_response.dart';
+
+import 'gossip_engine_test_harness.dart';
 import 'package:gossip/src/protocol/values/channel_digest.dart';
 import 'package:gossip/src/protocol/values/stream_digest.dart';
 
@@ -210,6 +212,7 @@ void main() {
       await entryRepo.append(channelId, streamId, entry2);
 
       final engine = createEngine(localNode, registry, entryRepo);
+      GossipEngineTestHarness.registerChannel(engine, channelId, [streamId]);
 
       // Peer requests entries since author1:0
       final peerVersion = VersionVector({author1: 0});
@@ -242,6 +245,7 @@ void main() {
       final streamId = StreamId('stream-1');
 
       final engine = createEngine(localNode, registry, entryRepo);
+      GossipEngineTestHarness.registerChannel(engine, channelId, [streamId]);
 
       // Initially empty
       expect(await entryRepo.entryCount(channelId, streamId), equals(0));

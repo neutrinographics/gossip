@@ -221,6 +221,40 @@ abstract interface class EntryRepository {
   /// Used when: Computing stream digests for anti-entropy gossip protocol.
   Future<VersionVector> getVersionVector(ChannelId channel, StreamId stream);
 
+  /// Returns the compaction floor for a stream.
+  ///
+  /// Maps each author to the highest sequence number no longer obtainable
+  /// from this node — removed by [removeEntries] (compaction) or adopted
+  /// as truncated history via [adoptVersionFloor]. Empty for authors that
+  /// were never compacted.
+  ///
+  /// Like [getVersionVector] this is a monotonic high-water mark: it must
+  /// survive process restarts and is reset only when the stream identity
+  /// is retired ([clearStream], [clearChannel], [clearAll]).
+  ///
+  /// Used when: Serving delta requests — a requester positioned below the
+  /// floor is told so, letting it adopt truncated history instead of
+  /// waiting forever for entries nobody can provide.
+  Future<VersionVector> getCompactionFloor(ChannelId channel, StreamId stream);
+
+  /// Accepts truncated history: for each author in [floor], raises both
+  /// the compaction floor and the version-vector high-water mark
+  /// ([getVersionVector], [latestSequence]) to the floor's sequence.
+  ///
+  /// Called when a peer's delta response reports that entries below its
+  /// floor were compacted away. The range up to the floor becomes
+  /// covered-but-unavailable: entries above it merge contiguously, and the
+  /// range is never re-requested — the retention policy that pruned it
+  /// declared it disposable.
+  ///
+  /// Monotonic: authors whose floor is at or below the current high-water
+  /// mark are ignored (we hold those entries).
+  Future<void> adoptVersionFloor(
+    ChannelId channel,
+    StreamId stream,
+    VersionVector floor,
+  );
+
   /// Removes all entries from all channels and streams.
   ///
   /// Used when resetting all sync state (e.g., user logout).

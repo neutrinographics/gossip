@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:typed_data';
 import 'package:test/test.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
@@ -196,6 +197,48 @@ void main() {
         decodedResponse.entries[1].payload,
         equals(Uint8List.fromList([4, 5, 6])),
       );
+      expect(
+        decodedResponse.floor.entries,
+        isEmpty,
+        reason: 'no floor was set',
+      );
+    });
+
+    test('DeltaResponse round-trips the compaction floor (COR3-1)', () {
+      final codec = ProtocolCodec();
+      final author = NodeId('author1');
+
+      final response = DeltaResponse(
+        sender: NodeId('peer2'),
+        channelId: ChannelId('channel1'),
+        streamId: StreamId('stream1'),
+        entries: const [],
+        floor: VersionVector({author: 10}),
+      );
+
+      final decoded = codec.decode(codec.encode(response)) as DeltaResponse;
+      expect(decoded.floor[author], equals(10));
+    });
+
+    test('DeltaResponse without a floor field decodes to an empty floor '
+        '(legacy senders)', () {
+      final codec = ProtocolCodec();
+      // A legacy sender's message: same wire format minus the floor key.
+      final legacyJson = utf8.encode(
+        jsonEncode({
+          'sender': 'peer2',
+          'channelId': 'channel1',
+          'streamId': 'stream1',
+          'entries': <Object>[],
+          'hasMore': false,
+        }),
+      );
+      final bytes = Uint8List(legacyJson.length + 1);
+      bytes[0] = 6; // DeltaResponse type byte
+      bytes.setRange(1, bytes.length, legacyJson);
+
+      final decoded = codec.decode(bytes) as DeltaResponse;
+      expect(decoded.floor.entries, isEmpty);
     });
   });
 }

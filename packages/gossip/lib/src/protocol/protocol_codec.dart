@@ -181,6 +181,10 @@ class ProtocolCodec {
       'streamId': message.streamId.value,
       'entries': _encodeLogEntries(message.entries),
       'hasMore': message.hasMore,
+      // Omitted when empty (the common case) to save wire bytes; legacy
+      // decoders ignore unknown keys.
+      if (message.floor.entries.isNotEmpty)
+        'floor': _encodeVersionVector(message.floor),
     };
   }
 
@@ -350,6 +354,7 @@ class ProtocolCodec {
   }
 
   DeltaResponse _decodeDeltaResponse(Map<String, dynamic> json) {
+    final floorJson = json['floor'] as Map<String, dynamic>?;
     return DeltaResponse(
       sender: NodeId(json['sender'] as String),
       channelId: ChannelId(json['channelId'] as String),
@@ -357,6 +362,10 @@ class ProtocolCodec {
       entries: _decodeLogEntries(json['entries'] as List),
       // Absent on legacy senders → defaults to false (no continuation).
       hasMore: json['hasMore'] as bool? ?? false,
+      // Absent on legacy senders or when serviceable → empty.
+      floor: floorJson == null
+          ? VersionVector.empty
+          : _decodeVersionVector(floorJson),
     );
   }
 

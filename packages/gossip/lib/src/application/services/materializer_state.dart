@@ -1,19 +1,19 @@
 import 'dart:async';
 
 import '../../domain/interfaces/state_materializer.dart';
-import '../../domain/value_objects/hlc.dart';
+import 'fold_cursor.dart';
 
 /// Internal tracking state for a registered materializer.
 ///
-/// Holds the cached materialized value, the cursor (last-folded HLC),
-/// the materializer instance, and a broadcast StreamController for
-/// state change notifications.
+/// Holds the cached materialized value, the cursor (position of the last
+/// folded entry), the materializer instance, and a broadcast
+/// StreamController for state change notifications.
 ///
 /// This class is internal to the gossip library and is not exported.
 class MaterializerState<T> {
   final StateMaterializer<T> materializer;
   T? cachedState;
-  Hlc? cursor;
+  FoldCursor? cursor;
   bool isInitialized = false;
 
   /// Chain serializing all fold-engine operations (initialize, fold,

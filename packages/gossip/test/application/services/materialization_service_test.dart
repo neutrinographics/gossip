@@ -270,7 +270,9 @@ void main() {
         await service.getState<int>(channelId, streamId);
 
         expect(mat.savedCursors, hasLength(1));
-        expect(mat.savedCursors.first, equals('Hlc(200:0)'));
+        // Full fold position: timestamp|author|sequence (COR3-27 — the
+        // timestamp alone cannot disambiguate HLC ties across authors).
+        expect(mat.savedCursors.first, equals('Hlc(200:0)|node|200'));
       });
 
       test('save is called once per foldEntries batch', () async {
@@ -290,7 +292,7 @@ void main() {
 
         // Only one save call for the whole batch
         expect(mat.savedCursors, hasLength(1));
-        expect(mat.savedCursors.first, equals('Hlc(500:0)'));
+        expect(mat.savedCursors.first, equals('Hlc(500:0)|node|500'));
       });
     });
 

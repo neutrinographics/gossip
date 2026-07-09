@@ -483,13 +483,30 @@ class Coordinator {
   ) async {
     if (_eventsController.isClosed || entries.isEmpty) return;
 
-    // Fold merged entries into registered materializers
-    await _channelService.foldMergedEntries(
-      channelId,
-      streamId,
-      entries,
-      containsOutOfOrderEntries: containsOutOfOrderEntries,
-    );
+    // Fold merged entries into registered materializers. A materializer is
+    // app code: letting its exception propagate would abort this handler
+    // (suppressing the EntriesMerged event for entries that ARE durably
+    // merged, and stalling the engine's catch-up continuation) and land in
+    // the engine's dispatcher catch-all blaming the PEER for message
+    // corruption (COR3-14).
+    try {
+      await _channelService.foldMergedEntries(
+        channelId,
+        streamId,
+        entries,
+        containsOutOfOrderEntries: containsOutOfOrderEntries,
+      );
+    } catch (e) {
+      _handleError(
+        StorageSyncError(
+          SyncErrorType.storageFailure,
+          'Materializer failed folding merged entries for '
+          '$channelId/$streamId: $e',
+          occurredAt: DateTime.now(),
+          cause: e,
+        ),
+      );
+    }
 
     // Compute the new version vector for the stream
     final newVersion = await _entryRepository.getVersionVector(

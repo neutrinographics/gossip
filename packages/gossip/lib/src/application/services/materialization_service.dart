@@ -1,9 +1,9 @@
 import '../../domain/interfaces/entry_repository.dart';
 import '../../domain/interfaces/state_materializer.dart';
 import '../../domain/value_objects/channel_id.dart';
-import '../../domain/value_objects/hlc.dart';
 import '../../domain/value_objects/log_entry.dart';
 import '../../domain/value_objects/stream_id.dart';
+import 'fold_cursor.dart';
 import 'materializer_state.dart';
 
 /// Application service managing materialized state for event streams.
@@ -96,28 +96,34 @@ class MaterializationService {
     List<LogEntry> entries, {
     bool containsOutOfOrderEntries = false,
   }) async {
-    for (final matState in _statesForStream(channelId, streamId).toList()) {
-      await _enqueue(
-        matState,
-        () => _foldForState(
+    // Enqueue for ALL materializers before awaiting any: awaiting
+    // sequentially lets one throwing materializer starve its siblings of
+    // the batch — their cursors then jump over it on the next successful
+    // fold, a silent permanent divergence. Future.wait (non-eager) lets
+    // every fold finish and still surfaces the first failure.
+    final tasks = [
+      for (final matState in _statesForStream(channelId, streamId).toList())
+        _enqueue(
           matState,
-          channelId,
-          streamId,
-          entries,
-          containsOutOfOrderEntries: containsOutOfOrderEntries,
+          () => _foldForState(
+            matState,
+            channelId,
+            streamId,
+            entries,
+            containsOutOfOrderEntries: containsOutOfOrderEntries,
+          ),
         ),
-      );
-    }
+    ];
+    await Future.wait(tasks);
   }
 
   /// Forces a full rebuild of all materializers for the stream.
   Future<void> reset(ChannelId channelId, StreamId streamId) async {
-    for (final matState in _statesForStream(channelId, streamId).toList()) {
-      await _enqueue(
-        matState,
-        () => _fullRebuild(matState, channelId, streamId),
-      );
-    }
+    final tasks = [
+      for (final matState in _statesForStream(channelId, streamId).toList())
+        _enqueue(matState, () => _fullRebuild(matState, channelId, streamId)),
+    ];
+    await Future.wait(tasks);
   }
 
   /// Disposes all materializer state for a channel.
@@ -133,10 +139,13 @@ class MaterializationService {
 
   /// Disposes all materializer state.
   Future<void> disposeAll() async {
-    for (final state in _states.values) {
+    // Snapshot: a register() landing between the awaits would otherwise
+    // mutate the map mid-iteration.
+    final states = _states.values.toList();
+    _states.clear();
+    for (final state in states) {
       await state.dispose();
     }
-    _states.clear();
   }
 
   // ---------------------------------------------------------------------------
@@ -201,9 +210,9 @@ class MaterializationService {
       isReset: false,
     );
 
-    Hlc? cursor;
+    FoldCursor? cursor;
     if (cursorStr != null) {
-      cursor = Hlc.tryParse(cursorStr);
+      cursor = FoldCursor.tryParse(cursorStr);
       if (cursor == null) {
         // Invalid cursor — force full rebuild
         await _fullRebuild<T>(matState, channelId, streamId);
@@ -211,12 +220,13 @@ class MaterializationService {
       }
     }
 
-    // Fold entries beyond the cursor
+    // Fold entries beyond the cursor (full entry order, not timestamp
+    // alone — an entry TYING the cursor's timestamp may still be unfolded).
     final allEntries = await _entryRepository.getAll(channelId, streamId);
     final c = cursor; // promote to non-nullable
     final entriesToFold = c == null
         ? allEntries
-        : allEntries.where((e) => e.timestamp > c).toList();
+        : allEntries.where(c.isBefore).toList();
 
     T currentState = state;
     for (final entry in entriesToFold) {
@@ -224,7 +234,7 @@ class MaterializationService {
     }
 
     final newCursor = allEntries.isNotEmpty
-        ? allEntries.last.timestamp
+        ? FoldCursor.fromEntry(allEntries.last)
         : cursor;
 
     if (newCursor != null) {
@@ -253,7 +263,9 @@ class MaterializationService {
       state = matState.materializer.fold(state, entry);
     }
 
-    matState.cursor = allEntries.isNotEmpty ? allEntries.last.timestamp : null;
+    matState.cursor = allEntries.isNotEmpty
+        ? FoldCursor.fromEntry(allEntries.last)
+        : null;
     matState.cachedState = state;
     matState.isInitialized = true;
 
@@ -274,7 +286,7 @@ class MaterializationService {
       state = matState.materializer.fold(state, entry);
     }
     if (newEntries.isNotEmpty) {
-      matState.cursor = newEntries.last.timestamp;
+      matState.cursor = FoldCursor.fromEntry(newEntries.last);
     }
     matState.cachedState = state;
   }

@@ -51,6 +51,17 @@ class InMemoryEntryRepository implements EntryRepository {
   final Map<ChannelId, Map<StreamId, Map<NodeId, int>>> _latestSequenceCache =
       {};
 
+  /// Compaction floor per stream: the highest sequence per author removed
+  /// by [removeEntries] or adopted via [adoptVersionFloor] — entries at or
+  /// below it are no longer obtainable from this node.
+  ///
+  /// Monotonic like [_latestSequenceCache]; reset only when the stream
+  /// identity is retired ([clearStream]/[clearChannel]/[clearAll]).
+  /// Persistent implementations must persist this separately from the
+  /// entries themselves.
+  final Map<ChannelId, Map<StreamId, Map<NodeId, int>>> _compactionFloorCache =
+      {};
+
   @override
   Future<void> append(
     ChannelId channel,
@@ -132,10 +143,10 @@ class InMemoryEntryRepository implements EntryRepository {
     // Validate the whole batch first (against the store AND within the
     // batch) so the operation is all-or-nothing per the interface
     // contract.
-    final existing = _storage[channel]?[stream] ?? const <LogEntry>[];
-    final seen = <(NodeId, int)>{
-      for (final e in existing) (e.author, e.sequence),
-    };
+    final stored = _storage
+        .putIfAbsent(channel, () => {})
+        .putIfAbsent(stream, () => []);
+    final seen = <(NodeId, int)>{for (final e in stored) (e.author, e.sequence)};
     for (final entry in entries) {
       if (!seen.add((entry.author, entry.sequence))) {
         throw StateError(
@@ -145,8 +156,14 @@ class InMemoryEntryRepository implements EntryRepository {
       }
     }
 
+    // Insert without yielding: an await per entry would open interleaving
+    // windows in which a concurrent overlapping merge passes its own
+    // validation and the batch is only partially applied — despite the
+    // all-or-nothing contract. The set above already proved uniqueness,
+    // so the per-entry duplicate scan is skipped too.
     for (final entry in entries) {
-      await append(channel, stream, entry);
+      _insertSorted(stored, entry);
+      _updateLatestSequenceCache(channel, stream, entry);
     }
   }
 
@@ -211,7 +228,18 @@ class InMemoryEntryRepository implements EntryRepository {
     if (entries == null) return;
 
     final idsSet = ids.toSet();
-    entries.removeWhere((entry) => idsSet.contains(entry.id));
+    final floor = _compactionFloorCache
+        .putIfAbsent(channel, () => {})
+        .putIfAbsent(stream, () => {});
+    entries.removeWhere((entry) {
+      if (!idsSet.contains(entry.id)) return false;
+      // Removed by compaction: raise the floor so delta responses can tell
+      // requesters positioned below it that the range is unobtainable.
+      if (entry.sequence > (floor[entry.author] ?? 0)) {
+        floor[entry.author] = entry.sequence;
+      }
+      return true;
+    });
 
     // Deliberately do NOT rebuild _latestSequenceCache from survivors:
     // it is a monotonic high-water mark. Regressing it after compaction
@@ -225,12 +253,14 @@ class InMemoryEntryRepository implements EntryRepository {
   Future<void> clearStream(ChannelId channel, StreamId stream) async {
     _storage[channel]?[stream]?.clear();
     _latestSequenceCache[channel]?.remove(stream);
+    _compactionFloorCache[channel]?.remove(stream);
   }
 
   @override
   Future<void> clearChannel(ChannelId channel) async {
     _storage.remove(channel);
     _latestSequenceCache.remove(channel);
+    _compactionFloorCache.remove(channel);
   }
 
   @override
@@ -249,6 +279,42 @@ class InMemoryEntryRepository implements EntryRepository {
   Future<void> clearAll() async {
     _storage.clear();
     _latestSequenceCache.clear();
+    _compactionFloorCache.clear();
+  }
+
+  @override
+  Future<VersionVector> getCompactionFloor(
+    ChannelId channel,
+    StreamId stream,
+  ) async {
+    final streamFloor = _compactionFloorCache[channel]?[stream];
+    if (streamFloor == null || streamFloor.isEmpty) {
+      return VersionVector.empty;
+    }
+    return VersionVector(Map<NodeId, int>.from(streamFloor));
+  }
+
+  @override
+  Future<void> adoptVersionFloor(
+    ChannelId channel,
+    StreamId stream,
+    VersionVector floor,
+  ) async {
+    final streamCache = _latestSequenceCache
+        .putIfAbsent(channel, () => {})
+        .putIfAbsent(stream, () => {});
+    final streamFloor = _compactionFloorCache
+        .putIfAbsent(channel, () => {})
+        .putIfAbsent(stream, () => {});
+    for (final adopted in floor.entries.entries) {
+      final author = adopted.key;
+      final seq = adopted.value;
+      // Only ranges beyond our high-water mark are truncated history; at
+      // or below it we hold (or already adopted) the entries.
+      if (seq <= (streamCache[author] ?? 0)) continue;
+      streamCache[author] = seq;
+      streamFloor[author] = seq;
+    }
   }
 
   @override

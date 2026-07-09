@@ -2,6 +2,7 @@ import '../../domain/value_objects/node_id.dart';
 import '../../domain/value_objects/channel_id.dart';
 import '../../domain/value_objects/stream_id.dart';
 import '../../domain/value_objects/log_entry.dart';
+import '../../domain/value_objects/version_vector.dart';
 import 'protocol_message.dart';
 
 /// Response containing the requested missing entries.
@@ -42,11 +43,23 @@ class DeltaResponse extends ProtocolMessage {
   /// one page per periodic round.
   final bool hasMore;
 
+  /// Per-author compaction floor, for authors where the requester asked
+  /// for entries the sender has compacted away (requested position below
+  /// the sender's floor).
+  ///
+  /// A requester whose version vector is below an author's floor can never
+  /// obtain the range (this sender pruned it by retention policy); it
+  /// should adopt the floor as truncated history so the entries above it
+  /// merge contiguously instead of being dropped forever. Empty when the
+  /// requester's position is serviceable (the common case).
+  final VersionVector floor;
+
   const DeltaResponse({
     required NodeId sender,
     required this.channelId,
     required this.streamId,
     required this.entries,
     this.hasMore = false,
+    this.floor = VersionVector.empty,
   }) : super(sender);
 }
