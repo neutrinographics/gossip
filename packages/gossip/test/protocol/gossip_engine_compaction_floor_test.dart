@@ -221,6 +221,51 @@ void main() {
     });
   });
 
+  group('stale self-authorship (COR3-4)', () {
+    test(
+      'a peer claiming sequences under OUR authorship beyond our own '
+      'high-water mark raises our sequence floor',
+      () async {
+        final h = GossipEngineTestHarness();
+        final peer = h.addPeer('peer1');
+        h.createChannel('ch1', streamIds: ['s1']);
+
+        // The peer's digest says WE authored up to seq 7 — but our store
+        // says 0: this channel/stream identity was removed and recreated
+        // (or our storage was reset). Appending from seq 1 again would
+        // collide with our stale history on every peer: the new entries
+        // would be permanently invisible (their VVs already cover the
+        // numbers) and divergent (two payloads for one entry identity).
+        await h.engine.handleDigestResponse(
+          DigestResponse(
+            sender: peer.id,
+            digests: [
+              ChannelDigest(
+                channelId: channelId,
+                streams: [
+                  StreamDigest(
+                    streamId: streamId,
+                    version: VersionVector({h.localNode: 7}),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+
+        expect(
+          await h.entryRepository.latestSequence(
+            channelId,
+            streamId,
+            h.localNode,
+          ),
+          equals(7),
+          reason: 'the next local append must allocate seq 8, not seq 1',
+        );
+      },
+    );
+  });
+
   group('end to end', () {
     test(
       'late joiner converges with a compacted responder (the COR3-1 '

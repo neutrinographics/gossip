@@ -1240,10 +1240,40 @@ class GossipEngine {
         // check above and emit duplicate DeltaRequests).
         _pendingDeltaRequests[key] = timePort.nowMs;
 
-        final ourVersion = await _computeVersionVector(
+        var ourVersion = await _computeVersionVector(
           channelDigest.channelId,
           streamDigest.streamId,
         );
+
+        // The peer claims entries under OUR authorship beyond our own
+        // high-water mark: this channel/stream identity was removed and
+        // recreated (or local storage was reset) while peers kept the old
+        // history. Appending from the stale-low sequence would collide
+        // with it — the new entries would be invisible to every peer whose
+        // vector already covers the numbers, and two payloads would exist
+        // under one entry identity. Adopt the claim as a sequence floor so
+        // new local appends allocate past it (COR3-4). A lying peer can
+        // only make us skip sequence numbers, which is harmless.
+        final theirClaimForUs = streamDigest.version[localNode];
+        if (theirClaimForUs > ourVersion[localNode]) {
+          await entryRepository.adoptVersionFloor(
+            channelDigest.channelId,
+            streamDigest.streamId,
+            VersionVector({localNode: theirClaimForUs}),
+          );
+          _log(
+            LogLevel.warning,
+            'peer ${_shortId(peer.value)} holds our authorship up to '
+            '$theirClaimForUs in ${channelDigest.channelId}/'
+            '${streamDigest.streamId} but our mark is '
+            '${ourVersion[localNode]} — adopting as sequence floor '
+            '(recreated channel identity?)',
+          );
+          ourVersion = await _computeVersionVector(
+            channelDigest.channelId,
+            streamDigest.streamId,
+          );
+        }
 
         // Only request delta if peer has entries we don't have
         if (!ourVersion.dominates(streamDigest.version)) {

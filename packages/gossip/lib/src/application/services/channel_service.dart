@@ -123,10 +123,14 @@ class ChannelService {
     }
   }
 
-  /// Creates a new channel with the given identifier.
+  /// Creates a new channel with the given identifier, or keeps the
+  /// existing one (get-or-create).
   ///
-  /// Initializes a new [ChannelAggregate] aggregate and persists it to the repository.
-  /// The channel starts with no members and no streams.
+  /// Initializes a new [ChannelAggregate] aggregate and persists it to the
+  /// repository. The channel starts with no members and no streams. If a
+  /// channel with this ID already exists it is left untouched and no
+  /// events are emitted — silently replacing it would wipe membership and
+  /// every stream registration (COR3-16).
   ///
   /// Used when: Local node discovers or creates a new channel.
   ///
@@ -134,6 +138,10 @@ class ChannelService {
   ///
   /// Returns: List of domain events emitted during creation (e.g., [ChannelCreated]).
   Future<List<DomainEvent>> createChannel(ChannelId channelId) async {
+    if (_channelRepository != null &&
+        await _channelRepository.findById(channelId) != null) {
+      return const [];
+    }
     final channel = ChannelAggregate(id: channelId, localNode: localNode);
     if (_channelRepository != null) {
       await _channelRepository.save(channel);
