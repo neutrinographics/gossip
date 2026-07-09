@@ -31,9 +31,36 @@ import '../value_objects/version_vector.dart';
 /// - Sequence number
 ///
 /// ## Ordering Guarantees
-/// - [getAll] returns entries sorted by HLC timestamp (causally ordered)
-/// - [entriesSince] maintains timestamp ordering
-/// - [entriesForAuthorAfter] returns entries in sequence order
+/// - [getAll] and [entriesSince] MUST return entries in the full
+///   [LogEntry.compareTo] total order: timestamp, then author, then
+///   sequence. Sorting by timestamp alone is NOT sufficient — HLC ties
+///   would then be ordered by arrival, which differs across peers, and
+///   non-commutative materializers would converge to different states on
+///   different devices.
+/// - [entriesForAuthorAfter] returns entries in sequence order.
+///
+/// ## Critical Invariants (violating these corrupts sync)
+///
+/// 1. **[getVersionVector] and [latestSequence] are monotonic high-water
+///    marks over everything EVER appended.** They must never regress —
+///    not on [removeEntries] (compaction) and not across process restarts.
+///    Deriving them from surviving rows (e.g. `SELECT MAX(sequence)`)
+///    reintroduces two data-corruption bugs: compacted entries are
+///    re-fetched from peers every round (resurrection), and after all of
+///    an author's entries are pruned the author re-issues already-used
+///    sequence numbers — making its new entries permanently invisible to
+///    peers whose version vectors already cover them. Persist the marks
+///    separately from the entries themselves.
+/// 2. **Duplicate (author, sequence) pairs must throw [StateError].**
+///    Silently dropping a duplicate is how a sequence-allocation race
+///    loses an entry with no trace. Callers (the sync engine) filter
+///    duplicates before appending; a duplicate reaching the repository is
+///    a bug that must surface.
+/// 3. **[appendAll] is all-or-nothing.** If any entry of the batch is
+///    invalid (duplicate against the store or within the batch), the
+///    whole batch must be rejected atomically with [StateError] — partial
+///    application leaves entries the version vector covers but the
+///    application never saw.
 ///
 /// ## Implementation Guidance
 ///
@@ -66,16 +93,18 @@ abstract interface class EntryRepository {
   /// Appends a locally-authored entry to a stream.
   ///
   /// The entry must have the next sequence number for its author.
-  /// Throws if the sequence number is invalid or if the entry already exists.
+  /// Throws [StateError] if an entry with the same (author, sequence)
+  /// already exists — never silently skip it (see Critical Invariants).
   ///
   /// Used when: The local node creates a new entry.
   Future<void> append(ChannelId channel, StreamId stream, LogEntry entry);
 
   /// Appends multiple entries atomically during synchronization.
   ///
-  /// All entries are added in a single operation. If any entry fails
-  /// validation, none are added. Implementations should use transactions
-  /// to ensure atomicity.
+  /// All-or-nothing: if any entry is a duplicate — against the store or
+  /// within the batch — the whole batch must be rejected with [StateError]
+  /// and nothing applied. Skip-and-continue semantics are NOT permitted
+  /// (see Critical Invariants). Implementations should use transactions.
   ///
   /// Used when: Merging entries received from a peer during anti-entropy.
   Future<void> appendAll(
@@ -121,7 +150,13 @@ abstract interface class EntryRepository {
     int afterSequence,
   );
 
-  /// Returns the highest sequence number for an author, or 0 if none exist.
+  /// Returns the highest sequence number ever appended by an author, or 0
+  /// if the author never appended to this stream.
+  ///
+  /// This is a monotonic high-water mark: it must reflect entries that
+  /// have since been removed by [removeEntries], and it must survive
+  /// process restarts (see Critical Invariants). "No surviving entries"
+  /// does NOT mean 0.
   ///
   /// Used when: Determining the next sequence number for a local entry.
   Future<int> latestSequence(ChannelId channel, StreamId stream, NodeId author);
@@ -143,6 +178,10 @@ abstract interface class EntryRepository {
   /// Deletes entries identified by their IDs. Implementations should use
   /// transactions to ensure atomicity when removing multiple entries.
   ///
+  /// MUST NOT regress [getVersionVector] or [latestSequence]: the
+  /// high-water marks reflect everything ever appended, including the
+  /// entries removed here (see Critical Invariants).
+  ///
   /// Used when: Applying retention policies to reclaim storage.
   Future<void> removeEntries(
     ChannelId channel,
@@ -150,7 +189,15 @@ abstract interface class EntryRepository {
     List<LogEntryId> ids,
   );
 
-  /// Removes all entries from a stream.
+  /// Removes all entries from a stream, including its high-water marks.
+  ///
+  /// Unlike [removeEntries], this resets [getVersionVector] and
+  /// [latestSequence] for the stream — correct only when the stream
+  /// identity is being retired. WARNING: clearing a stream that still
+  /// exists on peers (or recreating one under the same channel/stream IDs)
+  /// restarts sequence allocation at 1 while peers' version vectors still
+  /// cover the old numbers — new local entries become permanently
+  /// invisible to them.
   ///
   /// Used when: Deleting a stream or clearing data for testing.
   Future<void> clearStream(ChannelId channel, StreamId stream);
@@ -162,8 +209,11 @@ abstract interface class EntryRepository {
 
   /// Returns the version vector for a stream.
   ///
-  /// The version vector maps each author to their highest sequence number.
-  /// Returns an empty version vector if the stream has no entries.
+  /// Maps each author to the highest sequence number they EVER appended —
+  /// a monotonic high-water mark that must survive [removeEntries] and
+  /// process restarts, NOT a summary of surviving rows (see Critical
+  /// Invariants). Returns an empty version vector only if nothing was
+  /// ever appended.
   ///
   /// This method should be O(1) for implementations that cache the version
   /// vector, avoiding the need to iterate all entries.

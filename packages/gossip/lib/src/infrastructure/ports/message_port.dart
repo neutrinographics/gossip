@@ -56,8 +56,12 @@ class IncomingMessage {
 ///
 /// ## Implementation Example
 ///
+/// Extend (rather than implement) [MessagePort] to inherit the default
+/// backpressure members ([pendingSendCount], [totalPendingSendCount]) —
+/// with `implements`, Dart requires overriding every member.
+///
 /// ```dart
-/// class BluetoothMessagePort implements MessagePort {
+/// class BluetoothMessagePort extends MessagePort {
 ///   final _controller = StreamController<IncomingMessage>.broadcast();
 ///   final BluetoothAdapter _adapter;
 ///
@@ -91,7 +95,13 @@ class IncomingMessage {
 ///
 /// - **Best-effort delivery**: The library handles message loss via retransmission
 /// - **Non-blocking send**: `send()` should return quickly (queue if needed)
-/// - **No exceptions on failure**: Network errors should be logged, not thrown
+/// - **Failure signalling**: a `send()` that is KNOWN to have failed
+///   (destination not connected, transport write rejected) should throw or
+///   complete with an error — the engine treats a throw as immediate send
+///   failure and rolls back optimistic state (e.g. its pending-request
+///   flags) instead of waiting out a timeout. Completing normally means
+///   "handed to the transport, delivery not guaranteed". Never complete a
+///   known-failed send as success.
 /// - **Message size**: Support at least 32KB payloads (Android Nearby limit)
 ///
 /// ## Testing
@@ -111,7 +121,9 @@ abstract class MessagePort {
   /// The implementation should:
   /// - Deliver bytes best-effort (no guaranteed delivery)
   /// - Not block the caller (async delivery)
-  /// - Handle unreachable destinations gracefully (no exceptions)
+  /// - Throw (or complete with an error) when the send is known to have
+  ///   failed — e.g. the destination is not connected — so callers can
+  ///   roll back optimistic state immediately instead of timing out
   ///
   /// The optional [priority] parameter indicates message urgency:
   /// - [MessagePriority.high]: Time-sensitive messages (SWIM pings/acks)
