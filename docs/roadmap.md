@@ -33,6 +33,16 @@ detection. Seeded from the deferred follow-ups of the 2026-07 audits
 - ☐ **Low** — [Bound the Bluetooth send-queue depth](backlog/engine-send-queue-depth-cap.md) · add a size ceiling so a slow/stalled link can't grow the outgoing queue without limit (backstop; the congestion gate already throttles in practice)
 - ☐ **Low** — [Revisit the failure-detection sensitivity thresholds](backlog/engine-swim-threshold-tuning.md) · measure and possibly tighten the 5/15 consecutive-miss thresholds now that fair-rotation probing, adaptive timeouts, and indirect checks are in place
 
+## Testing
+
+Test-infrastructure quality: making simulated network conditions expressive
+enough to exercise the failure modes the protocol logic exists for.
+
+- ◐ **High** — [Simulate adverse network conditions in the test harness](backlog/testing-network-condition-simulation.md) · per-link latency/loss/duplication/one-way-partition/corruption policies on the in-memory bus, async delivery yield, emergent backpressure
+- ◐ **High** — [Integration coverage for adverse network scenarios](backlog/testing-adverse-scenario-coverage.md) · lost-message retries, asymmetric partition + indirect probing, duplicate frames, clock skew, sustained congestion — depends on the harness above
+- ◐ **High** — [Run full syncs over a faulty BLE link in the end-to-end tests](backlog/testing-bluey-adverse-e2e.md) · bluey's fault injectors exist but only unit tests use them; drive chunk drops, hung writes, mid-message disconnects through the whole stack
+- ☐ **High** — [A stateful fake network for the Nearby transport](backlog/testing-nearby-fake-port.md) · bring gossip_nearby up to bluey's standard: fake endpoint network + end-to-end Coordinator tests
+
 ## Code health
 
 Internal structure, documentation honesty, and audit-hygiene work — no
