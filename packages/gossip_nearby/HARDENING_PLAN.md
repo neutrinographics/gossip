@@ -10,7 +10,11 @@ Production log analysis and code review identified several reliability gaps. Thi
 
 **Fix:** The retry timer already ticks every `_connectionTimeout` (5s). Add a sweep of `_handshakeStartTimes`: for any entry older than a handshake timeout (e.g. 10s), call `_registry.cancelPendingHandshake()`, disconnect the endpoint, and log it. The endpoint will be rediscovered and retried naturally by the existing retry mechanism.
 
-**Status:** Complete. Handshake timeout sweep added to retry timer. Stale handshakes are disconnected and cleaned up after 10s.
+**Status:** Complete (implemented 2026-07-09 — audit COR3-7 found this section previously claimed completion while no sweep code existed). What now exists in `ConnectionService`:
+
+- The jittered retry tick runs `_sweepStaleHandshakes()` before retrying pending connections. Any handshake pending longer than `_handshakeTimeout` (10s) is cancelled via `_registry.cancelPendingHandshake()`, its `HandshakeFailed` event is emitted on `events`, the failure is recorded in metrics, and the platform connection is torn down via `NearbyPort.disconnect()` so the endpoint can be rediscovered.
+- Handshake start times are tracked in `TimePort` milliseconds, so the sweep is deterministic under simulated time in tests.
+- The failure paths that previously bypassed cleanup — endpoint disconnect mid-handshake, `ConnectionFailed`, handshake decode failure, and handshake send failure — all release the pending-handshake slot through the same `_failPendingHandshake()` helper, so slots (and connection-limit capacity) can no longer leak.
 
 ---
 

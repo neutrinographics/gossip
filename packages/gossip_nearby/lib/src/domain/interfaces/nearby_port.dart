@@ -101,3 +101,17 @@ class Disconnected extends NearbyEvent {
   @override
   String toString() => 'Disconnected(id: $id)';
 }
+
+/// A payload transfer to an endpoint failed after it was enqueued.
+///
+/// The platform accepts payloads at enqueue time; this event is the only
+/// signal that delivery subsequently did not happen.
+class PayloadTransferFailed extends NearbyEvent {
+  final EndpointId id;
+  final int payloadId;
+
+  const PayloadTransferFailed({required this.id, required this.payloadId});
+
+  @override
+  String toString() => 'PayloadTransferFailed(id: $id, payloadId: $payloadId)';
+}

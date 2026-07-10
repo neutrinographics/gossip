@@ -70,7 +70,14 @@ class ConnectionService {
   final _errorController = StreamController<ConnectionError>.broadcast();
   StreamSubscription<NearbyEvent>? _nearbySubscription;
 
-  final Map<EndpointId, DateTime> _handshakeStartTimes = {};
+  /// A handshake pending longer than this is presumed dead: the slot is
+  /// released and the platform connection torn down so the endpoint can be
+  /// rediscovered and retried.
+  static const _handshakeTimeout = Duration(seconds: 10);
+
+  /// Handshake start times in [TimePort] milliseconds, so the timeout
+  /// sweep is drivable by simulated time in tests.
+  final Map<EndpointId, int> _handshakeStartTimes = {};
   final Map<EndpointId, _PendingDiscovery> _pendingDiscoveries = {};
   bool _disposed = false;
 
@@ -127,6 +134,17 @@ class ConnectionService {
   /// Stream of connection errors for observability.
   Stream<ConnectionError> get errors => _errorController.stream;
 
+  // Emissions guarded against closed controllers: a send failure or a late
+  // port callback landing after dispose() must not throw StateError into
+  // its awaiter.
+  void _emitEvent(ConnectionEvent event) {
+    if (!_eventController.isClosed) _eventController.add(event);
+  }
+
+  void _emitError(ConnectionError error) {
+    if (!_errorController.isClosed) _errorController.add(error);
+  }
+
   /// Metrics for this service.
   NearbyMetrics get metrics => _metrics;
 
@@ -140,9 +158,15 @@ class ConnectionService {
     Uint8List bytes, {
     MessagePriority priority = MessagePriority.normal,
   }) async {
+    if (_disposed) {
+      throw StateError(
+        'Cannot send to $destination: ConnectionService is disposed',
+      );
+    }
+
     final endpointId = _registry.getEndpointIdForNodeId(destination);
     if (endpointId == null) {
-      _errorController.add(
+      _emitError(
         ConnectionNotFoundError(
           destination,
           'No active connection for peer',
@@ -222,7 +246,7 @@ class ConnectionService {
       );
       message.completer.complete();
     } catch (e, stack) {
-      _errorController.add(
+      _emitError(
         SendFailedError(
           message.destination,
           'Failed to send payload: $e',
@@ -235,11 +259,32 @@ class ConnectionService {
   }
 
   /// Disposes resources.
+  ///
+  /// Queued-but-unsent messages are completed with an error so their
+  /// awaiters don't hang. A message already in flight is completed by its
+  /// own send path, whose emissions are guarded against the closed
+  /// controllers.
   Future<void> dispose() async {
+    if (_disposed) return;
     _disposed = true;
     await _nearbySubscription?.cancel();
+    _drainQueue(_highPriorityQueue);
+    _drainQueue(_normalPriorityQueue);
     await _eventController.close();
     await _errorController.close();
+  }
+
+  /// Completes every message in [queue] with a disposal error.
+  void _drainQueue(Queue<_QueuedMessage> queue) {
+    while (queue.isNotEmpty) {
+      final message = queue.removeFirst();
+      message.completer.completeError(
+        StateError(
+          'Transport disposed before message to '
+          '${message.destination} was sent',
+        ),
+      );
+    }
   }
 
   void _handleNearbyEvent(NearbyEvent event) {
@@ -257,6 +302,8 @@ class ConnectionService {
           _onConnectionFailed(id, reason);
         case Disconnected(:final id):
           _onDisconnected(id);
+        case PayloadTransferFailed(:final id, :final payloadId):
+          _onPayloadTransferFailed(id, payloadId);
       }
     } catch (e, stack) {
       _log(LogLevel.error, 'Error handling nearby event: $event', e, stack);
@@ -345,7 +392,7 @@ class ConnectionService {
         'Connection limit reached ($maxConnections), '
         'disconnecting $id before handshake',
       );
-      _errorController.add(
+      _emitError(
         ConnectionLimitReachedError(
           id,
           'Connection limit of $maxConnections reached',
@@ -367,7 +414,7 @@ class ConnectionService {
 
     // Register pending handshake and send our NodeId
     _registry.registerPendingHandshake(id);
-    _handshakeStartTimes[id] = DateTime.now();
+    _handshakeStartTimes[id] = _timePort.nowMs;
     _metrics.recordHandshakeStarted();
 
     final handshakeBytes = _codec.encode(
@@ -379,9 +426,8 @@ class ConnectionService {
         Object e,
         StackTrace stack,
       ) {
-        _metrics.recordHandshakeFailed();
-        _handshakeStartTimes.remove(id);
-        _errorController.add(
+        _failPendingHandshake(id, 'Handshake send failed: $e');
+        _emitError(
           HandshakeTimeoutError(
             id,
             'Handshake send failed: $e',
@@ -443,9 +489,8 @@ class ConnectionService {
   void _handleHandshakeMessage(EndpointId id, Uint8List bytes) {
     final handshakeData = _codec.decode(bytes);
     if (handshakeData == null) {
-      _metrics.recordHandshakeFailed();
-      _handshakeStartTimes.remove(id);
-      _errorController.add(
+      _failPendingHandshake(id, 'Failed to decode handshake message');
+      _emitError(
         HandshakeInvalidError(
           id,
           'Failed to decode handshake message',
@@ -455,9 +500,9 @@ class ConnectionService {
       return;
     }
 
-    final startTime = _handshakeStartTimes.remove(id);
-    final duration = startTime != null
-        ? DateTime.now().difference(startTime)
+    final startMs = _handshakeStartTimes.remove(id);
+    final duration = startMs != null
+        ? Duration(milliseconds: _timePort.nowMs - startMs)
         : Duration.zero;
 
     final endpoint = Endpoint(
@@ -506,7 +551,7 @@ class ConnectionService {
       '(displayName: ${handshakeData.displayName}, ${duration.inMilliseconds}ms)',
     );
 
-    _eventController.add(event);
+    _emitEvent(event);
   }
 
   void _handleGossipMessage(EndpointId id, Uint8List bytes) {
@@ -537,20 +582,28 @@ class ConnectionService {
   /// that cause both sides to fail indefinitely.
   void _scheduleNextRetry() {
     if (_disposed) return;
-    _timePort
-        .delay(_jitteredTimeout())
-        .then((_) {
-          if (!_disposed) {
-            _retryPendingConnections();
-            _scheduleNextRetry();
-          }
-        })
-        .catchError((Object e, StackTrace stack) {
-          if (!_disposed) {
-            _log(LogLevel.error, 'Retry timer failed, rescheduling', e, stack);
-            _scheduleNextRetry();
-          }
-        });
+    unawaited(
+      _timePort
+          .delay(_jitteredTimeout())
+          .then((_) {
+            if (!_disposed) {
+              _sweepStaleHandshakes();
+              _retryPendingConnections();
+              _scheduleNextRetry();
+            }
+          })
+          .catchError((Object e, StackTrace stack) {
+            if (!_disposed) {
+              _log(
+                LogLevel.error,
+                'Retry timer failed, rescheduling',
+                e,
+                stack,
+              );
+              _scheduleNextRetry();
+            }
+          }),
+    );
   }
 
   /// Returns the connection timeout with ±30% random jitter.
@@ -591,6 +644,94 @@ class ConnectionService {
     }
   }
 
+  /// Cancels handshakes that have been pending longer than
+  /// [_handshakeTimeout].
+  ///
+  /// Without this, an endpoint that connects but never completes the
+  /// handshake (crashed peer, half-open link) would hold its registry slot
+  /// — and, with [maxConnections] set, a connection-limit slot — forever.
+  /// The platform connection is torn down so the endpoint can be
+  /// rediscovered and retried by the normal discovery path.
+  void _sweepStaleHandshakes() {
+    if (_handshakeStartTimes.isEmpty) return;
+
+    final nowMs = _timePort.nowMs;
+    final timeoutMs = _handshakeTimeout.inMilliseconds;
+    final stale = [
+      for (final entry in _handshakeStartTimes.entries)
+        if (nowMs - entry.value >= timeoutMs) entry.key,
+    ];
+
+    for (final id in stale) {
+      _log(
+        LogLevel.warning,
+        'Handshake with $id pending for over '
+        '${_handshakeTimeout.inSeconds}s, cancelling',
+      );
+      _failPendingHandshake(
+        id,
+        'Handshake timed out after ${_handshakeTimeout.inSeconds}s',
+        requestDisconnect: true,
+      );
+    }
+  }
+
+  /// Releases the pending-handshake slot for [id] and emits the registry's
+  /// [HandshakeFailed] event.
+  ///
+  /// No-op when no handshake is pending, so callers on every failure path
+  /// (timeout, disconnect, decode failure, send failure) can invoke it
+  /// unconditionally without drifting the metrics.
+  void _failPendingHandshake(
+    EndpointId id,
+    String reason, {
+    bool requestDisconnect = false,
+  }) {
+    _handshakeStartTimes.remove(id);
+    final event = _registry.cancelPendingHandshake(id, reason);
+    if (event == null) return;
+
+    _metrics.recordHandshakeFailed();
+    _emitEvent(event);
+
+    if (requestDisconnect) {
+      unawaited(
+        _nearbyPort.disconnect(id).catchError((Object e, StackTrace stack) {
+          _log(
+            LogLevel.warning,
+            'Failed to disconnect endpoint $id after handshake failure',
+            e,
+            stack,
+          );
+        }),
+      );
+    }
+  }
+
+  /// Surfaces a platform-reported payload transfer failure.
+  ///
+  /// Send futures complete when the platform accepts the payload, so this
+  /// event is the only signal a delivery did not happen. For a connected
+  /// peer it is reported as a [SendFailedError] on [errors].
+  void _onPayloadTransferFailed(EndpointId id, int payloadId) {
+    final nodeId = _registry.getNodeIdForEndpoint(id);
+    if (nodeId == null) {
+      _log(
+        LogLevel.warning,
+        'Payload transfer $payloadId to unknown endpoint $id failed',
+      );
+      return;
+    }
+
+    _emitError(
+      SendFailedError(
+        nodeId,
+        'Payload transfer $payloadId to $nodeId failed after enqueue',
+        occurredAt: DateTime.now(),
+      ),
+    );
+  }
+
   void _onEndpointLost(EndpointId id) {
     _log(LogLevel.debug, 'Endpoint lost: $id');
     _pendingDiscoveries.remove(id);
@@ -602,23 +743,18 @@ class ConnectionService {
       'Connection failed for endpoint: $id (reason: $reason)',
     );
     _metrics.recordConnectionFailed();
-    if (_handshakeStartTimes.remove(id) != null) {
-      _metrics.recordHandshakeFailed();
-    }
+    _failPendingHandshake(id, 'Connection failed during handshake: $reason');
   }
 
   void _onDisconnected(EndpointId id) {
     _log(LogLevel.info, 'Disconnected: $id');
 
-    // Clean up any pending handshake
-    if (_handshakeStartTimes.remove(id) != null) {
-      _metrics.recordHandshakeFailed();
-    }
+    _failPendingHandshake(id, 'Disconnected during handshake');
 
     final event = _registry.removeConnection(id, 'Disconnected');
     if (event != null) {
       _metrics.recordDisconnection();
-      _eventController.add(event);
+      _emitEvent(event);
     }
   }
 

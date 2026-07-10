@@ -365,6 +365,36 @@ void main() {
         expect(error.cause, isA<Exception>());
       });
 
+      test('emits SendFailedError when a payload transfer to a connected peer '
+          'fails', () async {
+        final endpointId = EndpointId('remote-ep');
+        final remoteNodeId = NodeId('remote-node-456');
+
+        // Establish and complete handshake
+        nearbyEventController.add(ConnectionEstablished(id: endpointId));
+        await Future.delayed(Duration.zero);
+        nearbyEventController.add(
+          PayloadReceived(
+            id: endpointId,
+            bytes: _encodeHandshake(remoteNodeId),
+          ),
+        );
+        await Future.delayed(Duration.zero);
+
+        final errors = <ConnectionError>[];
+        service.errors.listen(errors.add);
+
+        nearbyEventController.add(
+          PayloadTransferFailed(id: endpointId, payloadId: 7),
+        );
+        await Future.delayed(Duration.zero);
+
+        expect(errors, hasLength(1));
+        final error = errors.first as SendFailedError;
+        expect(error.nodeId, equals(remoteNodeId));
+        expect(error.type, equals(ConnectionErrorType.sendFailed));
+      });
+
       test(
         'emits HandshakeInvalidError when handshake decoding fails',
         () async {
@@ -856,6 +886,218 @@ void main() {
 
         await svc.dispose();
       });
+    });
+
+    group('dispose', () {
+      final endpointId = EndpointId('remote-ep');
+      final remoteNodeId = NodeId('remote-node-456');
+
+      /// Establishes a connection and completes the handshake so sends
+      /// can be routed to [remoteNodeId].
+      Future<void> completeHandshake() async {
+        nearbyEventController.add(ConnectionEstablished(id: endpointId));
+        await Future.delayed(Duration.zero);
+        nearbyEventController.add(
+          PayloadReceived(
+            id: endpointId,
+            bytes: _encodeHandshake(remoteNodeId),
+          ),
+        );
+        await Future.delayed(Duration.zero);
+      }
+
+      test('completes queued sends with an error instead of hanging', () async {
+        await completeHandshake();
+
+        // Gate the port so the first send stays in flight and the second
+        // stays queued.
+        final sendGate = Completer<void>();
+        when(
+          () => mockNearbyPort.sendPayload(any(), any()),
+        ).thenAnswer((_) => sendGate.future);
+
+        final inFlight = service.sendGossipMessage(
+          remoteNodeId,
+          Uint8List.fromList([1]),
+        );
+        final queued = service.sendGossipMessage(
+          remoteNodeId,
+          Uint8List.fromList([2]),
+        );
+        await Future.delayed(Duration.zero);
+
+        final inFlightExpectation = expectLater(
+          inFlight,
+          throwsA(isA<Exception>()),
+        );
+        final queuedExpectation = expectLater(
+          queued,
+          throwsA(isA<StateError>()),
+        );
+
+        await service.dispose();
+
+        // The in-flight send fails after dispose; its awaiter must still
+        // be completed instead of the error being thrown into a closed
+        // controller.
+        sendGate.completeError(Exception('link died'));
+
+        await inFlightExpectation;
+        await queuedExpectation;
+      });
+
+      test(
+        'send after dispose completes with an error without touching the port',
+        () async {
+          await completeHandshake();
+          clearInteractions(mockNearbyPort);
+
+          await service.dispose();
+
+          await expectLater(
+            service.sendGossipMessage(remoteNodeId, Uint8List.fromList([1])),
+            throwsA(isA<StateError>()),
+          );
+          verifyNever(() => mockNearbyPort.sendPayload(any(), any()));
+        },
+      );
+    });
+
+    group('handshake timeout', () {
+      late MockNearbyPort timeoutMockPort;
+      late ConnectionRegistry timeoutRegistry;
+      late StreamController<NearbyEvent> timeoutController;
+      late InMemoryTimePort timePort;
+
+      setUp(() {
+        timeoutMockPort = MockNearbyPort();
+        timeoutRegistry = ConnectionRegistry();
+        timeoutController = StreamController<NearbyEvent>.broadcast();
+        timePort = InMemoryTimePort();
+
+        when(
+          () => timeoutMockPort.events,
+        ).thenAnswer((_) => timeoutController.stream);
+        when(
+          () => timeoutMockPort.requestConnection(any()),
+        ).thenAnswer((_) async {});
+        when(
+          () => timeoutMockPort.sendPayload(any(), any()),
+        ).thenAnswer((_) async {});
+        when(() => timeoutMockPort.disconnect(any())).thenAnswer((_) async {});
+      });
+
+      tearDown(() async {
+        await timeoutController.close();
+      });
+
+      ConnectionService createTimeoutService({int? maxConnections}) {
+        return ConnectionService(
+          localNodeId: NodeId('aaa'),
+          nearbyPort: timeoutMockPort,
+          registry: timeoutRegistry,
+          timePort: timePort,
+          connectionTimeout: const Duration(seconds: 5),
+          random: Random(42),
+          maxConnections: maxConnections,
+        );
+      }
+
+      test(
+        'cancels pending handshake when endpoint disconnects mid-handshake',
+        () async {
+          final svc = createTimeoutService();
+
+          timeoutController.add(ConnectionEstablished(id: EndpointId('ep1')));
+          await Future.delayed(Duration.zero);
+          expect(timeoutRegistry.pendingHandshakeCount, equals(1));
+
+          timeoutController.add(Disconnected(id: EndpointId('ep1')));
+          await Future.delayed(Duration.zero);
+
+          expect(timeoutRegistry.pendingHandshakeCount, equals(0));
+
+          await svc.dispose();
+        },
+      );
+
+      test('cancels pending handshake when handshake decode fails', () async {
+        final svc = createTimeoutService();
+
+        timeoutController.add(ConnectionEstablished(id: EndpointId('ep1')));
+        await Future.delayed(Duration.zero);
+        expect(timeoutRegistry.pendingHandshakeCount, equals(1));
+
+        // Malformed handshake payload (declared length exceeds bytes)
+        timeoutController.add(
+          PayloadReceived(
+            id: EndpointId('ep1'),
+            bytes: Uint8List.fromList([0x01, 0, 0]),
+          ),
+        );
+        await Future.delayed(Duration.zero);
+
+        expect(timeoutRegistry.pendingHandshakeCount, equals(0));
+
+        await svc.dispose();
+      });
+
+      test('sweeps handshake pending longer than timeout and emits '
+          'HandshakeFailed', () async {
+        final svc = createTimeoutService();
+        final events = <ConnectionEvent>[];
+        svc.events.listen(events.add);
+
+        timeoutController.add(ConnectionEstablished(id: EndpointId('ep1')));
+        await Future.delayed(Duration.zero);
+        expect(timeoutRegistry.pendingHandshakeCount, equals(1));
+
+        // First retry tick at ~7s: handshake age below the 10s timeout,
+        // must not be swept yet.
+        await timePort.advance(const Duration(seconds: 7));
+        expect(timeoutRegistry.pendingHandshakeCount, equals(1));
+
+        // Second tick at ~14s: age exceeds the timeout — swept.
+        await timePort.advance(const Duration(seconds: 7));
+
+        expect(timeoutRegistry.pendingHandshakeCount, equals(0));
+        expect(events.whereType<HandshakeFailed>(), hasLength(1));
+        expect(svc.metrics.pendingHandshakeCount, equals(0));
+        verify(() => timeoutMockPort.disconnect(EndpointId('ep1'))).called(1);
+
+        await svc.dispose();
+      });
+
+      test(
+        'swept handshake frees a connection-limit slot for the next peer',
+        () async {
+          final svc = createTimeoutService(maxConnections: 1);
+
+          // Handshake starts but the peer never responds — slot consumed.
+          timeoutController.add(ConnectionEstablished(id: EndpointId('ep1')));
+          await Future.delayed(Duration.zero);
+          expect(timeoutRegistry.pendingHandshakeCount, equals(1));
+
+          // Sweep the stale handshake.
+          await timePort.advance(const Duration(seconds: 7));
+          await timePort.advance(const Duration(seconds: 7));
+          expect(timeoutRegistry.pendingHandshakeCount, equals(0));
+
+          clearInteractions(timeoutMockPort);
+
+          // A new inbound connection must proceed to handshake instead of
+          // being rejected against the leaked slot.
+          timeoutController.add(ConnectionEstablished(id: EndpointId('ep2')));
+          await Future.delayed(Duration.zero);
+
+          verify(
+            () => timeoutMockPort.sendPayload(EndpointId('ep2'), any()),
+          ).called(1);
+          verifyNever(() => timeoutMockPort.disconnect(EndpointId('ep2')));
+
+          await svc.dispose();
+        },
+      );
     });
 
     group('connection limit', () {

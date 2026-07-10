@@ -193,13 +193,21 @@ class NearbyAdapter implements NearbyPort {
 
   @override
   Future<void> requestConnection(EndpointId endpointId) async {
-    await _nearby.requestConnection(
+    final requested = await _nearby.requestConnection(
       _unusedUserName,
       endpointId.value,
       onConnectionInitiated: _onConnectionInitiated,
       onConnectionResult: _onConnectionResult,
       onDisconnected: _onDisconnected,
     );
+    if (!requested) {
+      // The endpoint stays in the discovery retry loop, which will issue
+      // another attempt; this is the only signal that this one went nowhere.
+      _log(
+        LogLevel.warning,
+        'requestConnection returned false for $endpointId',
+      );
+    }
   }
 
   @override
@@ -249,7 +257,7 @@ class NearbyAdapter implements NearbyPort {
             endpointId,
             onPayLoadRecieved: (endpointId, payload) =>
                 _onPayloadReceived(endpointId, payload),
-            onPayloadTransferUpdate: (endpointId, update) {},
+            onPayloadTransferUpdate: _onPayloadTransferUpdate,
           )
           .catchError((Object e, StackTrace stack) {
             _log(
@@ -264,6 +272,9 @@ class NearbyAdapter implements NearbyPort {
                 reason: 'acceptConnection failed: $e',
               ),
             );
+            // acceptConnection returns Future<bool>; the handler must
+            // produce a bool or the error path throws a TypeError.
+            return false;
           }),
     );
   }
@@ -283,10 +294,37 @@ class NearbyAdapter implements NearbyPort {
   }
 
   void _onPayloadReceived(String endpointId, Payload payload) {
-    if (payload.type != PayloadType.BYTES || payload.bytes == null) return;
+    if (payload.type != PayloadType.BYTES || payload.bytes == null) {
+      // The transport only speaks BYTES payloads; anything else indicates
+      // a foreign sender or plugin misbehavior and must not vanish silently.
+      _log(
+        LogLevel.warning,
+        'Dropping non-BYTES payload ${payload.id} '
+        '(type: ${payload.type.name}) from $endpointId',
+      );
+      return;
+    }
 
     _eventController.add(
       PayloadReceived(id: EndpointId(endpointId), bytes: payload.bytes!),
+    );
+  }
+
+  void _onPayloadTransferUpdate(
+    String endpointId,
+    PayloadTransferUpdate update,
+  ) {
+    if (update.status != PayloadStatus.FAILURE) return;
+
+    // Send futures complete when the platform accepts the payload; this
+    // update is the only signal that delivery subsequently failed.
+    _log(
+      LogLevel.error,
+      'Payload transfer ${update.id} to $endpointId failed '
+      '(${update.bytesTransferred}/${update.totalBytes} bytes)',
+    );
+    _eventController.add(
+      PayloadTransferFailed(id: EndpointId(endpointId), payloadId: update.id),
     );
   }
 
