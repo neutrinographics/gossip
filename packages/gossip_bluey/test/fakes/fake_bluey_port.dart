@@ -210,6 +210,37 @@ class FakeBlueyPort implements BlueyPort {
     if (!_events.isClosed) _events.add(event);
   }
 
+  /// Test hook: inject a [PortPeerConnected] event as if the platform
+  /// reported a new link. Does not mutate the fake's internal
+  /// connection-state sets — it drives only the event stream, which is
+  /// what the tie-break logic reacts to.
+  void emitPeerConnected(
+    NodeId nodeId,
+    ConnectionRole role, {
+    required BleAddress address,
+    String? displayName,
+  }) {
+    if (!_events.isClosed) {
+      _events.add(
+        PortPeerConnected(
+          nodeId: nodeId,
+          role: role,
+          address: address,
+          displayName: displayName,
+        ),
+      );
+    }
+  }
+
+  /// Test hook: inject a [PortPeerDisconnected] event.
+  void emitPeerDisconnected(NodeId nodeId, ConnectionRole role, String reason) {
+    if (!_events.isClosed) {
+      _events.add(
+        PortPeerDisconnected(nodeId: nodeId, role: role, reason: reason),
+      );
+    }
+  }
+
   /// Drive an error on the port event stream (test-only).
   void emitPortError(Object error, [StackTrace? stackTrace]) {
     if (!_events.isClosed) {

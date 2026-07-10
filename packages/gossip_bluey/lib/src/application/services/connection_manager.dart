@@ -191,12 +191,64 @@ class ConnectionManager implements MessageDispatcher {
         // already-registered peer doesn't consume a slot, and letting it
         // hit the cap branch would tear down the ACTIVE link via a
         // role-blind disconnect.
-        if (registry.contains(nodeId)) {
+        final existing = registry.get(nodeId);
+        if (existing != null) {
+          if (existing.role == role) {
+            // Same-role duplicate: a reconnect race, not a mutual
+            // connect. Keep first-write-wins; the port layer's
+            // supersession handles genuine link replacement (COR3-5).
+            onLog?.call(
+              LogLevel.info,
+              'duplicate $role connection for $nodeId; dropping newcomer',
+            );
+            _disconnectRoleGuarded(nodeId, role);
+            return;
+          }
+          // Mutual connect: we now hold one central and one peripheral
+          // link to the same peer. Tie-break (COR3-29): the surviving
+          // link is the one whose CENTRAL is the lexicographically
+          // smaller NodeId — the loser closes its own central, which is
+          // physically the same link as the winner's peripheral, so the
+          // pair converges to exactly one link with no peripheral-side
+          // disconnect API.
+          final localWins = localNodeId.value.compareTo(nodeId.value) < 0;
+          final survivingLocalRole =
+              localWins ? ConnectionRole.central : ConnectionRole.peripheral;
+          if (existing.role == survivingLocalRole) {
+            // Registered link survives; shed the newcomer. If the
+            // newcomer is our central we close it for real; if it is our
+            // peripheral this marks it rejected and the remote (the
+            // loser there) closes it physically.
+            onLog?.call(
+              LogLevel.info,
+              'tie-break for $nodeId: keeping ${existing.role} link, '
+              'shedding new $role link',
+            );
+            _disconnectRoleGuarded(nodeId, role);
+            return;
+          }
+          // The NEW link survives: swap the registration in place. The
+          // peer never disconnected at NodeId level, so no PeerClosed/
+          // PeerOpened — consumers see continuous connectivity. A fresh
+          // decoder isolates the new link's byte stream; residue from
+          // the dying link is absorbed by the decoder's garbage
+          // recovery.
           onLog?.call(
             LogLevel.info,
-            'duplicate connection for $nodeId arrived as $role; dropping',
+            'tie-break for $nodeId: adopting new $role link, '
+            'closing ${existing.role} link',
           );
-          _disconnectRoleGuarded(nodeId, role);
+          registry.remove(nodeId);
+          registry.tryRegister(
+            ConnectionHandle(
+              nodeId: nodeId,
+              role: role,
+              displayName: displayName,
+              connectedAt: _clock.now(),
+            ),
+          );
+          _decoders[nodeId] = FrameDecoder();
+          _disconnectRoleGuarded(nodeId, existing.role);
           return;
         }
         if (maxConnections != null &&

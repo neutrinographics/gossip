@@ -5,6 +5,7 @@ import 'package:gossip_bluey/src/application/services/auto_connect_policy.dart';
 import 'package:gossip_bluey/src/application/services/connection_manager.dart';
 import 'package:gossip_bluey/src/application/services/discovery_service.dart';
 import 'package:gossip_bluey/src/domain/aggregates/connection_registry.dart';
+import 'package:gossip_bluey/src/domain/entities/connection_handle.dart';
 import 'package:gossip_bluey/src/domain/errors/already_connecting_exception.dart';
 import 'package:gossip_bluey/src/domain/value_objects/ble_address.dart';
 import 'package:gossip_bluey/src/domain/value_objects/connection_mode.dart';
@@ -28,12 +29,15 @@ class _ThrowOnceRegistry extends ConnectionRegistry {
   bool _armed = true;
 
   @override
-  bool contains(NodeId nodeId) {
+  ConnectionHandle? get(NodeId nodeId) {
+    // `get` is the first registry call the PortPeerConnected handler
+    // makes (the tie-break reads the existing handle). Throwing here
+    // exercises the handler's error containment on the first event.
     if (_armed) {
       _armed = false;
       throw StateError('injected registry failure');
     }
-    return super.contains(nodeId);
+    return super.get(nodeId);
   }
 }
 

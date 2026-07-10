@@ -89,8 +89,8 @@ void main() {
     });
 
     test(
-      'PortPeerConnected for already-registered NodeId triggers '
-      'disconnectRole on the just-arrived role; existing handle untouched',
+      'PortPeerConnected opposite-role duplicate applies the tie-break: '
+      'local (smaller NodeId) keeps central, sheds the peripheral',
       () async {
         final network = FakeBlueyNetwork();
         final localPort = FakeBlueyPort(localNodeId: localId, network: network);
@@ -118,20 +118,33 @@ void main() {
         expect(registry.contains(remoteId), isTrue);
         expect(registry.get(remoteId)!.role, equals(ConnectionRole.peripheral));
 
-        // Now we initiate to the same peer → duplicate central connection.
+        // Now we initiate to the same peer → we hold both a peripheral and
+        // a central link (a mutual connect). localId ('1111…') is the
+        // smaller NodeId, so the tie-break (COR3-29) makes THIS device the
+        // central: the new central link is adopted and the peripheral is
+        // shed.
         await localPort.connect(remoteId);
         await Future<void>.delayed(Duration.zero);
 
         expect(
           registry.contains(remoteId),
           isTrue,
-          reason:
-              'peripheral handle should remain after duplicate central drop',
+          reason: 'NodeId-level connectivity never flapped during the swap',
+        );
+        expect(
+          registry.get(remoteId)!.role,
+          equals(ConnectionRole.central),
+          reason: 'we won the tie-break; the surviving link is our central',
         );
         expect(
           localPort.connectedAsCentral,
-          isNot(contains(remoteId)),
-          reason: 'duplicate central connection should have been disconnected',
+          contains(remoteId),
+          reason: 'our central link is the survivor and stays connected',
+        );
+        expect(
+          localPort.disconnectRoleCalls,
+          contains((remoteId, ConnectionRole.peripheral)),
+          reason: 'the losing peripheral link is torn down',
         );
 
         await svc.dispose();
