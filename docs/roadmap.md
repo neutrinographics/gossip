@@ -20,10 +20,23 @@ Constraints that new work must respect (see `packages/gossip/docs/adr/`):
 ## Sync engine
 
 Robustness of the gossip sync engine, its Bluetooth transport, and failure
-detection. Seeded from the 2026-07 algorithm audit's deferred follow-ups
-(all shipped fixes are recorded in
-[`audits/2026-07-06-algorithm-audit.md`](audits/2026-07-06-algorithm-audit.md)).
+detection. Seeded from the deferred follow-ups of the 2026-07 audits
+(shipped fixes are recorded in
+[`audits/2026-07-06-algorithm-audit.md`](audits/2026-07-06-algorithm-audit.md) and
+[`audits/2026-07-08-comprehensive-audit.md`](audits/2026-07-08-comprehensive-audit.md)).
 
+- ☐ **High** — [One Bluetooth link per device pair in a mesh](backlog/engine-mesh-connection-tiebreak.md) · embed identity in the advertisement for a pre-connect tie-break; mutual connects currently double every link and storm the radio at target scale
+- ☐ **Medium** — [Tell a rejected Bluetooth peer it was rejected](backlog/engine-reject-notify-capped-peers.md) · in-band rejection frame so a capped-out peer stops gossiping into the void; needs a control-frame type byte
+- ☐ **Medium** — [Cut redundant work on the message hot path](backlog/engine-hot-path-performance.md) · type-byte dispatch before decode, encode-once-send-many, checkpointed rebuilds, cache the GATT characteristic
+- ☐ **Medium** — [Per-peer send queues for the Nearby transport](backlog/engine-nearby-per-peer-queues.md) · one stalled endpoint currently head-of-line-blocks pings to every other peer; port the BLE transport's per-peer design
 - ☐ **Low** — [Eliminate head-of-line blocking on the Bluetooth transport](backlog/engine-ble-frame-multiplexing.md) · an urgent message can still wait out one in-flight transfer; frame multiplexing would remove even that
 - ☐ **Low** — [Bound the Bluetooth send-queue depth](backlog/engine-send-queue-depth-cap.md) · add a size ceiling so a slow/stalled link can't grow the outgoing queue without limit (backstop; the congestion gate already throttles in practice)
 - ☐ **Low** — [Revisit the failure-detection sensitivity thresholds](backlog/engine-swim-threshold-tuning.md) · measure and possibly tighten the 5/15 consecutive-miss thresholds now that fair-rotation probing, adaptive timeouts, and indirect checks are in place
+
+## Code health
+
+Internal structure, documentation honesty, and audit-hygiene work — no
+runtime behavior changes.
+
+- ☐ **Medium** — [Realign the module layout with the documented architecture](backlog/health-architecture-alignment.md) · ports to domain, delete the dead bridge, re-home transport codecs, owned lifecycle enums, amend ADR-010/011
+- ☐ **Medium** — [Sweep the remaining minor audit findings](backlog/health-minor-findings-sweep.md) · MIN-series plus two correctness latents (unbudgeted sync-request size, uncopied payload buffers)
