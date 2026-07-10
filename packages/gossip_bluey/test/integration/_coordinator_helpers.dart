@@ -4,9 +4,13 @@ import 'package:gossip/gossip.dart';
 
 /// Builds a [Coordinator] backed by in-memory repositories, wired to the
 /// supplied [messagePort]. Used by all integration tests in this package.
+///
+/// [config] overrides the coordinator defaults (e.g. a fixed short
+/// gossip interval so adverse-link tests converge quickly).
 Future<Coordinator> spawnCoordinator({
   required NodeId nodeId,
   required MessagePort messagePort,
+  CoordinatorConfig? config,
 }) async {
   return Coordinator.create(
     localNodeRepository: InMemoryLocalNodeRepository(nodeId: nodeId),
@@ -15,6 +19,7 @@ Future<Coordinator> spawnCoordinator({
     entryRepository: InMemoryEntryRepository(),
     messagePort: messagePort,
     timerPort: RealTimePort(),
+    config: config,
   );
 }
 
