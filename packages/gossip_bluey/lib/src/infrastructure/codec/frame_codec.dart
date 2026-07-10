@@ -104,6 +104,12 @@ class FrameDecoder {
   _DecoderState _state = _DecoderState.seekingMagic;
   int _expectedLength = 0;
 
+  /// True when the decoder sits exactly between frames: no partial frame
+  /// bytes buffered. Used by the control-frame dispatch to ensure GSP2
+  /// detection never fires on bytes that belong inside a GSP1 payload.
+  bool get isAtFrameBoundary =>
+      _state == _DecoderState.seekingMagic && _buffer.isEmpty;
+
   /// Feeds [chunk] into the decoder and returns any complete payloads
   /// available now plus the number of bytes discarded during corruption
   /// recovery in this call.
