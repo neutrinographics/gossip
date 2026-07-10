@@ -283,6 +283,144 @@ class TestNetwork {
   /// Returns true if the node is currently partitioned.
   bool isPartitioned(String nodeName) => _partitionedNodes.contains(nodeName);
 
+  // ---------------------------------------------------------------------
+  // Link conditions (adverse network simulation)
+  //
+  // All methods below act on a single direction (from → to) of a link,
+  // delegating to the shared [InMemoryMessageBus]. Apply them to both
+  // directions for symmetric conditions. See [InMemoryMessageBus] for the
+  // order in which conditions are evaluated.
+  // ---------------------------------------------------------------------
+
+  /// Blocks messages sent [from] → [to] (asymmetric partition).
+  ///
+  /// Unlike [partition], only one direction is cut: [to] still reaches
+  /// [from]. Restore with [healOneWay].
+  ///
+  /// Example:
+  /// ```dart
+  /// network.partitionOneWay('node1', 'node2'); // node2 never hears node1
+  /// ```
+  void partitionOneWay(String from, String to) {
+    _messageBus.blockLink(this[from].id, this[to].id);
+  }
+
+  /// Removes a one-way partition created with [partitionOneWay].
+  void healOneWay(String from, String to) {
+    _messageBus.unblockLink(this[from].id, this[to].id);
+  }
+
+  /// Drops the next [count] messages sent [from] → [to], then delivers
+  /// normally again.
+  ///
+  /// Example:
+  /// ```dart
+  /// network.dropNext('node1', 'node2', count: 3); // lose 3 messages
+  /// ```
+  void dropNext(String from, String to, {int count = 1}) {
+    _messageBus.dropNextMessages(this[from].id, this[to].id, count: count);
+  }
+
+  /// Drops each message sent [from] → [to] with probability [rate].
+  ///
+  /// The drop pattern is deterministic: it is driven by a `Random(seed)`
+  /// created here, so re-running the test reproduces the same losses.
+  /// Clear with [clearDropRate].
+  void setDropRate(String from, String to, double rate, {int seed = 42}) {
+    _messageBus.setDropRate(
+      this[from].id,
+      this[to].id,
+      rate,
+      random: Random(seed),
+    );
+  }
+
+  /// Removes a probabilistic drop rate set with [setDropRate].
+  void clearDropRate(String from, String to) {
+    _messageBus.clearDropRate(this[from].id, this[to].id);
+  }
+
+  /// Delivers the next [count] messages sent [from] → [to] twice each,
+  /// simulating duplication in the transport.
+  void duplicateNext(String from, String to, {int count = 1}) {
+    _messageBus.duplicateNextMessages(this[from].id, this[to].id, count: count);
+  }
+
+  /// Applies [transform] to the next [count] messages sent [from] → [to],
+  /// simulating in-flight corruption.
+  ///
+  /// Example:
+  /// ```dart
+  /// network.corruptNext('node1', 'node2',
+  ///     (bytes) => Uint8List.fromList(bytes.reversed.toList()));
+  /// ```
+  void corruptNext(
+    String from,
+    String to,
+    MessageTransform transform, {
+    int count = 1,
+  }) {
+    _messageBus.corruptNextMessages(
+      this[from].id,
+      this[to].id,
+      transform,
+      count: count,
+    );
+  }
+
+  /// Applies [transform] to every message sent [from] → [to] until
+  /// [clearCorruption] is called.
+  void corruptLink(String from, String to, MessageTransform transform) {
+    _messageBus.setLinkCorruption(this[from].id, this[to].id, transform);
+  }
+
+  /// Removes corruption configured with [corruptNext] or [corruptLink].
+  void clearCorruption(String from, String to) {
+    _messageBus.clearLinkCorruption(this[from].id, this[to].id);
+  }
+
+  /// Holds all subsequent messages sent [from] → [to] in flight instead of
+  /// delivering them (latency simulation).
+  ///
+  /// While delayed, the sender's `pendingSendCount` reflects the queued
+  /// messages (emergent backpressure). Deliver the queue with
+  /// [releaseInFlight] (link stays delayed) or [undelayLink] (link resumes
+  /// normal delivery).
+  void delayLink(String from, String to) {
+    _messageBus.holdLink(this[from].id, this[to].id);
+  }
+
+  /// Delivers messages currently held by [delayLink], in send order.
+  ///
+  /// With [from]/[to] given, releases that link only; with neither, all
+  /// links. The links remain delayed for messages sent afterwards.
+  void releaseInFlight({String? from, String? to}) {
+    _messageBus.flushHeldMessages(
+      from: from == null ? null : this[from].id,
+      to: to == null ? null : this[to].id,
+    );
+  }
+
+  /// Stops delaying the [from] → [to] link and delivers everything held.
+  void undelayLink(String from, String to) {
+    _messageBus.releaseLink(this[from].id, this[to].id);
+  }
+
+  /// Number of messages currently held in flight on the [from] → [to] link.
+  int inFlightCount(String from, String to) =>
+      _messageBus.heldMessageCount(this[from].id, this[to].id);
+
+  /// Resets all conditions on the [from] → [to] link, delivering any held
+  /// messages first.
+  void clearLinkConditions(String from, String to) {
+    _messageBus.clearLinkConditions(this[from].id, this[to].id);
+  }
+
+  /// Resets all conditions on every link, delivering any held messages.
+  void clearAllLinkConditions() {
+    _messageBus.clearAllLinkConditions();
+  }
+
   /// Creates a channel with a stream on specified nodes with mutual membership.
   ///
   /// This is a convenience method that:
