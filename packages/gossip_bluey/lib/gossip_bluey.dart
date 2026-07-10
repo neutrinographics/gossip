@@ -21,8 +21,12 @@ export 'src/domain/events/connection_event.dart'
     show ConnectionEvent, PeerOpened, PeerClosed;
 
 // Domain errors
+export 'src/domain/errors/already_connecting_exception.dart'
+    show AlreadyConnectingException;
 export 'src/domain/errors/bluetooth_unavailable_exception.dart'
     show BluetoothUnavailableException;
+export 'src/domain/errors/connection_rejected_exception.dart'
+    show ConnectionRejectedException;
 export 'src/domain/errors/connection_error.dart'
     show
         ConnectionError,

@@ -8,6 +8,7 @@ import '../../domain/aggregates/connection_registry.dart';
 import '../../domain/entities/connection_handle.dart';
 import '../../domain/errors/already_connecting_exception.dart';
 import '../../domain/errors/connection_error.dart';
+import '../../domain/errors/connection_rejected_exception.dart';
 import '../../domain/events/connection_event.dart';
 import '../../domain/interfaces/bluey_port.dart';
 import '../../domain/value_objects/ble_address.dart';
@@ -36,16 +37,39 @@ class ConnectionManager implements MessageDispatcher {
     required this.metrics,
     this.maxConnections,
     this.onLog,
+    this.sendTimeout = defaultSendTimeout,
     Clock? clock,
   }) : _clock = clock ?? const Clock() {
-    _portSub = port.events.listen(_onPortEvent);
+    _portSub = port.events.listen(
+      _onPortEvent,
+      // A port stream error must reach the logging surface instead of
+      // escaping as an uncaught zone error.
+      onError: (Object e, StackTrace st) {
+        onLog?.call(LogLevel.error, 'port event stream error', e, st);
+      },
+    );
   }
+
+  /// Default upper bound on a single chunk write ([BlueyPort.sendData]).
+  ///
+  /// Deliberately generous — a single BLE chunk write normally completes
+  /// in milliseconds. The point is to unwedge the peer's drain loop when
+  /// a GATT write hangs (platform bug, dead link the state watcher never
+  /// noticed), not to race normal writes: without a bound, one hung write
+  /// blocks every queued message to that peer forever, including
+  /// high-priority SWIM pings.
+  static const Duration defaultSendTimeout = Duration(seconds: 30);
 
   final BlueyPort port;
   final ConnectionRegistry registry;
   final BlueyMetrics metrics;
   final int? maxConnections;
   final LogCallback? onLog;
+
+  /// Per-chunk write timeout; a timed-out chunk is treated exactly like a
+  /// failed chunk write (SendFailedError, message aborted, link torn down).
+  final Duration sendTimeout;
+
   final Clock _clock;
 
   /// Addresses with an in-flight [connectTo] call. Used to guard against
@@ -108,6 +132,11 @@ class ConnectionManager implements MessageDispatcher {
   /// [AlreadyConnectingException] (a typed exception so policies can
   /// distinguish it from real connect failures).
   ///
+  /// Throws [ConnectionRejectedException] when the connect and
+  /// identification succeeded but the connection was NOT registered
+  /// (maxConnections cap, duplicate NodeId) — success would hand the
+  /// caller a NodeId it can never send to.
+  ///
   /// Does NOT add backoff or dedup against the connection registry; those
   /// are the responsibility of `AutoConnectPolicy` in auto mode. In
   /// manual mode the consumer makes the policy decision.
@@ -125,6 +154,9 @@ class ConnectionManager implements MessageDispatcher {
       for (var i = 0; i < 16 && !registry.contains(nodeId); i++) {
         await Future<void>.delayed(Duration.zero);
       }
+      if (!registry.contains(nodeId)) {
+        throw ConnectionRejectedException(nodeId);
+      }
       return nodeId;
     } finally {
       _connectingAddresses.remove(candidate.address);
@@ -132,6 +164,16 @@ class ConnectionManager implements MessageDispatcher {
   }
 
   void _onPortEvent(BlueyPortEvent event) {
+    // Contained: a throw from one event's handling must not surface as an
+    // uncaught zone error nor poison the processing of later events.
+    try {
+      _handlePortEvent(event);
+    } catch (e, st) {
+      onLog?.call(LogLevel.error, 'error handling port event $event', e, st);
+    }
+  }
+
+  void _handlePortEvent(BlueyPortEvent event) {
     switch (event) {
       case PortPeerConnected(
         :final nodeId,
@@ -295,9 +337,11 @@ class ConnectionManager implements MessageDispatcher {
           await _sendChunked(destination, next.bytes);
           if (!next.completer.isCompleted) next.completer.complete();
         } catch (e, st) {
-          // `_sendChunked` contains its own send failures; this guards
-          // the rare case it throws (e.g. framing) so the awaiter isn't
-          // left hanging and later queued messages still drain.
+          // A known-failed send must complete with an error, never
+          // success: the MessagePort contract lets the core engine roll
+          // back optimistic state (pending-request flags) immediately
+          // instead of waiting out a timeout. Later queued messages
+          // still drain.
           if (!next.completer.isCompleted) next.completer.completeError(e, st);
         }
       }
@@ -311,18 +355,21 @@ class ConnectionManager implements MessageDispatcher {
     }
   }
 
+  /// Sends one whole message as contiguous frame chunks. Throws on any
+  /// failure — the caller ([_drainQueue]) completes the message's future
+  /// with the thrown error — after emitting the matching
+  /// [ConnectionError] on [errors] for observability.
   Future<void> _sendChunked(NodeId destination, Uint8List bytes) async {
     final handle = registry.get(destination);
     if (handle == null) {
       // Connection dropped while we were queued behind a previous send.
-      _emitError(
-        ConnectionNotFoundError(
-          message: 'no active connection to $destination',
-          occurredAt: _clock.now(),
-          nodeId: destination,
-        ),
+      final error = ConnectionNotFoundError(
+        message: 'no active connection to $destination',
+        occurredAt: _clock.now(),
+        nodeId: destination,
       );
-      return;
+      _emitError(error);
+      throw error;
     }
     final chunks = FrameEncoder.encode(
       bytes,
@@ -334,19 +381,21 @@ class ConnectionManager implements MessageDispatcher {
       // frame's remaining chunks to the new link would corrupt the
       // receiver's byte-stream alignment.
       if (!identical(registry.get(destination), handle)) {
-        _emitError(
-          SendFailedError(
-            message:
-                'send to $destination aborted: connection replaced '
-                'mid-message',
-            occurredAt: _clock.now(),
-            nodeId: destination,
-          ),
+        final error = SendFailedError(
+          message:
+              'send to $destination aborted: connection replaced '
+              'mid-message',
+          occurredAt: _clock.now(),
+          nodeId: destination,
         );
-        return;
+        _emitError(error);
+        throw error;
       }
       try {
-        await port.sendData(destination, chunk);
+        // Bounded per chunk: a hung GATT write (dead link the state
+        // watcher never noticed) must not wedge this peer's drain loop
+        // forever. A timeout is handled exactly like a failed write.
+        await port.sendData(destination, chunk).timeout(sendTimeout);
         metrics.recordFrameSent();
         metrics.recordBytesSent(chunk.length);
       } catch (e, st) {
@@ -364,7 +413,7 @@ class ConnectionManager implements MessageDispatcher {
         if (identical(registry.get(destination), handle)) {
           _disconnectRoleGuarded(destination, handle.role);
         }
-        return;
+        rethrow;
       }
     }
     metrics.recordMessageSent();
@@ -411,13 +460,29 @@ class ConnectionManager implements MessageDispatcher {
 
   Future<void> dispose() async {
     _connectingAddresses.clear();
-    // Complete any still-queued sends so their awaiters don't hang past
-    // dispose. An in-flight message (already dequeued) is completed by
-    // its own drain loop.
-    for (final queue in _sendQueues.values) {
+    // Fail any still-queued sends so their awaiters don't hang past
+    // dispose — with an ERROR, not success: these messages were never
+    // written and the MessagePort contract forbids reporting a
+    // known-failed send as delivered. An in-flight message (already
+    // dequeued) is resolved by its own drain loop.
+    for (final entry in _sendQueues.entries) {
+      final queue = entry.value;
       while (!queue.isEmpty) {
         final s = queue.removeNext();
-        if (!s.completer.isCompleted) s.completer.complete();
+        if (s.completer.isCompleted) continue;
+        // Mark the error handled before completing: a fire-and-forget
+        // caller may never await this future, and an unobserved error
+        // would surface as an uncaught zone error. Real awaiters still
+        // receive it.
+        unawaited(s.completer.future.catchError((_) {}));
+        s.completer.completeError(
+          SendFailedError(
+            message: 'send to ${entry.key} dropped: transport disposed',
+            occurredAt: _clock.now(),
+            nodeId: entry.key,
+          ),
+          StackTrace.current,
+        );
       }
     }
     _sendQueues.clear();
@@ -430,7 +495,9 @@ class ConnectionManager implements MessageDispatcher {
 }
 
 /// A single gossip message waiting in a peer's send queue, with a
-/// completer resolved when the message has been sent (or dropped).
+/// completer resolved with success once the message has been handed to
+/// the transport, or with an error when the send is known to have failed
+/// (MessagePort contract).
 class _QueuedSend {
   _QueuedSend(this.bytes);
 

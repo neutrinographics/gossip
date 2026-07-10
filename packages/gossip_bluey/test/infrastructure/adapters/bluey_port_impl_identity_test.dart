@@ -49,6 +49,7 @@ class _Harness {
   late final BlueyPortImpl port;
   final events = <BlueyPortEvent>[];
   late final StreamSubscription<BlueyPortEvent> _eventSub;
+  LogCallback? _onLog;
 
   static final localId = NodeId('11111111-1111-1111-1111-111111111111');
   static final serviceUuid = ServiceUuid(
@@ -57,8 +58,9 @@ class _Harness {
   static String get dataCharUuid =>
       GossipCharacteristicUuids.derive(serviceUuid).dataCharacteristic;
 
-  static Future<_Harness> create() async {
+  static Future<_Harness> create({LogCallback? onLog}) async {
     final h = _Harness._();
+    h._onLog = onLog;
     final caps = _MockCapabilities();
     when(() => caps.platformKind).thenReturn(PlatformKind.android);
     when(() => h.mockBluey.capabilities).thenReturn(caps);
@@ -90,6 +92,7 @@ class _Harness {
     h.port = await BlueyPortImpl.create(
       localNodeId: localId,
       blueyInstance: h.mockBluey,
+      onLog: h._onLog,
     );
     h._eventSub = h.port.events.listen(h.events.add);
     await h.port.startAdvertising(
@@ -290,6 +293,81 @@ void main() {
     );
   });
 
+  group('COR3-5: peripheral supersession must disconnect the old link', () {
+    test(
+      'a fast reconnect under a new address emits PortPeerDisconnected for '
+      'the old link BEFORE PortPeerConnected for the new one',
+      () async {
+        final h = await _Harness.create();
+
+        // X connects at addr-1, then fast-reconnects at addr-2 before the
+        // platform delivers any disconnection for addr-1.
+        h.peerConnections.add(h.buildPeripheral(peerX, 'addr-1'));
+        await h.flush();
+        h.events.clear();
+
+        h.peerConnections.add(h.buildPeripheral(peerX, 'addr-2'));
+        await h.flush();
+
+        expect(
+          h.events,
+          hasLength(2),
+          reason:
+              'emitting only PortPeerConnected makes ConnectionManager '
+              'duplicate-reject the LIVE replacement link',
+        );
+        final disconnected = h.events[0];
+        expect(disconnected, isA<PortPeerDisconnected>());
+        expect(
+          (disconnected as PortPeerDisconnected).nodeId,
+          equals(peerX),
+        );
+        expect(disconnected.role, equals(ConnectionRole.peripheral));
+        expect(disconnected.reason, contains('superseded'));
+        final connected = h.events[1];
+        expect(connected, isA<PortPeerConnected>());
+        expect(
+          (connected as PortPeerConnected).role,
+          equals(ConnectionRole.peripheral),
+        );
+
+        // The replacement link is live: its writes resolve to the peer.
+        h.events.clear();
+        h.writeRequests.add(h.writeFrom('addr-2', [1, 2, 3]));
+        await h.flush();
+        expect(h.events.whereType<PortPeerData>(), hasLength(1));
+
+        await h.dispose();
+      },
+    );
+
+    test(
+      'a superseded link that was already rejected does not emit a second '
+      'disconnect',
+      () async {
+        final h = await _Harness.create();
+
+        h.peerConnections.add(h.buildPeripheral(peerX, 'addr-1'));
+        await h.flush();
+        // Duplicate rejection already reported this link as disconnected.
+        await h.port.disconnectRole(peerX, ConnectionRole.peripheral);
+        h.events.clear();
+
+        h.peerConnections.add(h.buildPeripheral(peerX, 'addr-2'));
+        await h.flush();
+
+        expect(
+          h.events.whereType<PortPeerDisconnected>(),
+          isEmpty,
+          reason: 'the rejected link was already reported as disconnected',
+        );
+        expect(h.events.whereType<PortPeerConnected>(), hasLength(1));
+
+        await h.dispose();
+      },
+    );
+  });
+
   group('H12: central registration rolls back on failure', () {
     test(
       'a failed service discovery leaves no stranded connection',
@@ -327,6 +405,62 @@ void main() {
         await h.port.connect(peerX);
         await h.flush();
         expect(h.events.whereType<PortPeerConnected>(), hasLength(1));
+
+        await h.dispose();
+      },
+    );
+  });
+
+  group('COR3-23: platform stream errors are logged, not left unhandled', () {
+    test(
+      'an error on the server peerConnections stream is logged and later '
+      'connections still register',
+      () async {
+        final errorLogs = <String>[];
+        final h = await _Harness.create(
+          onLog: (level, msg, [e, st]) {
+            if (level == LogLevel.error) errorLogs.add(msg);
+          },
+        );
+
+        h.peerConnections.addError(StateError('platform hiccup'));
+        await h.flush();
+        expect(errorLogs, isNotEmpty);
+
+        // The subscription survives: a real connection still lands.
+        h.peerConnections.add(h.buildPeripheral(peerX, 'addr-x'));
+        await h.flush();
+        expect(h.events.whereType<PortPeerConnected>(), hasLength(1));
+
+        await h.dispose();
+      },
+    );
+
+    test(
+      'an error on a central link\'s notifications stream is logged and '
+      'does not tear the link down',
+      () async {
+        final errorLogs = <String>[];
+        final h = await _Harness.create(
+          onLog: (level, msg, [e, st]) {
+            if (level == LogLevel.error) errorLogs.add(msg);
+          },
+        );
+        final central = h.buildCentral(peerX);
+        await h.port.connect(peerX);
+        await h.flush();
+        h.events.clear();
+
+        central.notifications.addError(StateError('GATT stream error'));
+        await h.flush();
+
+        expect(errorLogs, isNotEmpty);
+        expect(h.events.whereType<PortPeerDisconnected>(), isEmpty);
+
+        // Data after the error still flows.
+        central.notifications.add(Uint8List.fromList([1, 2]));
+        await h.flush();
+        expect(h.events.whereType<PortPeerData>(), hasLength(1));
 
         await h.dispose();
       },

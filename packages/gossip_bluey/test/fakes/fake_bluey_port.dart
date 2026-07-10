@@ -202,6 +202,30 @@ class FakeBlueyPort implements BlueyPort {
   /// Alias for [emitScanCandidate]. Newer tests use the shorter name.
   void emitCandidate(ScanCandidate candidate) => emitScanCandidate(candidate);
 
+  /// Drive a raw port event (test-only). Used to simulate event
+  /// sequences the fake's connection model doesn't produce on its own
+  /// (e.g. peripheral supersession: disconnect-then-reconnect under a
+  /// new platform address).
+  void emitPortEvent(BlueyPortEvent event) {
+    if (!_events.isClosed) _events.add(event);
+  }
+
+  /// Drive an error on the port event stream (test-only).
+  void emitPortError(Object error, [StackTrace? stackTrace]) {
+    if (!_events.isClosed) {
+      _events.addError(error, stackTrace ?? StackTrace.current);
+    }
+  }
+
+  /// Drive an error on the open scan stream (test-only). Mirrors the real
+  /// port, which forwards scanner errors via `onError: controller.addError`.
+  void emitScanError(Object error, [StackTrace? stackTrace]) {
+    final controller = _scanController;
+    if (controller != null && !controller.isClosed) {
+      controller.addError(error, stackTrace ?? StackTrace.current);
+    }
+  }
+
   /// Test hook: drive an adapter-state transition. Updates the cached
   /// value and broadcasts on [bluetoothStateStream]. When transitioning
   /// to anything other than `on`, also resets advertising/scan state to

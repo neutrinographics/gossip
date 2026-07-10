@@ -6,6 +6,12 @@ import 'package:gossip/gossip.dart';
 /// Lets the message port and connection service be tested independently.
 abstract interface class MessageDispatcher {
   /// Sends a gossip message to a destination peer.
+  ///
+  /// Completes normally once the message has been handed to the
+  /// transport; completes with an error when the send is KNOWN to have
+  /// failed (connection gone, chunk write failed or timed out, transport
+  /// disposed) so `MessagePort.send` propagates it and the core engine
+  /// can roll back optimistic state immediately (MessagePort contract).
   Future<void> sendGossipMessage(
     NodeId destination,
     Uint8List bytes, {

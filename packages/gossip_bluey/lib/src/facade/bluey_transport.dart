@@ -86,7 +86,7 @@ class BlueyTransport {
         'gossip_bluey requires NodeId to be a well-formed UUID',
       );
     }
-    final port = await BlueyPortImpl.create(localNodeId: nodeId);
+    final port = await BlueyPortImpl.create(localNodeId: nodeId, onLog: onLog);
     final registry = ConnectionRegistry();
     final metrics = BlueyMetrics();
     final service = ConnectionManager(

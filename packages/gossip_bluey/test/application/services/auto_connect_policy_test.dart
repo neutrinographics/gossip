@@ -365,6 +365,77 @@ void main() {
     );
 
     test(
+      'auto mode: a registration-rejected connect records backoff — '
+      'no hot retry on the next advertisement (COR3-6)',
+      () async {
+        // Self-contained fixtures: the shared setUp manager has no cap
+        // and would register the peer before the capped manager sees it.
+        final isolatedNetwork = FakeBlueyNetwork();
+        final isolatedPort = FakeBlueyPort(
+          localNodeId: localId,
+          network: isolatedNetwork,
+        );
+        FakeBlueyPort(localNodeId: remoteAId, network: isolatedNetwork);
+        FakeBlueyPort(localNodeId: remoteBId, network: isolatedNetwork);
+        final isolatedRegistry = ConnectionRegistry();
+        final isolatedDiscovery = DiscoveryService(
+          port: isolatedPort,
+          serviceUuid: serviceUuid,
+        );
+        // Capped at 1 connection: the second connect succeeds at the
+        // GATT level but is cap-rejected at registration.
+        final cappedConnections = ConnectionManager(
+          port: isolatedPort,
+          registry: isolatedRegistry,
+          metrics: BlueyMetrics(),
+          maxConnections: 1,
+          clock: clock,
+        );
+        addTearDown(() async {
+          await cappedConnections.dispose();
+          await isolatedDiscovery.dispose();
+          await isolatedPort.dispose();
+        });
+        var attempts = 0;
+        isolatedPort.onConnectAndIdentify = (_) => attempts++;
+        await isolatedDiscovery.start();
+        final policy = AutoConnectPolicy(
+          discovery: isolatedDiscovery,
+          connections: cappedConnections,
+          registry: isolatedRegistry,
+          now: () => clock.instant,
+          initialBackoff: const Duration(seconds: 1),
+        );
+        policy.setMode(ConnectionMode.auto);
+
+        // Fill the single slot.
+        isolatedPort.emitCandidate(_candidate(addrA.value));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(isolatedRegistry.connectionCount, 1);
+        expect(attempts, 1);
+
+        // B connects + identifies, then gets cap-rejected.
+        isolatedPort.emitCandidate(_candidate(addrB.value));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(attempts, 2);
+        expect(isolatedRegistry.contains(remoteBId), isFalse);
+
+        // Re-advertisement before the backoff window expires must NOT
+        // trigger another connect→identify→reject→disconnect cycle.
+        clock.advance(const Duration(milliseconds: 500));
+        isolatedPort.emitCandidate(_candidate(addrB.value));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(
+          attempts,
+          2,
+          reason:
+              'success-on-rejection clears backoff and repeats the full '
+              'GATT connect churn on every advertisement',
+        );
+      },
+    );
+
+    test(
       'setMode(auto) catches up on currently-emitted candidates',
       () async {
         // Manual: candidate is recorded in discovery.currentCandidates

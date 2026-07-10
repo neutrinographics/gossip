@@ -22,10 +22,163 @@ ScanCandidate _candidateFor(NodeId nodeId) => ScanCandidate(
   lastSeen: _t0,
 );
 
+/// Throws from [contains] exactly once, then behaves normally. Simulates
+/// an unexpected failure inside `ConnectionManager._onPortEvent`.
+class _ThrowOnceRegistry extends ConnectionRegistry {
+  bool _armed = true;
+
+  @override
+  bool contains(NodeId nodeId) {
+    if (_armed) {
+      _armed = false;
+      throw StateError('injected registry failure');
+    }
+    return super.contains(nodeId);
+  }
+}
+
 void main() {
   final localId = NodeId('11111111-1111-1111-1111-111111111111');
   final remoteId = NodeId('22222222-2222-2222-2222-222222222222');
   final serviceUuid = ServiceUuid('f0000000-0000-0000-0000-000000000000');
+
+  group('COR3-23: unhandled-error surfaces', () {
+    test(
+      'a throwing port event handler is logged and does not kill '
+      'subsequent event processing',
+      () async {
+        final network = FakeBlueyNetwork();
+        final port = FakeBlueyPort(localNodeId: localId, network: network);
+        final remotePort = FakeBlueyPort(
+          localNodeId: remoteId,
+          network: network,
+        );
+        final registry = _ThrowOnceRegistry();
+        final errorLogs = <String>[];
+        final manager = ConnectionManager(
+          port: port,
+          registry: registry,
+          metrics: BlueyMetrics(),
+          onLog: (level, msg, [e, st]) {
+            if (level == LogLevel.error) errorLogs.add(msg);
+          },
+        );
+        await port.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Local',
+          localNodeId: localId,
+        );
+
+        // First connect event hits the injected throw; the handler must
+        // contain it (log, no rethrow into the zone).
+        await remotePort.connect(localId);
+        await Future<void>.delayed(Duration.zero);
+        expect(errorLogs, isNotEmpty);
+
+        // A later event must still be processed.
+        final thirdId = NodeId('33333333-3333-3333-3333-333333333333');
+        final thirdPort = FakeBlueyPort(localNodeId: thirdId, network: network);
+        await thirdPort.connect(localId);
+        await Future<void>.delayed(Duration.zero);
+        expect(registry.contains(thirdId), isTrue);
+
+        await manager.dispose();
+        await port.dispose();
+        await remotePort.dispose();
+        await thirdPort.dispose();
+      },
+    );
+
+    test(
+      'an error on the port event stream is logged, not left as an '
+      'unhandled zone error',
+      () async {
+        final network = FakeBlueyNetwork();
+        final port = FakeBlueyPort(localNodeId: localId, network: network);
+        final remotePort = FakeBlueyPort(
+          localNodeId: remoteId,
+          network: network,
+        );
+        final errorLogs = <String>[];
+        final manager = ConnectionManager(
+          port: port,
+          registry: ConnectionRegistry(),
+          metrics: BlueyMetrics(),
+          onLog: (level, msg, [e, st]) {
+            if (level == LogLevel.error) errorLogs.add(msg);
+          },
+        );
+        await port.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Local',
+          localNodeId: localId,
+        );
+
+        port.emitPortError(StateError('platform stream hiccup'));
+        await Future<void>.delayed(Duration.zero);
+        expect(errorLogs, isNotEmpty);
+
+        // The subscription survives; events still register.
+        await remotePort.connect(localId);
+        await Future<void>.delayed(Duration.zero);
+        expect(manager.registry.contains(remoteId), isTrue);
+
+        await manager.dispose();
+        await port.dispose();
+        await remotePort.dispose();
+      },
+    );
+
+    test(
+      'a transient scan error does not crash AutoConnectPolicy: it is '
+      'logged and later candidates still connect',
+      () async {
+        final network = FakeBlueyNetwork();
+        final port = FakeBlueyPort(localNodeId: localId, network: network);
+        FakeBlueyPort(localNodeId: remoteId, network: network);
+        final registry = ConnectionRegistry();
+        final manager = ConnectionManager(
+          port: port,
+          registry: registry,
+          metrics: BlueyMetrics(),
+        );
+        final discovery = DiscoveryService(
+          port: port,
+          serviceUuid: serviceUuid,
+        );
+        final warningLogs = <String>[];
+        final policy = AutoConnectPolicy(
+          discovery: discovery,
+          connections: manager,
+          registry: registry,
+          now: () => _t0,
+          onLog: (level, msg, [e, st]) {
+            if (level == LogLevel.warning || level == LogLevel.error) {
+              warningLogs.add(msg);
+            }
+          },
+        );
+        policy.setMode(ConnectionMode.auto);
+        await discovery.start();
+
+        // DiscoveryService forwards scanner errors onto its candidate
+        // stream; the policy's subscription must not turn each one into
+        // an uncaught zone error.
+        port.emitScanError(StateError('scan hiccup'));
+        await Future<void>.delayed(Duration.zero);
+        expect(warningLogs, isNotEmpty);
+
+        port.emitCandidate(_candidateFor(remoteId));
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        expect(registry.contains(remoteId), isTrue);
+
+        await policy.dispose();
+        await discovery.dispose();
+        await manager.dispose();
+        await port.dispose();
+      },
+    );
+  });
 
   group('M18: AutoConnectPolicy error classification', () {
     test(

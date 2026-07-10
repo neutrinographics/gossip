@@ -61,11 +61,14 @@ class BlueyPortImpl implements BlueyPort {
   BlueyPortImpl._({
     required NodeId localNodeId,
     required bluey.Bluey blueyInstance,
+    LogCallback? onLog,
   }) : _localNodeIdValue = localNodeId.value,
-       _bluey = blueyInstance {
+       _bluey = blueyInstance,
+       _onLog = onLog {
     _adapterState = _mapBlueyState(_bluey.currentState);
     _stateSub = _bluey.stateStream.listen(
       (s) => _onBluetoothStateChanged(_mapBlueyState(s)),
+      onError: _logStreamError('bluetooth adapter state'),
     );
   }
 
@@ -76,19 +79,35 @@ class BlueyPortImpl implements BlueyPort {
   /// Pass [blueyInstance] to inject a pre-built `Bluey` (test fakes,
   /// shared instance reuse). When omitted, a new one is constructed with
   /// the local node id as the bluey `ServerId`.
+  ///
+  /// [onLog] receives diagnostics for platform stream errors — without a
+  /// handler those would surface as uncaught zone errors.
   static Future<BlueyPortImpl> create({
     required NodeId localNodeId,
     bluey.Bluey? blueyInstance,
+    LogCallback? onLog,
   }) async {
     final instance =
         blueyInstance ??
         await bluey.Bluey.create(
           localIdentity: bluey.ServerId(localNodeId.value),
         );
-    return BlueyPortImpl._(localNodeId: localNodeId, blueyInstance: instance);
+    return BlueyPortImpl._(
+      localNodeId: localNodeId,
+      blueyInstance: instance,
+      onLog: onLog,
+    );
   }
 
   final bluey.Bluey _bluey;
+  final LogCallback? _onLog;
+
+  /// onError handler for platform stream subscriptions: logs instead of
+  /// letting the error escape as an uncaught zone error (which would
+  /// bypass the package's logging surface entirely).
+  void Function(Object, StackTrace) _logStreamError(String context) =>
+      (Object e, StackTrace st) =>
+          _onLog?.call(LogLevel.error, '$context stream error', e, st);
   bluey.Server? _server;
   ServiceUuid? _serviceUuid;
   final String _localNodeIdValue;
@@ -271,6 +290,7 @@ class BlueyPortImpl implements BlueyPort {
       _setAdvertisingState(server.advertisingState);
       _advertisingStateSub = server.advertisingStateChanges.listen(
         _setAdvertisingState,
+        onError: _logStreamError('advertising state'),
       );
 
       await server.addService(GossipGattService.build(serviceUuid));
@@ -288,10 +308,23 @@ class BlueyPortImpl implements BlueyPort {
           final address = BleAddress(clientAddress.value);
           // A previous link for this peer (fast reconnect with a new
           // platform address) is superseded: drop its stale address
-          // mapping so late disconnections for it resolve to nothing.
+          // mapping so late disconnections for it resolve to nothing, and
+          // report the old link as disconnected BEFORE announcing the new
+          // one — otherwise ConnectionManager still holds the old handle
+          // and duplicate-rejects the LIVE replacement link (COR3-5). A
+          // rejected link was already reported as disconnected.
           final previous = _peripheralLinks[nodeId];
           if (previous != null && previous.clientAddress != clientAddress) {
             _clientAddressToNodeId.remove(previous.clientAddress);
+            if (!previous.rejected) {
+              _events.add(
+                PortPeerDisconnected(
+                  nodeId: nodeId,
+                  role: ConnectionRole.peripheral,
+                  reason: 'superseded by reconnect',
+                ),
+              );
+            }
           }
           // Peripheral side has no Connection.maxWritePayload — only the
           // Client.mtu raw value. Convert to a write-payload limit here
@@ -320,7 +353,7 @@ class BlueyPortImpl implements BlueyPort {
               address: address,
             ),
           );
-        }),
+        }, onError: _logStreamError('server peerConnections')),
       );
 
       _serverSubs.add(
@@ -345,7 +378,7 @@ class BlueyPortImpl implements BlueyPort {
               reason: 'peer disconnected',
             ),
           );
-        }),
+        }, onError: _logStreamError('server disconnections')),
       );
 
       _serverSubs.add(
@@ -375,7 +408,7 @@ class BlueyPortImpl implements BlueyPort {
                   .catchError((Object _) {}),
             );
           }
-        }),
+        }, onError: _logStreamError('server writeRequests')),
       );
 
       await server.startAdvertising(
@@ -550,7 +583,7 @@ class BlueyPortImpl implements BlueyPort {
       final dataChar = dataCharCandidates.first;
       link.notifSub = dataChar.notifications.listen((bytes) {
         _events.add(PortPeerData(nodeId: target, data: bytes));
-      });
+      }, onError: _logStreamError('notifications from $target'));
 
       link.stateSub = peerConnection.connection.stateChanges.listen((state) {
         if (state == bluey.ConnectionState.disconnected) {
@@ -558,7 +591,7 @@ class BlueyPortImpl implements BlueyPort {
           // so a stale event from a superseded link is a no-op.
           _cleanupCentral(target, link, reason: 'connection dropped');
         }
-      });
+      }, onError: _logStreamError('connection state for $target'));
     } catch (e) {
       // Roll back: remove the entry, cancel any subscriptions, and
       // physically disconnect so nothing is stranded.
@@ -703,7 +736,10 @@ class BlueyPortImpl implements BlueyPort {
     // platform reality, not just "we called scan()". Seed from the
     // scanner's current value, then subscribe for subsequent transitions.
     _setScanState(scanner.state);
-    _scanStateSub = scanner.stateChanges.listen(_setScanState);
+    _scanStateSub = scanner.stateChanges.listen(
+      _setScanState,
+      onError: _logStreamError('scan state'),
+    );
     _scanSubscription = scanner
         .scan(services: [bluey.UUID(serviceUuid.value)])
         .listen(

@@ -8,7 +8,9 @@ import 'package:gossip_bluey/src/application/services/connection_manager.dart';
 import 'package:gossip_bluey/src/domain/aggregates/connection_registry.dart';
 import 'package:gossip_bluey/src/domain/errors/connection_error.dart';
 import 'package:gossip_bluey/src/domain/interfaces/bluey_port.dart';
+import 'package:gossip_bluey/src/domain/value_objects/ble_address.dart';
 import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
+import 'package:gossip_bluey/src/infrastructure/codec/frame_codec.dart';
 
 import '../../fakes/fake_bluey_port.dart';
 
@@ -140,6 +142,81 @@ void main() {
     );
   });
 
+  group('COR3-5: peripheral supersession replaces the registration', () {
+    test(
+      'the port\'s supersession sequence (disconnect old, connect new) '
+      'leaves the peer REGISTERED with a working decoder',
+      () async {
+        final network = FakeBlueyNetwork();
+        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        final remotePort = FakeBlueyPort(
+          localNodeId: remoteId,
+          network: network,
+        );
+        final registry = ConnectionRegistry();
+        final svc = ConnectionManager(
+          port: localPort,
+          registry: registry,
+          metrics: BlueyMetrics(),
+        );
+
+        await localPort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Local',
+          localNodeId: localId,
+        );
+        await remotePort.connect(localId);
+        await Future<void>.delayed(Duration.zero);
+        expect(registry.get(remoteId)?.role, equals(ConnectionRole.peripheral));
+
+        // The port's supersession sequence for a peripheral fast
+        // reconnect under a new platform address (COR3-5 port fix).
+        localPort.emitPortEvent(
+          PortPeerDisconnected(
+            nodeId: remoteId,
+            role: ConnectionRole.peripheral,
+            reason: 'superseded by reconnect',
+          ),
+        );
+        localPort.emitPortEvent(
+          PortPeerConnected(
+            nodeId: remoteId,
+            role: ConnectionRole.peripheral,
+            address: BleAddress(remoteId.value),
+          ),
+        );
+        await Future<void>.delayed(Duration.zero);
+
+        expect(
+          registry.get(remoteId)?.role,
+          equals(ConnectionRole.peripheral),
+          reason: 'the replacement link must be registered, not rejected',
+        );
+        expect(
+          localPort.disconnectRoleCalls,
+          isEmpty,
+          reason: 'the replacement link must not be duplicate-rejected',
+        );
+
+        // The fresh decoder delivers post-supersession data.
+        final received = <IncomingMessage>[];
+        final sub = svc.incomingMessages.listen(received.add);
+        final payload = Uint8List.fromList([4, 5, 6]);
+        for (final chunk in FrameEncoder.encode(payload, mtuPayloadSize: 100)) {
+          localPort.emitPortEvent(PortPeerData(nodeId: remoteId, data: chunk));
+        }
+        await Future<void>.delayed(Duration.zero);
+        expect(received, hasLength(1));
+        expect(received.single.bytes, equals(payload));
+
+        await sub.cancel();
+        await svc.dispose();
+        await localPort.dispose();
+        await remotePort.dispose();
+      },
+    );
+  });
+
   group('ConnectionManager chunked send vs reconnect', () {
     test(
       'a mid-message reconnect aborts the remaining chunks instead of '
@@ -196,7 +273,9 @@ void main() {
         expect(newHandle, isNotNull, reason: 'sanity: reconnected');
 
         holdSecondChunk.complete();
-        await send;
+        // COR3-20: an aborted send completes with an error (the engine's
+        // rollback depends on it), not success as it originally did.
+        await expectLater(send, throwsA(isA<SendFailedError>()));
         await Future<void>.delayed(Duration.zero);
 
         // Chunk 1 landed before the swap; chunk 2 was already in-flight

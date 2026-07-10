@@ -4,6 +4,7 @@ import 'package:gossip/gossip.dart';
 
 import '../../domain/aggregates/connection_registry.dart';
 import '../../domain/errors/already_connecting_exception.dart';
+import '../../domain/errors/connection_rejected_exception.dart';
 import '../../domain/errors/not_a_bluey_peer_exception.dart';
 import '../../domain/value_objects/ble_address.dart';
 import '../../domain/value_objects/connection_mode.dart';
@@ -98,7 +99,14 @@ class AutoConnectPolicy {
       // practice the ConnectionManager.connectTo reentrancy guard absorbs
       // the duplicates (now logged at debug above), so this is bounded —
       // but a mode-epoch counter would be cleaner.
-      _sub ??= _discovery.candidates.listen(_tryConnect);
+      // DiscoveryService forwards scanner errors onto the candidate
+      // stream; without onError each one becomes an uncaught zone error.
+      _sub ??= _discovery.candidates.listen(
+        _tryConnect,
+        onError: (Object e, StackTrace st) {
+          onLog?.call(LogLevel.warning, 'discovery stream error', e, st);
+        },
+      );
       // Catch up on candidates already discovered while we were
       // dormant.
       for (final c in _discovery.currentCandidates) {
@@ -163,6 +171,16 @@ class AutoConnectPolicy {
         delay: _longBackoff,
         nextAttempt: _now().add(_longBackoff),
       );
+    } on ConnectionRejectedException catch (e) {
+      // The link came up but registration rejected it (cap/duplicate).
+      // A real failure for backoff purposes: an immediate retry repeats
+      // the whole connect→identify→reject→disconnect cycle on the next
+      // advertisement.
+      onLog?.call(
+        LogLevel.debug,
+        'auto-connect to ${c.address} rejected at registration: $e',
+      );
+      _recordExponentialBackoff(c.address);
     } catch (e, st) {
       onLog?.call(
         LogLevel.warning,
@@ -170,19 +188,25 @@ class AutoConnectPolicy {
         e,
         st,
       );
-      final prev = _backoff[c.address]?.delay ?? Duration.zero;
-      final next = prev == Duration.zero
-          ? _initialBackoff
-          : Duration(
-              milliseconds: (prev.inMilliseconds * 2).clamp(
-                _initialBackoff.inMilliseconds,
-                _maxBackoff.inMilliseconds,
-              ),
-            );
-      _backoff[c.address] = (delay: next, nextAttempt: _now().add(next));
+      _recordExponentialBackoff(c.address);
     } finally {
       _inFlightAttempts--;
     }
+  }
+
+  /// Doubles the address's previous backoff window, clamped to
+  /// [_initialBackoff, _maxBackoff].
+  void _recordExponentialBackoff(BleAddress address) {
+    final prev = _backoff[address]?.delay ?? Duration.zero;
+    final next = prev == Duration.zero
+        ? _initialBackoff
+        : Duration(
+            milliseconds: (prev.inMilliseconds * 2).clamp(
+              _initialBackoff.inMilliseconds,
+              _maxBackoff.inMilliseconds,
+            ),
+          );
+    _backoff[address] = (delay: next, nextAttempt: _now().add(next));
   }
 
   Future<void> dispose() async {

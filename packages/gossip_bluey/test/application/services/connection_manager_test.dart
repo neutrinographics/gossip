@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,7 @@ import 'package:gossip_bluey/src/application/services/connection_manager.dart';
 import 'package:gossip_bluey/src/domain/aggregates/connection_registry.dart';
 import 'package:gossip_bluey/src/domain/errors/already_connecting_exception.dart';
 import 'package:gossip_bluey/src/domain/errors/connection_error.dart';
+import 'package:gossip_bluey/src/domain/errors/connection_rejected_exception.dart';
 import 'package:gossip_bluey/src/domain/events/connection_event.dart';
 import 'package:gossip_bluey/src/domain/interfaces/bluey_port.dart';
 import 'package:gossip_bluey/src/domain/value_objects/ble_address.dart';
@@ -362,6 +364,90 @@ void main() {
       },
     );
 
+    test(
+      'a hung port.sendData times out instead of wedging the peer\'s '
+      'drain loop (COR3-22)',
+      () async {
+        final network = FakeBlueyNetwork();
+        final localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        final remotePort = FakeBlueyPort(
+          localNodeId: remoteId,
+          network: network,
+        );
+        final otherId = NodeId('33333333-3333-3333-3333-333333333333');
+        final otherPort = FakeBlueyPort(localNodeId: otherId, network: network);
+        final otherSvc = ConnectionManager(
+          port: otherPort,
+          registry: ConnectionRegistry(),
+          metrics: BlueyMetrics(),
+        );
+        final errs = <ConnectionError>[];
+        final svc = ConnectionManager(
+          port: localPort,
+          registry: ConnectionRegistry(),
+          metrics: BlueyMetrics(),
+          sendTimeout: const Duration(milliseconds: 50),
+        );
+        final errSub = svc.errors.listen(errs.add);
+
+        await localPort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Local',
+          localNodeId: localId,
+        );
+        await remotePort.connect(localId);
+        await otherPort.connect(localId);
+        await Future<void>.delayed(Duration.zero);
+        expect(svc.registry.contains(remoteId), isTrue);
+        expect(svc.registry.contains(otherId), isTrue);
+
+        // Writes to the remote peer hang forever (dead GATT link the
+        // state watcher never noticed); writes to the other peer flow.
+        localPort.sendGate = (target, _) => target == remoteId
+            ? Completer<void>().future
+            : Future<void>.value();
+
+        // Two sends to the hung peer: the first parks at the gate, the
+        // second queues behind it and can only ever drain if the first
+        // times out. Completion semantics of a failed send are pinned by
+        // the COR3-20 tests; here we only care that both complete.
+        final hung = svc
+            .sendGossipMessage(remoteId, Uint8List.fromList([1]))
+            .then((_) {}, onError: (_) {});
+        final queued = svc
+            .sendGossipMessage(remoteId, Uint8List.fromList([2]))
+            .then((_) {}, onError: (_) {});
+        await Future.wait([hung, queued]).timeout(
+          const Duration(seconds: 2),
+          onTimeout: () => fail(
+            'drain loop wedged: a hung sendData never times out',
+          ),
+        );
+
+        expect(errs.whereType<SendFailedError>(), isNotEmpty);
+        expect(
+          errs.whereType<SendFailedError>().first.cause,
+          isA<TimeoutException>(),
+        );
+
+        // Sends to the other peer still proceed.
+        final received = <IncomingMessage>[];
+        final sub = otherSvc.incomingMessages.listen(received.add);
+        await svc
+            .sendGossipMessage(otherId, Uint8List.fromList([9]))
+            .timeout(const Duration(seconds: 1));
+        await Future<void>.delayed(Duration.zero);
+        expect(received, hasLength(1));
+
+        await sub.cancel();
+        await errSub.cancel();
+        await svc.dispose();
+        await otherSvc.dispose();
+        await remotePort.dispose();
+        await otherPort.dispose();
+      },
+    );
+
     test('responder disconnects extra inbound past maxConnections', () async {
       final network = FakeBlueyNetwork();
       final localPort = FakeBlueyPort(localNodeId: localId, network: network);
@@ -457,6 +543,178 @@ void main() {
 
       await svc.dispose();
       await r2.dispose();
+    });
+
+    group('COR3-20: failed sends complete with an error', () {
+      test(
+        'a send whose chunk write throws completes its future with that '
+        'error (and still emits SendFailedError)',
+        () async {
+          final network = FakeBlueyNetwork();
+          final localPort = FakeBlueyPort(
+            localNodeId: localId,
+            network: network,
+          );
+          final remotePort = FakeBlueyPort(
+            localNodeId: remoteId,
+            network: network,
+          );
+          final errs = <ConnectionError>[];
+          final svc = ConnectionManager(
+            port: localPort,
+            registry: ConnectionRegistry(),
+            metrics: BlueyMetrics(),
+          );
+          final errSub = svc.errors.listen(errs.add);
+          await localPort.startAdvertising(
+            serviceUuid: serviceUuid,
+            displayName: 'Local',
+            localNodeId: localId,
+          );
+          await remotePort.connect(localId);
+          await Future<void>.delayed(Duration.zero);
+
+          localPort.sendGate = (_, _) async {
+            throw StateError('GATT write failed');
+          };
+
+          await expectLater(
+            svc.sendGossipMessage(remoteId, Uint8List.fromList([1])),
+            throwsA(isA<StateError>()),
+            reason:
+                'completing a known-failed send as success defeats the '
+                'core engine\'s pending-request rollback',
+          );
+          expect(errs.whereType<SendFailedError>(), isNotEmpty);
+
+          await errSub.cancel();
+          await svc.dispose();
+          await remotePort.dispose();
+        },
+      );
+
+      test(
+        'a send queued behind a disconnect completes with an error',
+        () async {
+          final network = FakeBlueyNetwork();
+          final localPort = FakeBlueyPort(
+            localNodeId: localId,
+            network: network,
+          );
+          final remotePort = FakeBlueyPort(
+            localNodeId: remoteId,
+            network: network,
+          );
+          final svc = ConnectionManager(
+            port: localPort,
+            registry: ConnectionRegistry(),
+            metrics: BlueyMetrics(),
+          );
+          await localPort.startAdvertising(
+            serviceUuid: serviceUuid,
+            displayName: 'Local',
+            localNodeId: localId,
+          );
+          await remotePort.connect(localId);
+          await Future<void>.delayed(Duration.zero);
+
+          // The first send parks at the gate (in-flight); the second
+          // waits in the queue.
+          final gate = Completer<void>();
+          localPort.sendGate = (_, _) => gate.future;
+          final first = svc.sendGossipMessage(
+            remoteId,
+            Uint8List.fromList([1]),
+          );
+          // Attach expectations immediately so the errors are observed
+          // the moment they fire.
+          final firstExpect = expectLater(first, throwsA(isA<StateError>()));
+          final second = svc.sendGossipMessage(
+            remoteId,
+            Uint8List.fromList([2]),
+          );
+          final secondExpect = expectLater(
+            second,
+            throwsA(isA<ConnectionNotFoundError>()),
+            reason: 'connection gone at dequeue is a known-failed send',
+          );
+          await Future<void>.delayed(Duration.zero);
+
+          // Peer drops while both sends are pending.
+          await remotePort.disconnect(localId);
+          await Future<void>.delayed(Duration.zero);
+          gate.complete();
+
+          await firstExpect;
+          await secondExpect;
+
+          await svc.dispose();
+          await remotePort.dispose();
+        },
+      );
+
+      test(
+        'dispose completes still-queued sends with an error, not success',
+        () async {
+          final network = FakeBlueyNetwork();
+          final localPort = FakeBlueyPort(
+            localNodeId: localId,
+            network: network,
+          );
+          final remotePort = FakeBlueyPort(
+            localNodeId: remoteId,
+            network: network,
+          );
+          final svc = ConnectionManager(
+            port: localPort,
+            registry: ConnectionRegistry(),
+            metrics: BlueyMetrics(),
+            // Bounds the in-flight (gated) send so the test ends promptly.
+            sendTimeout: const Duration(milliseconds: 50),
+          );
+          await localPort.startAdvertising(
+            serviceUuid: serviceUuid,
+            displayName: 'Local',
+            localNodeId: localId,
+          );
+          await remotePort.connect(localId);
+          await Future<void>.delayed(Duration.zero);
+
+          final gate = Completer<void>();
+          localPort.sendGate = (_, _) => gate.future;
+          final inFlight = svc.sendGossipMessage(
+            remoteId,
+            Uint8List.fromList([1]),
+          );
+          final inFlightExpect = expectLater(
+            inFlight,
+            throwsA(isA<TimeoutException>()),
+            reason: 'the in-flight send is resolved by its own drain loop',
+          );
+          final queued = svc.sendGossipMessage(
+            remoteId,
+            Uint8List.fromList([2]),
+          );
+          final queuedExpect = expectLater(
+            queued,
+            throwsA(
+              isA<SendFailedError>().having(
+                (e) => e.message,
+                'message',
+                contains('transport disposed'),
+              ),
+            ),
+          );
+          await Future<void>.delayed(Duration.zero);
+
+          await svc.dispose();
+
+          await queuedExpect;
+          await inFlightExpect;
+
+          await remotePort.dispose();
+        },
+      );
     });
 
     group('connectTo', () {
@@ -573,6 +831,73 @@ void main() {
 
           await svc.dispose();
           await remotePort.dispose();
+        },
+      );
+
+      test(
+        'connectTo throws ConnectionRejectedException when the connection '
+        'was cap-rejected (COR3-6)',
+        () async {
+          final network = FakeBlueyNetwork();
+          final localPort = FakeBlueyPort(
+            localNodeId: localId,
+            network: network,
+          );
+          final remotePort = FakeBlueyPort(
+            localNodeId: remoteId,
+            network: network,
+          );
+          final thirdId = NodeId('33333333-3333-3333-3333-333333333333');
+          final thirdPort = FakeBlueyPort(
+            localNodeId: thirdId,
+            network: network,
+          );
+          await remotePort.startAdvertising(
+            serviceUuid: serviceUuid,
+            displayName: 'Remote',
+            localNodeId: remoteId,
+          );
+          await thirdPort.startAdvertising(
+            serviceUuid: serviceUuid,
+            displayName: 'Third',
+            localNodeId: thirdId,
+          );
+          final registry = ConnectionRegistry();
+          final svc = ConnectionManager(
+            port: localPort,
+            registry: registry,
+            metrics: BlueyMetrics(),
+            maxConnections: 1,
+          );
+
+          // Fill the single slot.
+          await svc.connectTo(
+            ScanCandidate(
+              address: BleAddress(remoteId.value),
+              displayName: 'Remote',
+              lastSeen: _t0,
+            ),
+          );
+          expect(registry.contains(remoteId), isTrue);
+
+          // The GATT connect + identification succeeds, but registration
+          // is cap-rejected — success here means the caller holds a
+          // NodeId it can never send to.
+          await expectLater(
+            svc.connectTo(
+              ScanCandidate(
+                address: BleAddress(thirdId.value),
+                displayName: 'Third',
+                lastSeen: _t0,
+              ),
+            ),
+            throwsA(isA<ConnectionRejectedException>()),
+          );
+          expect(registry.contains(thirdId), isFalse);
+
+          await svc.dispose();
+          await remotePort.dispose();
+          await thirdPort.dispose();
         },
       );
 
