@@ -38,10 +38,11 @@ detection. Seeded from the deferred follow-ups of the 2026-07 audits
 Test-infrastructure quality: making simulated network conditions expressive
 enough to exercise the failure modes the protocol logic exists for.
 
-- ◐ **High** — [Simulate adverse network conditions in the test harness](backlog/testing-network-condition-simulation.md) · per-link latency/loss/duplication/one-way-partition/corruption policies on the in-memory bus, async delivery yield, emergent backpressure
-- ◐ **High** — [Integration coverage for adverse network scenarios](backlog/testing-adverse-scenario-coverage.md) · lost-message retries, asymmetric partition + indirect probing, duplicate frames, clock skew, sustained congestion — depends on the harness above
-- ◐ **High** — [Run full syncs over a faulty BLE link in the end-to-end tests](backlog/testing-bluey-adverse-e2e.md) · bluey's fault injectors exist but only unit tests use them; drive chunk drops, hung writes, mid-message disconnects through the whole stack
+- ☑ **High** — [Simulate adverse network conditions in the test harness](backlog/testing-network-condition-simulation.md) · per-link drop/duplication/corruption/one-way-partition/held-latency policies, async delivery default, emergent backpressure — shipped in 4b0106f
+- ☑ **High** — [Integration coverage for adverse network scenarios](backlog/testing-adverse-scenario-coverage.md) · 20 tests across loss/retry, asymmetric partition, duplicate frames, clock skew, congestion — shipped in 4b0106f
+- ☑ **High** — [Run full syncs over a faulty BLE link in the end-to-end tests](backlog/testing-bluey-adverse-e2e.md) · chunk drop, hung write + send timeout, mid-message disconnect, supersession, connect backoff — shipped in c8c35ae
 - ☐ **High** — [A stateful fake network for the Nearby transport](backlog/testing-nearby-fake-port.md) · bring gossip_nearby up to bluey's standard: fake endpoint network + end-to-end Coordinator tests
+- ☐ **Low** — [Quality-of-life additions to the adverse-network harness](backlog/testing-harness-niceties.md) · type-selective drop/duplicate predicates, per-node runRounds steps, duplicate-rate DSL wrapper, BLE facade test knobs
 
 ## Code health
 
