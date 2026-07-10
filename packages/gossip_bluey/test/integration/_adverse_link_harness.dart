@@ -101,6 +101,7 @@ class AdverseLinkNode {
       port: port,
       registry: registry,
       metrics: metrics,
+      localNodeId: nodeId,
       sendTimeout: sendTimeout,
     );
     final discovery = DiscoveryService(port: port, serviceUuid: serviceUuid);

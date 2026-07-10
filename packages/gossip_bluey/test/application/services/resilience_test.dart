@@ -59,6 +59,7 @@ void main() {
           port: port,
           registry: registry,
           metrics: BlueyMetrics(),
+          localNodeId: localId,
           onLog: (level, msg, [e, st]) {
             if (level == LogLevel.error) errorLogs.add(msg);
           },
@@ -104,6 +105,7 @@ void main() {
           port: port,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
+          localNodeId: localId,
           onLog: (level, msg, [e, st]) {
             if (level == LogLevel.error) errorLogs.add(msg);
           },
@@ -141,6 +143,7 @@ void main() {
           port: port,
           registry: registry,
           metrics: BlueyMetrics(),
+          localNodeId: localId,
         );
         final discovery = DiscoveryService(
           port: port,
@@ -192,6 +195,7 @@ void main() {
           port: port,
           registry: registry,
           metrics: BlueyMetrics(),
+          localNodeId: localId,
         );
         final discovery = DiscoveryService(
           port: port,
@@ -254,6 +258,7 @@ void main() {
           port: port,
           registry: registry,
           metrics: BlueyMetrics(),
+          localNodeId: localId,
         );
         final discovery = DiscoveryService(
           port: port,
@@ -315,6 +320,7 @@ void main() {
         port: port,
         registry: registry,
         metrics: BlueyMetrics(),
+        localNodeId: localId,
       );
       final discovery = DiscoveryService(port: port, serviceUuid: serviceUuid);
       final policy = AutoConnectPolicy(
@@ -417,6 +423,7 @@ void main() {
         port: port,
         registry: registry,
         metrics: BlueyMetrics(),
+        localNodeId: localId,
       );
 
       final nodeId = await manager.connectTo(_candidateFor(remoteId));
@@ -444,6 +451,7 @@ void main() {
         port: port,
         registry: ConnectionRegistry(),
         metrics: metrics,
+        localNodeId: localId,
       );
 
       port.connectFailureInjector = (_) => true;

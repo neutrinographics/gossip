@@ -35,6 +35,7 @@ class ConnectionManager implements MessageDispatcher {
     required this.port,
     required this.registry,
     required this.metrics,
+    required this.localNodeId,
     this.maxConnections,
     this.onLog,
     this.sendTimeout = defaultSendTimeout,
@@ -63,6 +64,11 @@ class ConnectionManager implements MessageDispatcher {
   final BlueyPort port;
   final ConnectionRegistry registry;
   final BlueyMetrics metrics;
+
+  /// This device's own identity — the tie-break (Task 3) compares it
+  /// against the remote NodeId to pick the surviving link in a mutual
+  /// connect.
+  final NodeId localNodeId;
   final int? maxConnections;
   final LogCallback? onLog;
 

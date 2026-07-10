@@ -36,6 +36,7 @@ void main() {
           port: localPort,
           registry: registry,
           metrics: BlueyMetrics(),
+          localNodeId: localId,
           maxConnections: 1, // registry is AT cap once remote registers
         );
 
@@ -105,6 +106,7 @@ void main() {
           port: localPort,
           registry: registry,
           metrics: BlueyMetrics(),
+          localNodeId: localId,
           maxConnections: 1,
         );
         svc.errors.listen(errors.add);
@@ -158,6 +160,7 @@ void main() {
           port: localPort,
           registry: registry,
           metrics: BlueyMetrics(),
+          localNodeId: localId,
         );
 
         await localPort.startAdvertising(
@@ -234,6 +237,7 @@ void main() {
           port: localPort,
           registry: registry,
           metrics: BlueyMetrics(),
+          localNodeId: localId,
         );
         svc.errors.listen(errors.add);
 

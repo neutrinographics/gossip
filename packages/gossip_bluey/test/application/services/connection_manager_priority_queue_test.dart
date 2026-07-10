@@ -42,6 +42,7 @@ void main() {
           port: localPort,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
+          localNodeId: localId,
         );
         await localPort.startAdvertising(
           serviceUuid: serviceUuid,
@@ -97,11 +98,13 @@ void main() {
           port: localPort,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
+          localNodeId: localId,
         );
         final remoteSvc = ConnectionManager(
           port: remotePort,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
+          localNodeId: remoteId,
         );
         await localPort.startAdvertising(
           serviceUuid: serviceUuid,
@@ -163,11 +166,13 @@ void main() {
           port: localPort,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
+          localNodeId: localId,
         );
         final svcB = ConnectionManager(
           port: portB,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
+          localNodeId: otherId,
         );
         await localPort.startAdvertising(
           serviceUuid: serviceUuid,
@@ -224,11 +229,13 @@ void main() {
           port: localPort,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
+          localNodeId: localId,
         );
         final remoteSvc = ConnectionManager(
           port: remotePort,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
+          localNodeId: remoteId,
         );
         await localPort.startAdvertising(
           serviceUuid: serviceUuid,

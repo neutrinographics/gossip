@@ -33,6 +33,7 @@ void main() {
         port: localPort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
+        localNodeId: localId,
       );
       final events = <ConnectionEvent>[];
       final sub = svc.events.listen(events.add);
@@ -62,6 +63,7 @@ void main() {
         port: localPort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
+        localNodeId: localId,
       );
       await localPort.startAdvertising(
         serviceUuid: serviceUuid,
@@ -101,6 +103,7 @@ void main() {
           port: localPort,
           registry: registry,
           metrics: BlueyMetrics(),
+          localNodeId: localId,
         );
 
         await localPort.startAdvertising(
@@ -152,6 +155,7 @@ void main() {
           port: localPort,
           registry: ConnectionRegistry(),
           metrics: metrics,
+          localNodeId: localId,
           onLog: (level, msg, [e, st]) {
             if (level == LogLevel.warning) logs.add(msg);
           },
@@ -199,11 +203,13 @@ void main() {
         port: localPort,
         registry: ConnectionRegistry(),
         metrics: localMetrics,
+        localNodeId: localId,
       );
       final remoteSvc = ConnectionManager(
         port: remotePort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
+        localNodeId: remoteId,
       );
 
       await localPort.startAdvertising(
@@ -263,6 +269,7 @@ void main() {
           port: localPort,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
+          localNodeId: localId,
         );
         await localPort.startAdvertising(
           serviceUuid: serviceUuid,
@@ -301,11 +308,13 @@ void main() {
         port: localPort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
+        localNodeId: localId,
       );
       final remoteSvc = ConnectionManager(
         port: remotePort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
+        localNodeId: remoteId,
       );
 
       await localPort.startAdvertising(
@@ -341,6 +350,7 @@ void main() {
           port: localPort,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
+          localNodeId: localId,
         );
 
         final errs = <ConnectionError>[];
@@ -380,12 +390,14 @@ void main() {
           port: otherPort,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
+          localNodeId: otherId,
         );
         final errs = <ConnectionError>[];
         final svc = ConnectionManager(
           port: localPort,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
+          localNodeId: localId,
           sendTimeout: const Duration(milliseconds: 50),
         );
         final errSub = svc.errors.listen(errs.add);
@@ -464,6 +476,7 @@ void main() {
         port: localPort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
+        localNodeId: localId,
         maxConnections: 1,
       );
       final errs = <ConnectionError>[];
@@ -496,6 +509,7 @@ void main() {
         port: localPort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
+        localNodeId: localId,
       );
 
       await localPort.startAdvertising(
@@ -531,6 +545,7 @@ void main() {
         port: localPort,
         registry: ConnectionRegistry(),
         metrics: BlueyMetrics(),
+        localNodeId: localId,
       );
       await r2.connect(localId);
       await Future<void>.delayed(Duration.zero);
@@ -564,6 +579,7 @@ void main() {
             port: localPort,
             registry: ConnectionRegistry(),
             metrics: BlueyMetrics(),
+            localNodeId: localId,
           );
           final errSub = svc.errors.listen(errs.add);
           await localPort.startAdvertising(
@@ -609,6 +625,7 @@ void main() {
             port: localPort,
             registry: ConnectionRegistry(),
             metrics: BlueyMetrics(),
+            localNodeId: localId,
           );
           await localPort.startAdvertising(
             serviceUuid: serviceUuid,
@@ -669,6 +686,7 @@ void main() {
             port: localPort,
             registry: ConnectionRegistry(),
             metrics: BlueyMetrics(),
+            localNodeId: localId,
             // Bounds the in-flight (gated) send so the test ends promptly.
             sendTimeout: const Duration(milliseconds: 50),
           );
@@ -736,6 +754,7 @@ void main() {
           port: localPort,
           registry: ConnectionRegistry(),
           metrics: BlueyMetrics(),
+          localNodeId: localId,
         );
 
         final candidate = ScanCandidate(
@@ -776,6 +795,7 @@ void main() {
             port: localPort,
             registry: ConnectionRegistry(),
             metrics: BlueyMetrics(),
+            localNodeId: localId,
           );
 
           final candidate = ScanCandidate(
@@ -818,6 +838,7 @@ void main() {
             port: localPort,
             registry: ConnectionRegistry(),
             metrics: BlueyMetrics(),
+            localNodeId: localId,
           );
 
           final candidate = ScanCandidate(
@@ -867,6 +888,7 @@ void main() {
             port: localPort,
             registry: registry,
             metrics: BlueyMetrics(),
+            localNodeId: localId,
             maxConnections: 1,
           );
 
@@ -932,6 +954,7 @@ void main() {
             port: localPort,
             registry: ConnectionRegistry(),
             metrics: BlueyMetrics(),
+            localNodeId: localId,
           );
 
           final candidate = ScanCandidate(

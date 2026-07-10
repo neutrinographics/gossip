@@ -93,6 +93,7 @@ class BlueyTransport {
       port: port,
       registry: registry,
       metrics: metrics,
+      localNodeId: nodeId,
       maxConnections: maxConnections,
       onLog: onLog,
     );
@@ -138,6 +139,7 @@ class BlueyTransport {
       port: port,
       registry: registry,
       metrics: metrics,
+      localNodeId: localNodeId,
       maxConnections: maxConnections,
       onLog: onLog,
     );

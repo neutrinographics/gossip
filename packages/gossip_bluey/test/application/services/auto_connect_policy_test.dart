@@ -75,6 +75,7 @@ void main() {
       port: port,
       registry: registry,
       metrics: BlueyMetrics(),
+      localNodeId: localId,
       clock: clock,
     );
     connectAndIdentifyCallCount = 0;
@@ -388,6 +389,7 @@ void main() {
           port: isolatedPort,
           registry: isolatedRegistry,
           metrics: BlueyMetrics(),
+          localNodeId: localId,
           maxConnections: 1,
           clock: clock,
         );
