@@ -30,7 +30,13 @@ import '../../domain/events/domain_event.dart';
 /// [PeerRepository] is optional to support in-memory-only operation for testing.
 /// When null, peer state changes are tracked in the registry but not persisted.
 ///
-/// Used by: Protocol services (FailureDetector, GossipEngine) and public facades.
+/// Persistence covers peer lifecycle only (add/remove): the protocol
+/// engines (FailureDetector, GossipEngine) mutate [PeerRegistry] directly,
+/// so SWIM status, contact times, and metrics are deliberately
+/// memory-only — peers are transient, and a persisted liveness snapshot
+/// would be stale the moment the process restarts.
+///
+/// Used by: The Coordinator facade (peer add/remove orchestration).
 class PeerService {
   /// The peer registry aggregate managing all peer state.
   ///
@@ -214,7 +220,12 @@ class PeerService {
   }
 
   /// Deletes peer from repository if repository exists.
-  Future<void> _deletePeer(NodeId peerId) async {
+  ///
+  /// Chained through the same per-peer queue as saves: a save that already
+  /// passed its registry snapshot and is inside the repository write when
+  /// the peer is removed would otherwise land after the delete and
+  /// resurrect the peer in persistent storage.
+  Future<void> _deletePeer(NodeId peerId) {
     if (repository == null) {
       _emitError(
         StorageSyncError(
@@ -223,8 +234,18 @@ class PeerService {
           occurredAt: DateTime.now(),
         ),
       );
-      return;
+      return Future.value();
     }
-    await repository!.delete(peerId);
+
+    final previous = _saveQueue[peerId] ?? Future<void>.value();
+    final task = previous.catchError((_) {}).then((_) {
+      return repository!.delete(peerId);
+    });
+    _saveQueue[peerId] = task;
+    return task.whenComplete(() {
+      if (identical(_saveQueue[peerId], task)) {
+        _saveQueue.remove(peerId);
+      }
+    });
   }
 }

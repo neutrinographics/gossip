@@ -44,7 +44,9 @@ import 'materialization_service.dart';
 /// in-memory-only operation for testing. When null, persistence is skipped
 /// but domain logic still executes.
 ///
-/// Used by: Protocol services (GossipEngine) and public facades.
+/// Used by: The Coordinator facade and the Channel/EventStream facades.
+/// (The GossipEngine writes merged entries via [EntryRepository] directly;
+/// it does not go through this service.)
 class ChannelService {
   /// Local node identifier for this instance.
   ///
@@ -108,6 +110,12 @@ class ChannelService {
        _entryRepository = entryRepository,
        _localNodeRepository = localNodeRepository,
        _materializationService = materializationService;
+
+  bool _disposed = false;
+
+  /// Rejects further writes (see [appendEntry]). Called by the owning
+  /// Coordinator when it is disposed.
+  void markDisposed() => _disposed = true;
 
   /// Emits an error through the callback if one is registered.
   void _emitError(SyncError error) {
@@ -331,6 +339,13 @@ class ChannelService {
     StreamId streamId,
     Uint8List payload,
   ) {
+    if (_disposed) {
+      // Durable-but-orphaned otherwise: no engine to sync the entry, its
+      // events dropped at the coordinator's closed controllers.
+      throw StateError(
+        'Cannot append: the coordinator has been disposed',
+      );
+    }
     final limit = maxPayloadBytes;
     if (limit != null && payload.length > limit) {
       // A payload that can never fit a delta message would sync-livelock;

@@ -24,28 +24,50 @@ class CachingChannelRepository implements ChannelRepository {
 
   CachingChannelRepository(this._inner);
 
-  @override
-  Future<ChannelAggregate?> findById(ChannelId id) async {
-    final cached = _cache[id];
-    if (cached != null) return cached;
+  /// In-flight loads, so concurrent cache misses share one deserialized
+  /// instance — two instances would break the in-place-mutation assumption
+  /// this identity map exists to protect.
+  final Map<ChannelId, Future<ChannelAggregate?>> _inFlight = {};
 
-    final loaded = await _inner.findById(id);
-    if (loaded != null) {
-      _cache[id] = loaded;
-    }
-    return loaded;
+  @override
+  Future<ChannelAggregate?> findById(ChannelId id) {
+    final cached = _cache[id];
+    if (cached != null) return Future.value(cached);
+
+    final pending = _inFlight[id];
+    if (pending != null) return pending;
+
+    final load = _inner
+        .findById(id)
+        .then((loaded) {
+          final existing = _cache[id];
+          if (existing != null) return existing;
+          if (loaded != null) _cache[id] = loaded;
+          return loaded;
+        })
+        // Block body, deliberately: `() => _inFlight.remove(id)` returns the
+        // removed value — this very future — and whenComplete awaits a
+        // Future-returning callback, deadlocking findById on itself.
+        .whenComplete(() {
+          _inFlight.remove(id);
+        });
+    _inFlight[id] = load;
+    return load;
   }
 
   @override
   Future<void> save(ChannelAggregate channel) async {
-    _cache[channel.id] = channel;
+    // Write through FIRST: caching before a failed persistent write leaves
+    // the aggregate visible in memory but absent from storage — gone on
+    // restart, present until then.
     await _inner.save(channel);
+    _cache[channel.id] = channel;
   }
 
   @override
   Future<void> delete(ChannelId id) async {
-    _cache.remove(id);
     await _inner.delete(id);
+    _cache.remove(id);
   }
 
   @override
@@ -62,7 +84,7 @@ class CachingChannelRepository implements ChannelRepository {
 
   @override
   Future<void> clearAll() async {
-    _cache.clear();
     await _inner.clearAll();
+    _cache.clear();
   }
 }

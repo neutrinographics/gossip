@@ -99,5 +99,43 @@ void main() {
         );
       },
     );
+
+    test(
+      'removePeer cannot be overtaken by an in-flight save (COR3-19)',
+      () async {
+        final localNode = NodeId('local');
+        final peerId = NodeId('peer1');
+        final registry = PeerRegistry(localNode: localNode);
+        // Call 0 = addPeer save (instant); call 1 = status change (SLOW —
+        // already past its registry snapshot when the peer is removed).
+        final repository = _ScriptedLatencyRepository([
+          Duration.zero,
+          const Duration(milliseconds: 50),
+        ]);
+        final service = PeerService(
+          registry: registry,
+          repository: repository,
+        );
+
+        await service.addPeer(peerId);
+        final slowSave = service.updatePeerStatus(
+          peerId,
+          PeerStatus.suspected,
+        );
+        // Let the save chain pass its registry snapshot and enter the
+        // repository write before the peer is removed.
+        await Future<void>.delayed(Duration.zero);
+        await service.removePeer(peerId);
+        await slowSave;
+
+        expect(
+          repository.stored,
+          isEmpty,
+          reason:
+              'a save in flight at removal time must not resurrect the '
+              'peer in persistent storage',
+        );
+      },
+    );
   });
 }

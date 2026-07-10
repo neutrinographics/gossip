@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:gossip/gossip.dart';
 import 'package:test/test.dart';
 
@@ -50,5 +52,26 @@ void main() {
 
     await sub.cancel();
     await coordinator.dispose();
+  });
+
+  test('a disposed coordinator rejects appends (COR3-18)', () async {
+    final localNode = NodeId('local');
+    final coordinator = await Coordinator.create(
+      localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+      channelRepository: InMemoryChannelRepository(),
+      peerRepository: InMemoryPeerRepository(),
+      entryRepository: InMemoryEntryRepository(),
+    );
+    final channel = await coordinator.createChannel(ChannelId('ch1'));
+    final stream = await channel.getOrCreateStream(StreamId('s1'));
+
+    await coordinator.dispose();
+
+    // A write accepted after dispose would be durable-but-orphaned: no
+    // engine to sync it, no event emitted, no error — silently dead data.
+    await expectLater(
+      stream.append(Uint8List.fromList([1])),
+      throwsStateError,
+    );
   });
 }

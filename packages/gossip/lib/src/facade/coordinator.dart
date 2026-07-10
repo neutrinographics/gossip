@@ -1084,6 +1084,11 @@ class Coordinator {
       return; // Already disposed
     }
 
+    // Reject further facade writes immediately: a payload accepted after
+    // dispose would be durable-but-orphaned — no engine to sync it, its
+    // events dropped at closed controllers (COR3-18).
+    _channelService.markDisposed();
+
     // Stop if currently running or paused
     if (_state == SyncState.running || _state == SyncState.paused) {
       // Stop GossipEngine if available
