@@ -13,6 +13,7 @@ import '../../domain/events/connection_event.dart';
 import '../../domain/interfaces/bluey_port.dart';
 import '../../domain/value_objects/ble_address.dart';
 import '../../domain/value_objects/scan_candidate.dart';
+import '../../infrastructure/codec/control_frame_codec.dart';
 import '../../infrastructure/codec/frame_codec.dart';
 import '../../infrastructure/ports/bluey_message_port.dart';
 import '../observability/bluey_metrics.dart';
@@ -260,6 +261,27 @@ class ConnectionManager implements MessageDispatcher {
               nodeId: nodeId,
             ),
           );
+          if (role == ConnectionRole.peripheral) {
+            // We cannot close an inbound peripheral link (no per-client
+            // disconnect API) — tell the remote central to close it
+            // (COR3-21). Best-effort single shot: on failure we are no
+            // worse off than before the frame existed.
+            unawaited(
+              port
+                  .sendData(
+                    nodeId,
+                    ControlFrameCodec.encodeRejection(RejectionReason.capacity),
+                  )
+                  .catchError((Object e, StackTrace st) {
+                onLog?.call(
+                  LogLevel.warning,
+                  'rejection frame to $nodeId failed',
+                  e,
+                  st,
+                );
+              }),
+            );
+          }
           // Tear down exactly the role that just connected — never the
           // role-blind disconnect(), which prefers central and could hit
           // an unrelated link.

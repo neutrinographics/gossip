@@ -232,6 +232,11 @@ class FakeBlueyPort implements BlueyPort {
     }
   }
 
+  /// Test hook: record an inbound link so sendData to [nodeId] routes.
+  void markConnectedAsPeripheralForTest(NodeId nodeId) {
+    _connectedAsPeripheral.add(nodeId);
+  }
+
   /// Test hook: inject a [PortPeerDisconnected] event.
   void emitPeerDisconnected(NodeId nodeId, ConnectionRole role, String reason) {
     if (!_events.isClosed) {
