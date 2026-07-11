@@ -519,5 +519,86 @@ void main() {
         );
       },
     );
+
+    test(
+      'consecutive peer rejections COMPOUND backoff across cycles — the '
+      'second window is strictly longer than the first (does not re-arm at '
+      'initialBackoff every cycle)',
+      () async {
+        final policy = AutoConnectPolicy(
+          discovery: discovery,
+          connections: connections,
+          registry: registry,
+          now: () => clock.instant,
+          initialBackoff: const Duration(seconds: 1),
+          maxBackoff: const Duration(seconds: 8),
+        );
+        policy.setMode(ConnectionMode.auto);
+
+        Future<void> settle() async {
+          await _pump();
+          await _pump();
+          await _pump();
+        }
+
+        // Drives one full reject cycle through the REAL receiver path:
+        // connect (success + register), then a GSP2 rejection frame decoded
+        // by ConnectionManager's port-event handler.
+        Future<void> rejectCycle() async {
+          port.emitCandidate(_candidate(addrA.value));
+          await settle();
+          expect(
+            registry.contains(remoteAId),
+            isTrue,
+            reason: 'central link should register before the rejection',
+          );
+          port.emitPeerData(
+            remoteAId,
+            ControlFrameCodec.encodeRejection(RejectionReason.capacity),
+          );
+          await settle();
+          expect(
+            registry.contains(remoteAId),
+            isFalse,
+            reason: 'central closes its own link on a GSP2 rejection',
+          );
+        }
+
+        // --- Cycle 1: arms backoff. Window = initialBackoff (1s),
+        // nextAttempt = t0 + 1s. ---
+        await rejectCycle();
+
+        // --- Cycle 2: step just past the 1s window, redial, get rejected
+        // again. A correct policy compounds the window to 2s. ---
+        clock.advance(const Duration(seconds: 1, milliseconds: 1));
+        await rejectCycle();
+
+        // Just past initialBackoff (1s) from cycle 2's rejection instant.
+        // Under the never-compounds bug the window re-armed at 1s and the
+        // gate re-opens here (a fresh connect fires); under a compounding
+        // policy the 2s window still holds it shut.
+        connectAndIdentifyCallCount = 0;
+        clock.advance(const Duration(seconds: 1));
+        port.emitCandidate(_candidate(addrA.value));
+        await settle();
+        expect(
+          connectAndIdentifyCallCount,
+          0,
+          reason: 'cycle 2 must compound to a >1s window; a 1s re-arm here '
+              'is the never-compounds bug',
+        );
+
+        // Past the doubled (2s) window: the gate finally re-opens.
+        clock.advance(const Duration(seconds: 1, milliseconds: 500));
+        port.emitCandidate(_candidate(addrA.value));
+        await settle();
+        expect(
+          connectAndIdentifyCallCount,
+          1,
+          reason: 'after the compounded 2s window expires the redial is '
+              'allowed',
+        );
+      },
+    );
   });
 }

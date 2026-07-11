@@ -1,3 +1,5 @@
+import 'dart:typed_data';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/src/application/observability/bluey_metrics.dart';
@@ -195,6 +197,67 @@ void main() {
       for (final c in chunks) {
         port.emitPeerData(remote, c);
       }
+      await pump();
+
+      expect(registry.contains(remote), isTrue);
+      expect(received, hasLength(1));
+      expect(received.single.bytes, equals(payload));
+    });
+
+    test('a byte-exact GSP2 frame arriving MID-GSP1-FRAME is NOT dispatched '
+        'as a rejection (decoder.isAtFrameBoundary guard)', () async {
+      final port = FakeBlueyPort(localNodeId: NodeId('local'), network: network);
+      final registry = ConnectionRegistry();
+      final manager = ConnectionManager(
+        port: port,
+        registry: registry,
+        metrics: BlueyMetrics(),
+        localNodeId: NodeId('local'),
+      );
+      final received = <IncomingMessage>[];
+      manager.incomingMessages.listen(received.add);
+
+      final remote = NodeId('remote');
+      port.emitPeerConnected(remote, ConnectionRole.central,
+          address: const BleAddress('addr-1'));
+      await pump();
+
+      // A payload-agnostic library carries opaque app bytes: build a
+      // gossip payload whose interior is a byte-exact GSP2 rejection frame
+      // (x ++ GSP2 ++ y). Framed into a single GSP1 frame, then delivered
+      // in three writes so the SECOND write is exactly the GSP2 rejection
+      // frame — arriving while the decoder is mid-payload, i.e. NOT at a
+      // frame boundary.
+      final gsp2 =
+          ControlFrameCodec.encodeRejection(RejectionReason.capacity);
+      final x = Uint8List.fromList([0x01, 0x02, 0x03]);
+      final y = Uint8List.fromList([0x04, 0x05]);
+      final payload = Uint8List.fromList([...x, ...gsp2, ...y]);
+      // One GSP1 frame: [magic 4][len 4][payload]. header = 8 bytes.
+      final frame =
+          FrameEncoder.encode(payload, mtuPayloadSize: 4096).single;
+      const header = 8;
+      final gsp2Start = header + x.length;
+      final gsp2End = gsp2Start + gsp2.length;
+
+      // Write 1: header + x → decoder now mid-payload (not at boundary).
+      port.emitPeerData(remote, frame.sublist(0, gsp2Start));
+      await pump();
+      // Write 2: the byte-exact GSP2 rejection frame, mid-GSP1-frame.
+      final gsp2Chunk = frame.sublist(gsp2Start, gsp2End);
+      expect(gsp2Chunk, equals(gsp2),
+          reason: 'second write must be byte-identical to a GSP2 frame');
+      port.emitPeerData(remote, gsp2Chunk);
+      await pump();
+
+      // The guard suppressed dispatch: the central link is untouched.
+      expect(registry.contains(remote), isTrue,
+          reason: 'a GSP2 frame mid-GSP1-frame must not close the link');
+      expect(received, isEmpty);
+
+      // Write 3: the remainder → the original payload reassembles intact,
+      // GSP2 bytes and all.
+      port.emitPeerData(remote, frame.sublist(gsp2End));
       await pump();
 
       expect(registry.contains(remote), isTrue);

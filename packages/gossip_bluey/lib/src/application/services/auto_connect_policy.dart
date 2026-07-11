@@ -50,11 +50,7 @@ class AutoConnectPolicy {
     _errorsSub = _connections.errors.listen(
       (error) {
         if (error is! ConnectionRejectedByPeerError) return;
-        for (final entry in _knownAddressToNode.entries) {
-          if (entry.value == error.nodeId) {
-            _recordExponentialBackoff(entry.key);
-          }
-        }
+        _recordRejectionBackoff(error.nodeId);
       },
       onError: (Object e, StackTrace st) {
         onLog?.call(LogLevel.warning, 'connection error stream error', e, st);
@@ -98,6 +94,27 @@ class AutoConnectPolicy {
   // rejoining with a fresh NodeId at an old address). At 8-peer scale
   // the growth is bounded and harmless; revisit if scale grows.
   final Map<BleAddress, NodeId> _knownAddressToNode = {};
+
+  /// Per-NodeId memory of the last rejection-driven backoff, keyed by the
+  /// *peer* rather than by address so it SURVIVES the `_backoff.remove`
+  /// that a (transiently) successful connect performs in [_tryConnect].
+  ///
+  /// Without this, a peer that accepts our central link then rejects us
+  /// via GSP2 every cycle would re-arm at [_initialBackoff] forever
+  /// (connectTo succeeds → clears `_backoff` → the rejection hook reads a
+  /// zeroed entry → records 1s again), so a newcomer redials a
+  /// persistently-full peer with a full connect+identify+reject
+  /// round-trip roughly every second.
+  ///
+  /// `delay` is the current window length; `activeUntil` is when it
+  /// expires. A single rejection can surface as BOTH
+  /// `ConnectionRejectedException` (connectTo threw mid-poll) and a
+  /// `ConnectionRejectedByPeerError` on the errors stream — because a new
+  /// connect attempt can only happen after the window expires, a second
+  /// signal arriving while `activeUntil` is still in the future is the
+  /// SAME cycle and must not compound twice.
+  final Map<NodeId, ({Duration delay, DateTime activeUntil})>
+      _rejectionBackoff = {};
 
   ConnectionMode get mode => _mode;
 
@@ -203,7 +220,7 @@ class AutoConnectPolicy {
         LogLevel.debug,
         'auto-connect to ${c.address} rejected at registration: $e',
       );
-      _recordExponentialBackoff(c.address);
+      _recordRejectionBackoff(e.nodeId, address: c.address);
     } catch (e, st) {
       onLog?.call(
         LogLevel.warning,
@@ -214,6 +231,52 @@ class AutoConnectPolicy {
       _recordExponentialBackoff(c.address);
     } finally {
       _inFlightAttempts--;
+    }
+  }
+
+  /// Records exponential backoff for a peer that rejected our connection
+  /// (a local cap/duplicate rejection surfaced as
+  /// [ConnectionRejectedException], or a peer-side GSP2 rejection surfaced
+  /// as [ConnectionRejectedByPeerError]).
+  ///
+  /// Unlike [_recordExponentialBackoff], the window compounds from
+  /// [_rejectionBackoff] — a NodeId-keyed memory that outlives the
+  /// success-clear in [_tryConnect] — so consecutive reject cycles double
+  /// (1s → 2s → 4s → … → [_maxBackoff]) instead of re-arming at
+  /// [_initialBackoff] every cycle. The two signals a single rejection can
+  /// raise are de-duplicated: while the previously-armed window is still
+  /// active no new connect attempt (hence no new rejection) can have
+  /// occurred, so we reuse the current delay rather than doubling again.
+  void _recordRejectionBackoff(NodeId nodeId, {BleAddress? address}) {
+    final now = _now();
+    final memo = _rejectionBackoff[nodeId];
+    final Duration next;
+    if (memo != null && now.isBefore(memo.activeUntil)) {
+      // Same rejection cycle (window still active) — the other signal for
+      // this one rejection already compounded it; do not double again.
+      next = memo.delay;
+    } else {
+      final prev = memo?.delay ?? Duration.zero;
+      next = prev == Duration.zero
+          ? _initialBackoff
+          : Duration(
+              milliseconds: (prev.inMilliseconds * 2).clamp(
+                _initialBackoff.inMilliseconds,
+                _maxBackoff.inMilliseconds,
+              ),
+            );
+    }
+    final nextAttempt = now.add(next);
+    _rejectionBackoff[nodeId] = (delay: next, activeUntil: nextAttempt);
+    // Arm every address that maps to this peer, plus the caller-supplied
+    // one (the connectTo path throws before it records the mapping).
+    final addresses = <BleAddress>{
+      ?address,
+      for (final e in _knownAddressToNode.entries)
+        if (e.value == nodeId) e.key,
+    };
+    for (final a in addresses) {
+      _backoff[a] = (delay: next, nextAttempt: nextAttempt);
     }
   }
 
