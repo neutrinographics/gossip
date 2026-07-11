@@ -4,6 +4,7 @@ import 'package:gossip/gossip.dart';
 
 import '../../domain/aggregates/connection_registry.dart';
 import '../../domain/errors/already_connecting_exception.dart';
+import '../../domain/errors/connection_error.dart';
 import '../../domain/errors/connection_rejected_exception.dart';
 import '../../domain/errors/not_a_bluey_peer_exception.dart';
 import '../../domain/value_objects/ble_address.dart';
@@ -41,7 +42,25 @@ class AutoConnectPolicy {
         _targetConnections = targetConnections,
         _initialBackoff = initialBackoff,
         _maxBackoff = maxBackoff,
-        _longBackoff = longBackoff;
+        _longBackoff = longBackoff {
+    // A peer that rejected us (GSP2, e.g. at capacity) must not be
+    // re-dialed at scan cadence: connectTo SUCCEEDED (clearing backoff)
+    // before the rejection arrived, so without this hook the retry loop
+    // would pace at scan speed against a still-full peer.
+    _errorsSub = _connections.errors.listen(
+      (error) {
+        if (error is! ConnectionRejectedByPeerError) return;
+        for (final entry in _knownAddressToNode.entries) {
+          if (entry.value == error.nodeId) {
+            _recordExponentialBackoff(entry.key);
+          }
+        }
+      },
+      onError: (Object e, StackTrace st) {
+        onLog?.call(LogLevel.warning, 'connection error stream error', e, st);
+      },
+    );
+  }
 
   final DiscoveryService _discovery;
   final ConnectionManager _connections;
@@ -58,6 +77,10 @@ class AutoConnectPolicy {
   // Cancelled in [setMode]/[dispose].
   // ignore: cancel_subscriptions
   StreamSubscription<ScanCandidate>? _sub;
+
+  // Cancelled in [dispose].
+  // ignore: cancel_subscriptions
+  StreamSubscription<ConnectionError>? _errorsSub;
 
   /// Per-address backoff bookkeeping. `delay` is the current backoff
   /// window length (used to compute the next exponential step);
@@ -213,5 +236,8 @@ class AutoConnectPolicy {
     final sub = _sub;
     _sub = null;
     await sub?.cancel();
+    final errorsSub = _errorsSub;
+    _errorsSub = null;
+    await errorsSub?.cancel();
   }
 }

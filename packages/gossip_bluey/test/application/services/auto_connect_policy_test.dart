@@ -10,6 +10,7 @@ import 'package:gossip_bluey/src/domain/value_objects/ble_address.dart';
 import 'package:gossip_bluey/src/domain/value_objects/connection_mode.dart';
 import 'package:gossip_bluey/src/domain/value_objects/scan_candidate.dart';
 import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
+import 'package:gossip_bluey/src/infrastructure/codec/control_frame_codec.dart';
 
 import '../../fakes/fake_bluey_port.dart';
 
@@ -458,6 +459,64 @@ void main() {
         await _pump();
         await _pump();
         expect(connectAndIdentifyCallCount, 1);
+      },
+    );
+
+    test(
+      'a ConnectionRejectedByPeerError applies exponential backoff to '
+      "the rejected NodeId's known address",
+      () async {
+        final policy = AutoConnectPolicy(
+          discovery: discovery,
+          connections: connections,
+          registry: registry,
+          now: () => clock.instant,
+          initialBackoff: const Duration(seconds: 1),
+        );
+        policy.setMode(ConnectionMode.auto);
+
+        // Successful connect populates _knownAddressToNode[addrA] ->
+        // remoteAId and registers remoteAId as a central connection.
+        port.emitCandidate(_candidate(addrA.value));
+        await _pump();
+        await _pump();
+        await _pump();
+        expect(connectAndIdentifyCallCount, 1);
+        expect(registry.contains(remoteAId), isTrue);
+
+        // Simulate the peer rejecting us via GSP2, driven through the
+        // REAL receiver path (ConnectionManager's port-event handler
+        // decoding a rejection control frame) rather than a test-only
+        // error-injection hook.
+        port.emitPeerData(
+          remoteAId,
+          ControlFrameCodec.encodeRejection(RejectionReason.capacity),
+        );
+        await _pump();
+        await _pump();
+        expect(registry.contains(remoteAId), isFalse);
+
+        // The next candidate emission for that address must NOT trigger
+        // a connect attempt until the backoff window passes.
+        connectAndIdentifyCallCount = 0;
+        port.emitCandidate(_candidate(addrA.value));
+        await _pump();
+        await _pump();
+        expect(
+          connectAndIdentifyCallCount,
+          0,
+          reason: 'address must be under backoff after peer rejection',
+        );
+
+        clock.advance(const Duration(seconds: 2)); // > initialBackoff (1s)
+        port.emitCandidate(_candidate(addrA.value));
+        await _pump();
+        await _pump();
+        expect(
+          connectAndIdentifyCallCount,
+          1,
+          reason: 'backoff expires — retry is legitimate (slot may free)',
+        );
       },
     );
   });
