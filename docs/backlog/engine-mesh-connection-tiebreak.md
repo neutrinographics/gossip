@@ -6,49 +6,46 @@
 
 In a mesh, every device both advertises and scans, so two devices routinely
 discover each other at the same time and *each* opens a connection to the
-other — leaving two physical Bluetooth links where one would do. There is
-currently no way to break the tie before connecting, because a scan result
-does not reveal the other device's identity; only after the link is up do we
-learn who we reached and reject the duplicate — by which point the radio
-resources were already spent, and the "rejected" link often stays physically
-open anyway.
+other — two physical Bluetooth links where one would do, invisible to the
+connection registry (which deduplicates by identity). At the recommended
+8-device scale this approached double the platform connection ceilings.
 
-The fix is to embed each device's identity (or a short hash of it) in its
-Bluetooth advertisement, so a scanner can apply a simple deterministic rule —
-e.g. "the lexicographically smaller identity initiates" — *before* opening a
-connection. One initiator per pair, every time.
+Shipped as a **post-connect tie-break**: for any pair, the surviving link is
+the one where the lexicographically smaller node identity is the central
+("the smaller ID initiates"). The loser closes its *own* central link —
+which is physically the same link as the winner's peripheral — so every
+pair converges to exactly one link without needing the peripheral-side
+disconnect API that Bluetooth doesn't offer. The brief double-connect
+still happens (roughly one identify round-trip) and is accepted;
+[a best-effort Android advertisement hash](engine-preconnect-adv-hash.md)
+could shrink it further.
 
-The project docs also promise a star-topology discovery filter ("spokes only
-connect to the hub") that the code does not actually offer. Either add the
-filter or correct the docs as part of this work.
+An earlier idea — embedding the identity in the advertisement so the
+tie-break could happen *before* connecting — was rejected: iOS peripherals
+cannot advertise manufacturer data, and backgrounded iOS demotes even
+service UUIDs, so no advertisement channel works reliably across both
+platforms.
+
+Star topology needed no filter after all: only the hub advertises, so
+spokes can only ever find the hub. The docs that claimed a discovery
+filter were corrected instead.
 
 ## Why it matters
 
-At the recommended scale of 8 devices per channel, mutual connects can hold
-up to 14 concurrent links per device — roughly double typical platform
-ceilings — causing connection storms exactly at the advertised target scale.
-The failure is invisible: the connection registry reports the deduplicated
-count, not the physical one. This is the highest-impact open finding from the
+Connection storms at exactly the documented target scale, invisible in
+production metrics. This was the highest-impact open finding of the
 2026-07-08 audit (COR3-29).
-
-## Rough approach
-
-- Put the node identity (or a collision-resistant hash) into the BLE
-  advertisement payload.
-- On scan, compare identities and only initiate when the local device wins
-  the tie-break; the loser waits to be connected to.
-- Add the star discovery filter (connect only to a named hub) or fix the
-  README/CLAUDE.md claims that it exists.
 
 ## Related
 
 - Audit finding COR3-29 in
   [audits/2026-07-08-comprehensive-audit.md](../audits/2026-07-08-comprehensive-audit.md).
+- Design: [the spec](../superpowers/specs/2026-07-10-bluey-tiebreak-rejection-design.md)
+  (includes the recorded "rejected premise" for the advertisement approach).
 - [Tell a rejected Bluetooth peer it was rejected](engine-reject-notify-capped-peers.md)
-  — the other half of duplicate/cap handling; both touch the wire formats.
-- Done — implemented as a post-connect tie-break (the advertisement
-  approach was rejected: iOS peripherals cannot advertise manufacturer
-  data). Design:
-  [the spec](../superpowers/specs/2026-07-10-bluey-tiebreak-rejection-design.md).
-  A best-effort pre-connect hash on Android remains a possible future
-  optimization of the transient double-connect.
+  — shipped together; covers the capacity-rejection case the tie-break
+  doesn't.
+- Follow-up optimization:
+  [Best-effort pre-connect identity hash on Android](engine-preconnect-adv-hash.md).
+- Remaining test debt:
+  [Close the recorded test debt from the tie-break/rejection reviews](../backlog/testing-tiebreak-followup-tests.md).
