@@ -106,7 +106,7 @@ Implements `MessagePort` using BLE via the [bluey](https://github.com/neutrinogr
 
 **Key components:**
 - `BlueyTransport` (facade): Lifecycle, advertising/discovery toggles, peer events
-- `ConnectionService` (application): Discovery + tie-break, soft/hard caps, adaptive scan, per-NodeId backoff, send/receive paths
+- `ConnectionManager` / `AutoConnectPolicy` (application): connection registry + send/receive paths; discovery-driven auto-connect with per-address backoff and caps
 - `ConnectionRegistry` (domain aggregate): One handle per NodeId
 - `BlueyPort` (domain interface): Adapter abstraction; `BlueyPortImpl` wraps the real `Bluey` instance
 - `FrameEncoder`/`FrameDecoder` (infrastructure): 4-byte length-prefix framing for chunked BLE writes
@@ -114,8 +114,8 @@ Implements `MessagePort` using BLE via the [bluey](https://github.com/neutrinogr
 **Identity model:** `NodeId.value` is fed directly into bluey's `ServerId` — no handshake required for the initiator's view of the responder. (See spec for the known peripheral-side limitation when running on real hardware.)
 
 **Topologies supported via composable primitives:**
-- **Mesh:** every device calls both `startAdvertising()` and `startDiscovery()`. Tie-break by `NodeId.value` ensures one initiator per pair.
-- **Star:** hub calls `startAdvertising()` only; spokes call `startDiscovery(filter: hubId)` only.
+- **Mesh:** every device calls both `startAdvertising()` and `startDiscovery()`. A mutual connect briefly holds two links; the post-connect tie-break (smaller `NodeId.value` stays central; the loser closes its own central link) converges every pair to one physical link.
+- **Star:** hub calls `startAdvertising()` only; spokes call `startDiscovery()` only — spokes can only ever find the hub because nothing else advertises.
 
 ## Key Design Decisions (ADRs)
 

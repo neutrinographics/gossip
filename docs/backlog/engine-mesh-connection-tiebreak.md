@@ -46,3 +46,9 @@ count, not the physical one. This is the highest-impact open finding from the
   [audits/2026-07-08-comprehensive-audit.md](../audits/2026-07-08-comprehensive-audit.md).
 - [Tell a rejected Bluetooth peer it was rejected](engine-reject-notify-capped-peers.md)
   — the other half of duplicate/cap handling; both touch the wire formats.
+- Done — implemented as a post-connect tie-break (the advertisement
+  approach was rejected: iOS peripherals cannot advertise manufacturer
+  data). Design:
+  [the spec](../superpowers/specs/2026-07-10-bluey-tiebreak-rejection-design.md).
+  A best-effort pre-connect hash on Android remains a possible future
+  optimization of the transient double-connect.
