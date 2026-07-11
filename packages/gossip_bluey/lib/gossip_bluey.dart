@@ -13,6 +13,7 @@ export 'src/domain/value_objects/ble_address.dart' show BleAddress;
 export 'src/domain/value_objects/bluetooth_adapter_state.dart'
     show BluetoothAdapterState;
 export 'src/domain/value_objects/connection_mode.dart' show ConnectionMode;
+export 'src/domain/value_objects/rejection_reason.dart' show RejectionReason;
 export 'src/domain/value_objects/scan_candidate.dart' show ScanCandidate;
 export 'src/domain/value_objects/service_uuid.dart' show ServiceUuid;
 
@@ -36,7 +37,8 @@ export 'src/domain/errors/connection_error.dart'
         ConnectFailedError,
         SendFailedError,
         ConnectionLimitReachedError,
-        FrameDecodeError;
+        FrameDecodeError,
+        ConnectionRejectedByPeerError;
 
 // Observability
 export 'src/application/observability/log_level.dart'

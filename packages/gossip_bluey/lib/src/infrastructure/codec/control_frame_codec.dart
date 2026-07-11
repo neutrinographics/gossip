@@ -1,28 +1,16 @@
 import 'dart:typed_data';
 
+import '../../domain/value_objects/rejection_reason.dart';
+
+export '../../domain/value_objects/rejection_reason.dart'
+    show RejectionReason;
+
 /// Magic prefix for CONTROL frames, ASCII "GSP2". Data frames keep the
 /// "GSP1" magic byte-for-byte unchanged; a receiver without GSP2 support
 /// treats a control frame as garbage and scan-recovers past it (existing,
 /// tested FrameDecoder behavior), so new→old control frames are harmlessly
 /// ignored. No version negotiation needed.
 const List<int> kControlMagicBytes = [0x47, 0x53, 0x50, 0x32];
-
-/// Wire values for [ConnectionRejectedFrame.reason].
-enum RejectionReason {
-  /// The remote is at its connection cap.
-  capacity(0x01);
-
-  const RejectionReason(this.wire);
-
-  final int wire;
-
-  static RejectionReason? fromWire(int byte) {
-    for (final r in RejectionReason.values) {
-      if (r.wire == byte) return r;
-    }
-    return null;
-  }
-}
 
 /// A decoded control frame. Currently only rejection exists; the sealed
 /// hierarchy leaves room for future control types without another wire

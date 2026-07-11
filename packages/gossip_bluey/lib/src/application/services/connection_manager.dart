@@ -341,6 +341,39 @@ class ConnectionManager implements MessageDispatcher {
           // Data from a peer we don't know about — ignore.
           return;
         }
+        final registered = registry.get(nodeId);
+        if (registered != null &&
+            registered.role == ConnectionRole.central &&
+            decoder.isAtFrameBoundary) {
+          final control = ControlFrameCodec.tryParse(data);
+          if (control is ConnectionRejectedFrame) {
+            // The responder cannot close its inbound link; we can and
+            // must (COR3-21). Unregister inline so PeerClosed carries a
+            // distinct reason — the later platform disconnect event
+            // finds no matching registration and is ignored.
+            onLog?.call(
+              LogLevel.info,
+              'peer $nodeId rejected our connection '
+              '(${control.reason.name}); closing our central link',
+            );
+            registry.remove(nodeId);
+            _decoders.remove(nodeId);
+            metrics.setConnectedPeerCount(registry.connectionCount);
+            _emitEvent(PeerClosed(
+              nodeId: nodeId,
+              reason: 'rejected by peer: ${control.reason.name}',
+            ));
+            _emitError(ConnectionRejectedByPeerError(
+              message: 'peer $nodeId rejected our connection '
+                  '(${control.reason.name})',
+              occurredAt: _clock.now(),
+              nodeId: nodeId,
+              reason: control.reason,
+            ));
+            _disconnectRoleGuarded(nodeId, ConnectionRole.central);
+            return;
+          }
+        }
         metrics.recordFrameReceived();
         metrics.recordBytesReceived(data.length);
         final result = decoder.feed(data);

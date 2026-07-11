@@ -1,5 +1,7 @@
 import 'package:gossip/gossip.dart';
 
+import '../value_objects/rejection_reason.dart';
+
 enum ConnectionErrorType {
   connectionNotFound,
   connectionLost,
@@ -7,6 +9,7 @@ enum ConnectionErrorType {
   sendFailed,
   connectionLimitReached,
   frameDecode,
+  connectionRejectedByPeer,
 }
 
 /// Sealed base class for errors emitted on `BlueyTransport.errors`.
@@ -85,4 +88,19 @@ final class FrameDecodeError extends ConnectionError {
     required this.nodeId,
     super.cause,
   }) : super(type: ConnectionErrorType.frameDecode);
+}
+
+/// The remote peer rejected our connection via an in-band GSP2 control
+/// frame (COR3-21) — e.g. it is at its connection cap. We closed our own
+/// link in response; retrying later is legitimate (a slot may free up).
+final class ConnectionRejectedByPeerError extends ConnectionError {
+  final NodeId nodeId;
+  final RejectionReason reason;
+  const ConnectionRejectedByPeerError({
+    required super.message,
+    required super.occurredAt,
+    required this.nodeId,
+    required this.reason,
+    super.cause,
+  }) : super(type: ConnectionErrorType.connectionRejectedByPeer);
 }
