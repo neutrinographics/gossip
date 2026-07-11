@@ -92,6 +92,7 @@ class AdverseLinkNode {
     Duration initialBackoff = const Duration(seconds: 1),
     Duration maxBackoff = const Duration(seconds: 60),
     int chunkSize = 200,
+    int? maxConnections,
   }) async {
     final port = FakeBlueyPort(localNodeId: nodeId, network: network)
       ..chunkSize = chunkSize;
@@ -103,6 +104,7 @@ class AdverseLinkNode {
       metrics: metrics,
       localNodeId: nodeId,
       sendTimeout: sendTimeout,
+      maxConnections: maxConnections,
     );
     final discovery = DiscoveryService(port: port, serviceUuid: serviceUuid);
     final autoConnect = AutoConnectPolicy(
@@ -150,6 +152,28 @@ class AdverseLinkNode {
 
   /// Whether the transport currently holds an active link to [peer].
   bool isLinkedTo(NodeId peer) => registry.contains(peer);
+
+  /// Tears down this node's link to [peer] via
+  /// [ConnectionManager.disconnect]. Used by adverse-link tests to free a
+  /// capacity slot on a full node.
+  Future<void> disconnectFrom(NodeId peer) => manager.disconnect(peer);
+
+  /// Directly initiates an outbound BLE connection to [peer] via
+  /// [ConnectionManager.connectTo], bypassing discovery and
+  /// [AutoConnectPolicy]. Tests use this to FORCE the mutual-connect race
+  /// that mesh auto-connect's initiator tie-break normally prevents — the
+  /// fake exposes the peer's NodeId directly as its BLE address, so a
+  /// synthetic [ScanCandidate] is all `connectTo` needs.
+  Future<NodeId> connectToPeer(NodeId peer) {
+    return manager.connectTo(
+      ScanCandidate(
+        address: BleAddress(peer.value),
+        displayName: peer.value,
+        rssi: -50,
+        lastSeen: DateTime.utc(2026, 1, 1),
+      ),
+    );
+  }
 
   /// Creates the shared channel/stream on this node and registers
   /// [peers] both as channel members and gossip peers. Returns the local

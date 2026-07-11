@@ -292,6 +292,14 @@ class FakeBlueyPort implements BlueyPort {
   Set<NodeId> get connectedAsPeripheral =>
       Set.unmodifiable(_connectedAsPeripheral);
 
+  /// Number of live physical links to [peer] — central and peripheral
+  /// counted separately. This is the ground truth the production
+  /// registry cannot see (COR3-29): a mutual connect that converged
+  /// correctly shows exactly 1 here.
+  int physicalLinkCountTo(NodeId peer) =>
+      (_connectedAsCentral.contains(peer) ? 1 : 0) +
+      (_connectedAsPeripheral.contains(peer) ? 1 : 0);
+
   @override
   Stream<BlueyPortEvent> get events => _events.stream;
 
@@ -565,8 +573,15 @@ class FakeBlueyPort implements BlueyPort {
           );
         }
       case ConnectionRole.peripheral:
+        // A peripheral has NO per-client disconnect API in bluey: it
+        // cannot force an inbound central off (COR3-21 — this is exactly
+        // why GSP2 rejection frames exist). So this tears down only the
+        // LOCAL peripheral bookkeeping; it does NOT close or notify the
+        // remote central, which stays physically connected until it
+        // closes its own link (e.g. on receiving a rejection frame). The
+        // remote's view is cleaned up if/when it closes its central role,
+        // whose disconnect DOES propagate.
         if (!_connectedAsPeripheral.remove(nodeId)) return;
-        remote?._connectedAsCentral.remove(localNodeId);
         _events.add(
           PortPeerDisconnected(
             nodeId: nodeId,
@@ -574,15 +589,6 @@ class FakeBlueyPort implements BlueyPort {
             reason: 'local request (role)',
           ),
         );
-        if (remote != null && !remote._events.isClosed) {
-          remote._events.add(
-            PortPeerDisconnected(
-              nodeId: localNodeId,
-              role: ConnectionRole.central,
-              reason: 'peer disconnected (role)',
-            ),
-          );
-        }
     }
   }
 
