@@ -41,3 +41,6 @@ commutativity opt-in that keeps the incremental path.
 
 - Findings PERF3-1/2/4/5 in
   [audits/2026-07-08-comprehensive-audit.md](../audits/2026-07-08-comprehensive-audit.md).
+- PERF3-3 (the redundant duplicate scan in batch appends) is NOT part of
+  this item — it was already fixed in commit 62a68c9, whose message
+  didn't tag the ID.

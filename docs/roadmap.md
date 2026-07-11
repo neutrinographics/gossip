@@ -42,7 +42,7 @@ enough to exercise the failure modes the protocol logic exists for.
 - ☑ **High** — [Simulate adverse network conditions in the test harness](backlog/testing-network-condition-simulation.md) · per-link drop/duplication/corruption/one-way-partition/held-latency policies, async delivery default, emergent backpressure — shipped in 4b0106f
 - ☑ **High** — [Integration coverage for adverse network scenarios](backlog/testing-adverse-scenario-coverage.md) · 20 tests across loss/retry, asymmetric partition, duplicate frames, clock skew, congestion — shipped in 4b0106f
 - ☑ **High** — [Run full syncs over a faulty BLE link in the end-to-end tests](backlog/testing-bluey-adverse-e2e.md) · chunk drop, hung write + send timeout, mid-message disconnect, supersession, connect backoff — shipped in c8c35ae
-- ☐ **High** — [A stateful fake network for the Nearby transport](backlog/testing-nearby-fake-port.md) · bring gossip_nearby up to bluey's standard: fake endpoint network + end-to-end Coordinator tests
+- ☐ **Medium** — [A stateful fake network for the Nearby transport](backlog/testing-nearby-fake-port.md) · bring gossip_nearby up to bluey's standard: fake endpoint network + end-to-end Coordinator tests
 - ☐ **Low** — [Quality-of-life additions to the adverse-network harness](backlog/testing-harness-niceties.md) · type-selective drop/duplicate predicates, per-node runRounds steps, duplicate-rate DSL wrapper, BLE facade test knobs
 - ☐ **Low** — [Close the recorded test debt from the tie-break/rejection reviews](backlog/testing-tiebreak-followup-tests.md) · queued-send-across-swap, backoff dedup branch, both-orders stagger, codec edges, backoff-reset product decision
 
@@ -51,5 +51,5 @@ enough to exercise the failure modes the protocol logic exists for.
 Internal structure, documentation honesty, and audit-hygiene work — no
 runtime behavior changes.
 
-- ☐ **Medium** — [Realign the module layout with the documented architecture](backlog/health-architecture-alignment.md) · ports to domain, delete the dead bridge, re-home transport codecs, owned lifecycle enums, amend ADR-010/011
-- ☐ **Medium** — [Sweep the remaining minor audit findings](backlog/health-minor-findings-sweep.md) · MIN-series plus two correctness latents (unbudgeted sync-request size, uncopied payload buffers)
+- ☐ **Medium** — [Realign the module layout with the documented architecture](backlog/health-architecture-alignment.md) · ports to domain, delete the dead bridge, re-home transport codecs, owned lifecycle enums, peer-persistence honesty (ARCH3-6), amend ADR-010/011
+- ☐ **High** — [Sweep the remaining minor audit findings](backlog/health-minor-findings-sweep.md) · three correctness latents (unbudgeted sync-request size, non-rotating responder digests, uncopied payload buffers) + transport minors + hygiene

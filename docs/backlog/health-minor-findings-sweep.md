@@ -4,34 +4,63 @@
 
 ## What this is
 
-The catch-all closing round ("R14") of the 2026-07-08 audit: the MIN-series
-minor findings plus two latent correctness items that were sized out of the
-main remediation rounds:
+The catch-all closing round ("R14") of the 2026-07-08 audit — everything
+small that remains open, enumerated here so nothing hides behind a label.
+
+**Three latent correctness bugs** (small, but real bugs waiting on
+unlucky inputs):
 
 - **Unbudgeted sync-request size (COR3-28).** The "what I already have"
   summary sent when requesting missing data is an unbounded list; a node
-  whose summary for one stream outgrows the message size limit can advertise
-  that stream but never pull it — a permanent, silent stall surfaced only as
-  generic send failures. Bound it the same way the digests were.
+  whose summary for one stream outgrows the message size limit can
+  advertise that stream but never pull it — a permanent, silent stall.
+  Bound it the same way the digests were.
+- **The responder's digest fitting never rotates (OBS-3).** The same
+  size-budget theme on the serving side: a paused or serve-only node with
+  over-budget version summaries truncates the same tail forever, so some
+  streams are never advertised by it at all. The requester side rotates;
+  the responder side passes a fixed starting offset.
 - **Payloads are held by reference, not copied (COR3-30).** An application
-  that reuses a scratch buffer after appending can corrupt what gets stored
-  and synced — and because entry equality ignores payload bytes, local and
-  remote copies can differ silently. Copy at the public API boundary.
-- **The MIN-series**: dead types and phantom events, retention-policy input
-  validation, safe parsing, documentation drift (including the root project
-  docs claiming a mesh tie-break and star filter that don't exist — see the
-  mesh item), unused dependencies, and a design note on the sync-request
-  budget.
+  that reuses a scratch buffer after appending can corrupt what gets
+  stored and synced — and because entry equality ignores payload bytes,
+  local and remote copies can differ silently. Copy at the public API
+  boundary.
+
+**Transport behavior minors** (each small; none has another home):
+
+- Silent code paths in the BLE transport that swallow outcomes without a
+  log conduit (MIN-14), and its pending-send count excluding the message
+  currently in flight (MIN-15).
+- Maps keyed by radio address that grow without pruning under iOS address
+  rotation (MIN-17).
+- The Nearby transport's robustness edges: an unguarded parse of the
+  peer's advertised name can throw on hostile input (MIN-18), and it has
+  no reconnect/backoff/adapter-state handling at all (MIN-19).
+- The BLE send queue's remaining halves of MIN-16 (per-lane aging and
+  queue metrics; the depth ceiling itself is
+  [its own item](engine-send-queue-depth-cap.md)).
+
+**Hygiene** (the rest of the MIN-series and actionable observations):
+dead types and phantom events (MIN-4/5/6/7, OBS-9's vestigial API),
+retention-policy input validation, safe parsing (`tryParse`),
+documentation drift, unused dependencies, persistence-call multiplicity
+for pluggable stores (MIN-10/OBS-6), and naming normalization across the
+transports (OBS-7).
 
 ## Why it matters
 
 Individually small; collectively they are the gap between "audited" and
-"clean". The two correctness latents above are real bugs waiting on
-unlucky inputs.
+"clean". The three latents above deserve to be fixed first — they are
+bugs, not polish.
 
 ## Related
 
-- Findings COR3-28, COR3-30 and MIN-* in
+- Findings COR3-28, COR3-30, OBS-3, and the MIN-/OBS-series in
   [audits/2026-07-08-comprehensive-audit.md](../audits/2026-07-08-comprehensive-audit.md).
+- SWIM probe-timing observations (OBS-4/OBS-5) live with
+  [the failure-detection threshold item](engine-swim-threshold-tuning.md).
+- Test-port production-fidelity (MIN-13) lives with
+  [the harness quality-of-life item](testing-harness-niceties.md).
 - [One Bluetooth link per device pair in a mesh](engine-mesh-connection-tiebreak.md)
-  — implementing it resolves the doc-drift half of the tie-break claim.
+  — the tie-break/star documentation drift named by the audit was fixed
+  with that item.

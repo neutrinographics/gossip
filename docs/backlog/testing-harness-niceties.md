@@ -25,6 +25,11 @@ and clearer:
   end-to-end harness re-wires the stack manually, bypassing the facade's thin
   event relay. Exposing those knobs would let those suites run through the
   facade itself.
+- **Test ports should enforce production constraints (audit MIN-13).** The
+  in-memory test transports don't enforce the real ports' semantics — most
+  notably the ~32 KB message cap — so a regression that produces oversized
+  messages passes every integration test and only fails on hardware. Make
+  the fakes reject what production would reject.
 
 ## Why it matters
 

@@ -30,6 +30,15 @@ how often it false-alarms at the present thresholds, then try lower values
 and compare. It's a tuning experiment with no structural change to how
 detection works.
 
+## Scope note
+
+Two audit observations belong to this item's measurement pass: contact
+times are recorded when a probe is *sent* rather than when it succeeds
+(OBS-4), and sequential probe phases plus orphaned timeout timers can add
+several timeout-lengths to a round's cadence, which matters most in
+two-device meshes (OBS-5). Both affect how the thresholds behave in
+practice, so tune them together.
+
 ## Related
 
 - Raised by the [algorithm audit](../audits/2026-07-06-algorithm-audit.md)

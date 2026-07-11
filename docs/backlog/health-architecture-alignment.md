@@ -27,15 +27,26 @@ contradiction:
   advertising/scanning states. Introduce owned lifecycle enums and translate
   at the adapter, as the package already does for adapter state.
 
+- The protocol layer mutates peer state (health status, contact times,
+  metrics) directly, bypassing the service whose docs claim to own that
+  path — so anyone who plugs in a *persistent* peer store will silently
+  lose every one of those changes (only add/remove ever reach storage).
+  Decide the honest contract: document protocol-driven peer state as
+  memory-only by design (and simplify the service accordingly), or route
+  the mutations through it. Fix the false "Used by: Protocol services"
+  doc claim either way. (The ChannelService half of this finding was
+  already fixed; this is the PeerService half.)
+
 Amend the affected architecture decision records (ADR-010/011) so docs and
 code agree.
 
 ## Why it matters
 
 None of this changes runtime behavior — it prevents the *next* class of bug:
-wire formats drifting per layer, dead components misleading readers, and a
-supposedly transport-agnostic API that isn't. Findings ARCH3-1 through
-ARCH3-5 from the 2026-07-08 audit (round "R12").
+wire formats drifting per layer, dead components misleading readers, a
+supposedly transport-agnostic API that isn't, and a persistence extension
+point that silently drops data. Findings ARCH3-1 through ARCH3-6 from the
+2026-07-08 audit (round "R12" plus R13's unfinished half).
 
 ## Related
 
