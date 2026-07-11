@@ -1,5 +1,12 @@
 # gossip_nearby Hardening Plan
 
+> **Historical record — not a work queue.** Open work is tracked on the
+> project roadmap ([`docs/roadmap.md`](../../docs/roadmap.md)): Phase 3
+> (retry exponential backoff) and the reconnect/adapter-state gaps are part
+> of the minor-findings sweep (audit MIN-19); the fast-fail-on-send-error
+> idea under Deferred Items moved to the failure-detection threshold item.
+> The remaining Deferred Items are documented won't-do decisions.
+
 Production log analysis and code review identified several reliability gaps. This plan covers the three highest-impact changes, plus deferred items for future consideration.
 
 ---

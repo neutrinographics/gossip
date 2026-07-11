@@ -32,12 +32,22 @@ detection works.
 
 ## Scope note
 
-Two audit observations belong to this item's measurement pass: contact
-times are recorded when a probe is *sent* rather than when it succeeds
-(OBS-4), and sequential probe phases plus orphaned timeout timers can add
-several timeout-lengths to a round's cadence, which matters most in
-two-device meshes (OBS-5). Both affect how the thresholds behave in
-practice, so tune them together.
+Three related observations belong to this item's measurement pass:
+
+- Contact times are recorded when a probe is *sent* rather than when it
+  succeeds (audit OBS-4).
+- Sequential probe phases plus orphaned timeout timers can add several
+  timeout-lengths to a round's cadence, which matters most in two-device
+  meshes (audit OBS-5).
+- A send that the transport *reports failed* still waits out the full
+  ping timeout before counting as a missed probe — treating a hard
+  transport error as an immediate probe failure would roughly halve
+  detection time for broken links. Needs care to avoid false positives
+  from transient radio congestion (flagged in the Nearby package's
+  hardening notes as a future core enhancement).
+
+All three affect how the thresholds behave in practice, so tune them
+together.
 
 ## Related
 
