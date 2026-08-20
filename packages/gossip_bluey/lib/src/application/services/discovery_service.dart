@@ -3,6 +3,7 @@ import 'dart:async';
 import '../../domain/interfaces/bluey_port.dart';
 import '../../domain/value_objects/ble_address.dart';
 import '../../domain/value_objects/scan_candidate.dart';
+import '../../domain/value_objects/scan_mode.dart';
 import '../../domain/value_objects/service_uuid.dart';
 
 /// Owns the BLE scan subscription and the current-candidates map. Emits
@@ -14,11 +15,17 @@ class DiscoveryService {
   DiscoveryService({
     required BlueyPort port,
     required ServiceUuid serviceUuid,
+    ScanMode? scanMode,
   })  : _port = port,
-        _serviceUuid = serviceUuid;
+        _serviceUuid = serviceUuid,
+        _scanMode = scanMode;
 
   final BlueyPort _port;
   final ServiceUuid _serviceUuid;
+
+  /// Scan duty cycle requested from the port on every [start] — owned
+  /// here (not passed per call) so a duty-cycle restart re-applies it.
+  final ScanMode? _scanMode;
 
   // Cancelled in [stop] and [dispose].
   // ignore: cancel_subscriptions
@@ -58,7 +65,7 @@ class DiscoveryService {
   Future<void> start() async {
     if (_sub != null || _disposed) return;
     _sub = _port
-        .scanForCandidates(serviceUuid: _serviceUuid)
+        .scanForCandidates(serviceUuid: _serviceUuid, mode: _scanMode)
         .listen(
           _onCandidate,
           onError: (Object error, StackTrace stackTrace) {

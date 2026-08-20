@@ -3,10 +3,12 @@ import 'dart:typed_data';
 import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 
+import '../value_objects/advertise_mode.dart';
 import '../value_objects/ble_address.dart';
 import '../value_objects/bluetooth_adapter_state.dart';
 import '../value_objects/discovered_peer.dart';
 import '../value_objects/scan_candidate.dart';
+import '../value_objects/scan_mode.dart';
 import '../value_objects/service_uuid.dart';
 
 /// Domain abstraction over the bluey library. Speaks only in domain types
@@ -22,10 +24,14 @@ abstract interface class BlueyPort {
   /// bluey `ServerId`), registers the gossip service, and starts
   /// advertising with the bluey lifecycle control service in the payload
   /// so other devices can find us via discovery.
+  ///
+  /// [mode] selects the advertising interval/power intensity; null keeps
+  /// the platform's historical default (low-latency, high power).
   Future<void> startAdvertising({
     required ServiceUuid serviceUuid,
     required String displayName,
     required NodeId localNodeId,
+    AdvertiseMode? mode,
   });
 
   Future<void> stopAdvertising();
@@ -55,7 +61,13 @@ abstract interface class BlueyPort {
   /// [ScanCandidate] per advertisement seen — the same device may be
   /// emitted repeatedly (BLE scans stream continuously). Caller is
   /// responsible for dedup.
-  Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid});
+  ///
+  /// [mode] selects the scan duty cycle; null keeps the platform's
+  /// historical default (continuous scanning).
+  Stream<ScanCandidate> scanForCandidates({
+    required ServiceUuid serviceUuid,
+    ScanMode? mode,
+  });
 
   /// Stop the active scan started by [scanForCandidates], if any.
   /// Idempotent.

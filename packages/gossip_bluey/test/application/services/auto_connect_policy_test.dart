@@ -601,4 +601,82 @@ void main() {
       },
     );
   });
+
+  group('WIRE4-7: the policy rests the radio at its connection target', () {
+    AutoConnectPolicy buildPolicy({int? target = 1}) {
+      final policy = AutoConnectPolicy(
+        discovery: discovery,
+        connections: connections,
+        registry: registry,
+        now: () => clock.instant,
+        targetConnections: target,
+      );
+      addTearDown(policy.dispose);
+      return policy;
+    }
+
+    test('reaching the target stops discovery', () async {
+      final policy = buildPolicy();
+      policy.setMode(ConnectionMode.auto);
+
+      port.emitCandidate(_candidate(addrA.value));
+      await _pump();
+      await _pump();
+
+      expect(registry.connectionCount, 1);
+      expect(discovery.isRunning, isFalse,
+          reason: 'at target, continuous scanning only burns battery');
+      expect(port.stopScanCallCount, greaterThanOrEqualTo(1));
+    });
+
+    test('losing a peer below the target resumes discovery', () async {
+      final policy = buildPolicy();
+      policy.setMode(ConnectionMode.auto);
+      port.emitCandidate(_candidate(addrA.value));
+      await _pump();
+      await _pump();
+      expect(discovery.isRunning, isFalse);
+
+      await connections.disconnect(remoteAId);
+      await _pump();
+      await _pump();
+
+      expect(discovery.isRunning, isTrue,
+          reason: 'below target again, the scan is the recovery path');
+    });
+
+    test('entering auto mode while already at target stops discovery',
+        () async {
+      await connections.connectTo(_candidate(addrA.value));
+      expect(registry.connectionCount, 1);
+
+      final policy = buildPolicy();
+      policy.setMode(ConnectionMode.auto);
+      await _pump();
+
+      expect(discovery.isRunning, isFalse);
+    });
+
+    test('without a target, discovery is never touched', () async {
+      final policy = buildPolicy(target: null);
+      policy.setMode(ConnectionMode.auto);
+
+      port.emitCandidate(_candidate(addrA.value));
+      await _pump();
+      await _pump();
+
+      expect(registry.connectionCount, 1);
+      expect(discovery.isRunning, isTrue);
+    });
+
+    test('in manual mode the policy never touches discovery', () async {
+      buildPolicy();
+
+      await connections.connectTo(_candidate(addrA.value));
+      await _pump();
+
+      expect(discovery.isRunning, isTrue,
+          reason: 'manual mode: the consumer owns the scan lifecycle');
+    });
+  });
 }

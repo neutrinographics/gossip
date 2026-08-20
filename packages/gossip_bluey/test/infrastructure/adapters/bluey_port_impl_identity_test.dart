@@ -7,7 +7,9 @@ import 'package:bluey_platform_interface/bluey_platform_interface.dart'
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/src/domain/interfaces/bluey_port.dart';
+import 'package:gossip_bluey/src/domain/value_objects/advertise_mode.dart';
 import 'package:gossip_bluey/src/domain/value_objects/gossip_characteristic_uuids.dart';
+import 'package:gossip_bluey/src/domain/value_objects/scan_mode.dart';
 import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
 import 'package:gossip_bluey/src/infrastructure/adapters/bluey_port_impl.dart';
 import 'package:mocktail/mocktail.dart';
@@ -33,6 +35,8 @@ class _MockCapabilities extends Mock implements bluey.Capabilities {}
 
 class _MockAndroidExtensions extends Mock
     implements bluey.AndroidConnectionExtensions {}
+
+class _MockScanner extends Mock implements bluey.Scanner {}
 
 /// Full harness around BlueyPortImpl with a mocked bluey layer:
 /// controllable server streams (peerConnections / disconnections /
@@ -222,6 +226,8 @@ void main() {
     registerFallbackValue(_MockClient());
     registerFallbackValue(bluey.UUID('00000000-0000-0000-0000-000000000000'));
     registerFallbackValue(bluey.Mtu.fromPlatform(23));
+    registerFallbackValue(bluey.ScanMode.balanced);
+    registerFallbackValue(bluey.AdvertiseMode.balanced);
   });
 
   final peerX = NodeId('22222222-2222-2222-2222-222222222222');
@@ -515,6 +521,76 @@ void main() {
         await h.dispose();
       },
     );
+  });
+
+  group('WIRE4-7: radio modes are translated at the adapter boundary', () {
+    // The domain owns its own ScanMode/AdvertiseMode enums (apps never
+    // import the BLE library to name a radio policy); the adapter
+    // translates. Null keeps the historical platform default
+    // (continuous scan, low-latency + high-power advertising).
+    test('scanForCandidates passes the requested scan mode to the scanner',
+        () async {
+      final h = await _Harness.create();
+      addTearDown(h.dispose);
+      final scanner = _MockScanner();
+      when(() => h.mockBluey.scanner()).thenReturn(scanner);
+      when(() => scanner.state).thenReturn(bluey.ScanState.stopped);
+      when(() => scanner.stateChanges)
+          .thenAnswer((_) => const Stream.empty());
+      when(() => scanner.stop()).thenAnswer((_) async {});
+      when(
+        () => scanner.scan(
+          services: any(named: 'services'),
+          mode: any(named: 'mode'),
+        ),
+      ).thenAnswer((_) => const Stream.empty());
+
+      h.port
+          .scanForCandidates(
+            serviceUuid: _Harness.serviceUuid,
+            mode: ScanMode.lowPower,
+          )
+          .listen((_) {});
+      await h.flush();
+
+      verify(
+        () => scanner.scan(
+          services: any(named: 'services'),
+          mode: bluey.ScanMode.lowPower,
+        ),
+      ).called(1);
+    });
+
+    test('startAdvertising passes the requested advertise mode to the server',
+        () async {
+      final h = await _Harness.create();
+      addTearDown(h.dispose);
+      when(
+        () => h.server.startAdvertising(
+          name: any(named: 'name'),
+          services: any(named: 'services'),
+          peerDiscoverable: any(named: 'peerDiscoverable'),
+          mode: any(named: 'mode'),
+        ),
+      ).thenAnswer((_) async {});
+
+      await h.port.stopAdvertising();
+      await h.port.startAdvertising(
+        serviceUuid: _Harness.serviceUuid,
+        displayName: 'Local',
+        localNodeId: _Harness.localId,
+        mode: AdvertiseMode.balanced,
+      );
+
+      verify(
+        () => h.server.startAdvertising(
+          name: any(named: 'name'),
+          services: any(named: 'services'),
+          peerDiscoverable: any(named: 'peerDiscoverable'),
+          mode: bluey.AdvertiseMode.balanced,
+        ),
+      ).called(1);
+    });
   });
 
   group('WIRE4-8: MTU is negotiated once per central connection', () {

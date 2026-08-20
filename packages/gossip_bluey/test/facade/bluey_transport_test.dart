@@ -22,6 +22,27 @@ void main() {
       );
     });
 
+    test('radio-mode knobs reach the port on advertising and discovery '
+        '(WIRE4-7)', () async {
+      final network = FakeBlueyNetwork();
+      final port = FakeBlueyPort(localNodeId: localId, network: network);
+      final transport = BlueyTransport.testing(
+        localNodeId: localId,
+        serviceUuid: serviceUuid,
+        displayName: 'phone',
+        port: port,
+        scanMode: ScanMode.lowPower,
+        advertiseMode: AdvertiseMode.balanced,
+      );
+      addTearDown(transport.dispose);
+
+      await transport.startAdvertising();
+      expect(port.lastAdvertiseMode, AdvertiseMode.balanced);
+
+      await transport.startDiscovery();
+      expect(port.lastScanMode, ScanMode.lowPower);
+    });
+
     test(
       'startAdvertising / stopAdvertising drive advertisingState',
       () async {

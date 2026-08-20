@@ -12,10 +12,12 @@ import '../domain/aggregates/connection_registry.dart';
 import '../domain/errors/connection_error.dart';
 import '../domain/events/connection_event.dart';
 import '../domain/interfaces/bluey_port.dart';
+import '../domain/value_objects/advertise_mode.dart';
 import '../domain/value_objects/ble_address.dart';
 import '../domain/value_objects/bluetooth_adapter_state.dart';
 import '../domain/value_objects/connection_mode.dart';
 import '../domain/value_objects/scan_candidate.dart';
+import '../domain/value_objects/scan_mode.dart';
 import '../domain/value_objects/service_uuid.dart';
 import '../infrastructure/adapters/bluey_port_impl.dart';
 import '../infrastructure/ports/bluey_message_port.dart';
@@ -49,13 +51,15 @@ class BlueyTransport {
     required DiscoveryService discovery,
     required AutoConnectPolicy autoConnect,
     required BlueyMessagePort messagePort,
+    AdvertiseMode? advertiseMode,
   }) : _serviceUuid = serviceUuid,
        _displayName = displayName,
        _port = port,
        _service = service,
        _discovery = discovery,
        _autoConnect = autoConnect,
-       _messagePort = messagePort {
+       _messagePort = messagePort,
+       _advertiseMode = advertiseMode {
     _eventSub = service.events.listen(_onEvent);
   }
 
@@ -71,6 +75,8 @@ class BlueyTransport {
     required String displayName,
     int? maxConnections,
     int? targetConnections,
+    ScanMode? scanMode,
+    AdvertiseMode? advertiseMode,
     @Deprecated(
       'No-op since the scan-upgrade migration; scan is now '
       'long-lived and does not run on a fixed interval.',
@@ -97,7 +103,11 @@ class BlueyTransport {
       maxConnections: maxConnections,
       onLog: onLog,
     );
-    final discovery = DiscoveryService(port: port, serviceUuid: serviceUuid);
+    final discovery = DiscoveryService(
+      port: port,
+      serviceUuid: serviceUuid,
+      scanMode: scanMode,
+    );
     final autoConnect = AutoConnectPolicy(
       discovery: discovery,
       connections: service,
@@ -115,6 +125,7 @@ class BlueyTransport {
       discovery: discovery,
       autoConnect: autoConnect,
       messagePort: BlueyMessagePort(service),
+      advertiseMode: advertiseMode,
     );
   }
 
@@ -126,6 +137,8 @@ class BlueyTransport {
     required BlueyPort port,
     int? maxConnections,
     int? targetConnections,
+    ScanMode? scanMode,
+    AdvertiseMode? advertiseMode,
     @Deprecated(
       'No-op since the scan-upgrade migration; scan is now '
       'long-lived and does not run on a fixed interval.',
@@ -143,7 +156,11 @@ class BlueyTransport {
       maxConnections: maxConnections,
       onLog: onLog,
     );
-    final discovery = DiscoveryService(port: port, serviceUuid: serviceUuid);
+    final discovery = DiscoveryService(
+      port: port,
+      serviceUuid: serviceUuid,
+      scanMode: scanMode,
+    );
     final autoConnect = AutoConnectPolicy(
       discovery: discovery,
       connections: service,
@@ -162,6 +179,7 @@ class BlueyTransport {
       discovery: discovery,
       autoConnect: autoConnect,
       messagePort: mp,
+      advertiseMode: advertiseMode,
     );
   }
 
@@ -173,6 +191,10 @@ class BlueyTransport {
   final DiscoveryService _discovery;
   final AutoConnectPolicy _autoConnect;
   final BlueyMessagePort _messagePort;
+
+  /// Advertising intensity for every [startAdvertising] call; null keeps
+  /// the platform default (low latency, high power).
+  final AdvertiseMode? _advertiseMode;
 
   late final StreamSubscription<ConnectionEvent> _eventSub;
   final StreamController<PeerEvent> _peers =
@@ -286,6 +308,7 @@ class BlueyTransport {
     serviceUuid: _serviceUuid,
     displayName: _displayName,
     localNodeId: localNodeId,
+    mode: _advertiseMode,
   );
 
   Future<void> stopAdvertising() => _port.stopAdvertising();

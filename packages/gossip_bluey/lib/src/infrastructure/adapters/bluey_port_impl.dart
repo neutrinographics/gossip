@@ -9,9 +9,11 @@ import '../../domain/errors/not_a_bluey_peer_exception.dart' as domain;
 import '../../domain/interfaces/bluey_port.dart';
 import '../../domain/value_objects/ble_address.dart';
 import '../../domain/value_objects/bluetooth_adapter_state.dart';
+import '../../domain/value_objects/advertise_mode.dart';
 import '../../domain/value_objects/discovered_peer.dart';
 import '../../domain/value_objects/gossip_characteristic_uuids.dart';
 import '../../domain/value_objects/scan_candidate.dart';
+import '../../domain/value_objects/scan_mode.dart';
 import '../../domain/value_objects/service_uuid.dart';
 import 'gossip_gatt_service.dart';
 
@@ -259,6 +261,7 @@ class BlueyPortImpl implements BlueyPort {
     required ServiceUuid serviceUuid,
     required String displayName,
     required NodeId localNodeId,
+    AdvertiseMode? mode,
   }) async {
     _requireAdapterEnabled();
     if (localNodeId.value != _localNodeIdValue) {
@@ -415,6 +418,14 @@ class BlueyPortImpl implements BlueyPort {
         name: displayName,
         services: [bluey.UUID(serviceUuid.value)],
         peerDiscoverable: true,
+        // Domain mode → bluey mode at the boundary; null keeps bluey's
+        // historical default (low latency).
+        mode: switch (mode) {
+          null => null,
+          AdvertiseMode.lowPower => bluey.AdvertiseMode.lowPower,
+          AdvertiseMode.balanced => bluey.AdvertiseMode.balanced,
+          AdvertiseMode.lowLatency => bluey.AdvertiseMode.lowLatency,
+        },
       );
     } on Exception catch (e, st) {
       // Roll back partial setup so a retry starts clean. Cancel any
@@ -751,7 +762,10 @@ class BlueyPortImpl implements BlueyPort {
   }
 
   @override
-  Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid}) {
+  Stream<ScanCandidate> scanForCandidates({
+    required ServiceUuid serviceUuid,
+    ScanMode? mode,
+  }) {
     _requireAdapterEnabled();
     // If a previous scan is still open, tear it down first.
     final previous = _scanController;
@@ -774,7 +788,17 @@ class BlueyPortImpl implements BlueyPort {
       onError: _logStreamError('scan state'),
     );
     _scanSubscription = scanner
-        .scan(services: [bluey.UUID(serviceUuid.value)])
+        .scan(
+          services: [bluey.UUID(serviceUuid.value)],
+          // Domain mode → bluey mode at the boundary; null keeps bluey's
+          // historical default (continuous scanning).
+          mode: switch (mode) {
+            null => null,
+            ScanMode.lowPower => bluey.ScanMode.lowPower,
+            ScanMode.balanced => bluey.ScanMode.balanced,
+            ScanMode.lowLatency => bluey.ScanMode.lowLatency,
+          },
+        )
         .listen(
           (result) {
             final address = BleAddress(result.device.address.value);

@@ -5,10 +5,12 @@ import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/src/domain/errors/not_a_bluey_peer_exception.dart';
 import 'package:gossip_bluey/src/domain/interfaces/bluey_port.dart';
+import 'package:gossip_bluey/src/domain/value_objects/advertise_mode.dart';
 import 'package:gossip_bluey/src/domain/value_objects/ble_address.dart';
 import 'package:gossip_bluey/src/domain/value_objects/bluetooth_adapter_state.dart';
 import 'package:gossip_bluey/src/domain/value_objects/discovered_peer.dart';
 import 'package:gossip_bluey/src/domain/value_objects/scan_candidate.dart';
+import 'package:gossip_bluey/src/domain/value_objects/scan_mode.dart';
 import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
 
 final _testCandidateInstant = DateTime.utc(2026, 1, 1);
@@ -336,14 +338,24 @@ class FakeBlueyPort implements BlueyPort {
   Stream<BluetoothAdapterState> get bluetoothStateStream =>
       _adapterStateController.stream;
 
+  /// The advertise mode passed to the most recent [startAdvertising]
+  /// (null when none was given).
+  AdvertiseMode? lastAdvertiseMode;
+
+  /// The scan mode passed to the most recent [scanForCandidates] (null
+  /// when none was given).
+  ScanMode? lastScanMode;
+
   @override
   Future<void> startAdvertising({
     required ServiceUuid serviceUuid,
     required String displayName,
     required NodeId localNodeId,
+    AdvertiseMode? mode,
   }) async {
     _advertisedServiceUuid = serviceUuid;
     _advertisedDisplayName = displayName;
+    lastAdvertiseMode = mode;
     setAdvertisingStateForTest(bluey.AdvertisingState.advertising);
   }
 
@@ -545,7 +557,11 @@ class FakeBlueyPort implements BlueyPort {
   }
 
   @override
-  Stream<ScanCandidate> scanForCandidates({required ServiceUuid serviceUuid}) {
+  Stream<ScanCandidate> scanForCandidates({
+    required ServiceUuid serviceUuid,
+    ScanMode? mode,
+  }) {
+    lastScanMode = mode;
     scanForCandidatesCallCount++;
     setScanStateForTest(bluey.ScanState.scanning);
     // Closed in [stopScan] and [dispose].

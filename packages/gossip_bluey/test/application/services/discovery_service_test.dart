@@ -3,6 +3,7 @@ import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/src/application/services/discovery_service.dart';
 import 'package:gossip_bluey/src/domain/value_objects/ble_address.dart';
 import 'package:gossip_bluey/src/domain/value_objects/scan_candidate.dart';
+import 'package:gossip_bluey/src/domain/value_objects/scan_mode.dart';
 import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
 
 import '../../fakes/fake_bluey_port.dart';
@@ -43,6 +44,30 @@ void main() {
       await service.start();
       expect(service.isRunning, isTrue);
       expect(port.scanForCandidatesCallCount, 1);
+    });
+
+    test('start() passes the configured scan mode to the port — and '
+        're-applies it on every restart', () async {
+      final modedService = DiscoveryService(
+        port: port,
+        serviceUuid: uuid,
+        scanMode: ScanMode.lowPower,
+      );
+      addTearDown(modedService.dispose);
+
+      await modedService.start();
+      expect(port.lastScanMode, ScanMode.lowPower);
+
+      await modedService.stop();
+      await modedService.start();
+      expect(port.lastScanMode, ScanMode.lowPower,
+          reason: 'a duty-cycle restart must not silently fall back to '
+              'continuous scanning');
+    });
+
+    test('without a configured scan mode the port default applies', () async {
+      await service.start();
+      expect(port.lastScanMode, isNull);
     });
 
     test('start() is idempotent', () async {

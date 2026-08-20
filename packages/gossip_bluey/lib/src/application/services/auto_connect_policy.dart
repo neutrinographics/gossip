@@ -7,6 +7,7 @@ import '../../domain/errors/already_connecting_exception.dart';
 import '../../domain/errors/connection_error.dart';
 import '../../domain/errors/connection_rejected_exception.dart';
 import '../../domain/errors/not_a_bluey_peer_exception.dart';
+import '../../domain/events/connection_event.dart';
 import '../../domain/value_objects/ble_address.dart';
 import '../../domain/value_objects/connection_mode.dart';
 import '../../domain/value_objects/scan_candidate.dart';
@@ -56,6 +57,17 @@ class AutoConnectPolicy {
         onLog?.call(LogLevel.warning, 'connection error stream error', e, st);
       },
     );
+    // Radio duty-cycle (WIRE4-7): in auto mode with a target, a fully
+    // connected node has nothing to gain from continuous scanning — the
+    // single largest battery item on the transport. Rest discovery when
+    // the target is reached; resume it when a peer is lost, because the
+    // scan is then the recovery path.
+    _eventsSub = _connections.events.listen(
+      _onConnectionEvent,
+      onError: (Object e, StackTrace st) {
+        onLog?.call(LogLevel.warning, 'connection event stream error', e, st);
+      },
+    );
   }
 
   final DiscoveryService _discovery;
@@ -77,6 +89,33 @@ class AutoConnectPolicy {
   // Cancelled in [dispose].
   // ignore: cancel_subscriptions
   StreamSubscription<ConnectionError>? _errorsSub;
+
+  // Cancelled in [dispose].
+  // ignore: cancel_subscriptions
+  StreamSubscription<ConnectionEvent>? _eventsSub;
+
+  void _onConnectionEvent(ConnectionEvent event) {
+    final target = _targetConnections;
+    if (target == null || _mode != ConnectionMode.auto) return;
+    switch (event) {
+      case PeerOpened():
+        if (_registry.connectionCount >= target) {
+          onLog?.call(
+            LogLevel.info,
+            'connection target ($target) reached; resting discovery',
+          );
+          unawaited(_discovery.stop());
+        }
+      case PeerClosed():
+        if (_registry.connectionCount < target) {
+          onLog?.call(
+            LogLevel.info,
+            'below connection target ($target); resuming discovery',
+          );
+          unawaited(_discovery.start());
+        }
+    }
+  }
 
   /// Per-address backoff bookkeeping. `delay` is the current backoff
   /// window length (used to compute the next exponential step);
@@ -151,6 +190,16 @@ class AutoConnectPolicy {
       // dormant.
       for (final c in _discovery.currentCandidates) {
         unawaited(_tryConnect(c));
+      }
+      // Already at target when auto-connect engages? Rest the radio now
+      // rather than waiting for the next PeerOpened that will never come.
+      final target = _targetConnections;
+      if (target != null && _registry.connectionCount >= target) {
+        onLog?.call(
+          LogLevel.info,
+          'connection target ($target) already met; resting discovery',
+        );
+        unawaited(_discovery.stop());
       }
     } else {
       final sub = _sub;
@@ -302,5 +351,8 @@ class AutoConnectPolicy {
     final errorsSub = _errorsSub;
     _errorsSub = null;
     await errorsSub?.cancel();
+    final eventsSub = _eventsSub;
+    _eventsSub = null;
+    await eventsSub?.cancel();
   }
 }
