@@ -512,6 +512,25 @@ void main() {
     );
   });
 
+  group('WIRE4-23: connection setup reuses the discovery bluey already did', () {
+    test(
+      'central registration asks for the CACHED service tree — '
+      'connectAsPeer just discovered it; a second over-the-air discovery '
+      'is ~10-30 wasted ATT PDUs per connect',
+      () async {
+        final h = await _Harness.create();
+        addTearDown(h.dispose);
+
+        final central = h.buildCentral(peerX);
+        await h.port.connect(peerX);
+
+        verify(() => central.peerConn.services(cache: true))
+            .called(greaterThanOrEqualTo(1));
+        verifyNever(() => central.peerConn.services());
+      },
+    );
+  });
+
   group('WIRE4-9: a rejected peripheral link still carries outbound sends', () {
     test(
       'sendData after disconnectRole(peripheral) notifies on the '

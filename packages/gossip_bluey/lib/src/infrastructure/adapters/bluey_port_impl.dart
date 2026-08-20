@@ -564,7 +564,10 @@ class BlueyPortImpl implements BlueyPort {
       final charUuid = GossipCharacteristicUuids.derive(
         serviceUuid,
       ).dataCharacteristic;
-      final services = await peerConnection.services();
+      // cache: true — connectAsPeer already ran a full service discovery
+      // moments ago; re-discovering over the air costs ~10-30 ATT PDUs
+      // per connect for an identical answer (WIRE4-23).
+      final services = await peerConnection.services(cache: true);
       final gossipService = services.firstWhere(
         (s) => s.uuid.toString().toLowerCase() == serviceUuid.value,
         orElse: () => throw StateError(
