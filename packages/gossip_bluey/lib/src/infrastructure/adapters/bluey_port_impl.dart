@@ -547,6 +547,30 @@ class BlueyPortImpl implements BlueyPort {
     _centralLinks[target] = link;
     try {
       // Query the platform-authoritative write payload limit. On Android
+      // Negotiate a bigger MTU BEFORE reading the write budget (WIRE4-8):
+      // Android keeps the BLE default (MTU 23 → 20-byte writes) unless
+      // somebody asks, which shreds every message into ~11x the GATT
+      // writes. One ATT exchange here is amortized over the whole link
+      // lifetime; the peripheral negotiates down to what it supports.
+      // iOS negotiates automatically and has no request API — there
+      // Connection.android is null and this is a no-op. Best-effort: a
+      // refused negotiation leaves the un-negotiated budget in effect.
+      final android = peerConnection.connection.android;
+      if (android != null) {
+        try {
+          final caps = _bluey.capabilities;
+          await android.requestMtu(
+            bluey.Mtu(caps.maxMtu, capabilities: caps),
+          );
+        } catch (e) {
+          _onLog?.call(
+            LogLevel.debug,
+            'MTU negotiation with $target failed; '
+            'using un-negotiated write budget',
+            e,
+          );
+        }
+      }
       // this reflects the cached negotiated MTU; on iOS it comes from
       // CBPeripheral.maximumWriteValueLength(for:). Either way the value
       // IS the largest single ATT write — no MTU-minus-3 arithmetic

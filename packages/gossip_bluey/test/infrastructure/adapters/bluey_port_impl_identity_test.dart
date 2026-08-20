@@ -31,6 +31,9 @@ class _MockClient extends Mock implements bluey.Client {}
 
 class _MockCapabilities extends Mock implements bluey.Capabilities {}
 
+class _MockAndroidExtensions extends Mock
+    implements bluey.AndroidConnectionExtensions {}
+
 /// Full harness around BlueyPortImpl with a mocked bluey layer:
 /// controllable server streams (peerConnections / disconnections /
 /// writeRequests) and per-peer mock central connections.
@@ -63,6 +66,7 @@ class _Harness {
     h._onLog = onLog;
     final caps = _MockCapabilities();
     when(() => caps.platformKind).thenReturn(PlatformKind.android);
+    when(() => caps.maxMtu).thenReturn(517);
     when(() => h.mockBluey.capabilities).thenReturn(caps);
     when(() => h.mockBluey.currentState).thenReturn(bluey.BluetoothState.on);
     when(() => h.mockBluey.stateStream).thenAnswer((_) => h.stateCtrl.stream);
@@ -217,6 +221,7 @@ void main() {
     registerFallbackValue(Uint8List(0));
     registerFallbackValue(_MockClient());
     registerFallbackValue(bluey.UUID('00000000-0000-0000-0000-000000000000'));
+    registerFallbackValue(bluey.Mtu.fromPlatform(23));
   });
 
   final peerX = NodeId('22222222-2222-2222-2222-222222222222');
@@ -508,6 +513,74 @@ void main() {
         ).called(1);
 
         await h.dispose();
+      },
+    );
+  });
+
+  group('WIRE4-8: MTU is negotiated once per central connection', () {
+    // Android holds MTU at the BLE default (23 → 20-byte writes) unless
+    // somebody asks: an un-negotiated link shreds a ~250 B digest into
+    // 13 GATT writes. One requestMtu at connect is amortized over the
+    // whole link lifetime.
+    test(
+      'registration requests the platform-max MTU BEFORE sizing the '
+      'chunk budget',
+      () async {
+        final h = await _Harness.create();
+        addTearDown(h.dispose);
+        final central = h.buildCentral(peerX);
+        final ext = _MockAndroidExtensions();
+        when(() => central.raw.android).thenReturn(ext);
+        when(() => ext.requestMtu(any()))
+            .thenAnswer((_) async => bluey.Mtu.fromPlatform(247));
+
+        await h.port.connect(peerX);
+
+        verifyInOrder([
+          () => ext.requestMtu(any(that: predicate<bluey.Mtu>(
+                (m) => m.value == 517,
+                'requests the platform maximum',
+              ))),
+          () => central.raw.maxWritePayload(withResponse: false),
+        ]);
+      },
+    );
+
+    test(
+      'a failed MTU request is tolerated: registration completes and the '
+      'un-negotiated budget applies',
+      () async {
+        final h = await _Harness.create();
+        addTearDown(h.dispose);
+        final central = h.buildCentral(peerX);
+        final ext = _MockAndroidExtensions();
+        when(() => central.raw.android).thenReturn(ext);
+        when(() => ext.requestMtu(any()))
+            .thenThrow(StateError('negotiation refused'));
+
+        await h.port.connect(peerX);
+        await h.flush();
+
+        expect(h.events.whereType<PortPeerConnected>(), isNotEmpty,
+            reason: 'a refused MTU negotiation must not fail the connect');
+        expect(h.port.chunkSizeFor(peerX), 185,
+            reason: 'the maxWritePayload read still sizes the budget');
+      },
+    );
+
+    test(
+      'platforms without the Android surface skip negotiation '
+      '(Connection.android is null)',
+      () async {
+        final h = await _Harness.create();
+        addTearDown(h.dispose);
+        h.buildCentral(peerX); // android getter unstubbed → null
+
+        await h.port.connect(peerX);
+        await h.flush();
+
+        expect(h.events.whereType<PortPeerConnected>(), isNotEmpty);
+        expect(h.port.chunkSizeFor(peerX), 185);
       },
     );
   });
