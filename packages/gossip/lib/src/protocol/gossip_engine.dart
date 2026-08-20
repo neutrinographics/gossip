@@ -5,6 +5,7 @@ import '../domain/errors/sync_error.dart';
 import '../domain/interfaces/local_node_repository.dart';
 import '../domain/services/hlc_clock.dart';
 import '../domain/services/jitter.dart';
+import '../domain/services/quiescence_pacer.dart';
 import '../domain/services/rtt_tracker.dart';
 
 import '../domain/value_objects/node_id.dart';
@@ -184,6 +185,25 @@ class GossipEngine {
   /// Gossip interval = 2x RTT (time for request + response round trip).
   static const int _gossipIntervalMultiplier = 2;
 
+  /// Two-tier pacing (spec 2026-08-20): stretches the adaptive interval
+  /// toward [_idleCeiling] across quiet rounds; any news snaps it back.
+  final QuiescencePacer _pacer = QuiescencePacer(ceiling: _idleCeiling);
+
+  /// The slowest the anti-entropy safety net may get (owner decision:
+  /// 30 s, not configurable).
+  static const Duration _idleCeiling = Duration(seconds: 30);
+
+  /// True when anything newsworthy happened since the last round began.
+  /// Read-and-cleared by [performGossipRound]; set by [_recordNews].
+  bool _newsSinceLastRound = true;
+
+  /// News: local append, merge, delta traffic either direction, or a
+  /// membership change. Resets the pacer and marks the round non-quiet.
+  void _recordNews() {
+    _newsSinceLastRound = true;
+    _pacer.news();
+  }
+
   /// Tracks pending DeltaRequests to prevent duplicate requests.
   ///
   /// Keyed per-(peer, channel, stream): the timestamp (in ms) when the
@@ -314,12 +334,20 @@ class GossipEngine {
     if (_staticIntervalProvided || !_adaptiveTimingEnabled) {
       return _staticGossipInterval;
     }
+    return _pacer.apply(_adaptiveBaseInterval);
+  }
 
-    // Pace off the MEDIAN per-peer SRTT across reachable peers, not the min.
-    // The min let a single fast peer pin the whole loop to a fast cadence,
-    // over-driving slower links — and each uniform-random round is ~(n-1)/n
-    // likely to target a slower-than-fastest peer with a potentially large
-    // payload. The median is robust to a single outlier at either end.
+  /// Today's latency-derived cadence, unchanged (median SRTT x 2, clamped
+  /// [[_minGossipInterval], [_maxGossipInterval]]; [_defaultConservativeInterval]
+  /// fallback without samples). [effectiveGossipInterval] stretches THIS
+  /// toward the idle ceiling via [_pacer].
+  ///
+  /// Pace off the MEDIAN per-peer SRTT across reachable peers, not the min.
+  /// The min let a single fast peer pin the whole loop to a fast cadence,
+  /// over-driving slower links — and each uniform-random round is ~(n-1)/n
+  /// likely to target a slower-than-fastest peer with a potentially large
+  /// payload. The median is robust to a single outlier at either end.
+  Duration get _adaptiveBaseInterval {
     final srtts = <Duration>[];
     for (final peer in peerRegistry.reachablePeers) {
       final rttEstimate = peer.metrics.rttEstimate;
@@ -388,6 +416,9 @@ class GossipEngine {
   void start() {
     if (_isRunning) return;
     _isRunning = true;
+    // A restart is news — never resume mid-backoff into a stale world.
+    _newsSinceLastRound = true;
+    _pacer.news();
     _generation++;
     _scheduleNextGossipRound(_generation);
   }
@@ -466,6 +497,7 @@ class GossipEngine {
     LogEntry entry,
   ) {
     if (!_isRunning) return;
+    _recordNews();
     _pendingPush.putIfAbsent((channelId, streamId), () => []).add(entry);
     if (_pushFlushScheduled) return;
     _pushFlushScheduled = true;
@@ -584,6 +616,12 @@ class GossipEngine {
   ///
   /// Returns immediately if all peers are congested or no reachable peers exist.
   Future<void> performGossipRound() async {
+    if (_newsSinceLastRound) {
+      _newsSinceLastRound = false;
+    } else {
+      _pacer.quietRound();
+    }
+
     final reachable = peerRegistry.reachablePeers;
     if (reachable.isEmpty) return;
 
