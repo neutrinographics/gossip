@@ -30,22 +30,22 @@ dependency_overrides:
     git:
       url: https://github.com/neutrinographics/bluey.git
       path: bluey
-      ref: "3863358"
+      ref: "f29ec98"
   bluey_platform_interface:
     git:
       url: https://github.com/neutrinographics/bluey.git
       path: bluey_platform_interface
-      ref: "3863358"
+      ref: "f29ec98"
   bluey_android:
     git:
       url: https://github.com/neutrinographics/bluey.git
       path: bluey_android
-      ref: "3863358"
+      ref: "f29ec98"
   bluey_ios:
     git:
       url: https://github.com/neutrinographics/bluey.git
       path: bluey_ios
-      ref: "3863358"
+      ref: "f29ec98"
 
 melos:
   scripts:
