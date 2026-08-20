@@ -98,6 +98,13 @@ class FakeBlueyPort implements BlueyPort {
   /// after its [notificationSubscribeDelay].
   final Set<NodeId> _subscribedToOurNotifications = {};
 
+  /// Peripheral links whose local role bookkeeping was torn down
+  /// ([disconnectRole]) but whose physical link is still up — mirrors the
+  /// real port's rejected-link record: bluey has no per-client
+  /// disconnect, and [sendData] must still serve these so the GSP2
+  /// rejection re-send (WIRE4-9) can reach the still-connected central.
+  final Set<NodeId> _rejectedPeripheralLinks = {};
+
   /// Internal convenience: peers are visible to network scans iff
   /// advertising state is [bluey.AdvertisingState.advertising].
   bool get _isAdvertisingInternal =>
@@ -386,7 +393,12 @@ class FakeBlueyPort implements BlueyPort {
       remote._subscribedToOurNotifications.add(localNodeId);
     } else {
       Timer(notificationSubscribeDelay, () {
-        if (remote._connectedAsPeripheral.contains(localNodeId)) {
+        // The CCCD write lands on the PHYSICAL link — which is alive as
+        // long as the peripheral holds either an active or a
+        // rejected-but-alive record of it (bluey cannot close inbound
+        // links; only the central can).
+        if (remote._connectedAsPeripheral.contains(localNodeId) ||
+            remote._rejectedPeripheralLinks.contains(localNodeId)) {
           remote._subscribedToOurNotifications.add(localNodeId);
         }
       });
@@ -435,8 +447,10 @@ class FakeBlueyPort implements BlueyPort {
         ),
       );
       // Our central link is gone: our subscription on their peripheral
-      // dies with it.
+      // dies with it, as does any rejected-but-alive record they kept
+      // (this closure is what finally ends a rejected physical link).
       remote?._subscribedToOurNotifications.remove(localNodeId);
+      remote?._rejectedPeripheralLinks.remove(localNodeId);
       // Our central → remote's peripheral view of us
       if (remote != null && remote._connectedAsPeripheral.remove(localNodeId)) {
         if (!remote._events.isClosed) {
@@ -507,7 +521,8 @@ class FakeBlueyPort implements BlueyPort {
     final remote = network.lookup(nodeId);
     if (remote == null ||
         (!_connectedAsCentral.contains(nodeId) &&
-            !_connectedAsPeripheral.contains(nodeId))) {
+            !_connectedAsPeripheral.contains(nodeId) &&
+            !_rejectedPeripheralLinks.contains(nodeId))) {
       throw StateError('no connection to $nodeId');
     }
     if (chunkDropInjector?.call(nodeId, data) ?? false) {
@@ -632,6 +647,9 @@ class FakeBlueyPort implements BlueyPort {
         // remote's view is cleaned up if/when it closes its central role,
         // whose disconnect DOES propagate.
         if (!_connectedAsPeripheral.remove(nodeId)) return;
+        // The physical link survives the local teardown (mirrors
+        // _rejectPeripheral in the real port).
+        _rejectedPeripheralLinks.add(nodeId);
         _events.add(
           PortPeerDisconnected(
             nodeId: nodeId,

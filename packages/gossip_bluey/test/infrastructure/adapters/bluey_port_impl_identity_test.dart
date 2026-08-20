@@ -215,6 +215,8 @@ void main() {
       bluey.ServerId('99999999-9999-9999-9999-999999999999'),
     );
     registerFallbackValue(Uint8List(0));
+    registerFallbackValue(_MockClient());
+    registerFallbackValue(bluey.UUID('00000000-0000-0000-0000-000000000000'));
   });
 
   final peerX = NodeId('22222222-2222-2222-2222-222222222222');
@@ -506,6 +508,36 @@ void main() {
         ).called(1);
 
         await h.dispose();
+      },
+    );
+  });
+
+  group('WIRE4-9: a rejected peripheral link still carries outbound sends', () {
+    test(
+      'sendData after disconnectRole(peripheral) notifies on the '
+      'still-alive link instead of throwing',
+      () async {
+        final h = await _Harness.create();
+        addTearDown(h.dispose);
+        when(
+          () => h.server.notifyTo(any(), any(), data: any(named: 'data')),
+        ).thenAnswer((_) async {});
+
+        h.peerConnections.add(h.buildPeripheral(peerX, 'addr-x'));
+        await h.flush();
+
+        // What ConnectionManager does on a capacity rejection: the
+        // peripheral role is torn down locally — but bluey has no
+        // per-client disconnect, so the physical link stays up until the
+        // central closes it. A rejection RE-send (the WIRE4-9 fix) must
+        // be able to reach that still-connected central.
+        await h.port.disconnectRole(peerX, ConnectionRole.peripheral);
+
+        await h.port.sendData(peerX, Uint8List.fromList([9, 9]));
+
+        verify(
+          () => h.server.notifyTo(any(), any(), data: any(named: 'data')),
+        ).called(1);
       },
     );
   });

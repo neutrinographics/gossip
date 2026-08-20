@@ -700,8 +700,14 @@ class BlueyPortImpl implements BlueyPort {
       return;
     }
 
+    // A rejected peripheral link is deliberately NOT excluded here: the
+    // physical link is still up (bluey has no per-client disconnect), and
+    // the GSP2 rejection re-send (WIRE4-9) must be able to reach the
+    // still-connected central. Gossip cannot route here by accident — the
+    // ConnectionManager's registry entry for a rejected peer is gone, so
+    // ordinary sends to it fail at that layer.
     final peripheral = _peripheralLinks[nodeId];
-    if (peripheral != null && !peripheral.rejected) {
+    if (peripheral != null) {
       final server = _server;
       if (server == null) {
         throw StateError('no server — startAdvertising not called?');
@@ -851,7 +857,9 @@ class BlueyPortImpl implements BlueyPort {
   /// on their central link, so the peer's gossip arrives HERE; dropping
   /// the mapping black-holes 100% of traffic in both directions.
   ///
-  /// The link is marked rejected so outbound sends stop using it.
+  /// The link is marked rejected so [chunkSizeFor] stops preferring it;
+  /// [sendData] still serves it deliberately — the GSP2 rejection re-send
+  /// (WIRE4-9) needs the physically-alive link.
   void _rejectPeripheral(NodeId nodeId, {required String reason}) {
     final link = _peripheralLinks[nodeId];
     if (link == null || link.rejected) return;

@@ -111,6 +111,27 @@ void main() {
     expect(peripheral.preSubscribeDrops[centralId], 1);
   });
 
+  test('a rejected peripheral link still delivers notifications to a '
+      'subscribed central (mirrors the real port: the physical link '
+      'stays up, and the WIRE4-9 re-send depends on it)', () async {
+    final delivered = <PortPeerData>[];
+    central.events.listen((e) {
+      if (e is PortPeerData) delivered.add(e);
+    });
+
+    await central.connect(peripheralId); // immediate subscribe
+    // Capacity rejection: the peripheral tears down its own role
+    // bookkeeping, but bluey has no per-client disconnect — the link
+    // stays physically alive until the central closes it.
+    await peripheral.disconnectRole(centralId, ConnectionRole.peripheral);
+
+    await peripheral.sendData(centralId, bytes([3, 1]));
+    await Future<void>.delayed(Duration.zero);
+
+    expect(delivered, hasLength(1),
+        reason: 'the rejection re-send must reach the still-alive central');
+  });
+
   test('writes from the central are NOT gated on subscription '
       '(write-without-response needs no CCCD)', () async {
     central.notificationSubscribeDelay = const Duration(milliseconds: 50);

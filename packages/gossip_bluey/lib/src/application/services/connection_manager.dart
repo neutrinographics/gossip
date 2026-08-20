@@ -79,6 +79,61 @@ class ConnectionManager implements MessageDispatcher {
 
   final Clock _clock;
 
+  /// Peers rejected at capacity whose GSP2 frame may have been lost to
+  /// the notification-subscribe race (WIRE4-9). While such a peer keeps
+  /// writing into the rejected link, the rejection is re-sent — at most
+  /// one per [_rejectionResendInterval], at most [_maxRejectionResends]
+  /// times — so one lands after the peer's subscribe completes. Entries
+  /// are cleared on any physical disconnect or successful registration;
+  /// a peer that never triggers either leaves one exhausted record,
+  /// bounded by the number of distinct rejected peers (same growth class
+  /// as AutoConnectPolicy's backoff maps).
+  final Map<NodeId, ({int remaining, DateTime lastAt})> _rejectionResends = {};
+
+  /// Cap on rejection re-sends per rejected connection (each frame is 10
+  /// bytes; a GSP1-only legacy peer never acts on them, so the loop must
+  /// not run forever).
+  static const int _maxRejectionResends = 5;
+
+  /// Minimum spacing between rejection re-sends — comfortably longer
+  /// than a central's connect→subscribe window on real hardware, so the
+  /// bounded budget is not burned inside the race it exists to beat.
+  static const Duration _rejectionResendInterval = Duration(seconds: 1);
+
+  /// Re-sends the capacity rejection to [nodeId] if one is pending, its
+  /// pacing interval has elapsed, and its budget is not exhausted.
+  void _maybeResendRejection(NodeId nodeId) {
+    final pending = _rejectionResends[nodeId];
+    if (pending == null || pending.remaining <= 0) return;
+    final now = _clock.now();
+    if (now.difference(pending.lastAt) < _rejectionResendInterval) return;
+    _rejectionResends[nodeId] = (
+      remaining: pending.remaining - 1,
+      lastAt: now,
+    );
+    onLog?.call(
+      LogLevel.debug,
+      're-sending capacity rejection to $nodeId '
+      '(writes still arriving on a rejected link; '
+      '${pending.remaining - 1} re-sends left)',
+    );
+    unawaited(
+      port
+          .sendData(
+            nodeId,
+            ControlFrameCodec.encodeRejection(RejectionReason.capacity),
+          )
+          .catchError((Object e, StackTrace st) {
+        onLog?.call(
+          LogLevel.warning,
+          'rejection re-send to $nodeId failed',
+          e,
+          st,
+        );
+      }),
+    );
+  }
+
   /// Addresses with an in-flight [connectTo] call. Used to guard against
   /// reentrant [connectTo] for the same address.
   final Set<BleAddress> _connectingAddresses = {};
@@ -264,8 +319,13 @@ class ConnectionManager implements MessageDispatcher {
           if (role == ConnectionRole.peripheral) {
             // We cannot close an inbound peripheral link (no per-client
             // disconnect API) — tell the remote central to close it
-            // (COR3-21). Best-effort single shot: on failure we are no
-            // worse off than before the frame existed.
+            // (COR3-21). On real hardware this first frame is sent the
+            // moment the central is identified (its first lifecycle
+            // heartbeat), which usually PRECEDES its notification
+            // subscribe — a notify into an unsubscribed characteristic
+            // is lost without error (WIRE4-9). So this shot is
+            // best-effort, and _maybeResendRejection re-sends, paced and
+            // bounded, for as long as the rejected peer keeps writing.
             unawaited(
               port
                   .sendData(
@@ -280,6 +340,10 @@ class ConnectionManager implements MessageDispatcher {
                   st,
                 );
               }),
+            );
+            _rejectionResends[nodeId] = (
+              remaining: _maxRejectionResends,
+              lastAt: _clock.now(),
             );
           }
           // Tear down exactly the role that just connected — never the
@@ -301,6 +365,10 @@ class ConnectionManager implements MessageDispatcher {
             _disconnectRoleGuarded(nodeId, role);
             return;
           case Registered():
+            // A successful registration supersedes any pending
+            // capacity-rejection re-sends (a slot freed and the peer got
+            // in).
+            _rejectionResends.remove(nodeId);
             _decoders[nodeId] = FrameDecoder();
             metrics.recordConnectionEstablished();
             metrics.setConnectedPeerCount(registry.connectionCount);
@@ -313,6 +381,13 @@ class ConnectionManager implements MessageDispatcher {
             );
         }
       case PortPeerDisconnected(:final nodeId, :final role, :final reason):
+        // Deliberately NOT clearing _rejectionResends here: rejecting a
+        // peer emits a local PortPeerDisconnected for its own role
+        // teardown (both in the fake and via _rejectPeripheral in the
+        // real port), which would delete the record the same turn it was
+        // created. No cleanup is needed on disconnect anyway — re-sends
+        // are triggered only by INBOUND writes, and a closed link cannot
+        // write.
         // The registry only holds one handle per NodeId regardless of
         // role. When a disconnect arrives, it may be for the role we
         // registered (the "real" link) OR for a duplicate role we
@@ -338,7 +413,12 @@ class ConnectionManager implements MessageDispatcher {
       case PortPeerData(:final nodeId, :final data):
         final decoder = _decoders[nodeId];
         if (decoder == null) {
-          // Data from a peer we don't know about — ignore.
+          // Data from a peer we don't know about. If we rejected this
+          // peer at capacity, its writes arriving here mean it never got
+          // the rejection frame (lost to the subscribe race, WIRE4-9) —
+          // re-send it, paced and bounded, so the peer can finally close
+          // its side instead of gossiping into a void forever.
+          _maybeResendRejection(nodeId);
           return;
         }
         final registered = registry.get(nodeId);
