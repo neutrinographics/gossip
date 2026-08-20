@@ -95,6 +95,10 @@ class ConnectionManager implements MessageDispatcher {
   /// not run forever).
   static const int _maxRejectionResends = 5;
 
+  /// Retries per chunk for transient (non-timeout) write failures before
+  /// the link is torn down (WIRE4-10).
+  static const int _maxChunkRetries = 1;
+
   /// Minimum spacing between rejection re-sends — comfortably longer
   /// than a central's connect→subscribe window on real hardware, so the
   /// bounded budget is not burned inside the race it exists to beat.
@@ -569,44 +573,70 @@ class ConnectionManager implements MessageDispatcher {
       mtuPayloadSize: port.chunkSizeFor(destination),
     );
     for (final chunk in chunks) {
-      // Re-check per chunk against the SAME handle: a disconnect + fast
-      // reconnect mid-message swaps the registry entry, and writing this
-      // frame's remaining chunks to the new link would corrupt the
-      // receiver's byte-stream alignment.
-      if (!identical(registry.get(destination), handle)) {
-        final error = SendFailedError(
-          message:
-              'send to $destination aborted: connection replaced '
-              'mid-message',
-          occurredAt: _clock.now(),
-          nodeId: destination,
-        );
-        _emitError(error);
-        throw error;
-      }
-      try {
-        // Bounded per chunk: a hung GATT write (dead link the state
-        // watcher never noticed) must not wedge this peer's drain loop
-        // forever. A timeout is handled exactly like a failed write.
-        await port.sendData(destination, chunk).timeout(sendTimeout);
-        metrics.recordFrameSent();
-        metrics.recordBytesSent(chunk.length);
-      } catch (e, st) {
-        _emitError(
-          SendFailedError(
-            message: 'send failed to $destination',
+      var retriesLeft = _maxChunkRetries;
+      while (true) {
+        // Re-check per chunk against the SAME handle: a disconnect + fast
+        // reconnect mid-message swaps the registry entry, and writing this
+        // frame's remaining chunks to the new link would corrupt the
+        // receiver's byte-stream alignment.
+        if (!identical(registry.get(destination), handle)) {
+          final error = SendFailedError(
+            message:
+                'send to $destination aborted: connection replaced '
+                'mid-message',
             occurredAt: _clock.now(),
             nodeId: destination,
-            cause: e,
-          ),
-        );
-        onLog?.call(LogLevel.warning, 'send failed', e, st);
-        // Tear down only the link this send was using — if it was
-        // already replaced, the new connection is innocent.
-        if (identical(registry.get(destination), handle)) {
-          _disconnectRoleGuarded(destination, handle.role);
+          );
+          _emitError(error);
+          throw error;
         }
-        rethrow;
+        try {
+          // Bounded per chunk: a hung GATT write (dead link the state
+          // watcher never noticed) must not wedge this peer's drain loop
+          // forever.
+          await port.sendData(destination, chunk).timeout(sendTimeout);
+          metrics.recordFrameSent();
+          metrics.recordBytesSent(chunk.length);
+          break;
+        } catch (e, st) {
+          // A transient write error gets one retry before the link is
+          // condemned (WIRE4-10): at 20-byte chunks a message is many
+          // writes, and one flaky write must not cost a ~30-60 ATT
+          // round-trip reconnect. The single drain loop per peer keeps
+          // the retried chunk ordered before every later one. Never
+          // retried: a TIMEOUT (the link already sat silent for the full
+          // sendTimeout; doubling the wedge helps nobody) and a link
+          // whose registration is gone (nothing to retry into — let the
+          // original error propagate, e.g. the port's StateError after a
+          // disconnect, COR3-20).
+          if (e is! TimeoutException &&
+              retriesLeft > 0 &&
+              identical(registry.get(destination), handle)) {
+            retriesLeft--;
+            onLog?.call(
+              LogLevel.debug,
+              'chunk write to $destination failed; retrying once',
+              e,
+              st,
+            );
+            continue;
+          }
+          _emitError(
+            SendFailedError(
+              message: 'send failed to $destination',
+              occurredAt: _clock.now(),
+              nodeId: destination,
+              cause: e,
+            ),
+          );
+          onLog?.call(LogLevel.warning, 'send failed', e, st);
+          // Tear down only the link this send was using — if it was
+          // already replaced, the new connection is innocent.
+          if (identical(registry.get(destination), handle)) {
+            _disconnectRoleGuarded(destination, handle.role);
+          }
+          rethrow;
+        }
       }
     }
     metrics.recordMessageSent();

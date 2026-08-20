@@ -269,6 +269,99 @@ void main() {
       await remotePort.dispose();
     });
 
+    group('WIRE4-10: transient chunk failures are retried, not fatal', () {
+      // At 20-byte chunks a message is many writes, so a single transient
+      // GATT failure is many times more likely per message — turning each
+      // one into a full teardown + reconnect (~30-60 ATT round trips)
+      // converts write noise into reconnect churn.
+      late FakeBlueyNetwork network;
+      late FakeBlueyPort localPort;
+      late FakeBlueyPort remotePort;
+      late ConnectionManager localSvc;
+      late ConnectionManager remoteSvc;
+
+      setUp(() async {
+        network = FakeBlueyNetwork();
+        localPort = FakeBlueyPort(localNodeId: localId, network: network);
+        remotePort = FakeBlueyPort(localNodeId: remoteId, network: network);
+        localSvc = ConnectionManager(
+          port: localPort,
+          registry: ConnectionRegistry(),
+          metrics: BlueyMetrics(),
+          localNodeId: localId,
+        );
+        remoteSvc = ConnectionManager(
+          port: remotePort,
+          registry: ConnectionRegistry(),
+          metrics: BlueyMetrics(),
+          localNodeId: remoteId,
+        );
+        await localPort.startAdvertising(
+          serviceUuid: serviceUuid,
+          displayName: 'Local',
+          localNodeId: localId,
+        );
+        await remotePort.connect(localId);
+        await Future<void>.delayed(Duration.zero);
+        remotePort.chunkSize = 12; // 8-byte header + 4 payload per chunk
+      });
+
+      tearDown(() async {
+        await localSvc.dispose();
+        await remoteSvc.dispose();
+        await localPort.dispose();
+        await remotePort.dispose();
+      });
+
+      test(
+          'one transient write failure mid-message: the message still '
+          'arrives whole and the link survives', () async {
+        final incoming = <IncomingMessage>[];
+        final sub = localSvc.incomingMessages.listen(incoming.add);
+        addTearDown(sub.cancel);
+
+        var calls = 0;
+        var failuresRemaining = 1;
+        remotePort.sendGate = (_, _) async {
+          calls++;
+          if (calls == 2 && failuresRemaining > 0) {
+            failuresRemaining--;
+            throw Exception('transient GATT write failure');
+          }
+        };
+
+        final payload = Uint8List.fromList(List.generate(20, (i) => i));
+        await remoteSvc.sendGossipMessage(localId, payload);
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+
+        expect(incoming, hasLength(1),
+            reason: 'the retried chunk must complete the message');
+        expect(incoming.single.bytes, equals(payload));
+        expect(remoteSvc.registry.contains(localId), isTrue,
+            reason: 'one transient failure must not tear down the link');
+        expect(remotePort.disconnectRoleCalls, isEmpty);
+      });
+
+      test(
+          'a persistently failing chunk still completes the send with an '
+          'error and tears the link down (retries are bounded)', () async {
+        remotePort.sendGate = (_, _) async {
+          throw Exception('hard GATT failure');
+        };
+
+        await expectLater(
+          remoteSvc.sendGossipMessage(
+            localId,
+            Uint8List.fromList(List.generate(20, (i) => i)),
+          ),
+          throwsA(isA<Exception>()),
+        );
+        expect(remotePort.disconnectRoleCalls, isNotEmpty,
+            reason: 'a link that fails past the retry budget is dead — '
+                'teardown must still happen');
+      });
+    });
+
     test(
       'PortPeerData feeds the FrameDecoder and emits IncomingMessage',
       () async {
