@@ -79,6 +79,25 @@ class FakeBlueyPort implements BlueyPort {
   final Set<NodeId> _connectedAsCentral = {};
   final Set<NodeId> _connectedAsPeripheral = {};
 
+  /// GATT fidelity knob (central side): how long after [connect] this
+  /// port's notification subscription lands on the remote peripheral.
+  /// Real hardware has a measurable window (the central is still doing
+  /// service discovery) during which the peripheral already sees the
+  /// link as up but its notifications go nowhere — the WIRE4-9 race.
+  /// Zero (the default) subscribes synchronously, preserving the
+  /// pre-existing behavior of every test that doesn't opt in.
+  Duration notificationSubscribeDelay = Duration.zero;
+
+  /// Count of notifications this port swallowed per remote because the
+  /// central had not yet subscribed (the sender saw success) — real
+  /// notify-to-unsubscribed-CCCD semantics, made observable for tests.
+  final Map<NodeId, int> preSubscribeDrops = {};
+
+  /// Centrals currently subscribed to OUR notifications (we are their
+  /// peripheral). Populated by the central's [connect], immediately or
+  /// after its [notificationSubscribeDelay].
+  final Set<NodeId> _subscribedToOurNotifications = {};
+
   /// Internal convenience: peers are visible to network scans iff
   /// advertising state is [bluey.AdvertisingState.advertising].
   bool get _isAdvertisingInternal =>
@@ -359,6 +378,19 @@ class FakeBlueyPort implements BlueyPort {
     }
     _connectedAsCentral.add(target);
     remote._connectedAsPeripheral.add(localNodeId);
+    // Our notification subscription lands on the remote peripheral —
+    // synchronously by default, after the configured delay when a test
+    // models the real hardware window (service discovery still running
+    // when the peripheral already sees the link).
+    if (notificationSubscribeDelay == Duration.zero) {
+      remote._subscribedToOurNotifications.add(localNodeId);
+    } else {
+      Timer(notificationSubscribeDelay, () {
+        if (remote._connectedAsPeripheral.contains(localNodeId)) {
+          remote._subscribedToOurNotifications.add(localNodeId);
+        }
+      });
+    }
     // The fake uses each port's NodeId as its BLE address (as a string)
     // since there's no real address space — this matches
     // FakeBlueyNetwork.scanCandidatesFor and honours the real-bluey
@@ -402,6 +434,9 @@ class FakeBlueyPort implements BlueyPort {
           reason: 'local request',
         ),
       );
+      // Our central link is gone: our subscription on their peripheral
+      // dies with it.
+      remote?._subscribedToOurNotifications.remove(localNodeId);
       // Our central → remote's peripheral view of us
       if (remote != null && remote._connectedAsPeripheral.remove(localNodeId)) {
         if (!remote._events.isClosed) {
@@ -416,6 +451,9 @@ class FakeBlueyPort implements BlueyPort {
       }
     }
     if (wasPeripheral) {
+      // The peripheral link is gone in both directions: the remote
+      // central's subscription to us dies with it.
+      _subscribedToOurNotifications.remove(nodeId);
       _events.add(
         PortPeerDisconnected(
           nodeId: nodeId,
@@ -439,8 +477,11 @@ class FakeBlueyPort implements BlueyPort {
   }
 
   /// Test hook: per-call chunk size returned by [chunkSizeFor]. Defaults
-  /// to 200 (large enough that small payloads fit in one chunk).
-  int chunkSize = 200;
+  /// to 20 — the un-negotiated Android ATT payload (MTU 23 − 3), i.e.
+  /// what a real link carries when nobody calls requestMtu (WIRE4-8) —
+  /// so every test runs at real chunking pressure by default. Tests that
+  /// need single-chunk sends can raise it explicitly.
+  int chunkSize = 20;
 
   @override
   int chunkSizeFor(NodeId nodeId) => chunkSize;
@@ -473,6 +514,14 @@ class FakeBlueyPort implements BlueyPort {
       // Silently drop — simulates a write-without-response that was
       // never delivered. Returns success to the sender (matching real
       // BLE behaviour: writes-without-response have no ACK).
+      return;
+    }
+    // Sending as peripheral means notifying: real GATT delivers a
+    // notification only to a subscribed central, and notifying an
+    // unsubscribed one is NOT an error — the bytes just go nowhere.
+    final sendingAsCentral = _connectedAsCentral.contains(nodeId);
+    if (!sendingAsCentral && !_subscribedToOurNotifications.contains(nodeId)) {
+      preSubscribeDrops[nodeId] = (preSubscribeDrops[nodeId] ?? 0) + 1;
       return;
     }
     if (!remote._events.isClosed) {
@@ -556,6 +605,7 @@ class FakeBlueyPort implements BlueyPort {
       case ConnectionRole.central:
         if (!_connectedAsCentral.remove(nodeId)) return;
         remote?._connectedAsPeripheral.remove(localNodeId);
+        remote?._subscribedToOurNotifications.remove(localNodeId);
         _events.add(
           PortPeerDisconnected(
             nodeId: nodeId,
