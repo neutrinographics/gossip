@@ -26,7 +26,7 @@ detection. Seeded from the deferred follow-ups of the 2026-07 audits
 [`audits/2026-07-08-comprehensive-audit.md`](audits/2026-07-08-comprehensive-audit.md)).
 
 - ☑ **High** — [One Bluetooth link per device pair in a mesh](backlog/engine-mesh-connection-tiebreak.md) · post-connect tie-break (smaller NodeId is central; loser closes its own central) — shipped in 5a6a764
-- ☑ **Medium** — [Tell a rejected Bluetooth peer it was rejected](backlog/engine-reject-notify-capped-peers.md) · GSP2 control frame + receiver close + policy backoff — shipped in b210fdb..4f3d072
+- ☑ **Medium** — [Tell a rejected Bluetooth peer it was rejected](backlog/engine-reject-notify-capped-peers.md) · GSP2 control frame + receiver close + policy backoff — shipped in b210fdb..4f3d072; caveat: the 2026-08-20 audit found the frame likely races the remote's subscribe on real hardware (WIRE4-9) — delivery re-fix pending
 - ☐ **Medium** — [Cut redundant work on the message hot path](backlog/engine-hot-path-performance.md) · type-byte dispatch before decode, encode-once-send-many, checkpointed rebuilds, cache the GATT characteristic
 - ☐ **Medium** — [Per-peer send queues for the Nearby transport](backlog/engine-nearby-per-peer-queues.md) · one stalled endpoint currently head-of-line-blocks pings to every other peer; port the BLE transport's per-peer design
 - ☐ **Low** — [Eliminate head-of-line blocking on the Bluetooth transport](backlog/engine-ble-frame-multiplexing.md) · an urgent message can still wait out one in-flight transfer; frame multiplexing would remove even that
@@ -43,6 +43,7 @@ enough to exercise the failure modes the protocol logic exists for.
 - ☑ **High** — [Integration coverage for adverse network scenarios](backlog/testing-adverse-scenario-coverage.md) · 20 tests across loss/retry, asymmetric partition, duplicate frames, clock skew, congestion — shipped in 4b0106f
 - ☑ **High** — [Run full syncs over a faulty BLE link in the end-to-end tests](backlog/testing-bluey-adverse-e2e.md) · chunk drop, hung write + send timeout, mid-message disconnect, supersession, connect backoff — shipped in c8c35ae
 - ☐ **Medium** — [A stateful fake network for the Nearby transport](backlog/testing-nearby-fake-port.md) · bring gossip_nearby up to bluey's standard: fake endpoint network + end-to-end Coordinator tests
+- ☐ **Medium** — [Make the Bluetooth test fake faithful to real GATT behavior](backlog/testing-bluey-gatt-fidelity-fake.md) · subscription state + real 20 B write sizes first, then a fake beneath the platform adapter — the WIRE4-9 bug class is invisible to today's tests
 - ☐ **Low** — [Quality-of-life additions to the adverse-network harness](backlog/testing-harness-niceties.md) · type-selective drop/duplicate predicates, per-node runRounds steps, duplicate-rate DSL wrapper, BLE facade test knobs
 - ☐ **Low** — [Close the recorded test debt from the tie-break/rejection reviews](backlog/testing-tiebreak-followup-tests.md) · queued-send-across-swap, backoff dedup branch, both-orders stagger, codec edges, backoff-reset product decision
 
@@ -51,5 +52,5 @@ enough to exercise the failure modes the protocol logic exists for.
 Internal structure, documentation honesty, and audit-hygiene work — no
 runtime behavior changes.
 
-- ☐ **Medium** — [Realign the module layout with the documented architecture](backlog/health-architecture-alignment.md) · ports to domain, delete the dead bridge, re-home transport codecs, owned lifecycle enums, peer-persistence honesty (ARCH3-6), amend ADR-010/011
+- ☐ **Medium** — [Realign the module layout and make the architecture scream](backlog/health-architecture-alignment.md) · part 1: ports to domain, dead bridge, codec re-homing, lifecycle enums, ARCH3-6, ADR amendments; part 2: concept-first packages (sync / detection / shared kernel, per gossip-kt) + an explicit sync↔detection contract — sequence after the WIRE4 pacing redesign
 - ☐ **High** — [Sweep the remaining minor audit findings](backlog/health-minor-findings-sweep.md) · three correctness latents (unbudgeted sync-request size, non-rotating responder digests, uncopied payload buffers) + transport minors + hygiene

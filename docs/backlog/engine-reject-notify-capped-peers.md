@@ -37,6 +37,12 @@ worse than today.
 
 - Audit finding COR3-21 in
   [audits/2026-07-08-comprehensive-audit.md](../audits/2026-07-08-comprehensive-audit.md).
+- Follow-up: finding WIRE4-9 in
+  [audits/2026-08-20-wire-scheduling-audit.md](../audits/2026-08-20-wire-scheduling-audit.md)
+  — the frame is sent before the remote has subscribed to notifications, so
+  real hardware likely drops it; the delivery mechanism needs a re-fix, and
+  [a faithful GATT-level test fake](testing-bluey-gatt-fidelity-fake.md)
+  is what would let that be test-driven.
 - [One Bluetooth link per device pair in a mesh](engine-mesh-connection-tiebreak.md)
   — removes the *duplicate*-rejection case entirely; this item still covers
   the capacity-limit case.

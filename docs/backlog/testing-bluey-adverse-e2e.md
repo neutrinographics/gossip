@@ -34,6 +34,11 @@ test code — where a scenario needs a new hook).
 
 - The existing fake and end-to-end tests: `packages/gossip_bluey/test/fakes/`,
   `packages/gossip_bluey/test/integration/`.
+- Deepened by
+  [Make the Bluetooth test fake faithful to real GATT behavior](testing-bluey-gatt-fidelity-fake.md)
+  — this suite's fake models the transport's port interface; that item
+  models the Bluetooth semantics beneath it (subscriptions, setup ordering,
+  write sizes).
 - [Simulate adverse network conditions in the test harness](testing-network-condition-simulation.md)
   — the same philosophy at the protocol layer.
 - [A stateful fake network for the Nearby transport](testing-nearby-fake-port.md).
