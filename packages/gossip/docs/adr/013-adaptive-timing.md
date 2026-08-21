@@ -168,3 +168,41 @@ ceiling, not configurable; time-based suppression only (no cached-VV
 skipping); minutes-scale detection of half-open links in a deep-idle
 mesh is accepted — hard disconnects surface via the transport instantly.
 Static `gossipInterval`/`probeInterval` overrides bypass the pacer.
+
+The worst-case repair bound for a lost push is **30 s + scheduling
+jitter (±20%)**, not a flat 30 s: every scheduled round (gossip and
+probe alike) is jittered before it fires (see `applyJitter`), so the
+ceiling itself can take up to ~36 s to elapse in the worst case.
+
+### Final-review refinements (2026-08-21)
+
+Three deliberate refinements found during final review, kept because
+they are the more correct behavior (not bugs to fix toward the
+original wording above):
+
+1. **News on delta receipt requires an actual merge, not just a
+   non-empty response.** A `DeltaResponse` we *receive* only resets the
+   gossip pacer when it actually merges at least one new entry — a
+   response that is non-empty on the wire but resolves to zero accepted
+   entries (all already held, or dropped by the per-author contiguity
+   guard) is redundancy, not novelty. (Serving a puller — a non-empty
+   response we *send* — is still news regardless of what the puller
+   does with it.)
+2. **Membership news is asymmetric between the two loops.** The gossip
+   engine's pacer resets on both peer addition and peer removal. The
+   failure detector's pacer resets on addition (via `probeNewPeer`) and
+   on probe failure, but deliberately **not** on removal — a shrinking
+   registry is self-evident and needs no immediate re-probe of the
+   remaining peers.
+3. **Probe suppression is capped.** Freshness-only suppression keys on
+   INBOUND evidence (`lastContactMs`), which under asymmetric one-way
+   loss (our probes to a peer die, but the peer's own traffic to us —
+   e.g. its own unreachable-probing of us — keeps arriving) never stops,
+   suppressing that peer forever with no detection. Every peer is now
+   actually probed at least once per 2-minute cap window (4x the 30 s
+   ceiling; not configurable) regardless of freshness, bounding
+   half-open detection under one-way loss. `FailureDetector.start()`
+   also now resets the pacer on restart, mirroring
+   `GossipEngine.start()`'s existing "a restart is news" behavior — a
+   paused/resumed detector must not resume mid-backoff into a stale
+   world.

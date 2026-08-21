@@ -26,7 +26,9 @@ missing.
 ## Owner decisions (Joel, 2026-08-20)
 
 1. **Idle ceiling: 30 s** for both loops. Worst-case repair of a lost
-   push = 30 s per affected pair. Not configurable (no new knobs).
+   push = 30 s + scheduling jitter (±20%, see `applyJitter`) per affected
+   pair — not a flat 30 s, since every scheduled round is jittered before
+   it fires. Not configurable (no new knobs).
 2. **Backoff only — no convergence-memory skip.** The safety net always
    actually exchanges, just rarely. No cached-VV skip: a stale cache
    would silently desync; time-based mechanisms only, every exchange
@@ -62,10 +64,14 @@ Both loops reach their ceiling from base within ~8–10 quiet rounds.
   Implemented as a news flag the round loop reads-and-clears.
 - **News (resets the pacer):**
   - local append (`notifyLocalWrite`);
-  - entries merged from any peer;
   - any `DeltaRequest` sent or received;
-  - any non-empty `DeltaResponse` sent or received (empty responses and
-    converged digest/digest exchanges are NOT news);
+  - any non-empty `DeltaResponse` we *send* (serving a puller — the act of
+    serving is news regardless of what the puller does with it);
+  - a `DeltaResponse` we *receive* only when it actually merges at least
+    one new entry — refined during implementation to be stricter than
+    "non-empty": a response that is non-empty on the wire but resolves to
+    zero accepted entries (all already held, or dropped by the contiguity
+    guard) is redundancy, not novelty, and must not reset the pacer;
   - peer added or removed (registry membership change);
   - `syncWithPeer` (join/reconnect fast path).
 - **Responder-side exchange recording** (missing half of WIRE4-1):
@@ -94,11 +100,23 @@ Both loops reach their ceiling from base within ~8–10 quiet rounds.
   (gossip traffic is liveness evidence — `lastContactMs` finally gets a
   reader). Skipped peers advance the round-robin cursor; if every
   candidate is fresh, no probe fires this round (a quiet round).
+- **Probe suppression is capped (final review, item 2):** freshness alone
+  keys on INBOUND evidence, which under asymmetric one-way loss (our
+  probes to a peer die, but the peer's own traffic — e.g. its own
+  unreachable-probing of us — keeps arriving) never stops, suppressing
+  the peer forever with no detection. Every peer is therefore actually
+  probed at least once per 2-minute cap window (4× the 30 s ceiling, not
+  configurable) regardless of freshness, bounding half-open detection
+  under one-way loss.
 - **Quiet round:** the round's probe (if any) was answered, or all
   candidates were suppressed-by-freshness.
 - **Reset:** any missed ack (direct + indirect both failed), any
-  suspicion/unreachable transition, membership change, or an
-  unreachable peer recovering.
+  suspicion/unreachable transition, a peer becoming newly probable
+  (added, or `start()` after a pause — final review, item 1), or an
+  unreachable peer recovering. A peer's *removal* deliberately does NOT
+  reset this pacer — the registry shrinking is self-evident and needs no
+  immediate re-probe of the remaining peers. This differs from the
+  gossip engine's pacer (§2), which resets on both addition and removal.
 
 ### 4. Expected idle footprint (n=2, converged, healthy BLE)
 
@@ -128,9 +146,11 @@ instant snap-back on any news.
   Use static-interval configs where determinism is needed.
 - **Integration:** an idle converged network's per-window message count
   decays round over round; a local write snaps the cadence back to
-  base; a deliberately dropped reactive push is repaired within the
-  30 s ceiling; suppressed probes do not mark peers stale; a half-open
-  peer is still detected (suspected → unreachable) after backoff.
+  base; a deliberately dropped reactive push is repaired within
+  30 s + scheduling jitter (±20%); suppressed probes do not mark peers
+  stale; a half-open peer is still detected (suspected → unreachable)
+  after backoff; a peer suppressed only by continuous inbound freshness
+  is still actually probed once every 2-minute cap window.
 - **Regression:** the full suites stay green. Convergence-speed tests
   are protected: news resets keep the active phase at today's cadence.
 
