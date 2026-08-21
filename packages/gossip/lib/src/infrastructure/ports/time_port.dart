@@ -19,7 +19,7 @@ abstract class TimerHandle {
 ///
 /// The library uses this port for:
 /// - Scheduling periodic gossip rounds (adaptive: 2× median RTT, clamped 100 ms–5 s active, backed off to 30 s when idle)
-/// - Scheduling SWIM probe rounds (adaptive: 2× median RTT, clamped 100 ms–5 s active, backed off to 30 s when idle)
+/// - Scheduling SWIM probe rounds (adaptive: 3× the effective ping timeout, clamped 500 ms–30 s, paced toward the 30 s cap when quiet — see ADR-013 amendment)
 /// - Getting current time for timestamps
 /// - Creating timeouts for probe responses
 ///
@@ -58,7 +58,7 @@ abstract class TimerHandle {
 /// returns an independent [TimerHandle]:
 ///
 /// ```dart
-/// final handle1 = port.schedulePeriodic(Duration(milliseconds: 200), gossip);
+/// final handle1 = port.schedulePeriodic(Duration(seconds: 1), gossip);
 /// final handle2 = port.schedulePeriodic(Duration(seconds: 1), probe);
 ///
 /// // Cancel individually
