@@ -640,6 +640,14 @@ class GossipEngine {
 
     // Filter out congested peers (per-peer backpressure) AND peers we
     // already exchanged with inside the current interval.
+    //
+    // Deliberate: this reads effectiveGossipInterval AFTER the quietRound()
+    // above may have just grown it this very round, so the suppression
+    // window here is already the just-grown interval, not the pre-round
+    // one. That's intentional and self-correcting — it's time-based (see
+    // the recency-suppression note below), so widening the window only
+    // widens how long an idle pair goes between exchanges, consistent
+    // with the pacer's own stretch, never a correctness issue.
     final interval = effectiveGossipInterval.inMilliseconds;
     final nowMs = timePort.nowMs;
     final candidates = reachable

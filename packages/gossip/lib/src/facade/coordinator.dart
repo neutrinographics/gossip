@@ -729,8 +729,10 @@ class Coordinator {
   /// The peer will no longer participate in gossip or failure detection.
   /// Any pending operations with this peer will be cancelled.
   Future<void> removePeer(NodeId id) async {
-    // Drop any probing hold so entries don't accumulate under peer churn.
-    _failureDetector?.clearProbingHold(id);
+    // Drop the probing hold and probe-attempt tracking so entries don't
+    // accumulate under peer churn (the peer is gone, not merely confirmed
+    // reachable — see FailureDetector.forgetPeer).
+    _failureDetector?.forgetPeer(id);
     // Drop in-flight pulls to this peer: they can never complete, and a
     // stale flag would both block re-requesting after a fast reconnect and
     // wedge gossipSyncActivity.isQuiescent (COR3-12).

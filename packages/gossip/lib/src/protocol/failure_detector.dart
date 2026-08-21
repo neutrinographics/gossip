@@ -144,6 +144,16 @@ class FailureDetector {
   static const Duration _maxProbeInterval = Duration(seconds: 30);
   static const int _probeIntervalMultiplier = 3;
 
+  /// Hard cap on how long freshness alone may suppress a probe (final
+  /// review, item 2): 4× the 30 s ceiling. Freshness-only suppression
+  /// (below) keys on INBOUND evidence — under asymmetric one-way loss
+  /// (our probes to a peer die, but the peer's own traffic to us, e.g. its
+  /// own unreachable-probing of us, keeps arriving) that inbound evidence
+  /// never stops, so we would never probe the peer and never detect the
+  /// failure. This bounds half-open detection instead of suppressing
+  /// forever. Not configurable — no new knobs.
+  static const Duration _maxProbeSuppression = Duration(minutes: 2);
+
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
@@ -195,6 +205,19 @@ class FailureDetector {
   /// positives during connection establishment.
   final Map<NodeId, int> _probingHeldUntil = {};
 
+  /// Timestamp (ms since epoch) of the last time we actually sent this peer
+  /// a probe Ping — via [performProbeRound], [probeNewPeer], or
+  /// [_probeUnreachablePeer] (all funnel through [_sendPing]). Distinct from
+  /// [Peer.lastContactMs] (inbound evidence only): this tracks our own
+  /// outbound attempts, so [selectRandomPeer] can bound how long freshness
+  /// alone may suppress a peer (item 2 — see [_maxProbeSuppression]).
+  ///
+  /// A missing entry means "never probed" — on a real device `nowMs` is a
+  /// huge wall-clock epoch reading, so treating a missing entry as 0 makes
+  /// a never-probed peer immediately cap-expired (probe-eligible), matching
+  /// cold-start expectations.
+  final Map<NodeId, int> _lastProbeAttemptMs = {};
+
   // ---------------------------------------------------------------------------
   // Public API: probing hold (startup grace period)
   // ---------------------------------------------------------------------------
@@ -224,6 +247,19 @@ class FailureDetector {
     final holdUntil = _probingHeldUntil[peerId];
     if (holdUntil == null) return false;
     return timePort.nowMs < holdUntil;
+  }
+
+  /// Drops all per-peer bookkeeping for a peer that has been removed from
+  /// the system entirely.
+  ///
+  /// Unlike [clearProbingHold] — which is also called when [probeNewPeer]
+  /// merely *confirms* connectivity, and so must not touch probe-attempt
+  /// history — this is for actual removal: the peer is gone, so its
+  /// probing hold and its [_maxProbeSuppression] tracking (item 2) are
+  /// both moot and would otherwise accumulate under peer churn.
+  void forgetPeer(NodeId peerId) {
+    _probingHeldUntil.remove(peerId);
+    _lastProbeAttemptMs.remove(peerId);
   }
 
   // ---------------------------------------------------------------------------
@@ -286,6 +322,8 @@ class FailureDetector {
   void start() {
     if (_isRunning) return;
     _isRunning = true;
+    // A restart is news — never resume mid-backoff into a stale world.
+    _pacer.news();
     _generation++;
     _scheduleNextProbeRound(_generation);
   }
@@ -372,6 +410,13 @@ class FailureDetector {
         final gotIndirectAck = await _performIndirectPing(peer.id);
         _evaluateProbeOutcome(peer.id, sequence, pending, gotIndirectAck);
       } else {
+        // If something else already called news() earlier in this same
+        // round (e.g. a different peer's contact recovering it from
+        // suspected), this quietRound() still runs right after — netting
+        // a multiplier of 1.5x base rather than staying at 1x. Accepted:
+        // it self-corrects, since the next quiet round continues growing
+        // from wherever this landed, and the next real news() resets it
+        // to 1 regardless.
         _pacer.quietRound();
       }
     } finally {
@@ -498,13 +543,26 @@ class FailureDetector {
   Peer? selectRandomPeer() {
     final nowMs = timePort.nowMs;
     final intervalMs = effectiveProbeInterval.inMilliseconds;
+    final maxSuppressionMs = _maxProbeSuppression.inMilliseconds;
     final probable = peerRegistry.probablePeers.where((p) {
       final holdUntil = _probingHeldUntil[p.id];
       if (holdUntil != null && nowMs < holdUntil) return false;
       // Suppression (WIRE4-3): any inbound message already proved this
       // peer alive within the current interval — a probe adds nothing.
-      if (nowMs - p.lastContactMs < intervalMs) return false;
-      return true;
+      final isFresh = nowMs - p.lastContactMs < intervalMs;
+      if (!isFresh) return true;
+      // Cap (item 2): freshness alone keys on INBOUND evidence, which
+      // under asymmetric one-way loss can be perpetually refreshed by the
+      // peer's own traffic (e.g. it probing us) even though OUR probes to
+      // IT are the ones dying — suppressing forever and never detecting
+      // the failure. Bound it: a peer we haven't actually probed in
+      // _maxProbeSuppression is probe-eligible regardless of freshness.
+      // A missing entry (never probed) reads as 0, so on a real device
+      // (huge wall-clock nowMs) a brand-new peer is immediately eligible —
+      // consistent with cold start.
+      final lastAttempt = _lastProbeAttemptMs[p.id] ?? 0;
+      final capExpired = nowMs - lastAttempt >= maxSuppressionMs;
+      return capExpired;
     }).toList();
     if (probable.isEmpty) return null;
 
@@ -892,6 +950,13 @@ class FailureDetector {
 
   Future<void> _sendPing(NodeId target, int sequence) async {
     _pingsSent++;
+    // Single choke point for all 3 of our own probe-selection Pings
+    // (performProbeRound, probeNewPeer, _probeUnreachablePeer) — records
+    // that this peer was actually probed, resetting its suppression-cap
+    // clock (item 2). Deliberately NOT used by the PingReq intermediary
+    // role (_handlePingReq sends its relay Ping directly via _safeSend):
+    // relaying on someone else's behalf isn't our own scheduling decision.
+    _lastProbeAttemptMs[target] = timePort.nowMs;
     _log('Sending Ping to $target seq=$sequence (pings sent: $_pingsSent)');
     final ping = Ping(sender: localNode, sequence: sequence);
     await _safeSend(target, _codec.encode(ping), 'Ping');

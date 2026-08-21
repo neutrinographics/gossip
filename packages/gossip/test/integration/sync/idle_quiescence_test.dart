@@ -118,11 +118,14 @@ void main() {
             'otherwise the repair below is not exercising the lost-push '
             'path at all');
 
-    // Within the ceiling (30 simulated seconds plus margin), anti-entropy
-    // repairs it.
-    await network.runRounds(35);
+    // Within the ceiling, anti-entropy repairs it. Theoretical worst case:
+    // 30s ceiling x 1.2 (the +/-20% scheduling jitter, see applyJitter) +
+    // 150ms debounce (the flush that consumed the drop above) ~= 36.2s.
+    // 35 simulated seconds sat inside that worst case; 40 gives real margin.
+    await network.runRounds(40);
     expect(await network.hasConverged(channelId, streamId), isTrue,
-        reason: 'the safety net must repair a lost push within 30s');
+        reason: 'the safety net must repair a lost push within 30s + '
+            'scheduling jitter (+/-20%)');
     await network.dispose();
   });
 

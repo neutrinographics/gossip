@@ -76,6 +76,37 @@ void main() {
       h.stopListening();
     });
 
+    test('start() resets the pacer after a pause (stop/start)', () async {
+      // Final-review fix: FailureDetector.start() must reset the pacer,
+      // mirroring GossipEngine.start()'s "a restart is news" comment.
+      // Without this, pausing and resuming (e.g. Coordinator pause/resume)
+      // can resume mid-backoff — up to ~30s stale — into a world that may
+      // have changed while stopped.
+      final h = FailureDetectorTestHarness();
+      h.startListening();
+      h.addAnsweringPeer('peer1');
+      h.detector.start();
+      final base = h.detector.effectiveProbeInterval;
+
+      for (var i = 0; i < 4; i++) {
+        await h.detector.performProbeRound();
+      }
+      expect(h.detector.effectiveProbeInterval, greaterThan(base));
+
+      h.detector.stop();
+      h.detector.start();
+
+      expect(
+        h.detector.effectiveProbeInterval,
+        base,
+        reason: 'a restart is news — must not resume mid-backoff into a '
+            'stale world',
+      );
+
+      h.detector.stop();
+      h.stopListening();
+    });
+
     test('a static probeInterval bypasses the pacer', () async {
       final h = FailureDetectorTestHarness(
         probeInterval: const Duration(seconds: 2),

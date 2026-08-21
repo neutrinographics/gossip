@@ -47,5 +47,52 @@ void main() {
 
       expect(h.peerRegistry.getPeer(a.id)!.failedProbeCount, 0);
     });
+
+    // Final-review fix: freshness-only suppression keys on INBOUND evidence.
+    // Under asymmetric one-way loss (our probes to a peer die, but the
+    // peer's own traffic to us — e.g. its own unreachable-probing pings —
+    // keeps arriving), lastContactMs is perpetually refreshed and we would
+    // NEVER probe that peer, so a genuine failure is never detected. The
+    // fix bounds suppression: every peer must be actually probed at least
+    // once per 2-minute cap window regardless of freshness.
+    test(
+        'a continuously fresh peer is still probed once the suppression '
+        'cap elapses', () async {
+      final h = FailureDetectorTestHarness();
+      h.startListening(); // required for the detector to process Acks
+      final peer = h.addAnsweringPeer('peer');
+
+      // Two rounds well within the 2-minute cap: continuous freshness alone
+      // suppresses the probe, exactly as WIRE4-3 intends.
+      for (var i = 0; i < 2; i++) {
+        h.peerRegistry.updatePeerContact(peer.id, h.timePort.nowMs);
+        await h.detector.performProbeRound();
+        await h.timePort.advance(const Duration(seconds: 30));
+      }
+      expect(
+        h.sentMessageCount,
+        0,
+        reason: 'still within the cap window — suppression holds',
+      );
+
+      // Cross the 2-minute cap while the peer keeps looking freshly
+      // contacted (simulating one-way loss: our probes to it die, but its
+      // own traffic keeps refreshing lastContactMs).
+      for (var i = 0; i < 3; i++) {
+        h.peerRegistry.updatePeerContact(peer.id, h.timePort.nowMs);
+        await h.detector.performProbeRound();
+        await h.timePort.advance(const Duration(seconds: 30));
+      }
+
+      expect(
+        h.sentMessageCount,
+        greaterThan(0),
+        reason: 'the cap must force an actual probe within 2 minutes '
+            'despite continuous freshness, or one-way loss to this peer '
+            'would never be detected',
+      );
+
+      h.stopListening();
+    });
   });
 }
