@@ -62,8 +62,11 @@ void main() {
       h.startListening(); // required for the detector to process Acks
       final peer = h.addAnsweringPeer('peer');
 
-      // Two rounds well within the 2-minute cap: continuous freshness alone
-      // suppresses the probe, exactly as WIRE4-3 intends.
+      // A never-probed peer's cap anchors at epoch 0 while the harness
+      // clock starts at t=60s, so the cap expires at absolute t=120s.
+      // These two rounds run at t=60s and t=90s — inside the window, where
+      // continuous freshness alone suppresses the probe, exactly as
+      // WIRE4-3 intends.
       for (var i = 0; i < 2; i++) {
         h.peerRegistry.updatePeerContact(peer.id, h.timePort.nowMs);
         await h.detector.performProbeRound();
@@ -75,9 +78,10 @@ void main() {
         reason: 'still within the cap window — suppression holds',
       );
 
-      // Cross the 2-minute cap while the peer keeps looking freshly
-      // contacted (simulating one-way loss: our probes to it die, but its
-      // own traffic keeps refreshing lastContactMs).
+      // Reach absolute t=120s (the cap boundary for a never-probed peer)
+      // while the peer keeps looking freshly contacted (simulating one-way
+      // loss: our probes to it die, but its own traffic keeps refreshing
+      // lastContactMs). The first round of this loop trips the cap.
       for (var i = 0; i < 3; i++) {
         h.peerRegistry.updatePeerContact(peer.id, h.timePort.nowMs);
         await h.detector.performProbeRound();
