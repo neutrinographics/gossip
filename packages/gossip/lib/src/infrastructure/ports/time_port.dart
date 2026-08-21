@@ -18,8 +18,8 @@ abstract class TimerHandle {
 /// - **Testing**: Use fake time ([InMemoryTimePort]) for deterministic tests
 ///
 /// The library uses this port for:
-/// - Scheduling periodic gossip rounds (typically every 200ms)
-/// - Scheduling SWIM probe rounds (every 1000ms)
+/// - Scheduling periodic gossip rounds (adaptive: 2× median RTT, clamped 100 ms–5 s active, backed off to 30 s when idle)
+/// - Scheduling SWIM probe rounds (adaptive: 2× median RTT, clamped 100 ms–5 s active, backed off to 30 s when idle)
 /// - Getting current time for timestamps
 /// - Creating timeouts for probe responses
 ///

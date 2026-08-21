@@ -73,7 +73,7 @@ Step 4: Delta Response (peer → initiator)
 
 ### Gossip Round Timing
 
-- **Gossip interval**: 200ms (configurable)
+- **Gossip interval**: adaptive: 2× median RTT, clamped 100 ms–5 s active, backed off to 30 s when idle (see ADR-013 amendment)
 - **Peer selection**: Random reachable peer each round
 - **Bidirectional**: Each round can sync in both directions
 
@@ -104,7 +104,7 @@ Step 4: Delta Response (peer → initiator)
 ### Negative
 
 - **Probabilistic**: No guaranteed sync time (only probabilistic bounds)
-- **Periodic overhead**: Gossip rounds run even when nothing changes
+- **Periodic overhead**: Gossip rounds run even when nothing changes (but back off to 30 s when idle; see ADR-013 amendment)
 - **No ordering guarantee**: Entries may arrive out of timestamp order
 - **Digest overhead**: Digests grow with number of authors per stream
 

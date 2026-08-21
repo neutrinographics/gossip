@@ -154,3 +154,17 @@ Rejected because:
 
 - TCP RTO calculation (RFC 6298): Similar EWMA approach for timeout computation
 - SWIM paper: Scalable Weakly-consistent Infection-style Process Group Membership Protocol
+
+## Amendment (2026-08-20): Two-Tier Pacing
+
+The original design adapted both intervals to LATENCY only, so a
+healthier link produced more idle traffic and a converged network never
+went quiet (audit WIRE4-2/4). Both loops now feed a pure
+`QuiescencePacer` (domain service): rounds that carry no news stretch
+the latency-derived base interval by 1.5x per quiet round toward a 30 s
+ceiling; any news (local append, merge, delta traffic, membership
+change, missed probe) snaps it back to base. Owner decisions: 30 s
+ceiling, not configurable; time-based suppression only (no cached-VV
+skipping); minutes-scale detection of half-open links in a deep-idle
+mesh is accepted — hard disconnects surface via the transport instantly.
+Static `gossipInterval`/`probeInterval` overrides bypass the pacer.

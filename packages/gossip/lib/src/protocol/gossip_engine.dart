@@ -35,7 +35,7 @@ import 'messages/delta_response.dart';
 ///
 /// ## Anti-Entropy Protocol (4 Steps)
 ///
-/// **Step 1: Digest Request (every 200ms)**
+/// **Step 1: Digest Request (adaptive: 2× median RTT, clamped 100 ms–5 s active, backed off to 30 s when idle)**
 /// - Select random reachable peer
 /// - Generate digests (version vectors) for all local channels/streams
 /// - Send [DigestRequest] containing our sync state
@@ -608,7 +608,7 @@ class GossipEngine {
     _channels = channels;
   }
 
-  /// Performs a single gossip round (called every 200ms).
+  /// Performs a single gossip round (called at adaptive: 2× median RTT, clamped 100 ms–5 s active, backed off to 30 s when idle).
   ///
   /// Implements Step 1 of the anti-entropy protocol:
   /// 1. Get reachable peers and filter out congested ones (per-peer
