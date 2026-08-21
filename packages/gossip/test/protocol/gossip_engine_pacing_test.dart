@@ -177,4 +177,69 @@ void main() {
       h.engine.stop();
     });
   });
+
+  group('GossipEngine recency suppression', () {
+    test('handling an inbound DigestRequest records the exchange', () async {
+      final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
+      final peer = h.addPeer('peer1');
+      h.engine.startListening(const {});
+      await h.deliverDigestRequest(from: peer); // empty digests are fine
+
+      final recorded = h.peerRegistry.getPeer(peer.id)!.lastAntiEntropyMs;
+      expect(
+        recorded,
+        isNotNull,
+        reason:
+            'a reciprocated exchange must count as coverage '
+            '(missing half of WIRE4-1)',
+      );
+    });
+
+    test(
+      'a round skips a peer whose exchange is fresher than the '
+      'current interval',
+      () async {
+        final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
+        final peer = h.addPeer('peer1');
+        h.peerRegistry.recordPeerRtt(
+          peer.id,
+          const Duration(milliseconds: 500),
+        );
+        h.engine.start();
+
+        // Mark the peer as exchanged-with "now".
+        h.peerRegistry.updatePeerAntiEntropy(peer.id, h.timePort.nowMs);
+        final (messages, sub) = h.captureMessages(peer);
+
+        await h.engine.performGossipRound();
+        await h.flush(3);
+
+        expect(
+          messages,
+          isEmpty,
+          reason: 'all candidates fresh: the round must send nothing',
+        );
+        await sub.cancel();
+        h.engine.stop();
+      },
+    );
+
+    test('a stale peer is still gossiped with', () async {
+      final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
+      final peer = h.addPeer('peer1');
+      h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 500));
+      h.engine.start();
+
+      // Exchange recorded far in the past relative to the interval.
+      h.peerRegistry.updatePeerAntiEntropy(peer.id, h.timePort.nowMs - 60000);
+      final (messages, sub) = h.captureMessages(peer);
+
+      await h.engine.performGossipRound();
+      await h.flush(3);
+
+      expect(messages, isNotEmpty);
+      await sub.cancel();
+      h.engine.stop();
+    });
+  });
 }

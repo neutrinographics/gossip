@@ -151,6 +151,12 @@ void main() {
           }
         }
         reqs.clear();
+        // Real exchanges take real time; this test drives many rounds
+        // back-to-back against a frozen clock, so age the exchange after
+        // each round — otherwise recency suppression (WIRE4-1) would stop
+        // rotation dead after round 1, since the same peer would look
+        // freshly-synced forever.
+        h.peerRegistry.updatePeerAntiEntropy(peer.id, -1000000000);
       }
 
       expect(covered, equals(streams.toSet()),
@@ -342,6 +348,11 @@ void main() {
           for (var p = 0; p < 12; p++) {
             await Future<void>.delayed(Duration.zero);
           }
+          // Real exchanges take real time; this test drives many rounds
+          // back-to-back against a frozen clock, so age the exchange after
+          // each round — otherwise recency suppression (WIRE4-1) would stop
+          // A from re-gossiping with B after round 1.
+          registryA.updatePeerAntiEntropy(nodeB, -1000000000);
         }
 
         for (final s in streams) {

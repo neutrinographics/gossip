@@ -611,16 +611,23 @@ class GossipEngine {
   /// Performs a single gossip round (called every 200ms).
   ///
   /// Implements Step 1 of the anti-entropy protocol:
-  /// 1. Get reachable peers and filter out congested ones (per-peer backpressure)
+  /// 1. Get reachable peers and filter out congested ones (per-peer
+  ///    backpressure) and ones we already exchanged with inside the
+  ///    current interval (recency suppression, time-based — see
+  ///    [Peer.lastAntiEntropyMs])
   /// 2. Select the least-recently-gossiped uncongested candidate (bounded
   ///    coverage; random tiebreak) and mark it gossiped
   /// 3. Generate digests for all channels via [generateDigest]
   /// 4. Send [DigestRequest] to peer
   ///
   /// The peer will respond with their digests ([DigestResponse]), triggering
-  /// Step 3 delta request generation.
+  /// Step 3 delta request generation. The responder side of an exchange is
+  /// recorded too (see the [DigestRequest] branch of
+  /// [_handleIncomingMessage]), so a reciprocated exchange counts as
+  /// coverage for both sides.
   ///
-  /// Returns immediately if all peers are congested or no reachable peers exist.
+  /// Returns immediately if no reachable peers exist, or if every reachable
+  /// peer is either congested or too fresh to re-gossip with yet.
   Future<void> performGossipRound() async {
     if (_newsSinceLastRound) {
       _newsSinceLastRound = false;
@@ -631,19 +638,28 @@ class GossipEngine {
     final reachable = peerRegistry.reachablePeers;
     if (reachable.isEmpty) return;
 
-    // Filter out congested peers (per-peer backpressure)
+    // Filter out congested peers (per-peer backpressure) AND peers we
+    // already exchanged with inside the current interval.
+    final interval = effectiveGossipInterval.inMilliseconds;
+    final nowMs = timePort.nowMs;
     final candidates = reachable
         .where(
           (p) =>
-              messagePort.pendingSendCount(p.id) <= _perPeerCongestionThreshold,
+              messagePort.pendingSendCount(p.id) <=
+                  _perPeerCongestionThreshold &&
+              // Recency suppression (time-based — deliberately NOT
+              // cached-VV state): skip peers we exchanged with inside
+              // the current interval. Worst case of a wrong skip is one
+              // interval of delay.
+              (p.lastAntiEntropyMs == null ||
+                  nowMs - p.lastAntiEntropyMs! >= interval),
         )
         .toList();
 
     if (candidates.isEmpty) {
       _log(
         LogLevel.debug,
-        'Skipping gossip round: all ${reachable.length} peers congested '
-        '(threshold: $_perPeerCongestionThreshold per peer)',
+        'Skipping gossip round: no stale, uncongested peers',
       );
       return;
     }
@@ -839,6 +855,10 @@ class GossipEngine {
           'RECV DigestRequest from ${_shortId(message.sender.value)}: '
           '${protocolMessage.digests.length} channels',
         );
+        // A reciprocated exchange is coverage for BOTH sides: record it
+        // so our own selector/suppression see this peer as fresh
+        // (missing half of WIRE4-1).
+        peerRegistry.updatePeerAntiEntropy(message.sender, nowMs);
         final response = await _handleDigestRequest(protocolMessage);
         await _sendMessage(message.sender, response);
         // Push-pull: the request already carries the initiator's version

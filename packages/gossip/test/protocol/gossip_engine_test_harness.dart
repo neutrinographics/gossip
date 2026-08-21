@@ -22,7 +22,9 @@ import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart
 import 'package:gossip/src/protocol/gossip_engine.dart';
 import 'package:gossip/src/protocol/messages/delta_request.dart';
 import 'package:gossip/src/protocol/messages/delta_response.dart';
+import 'package:gossip/src/protocol/messages/digest_request.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
+import 'package:gossip/src/protocol/values/channel_digest.dart';
 
 // ---------------------------------------------------------------------------
 // Test peer
@@ -355,6 +357,24 @@ class GossipEngineTestHarness {
       streamId: streamId,
       since: since ?? VersionVector.empty,
     );
+    await from.port.send(localNode, codec.encode(request));
+    await flush(3);
+  }
+
+  /// Delivers a [DigestRequest] from [from] as a real wire message, driving
+  /// it through [engine]'s actual incoming-message handling. See
+  /// [deliverDeltaResponse] for why this goes over the wire instead of
+  /// calling `engine.handleDigestRequest` directly.
+  ///
+  /// Starts listening (idempotent) so the message is actually routed.
+  /// Defaults to an empty digest list — fine for tests that only care
+  /// about the responder-side exchange bookkeeping, not the reply content.
+  Future<void> deliverDigestRequest({
+    required GossipTestPeer from,
+    List<ChannelDigest> digests = const [],
+  }) async {
+    engine.startListening(Map.of(_channels));
+    final request = DigestRequest(sender: from.id, digests: digests);
     await from.port.send(localNode, codec.encode(request));
     await flush(3);
   }
