@@ -23,8 +23,10 @@ void main() {
       await h.engine.performGossipRound(); // quiet
       await h.engine.performGossipRound(); // quiet
 
-      expect(h.engine.effectiveGossipInterval,
-          greaterThan(const Duration(seconds: 1)));
+      expect(
+        h.engine.effectiveGossipInterval,
+        greaterThan(const Duration(seconds: 1)),
+      );
       h.engine.stop();
     });
 
@@ -36,8 +38,10 @@ void main() {
       for (var i = 0; i < 6; i++) {
         await h.engine.performGossipRound();
       }
-      expect(h.engine.effectiveGossipInterval,
-          greaterThan(const Duration(seconds: 1)));
+      expect(
+        h.engine.effectiveGossipInterval,
+        greaterThan(const Duration(seconds: 1)),
+      );
 
       h.engine.notifyLocalWrite(
         ChannelId('ch'),
@@ -76,6 +80,100 @@ void main() {
         await h.engine.performGossipRound();
       }
       expect(h.engine.effectiveGossipInterval, const Duration(seconds: 2));
+      h.engine.stop();
+    });
+
+    test('merged entries are news: the interval snaps back', () async {
+      final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
+      final peer = h.addPeer('peer1');
+      h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 500));
+      final channelId = ChannelId('ch');
+      final streamId = StreamId('s');
+      await h.createChannelWithStream(channelId, streamId);
+      h.engine.start();
+      for (var i = 0; i < 6; i++) {
+        await h.engine.performGossipRound();
+      }
+      expect(
+        h.engine.effectiveGossipInterval,
+        greaterThan(const Duration(seconds: 1)),
+      );
+
+      // A peer-authored entry arriving as an unsolicited push merges and
+      // must reset the cadence.
+      await h.deliverDeltaResponse(
+        from: peer,
+        channelId: channelId,
+        streamId: streamId,
+        entries: [
+          LogEntry(
+            author: peer.id,
+            sequence: 1,
+            timestamp: Hlc(1, 0),
+            payload: Uint8List.fromList([7]),
+          ),
+        ],
+      );
+
+      expect(h.engine.effectiveGossipInterval, const Duration(seconds: 1));
+      h.engine.stop();
+    });
+
+    test(
+      'an inbound DeltaRequest is news (the peer is pulling from us)',
+      () async {
+        final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
+        final peer = h.addPeer('peer1');
+        h.peerRegistry.recordPeerRtt(
+          peer.id,
+          const Duration(milliseconds: 500),
+        );
+        final channelId = ChannelId('ch');
+        final streamId = StreamId('s');
+        await h.createChannelWithStream(channelId, streamId);
+        h.engine.start();
+        for (var i = 0; i < 6; i++) {
+          await h.engine.performGossipRound();
+        }
+        expect(
+          h.engine.effectiveGossipInterval,
+          greaterThan(const Duration(seconds: 1)),
+        );
+
+        await h.deliverDeltaRequest(
+          from: peer,
+          channelId: channelId,
+          streamId: streamId,
+        );
+
+        expect(h.engine.effectiveGossipInterval, const Duration(seconds: 1));
+        h.engine.stop();
+      },
+    );
+
+    test('syncWithPeer (join/reconnect) is news', () async {
+      final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
+      final peer = h.addPeer('peer1');
+      h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 500));
+      h.engine.start();
+      for (var i = 0; i < 6; i++) {
+        await h.engine.performGossipRound();
+      }
+      await h.engine.syncWithPeer(peer.id);
+      expect(h.engine.effectiveGossipInterval, const Duration(seconds: 1));
+      h.engine.stop();
+    });
+
+    test('peer removal (clearPendingRequestsForPeer) is news', () async {
+      final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
+      final peer = h.addPeer('peer1');
+      h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 500));
+      h.engine.start();
+      for (var i = 0; i < 6; i++) {
+        await h.engine.performGossipRound();
+      }
+      h.engine.clearPendingRequestsForPeer(peer.id);
+      expect(h.engine.effectiveGossipInterval, const Duration(seconds: 1));
       h.engine.stop();
     });
   });

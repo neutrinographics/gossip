@@ -13,12 +13,15 @@ import 'package:gossip/src/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
 import 'package:gossip/src/infrastructure/ports/message_port.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:gossip/src/protocol/gossip_engine.dart';
+import 'package:gossip/src/protocol/messages/delta_request.dart';
+import 'package:gossip/src/protocol/messages/delta_response.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
 
 // ---------------------------------------------------------------------------
@@ -116,9 +119,7 @@ class GossipEngineTestHarness {
     Random? random,
   }) {
     final localNode = NodeId(localName);
-    final peerRegistry = PeerRegistry(
-      localNode: localNode,
-    );
+    final peerRegistry = PeerRegistry(localNode: localNode);
     final timePort = InMemoryTimePort();
     final bus = InMemoryMessageBus();
     final localPort = InMemoryMessagePort(localNode, bus);
@@ -257,6 +258,24 @@ class GossipEngineTestHarness {
     return channel;
   }
 
+  /// Creates a channel with a single stream from already-typed ids and
+  /// registers it with the engine. Thin wrapper around [createChannel] for
+  /// tests that already have a [ChannelId]/[StreamId] in hand.
+  Future<ChannelAggregate> createChannelWithStream(
+    ChannelId channelId,
+    StreamId streamId,
+  ) async {
+    final channel = ChannelAggregate(id: channelId, localNode: localNode);
+    channel.createStream(
+      streamId,
+      const KeepAllRetention(),
+      occurredAt: DateTime.now(),
+    );
+    _channels[channelId] = channel;
+    engine.setChannels(Map.of(_channels));
+    return channel;
+  }
+
   // -------------------------------------------------------------------------
   // Entry management
   // -------------------------------------------------------------------------
@@ -286,6 +305,58 @@ class GossipEngineTestHarness {
       messages.add(codec.decode(msg.bytes));
     });
     return (messages, sub);
+  }
+
+  /// Delivers a [DeltaResponse] from [from] as a real wire message, driving
+  /// it through [engine]'s actual incoming-message handling (the same path
+  /// a live peer's push or reply takes) rather than calling
+  /// `engine.handleDeltaResponse` directly. This matters for news-trigger
+  /// tests: some `_recordNews()` call sites live in `_handleIncomingMessage`
+  /// itself, not just in the handler it delegates to.
+  ///
+  /// Starts listening (idempotent) so the message is actually routed.
+  Future<void> deliverDeltaResponse({
+    required GossipTestPeer from,
+    required ChannelId channelId,
+    required StreamId streamId,
+    required List<LogEntry> entries,
+    bool hasMore = false,
+    VersionVector floor = VersionVector.empty,
+  }) async {
+    engine.startListening(Map.of(_channels));
+    final response = DeltaResponse(
+      sender: from.id,
+      channelId: channelId,
+      streamId: streamId,
+      entries: entries,
+      hasMore: hasMore,
+      floor: floor,
+    );
+    await from.port.send(localNode, codec.encode(response));
+    await flush(3);
+  }
+
+  /// Delivers a [DeltaRequest] from [from] as a real wire message, driving it
+  /// through [engine]'s actual incoming-message handling. See
+  /// [deliverDeltaResponse] for why this goes over the wire instead of
+  /// calling `engine.handleDeltaRequest` directly.
+  ///
+  /// Starts listening (idempotent) so the message is actually routed.
+  Future<void> deliverDeltaRequest({
+    required GossipTestPeer from,
+    required ChannelId channelId,
+    required StreamId streamId,
+    VersionVector? since,
+  }) async {
+    engine.startListening(Map.of(_channels));
+    final request = DeltaRequest(
+      sender: from.id,
+      channelId: channelId,
+      streamId: streamId,
+      since: since ?? VersionVector.empty,
+    );
+    await from.port.send(localNode, codec.encode(request));
+    await flush(3);
   }
 
   // -------------------------------------------------------------------------

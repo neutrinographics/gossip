@@ -329,6 +329,9 @@ class GossipEngine {
   ///
   /// Falls back to a conservative default (1000ms) when no peers have
   /// RTT estimates yet.
+  ///
+  /// During quiet rounds this adaptive base is further stretched toward the
+  /// 30s idle ceiling by the quiescence pacer (see [_adaptiveBaseInterval]).
   Duration get effectiveGossipInterval {
     // Use static interval if explicitly provided (for backward compatibility)
     if (_staticIntervalProvided || !_adaptiveTimingEnabled) {
@@ -338,7 +341,7 @@ class GossipEngine {
   }
 
   /// Today's latency-derived cadence, unchanged (median SRTT x 2, clamped
-  /// [[_minGossipInterval], [_maxGossipInterval]]; [_defaultConservativeInterval]
+  /// [_minGossipInterval]..[_maxGossipInterval]; [_defaultConservativeInterval]
   /// fallback without samples). [effectiveGossipInterval] stretches THIS
   /// toward the idle ceiling via [_pacer].
   ///
@@ -436,27 +439,30 @@ class GossipEngine {
     if (!_isRunning || generation != _generation) return;
     // ±20% jitter decorrelates gossip loops across nodes so they don't
     // phase-lock into correlated request/response bursts.
-    timePort.delay(applyJitter(effectiveGossipInterval, _random)).then((_) {
-      if (_isRunning && generation == _generation) {
-        _gossipRound(generation);
-      }
-    }).catchError((Object error, StackTrace stackTrace) {
-      // A broken timer must not kill the loop silently: surface the error
-      // and stop so isRunning reflects reality.
-      if (generation == _generation) {
-        _isRunning = false;
-        _generation++;
-      }
-      _emitError(
-        PeerSyncError(
-          localNode,
-          SyncErrorType.protocolError,
-          'Gossip round scheduling failed: $error',
-          occurredAt: DateTime.now(),
-          cause: error,
-        ),
-      );
-    });
+    timePort
+        .delay(applyJitter(effectiveGossipInterval, _random))
+        .then((_) {
+          if (_isRunning && generation == _generation) {
+            _gossipRound(generation);
+          }
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          // A broken timer must not kill the loop silently: surface the error
+          // and stop so isRunning reflects reality.
+          if (generation == _generation) {
+            _isRunning = false;
+            _generation++;
+          }
+          _emitError(
+            PeerSyncError(
+              localNode,
+              SyncErrorType.protocolError,
+              'Gossip round scheduling failed: $error',
+              occurredAt: DateTime.now(),
+              cause: error,
+            ),
+          );
+        });
   }
 
   /// Stops periodic gossip rounds.
@@ -739,7 +745,8 @@ class GossipEngine {
       // Conservative cost: the stream digest plus a full channel envelope
       // (channelId + structural JSON), so we never exceed the budget even
       // when a stream is the first of its channel.
-      final cost = _codec.encodedStreamDigestSize(item.digest) +
+      final cost =
+          _codec.encodedStreamDigestSize(item.digest) +
           item.channel.value.length +
           40;
 
@@ -780,6 +787,7 @@ class GossipEngine {
   /// single exchange syncs both directions. No-op when not running.
   Future<void> syncWithPeer(NodeId peerId) async {
     if (!_isRunning) return;
+    _recordNews();
     try {
       await _sendMessage(peerId, await _buildDigestRequest());
     } catch (e) {
@@ -885,6 +893,9 @@ class GossipEngine {
           'channel=${_shortId(protocolMessage.channelId.value)} '
           'stream=${protocolMessage.streamId.value}',
         );
+        // An inbound DeltaRequest means the peer is actively pulling from
+        // us — news regardless of whether we can serve anything back.
+        _recordNews();
         final response = await handleDeltaRequest(protocolMessage);
         await _sendMessage(message.sender, response);
       } else if (protocolMessage is DeltaResponse) {
@@ -1131,9 +1142,7 @@ class GossipEngine {
   /// entries we don't have (i.e., where our version does not dominate theirs).
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
-  Future<List<DeltaRequest>> handleDigestResponse(
-    DigestResponse response,
-  ) {
+  Future<List<DeltaRequest>> handleDigestResponse(DigestResponse response) {
     return _computeDeltaRequests(response.sender, response.digests);
   }
 
@@ -1205,12 +1214,17 @@ class GossipEngine {
     NodeId recipient,
     List<DeltaRequest> requests,
   ) async {
+    // Initiating a pull is news: we're actively chasing entries we're
+    // missing, so the round is not quiet.
+    if (requests.isNotEmpty) _recordNews();
     for (final request in requests) {
       final sent = await _sendMessage(recipient, request);
       if (!sent) {
-        _pendingDeltaRequests.remove(
-          (recipient, request.channelId, request.streamId),
-        );
+        _pendingDeltaRequests.remove((
+          recipient,
+          request.channelId,
+          request.streamId,
+        ));
       }
     }
   }
@@ -1389,6 +1403,9 @@ class GossipEngine {
     }
 
     final (fitted, hasMore) = _fitDeltaToBudget(request, delta);
+    // Serving data back to a puller is news; an empty response (nothing to
+    // give) is not.
+    if (fitted.isNotEmpty) _recordNews();
     return DeltaResponse(
       sender: localNode,
       channelId: request.channelId,
@@ -1618,6 +1635,7 @@ class GossipEngine {
         newEntries.any((e) => e.timestamp <= previousTailHlc);
 
     _mergedBatchCount++;
+    _recordNews();
 
     await onEntriesMerged?.call(
       response.channelId,
@@ -1659,6 +1677,7 @@ class GossipEngine {
   /// so leaving them would block re-requesting after a fast reconnect and
   /// hold [outstandingPullCount] above zero until expiry.
   void clearPendingRequestsForPeer(NodeId peer) {
+    _recordNews();
     _pendingDeltaRequests.removeWhere((key, _) => key.$1 == peer);
     _reportedGaps.removeWhere((key) => key.$1 == peer);
   }
