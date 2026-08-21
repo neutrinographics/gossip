@@ -197,7 +197,9 @@ const edges = {
   'shared':            {'shared'},
   'sync':              {'sync', 'shared', 'membership'}, // 'membership' ONLY from sync/infrastructure/ (the ACL)
   'membership':        {'membership', 'shared'},
-  'coordinator':       {}, // sink: may import anything; nothing imports it
+  // Composition root: may import everything. It is the graph's sink —
+  // "nothing imports it" is enforced by its absence from every other row.
+  'coordinator':       {'coordinator', 'shared', 'sync', 'membership'},
 };
 ```
 
