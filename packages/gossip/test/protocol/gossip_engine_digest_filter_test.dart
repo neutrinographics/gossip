@@ -25,21 +25,27 @@ void main() {
       final request = DigestRequest(
         sender: h.addPeer('peer1').id,
         digests: [
-          ChannelDigest(channelId: channelId, streams: [
-            StreamDigest(
-              streamId: streamId,
-              version: VersionVector({h.localNode: 1}),
-            ),
-          ]),
+          ChannelDigest(
+            channelId: channelId,
+            streams: [
+              StreamDigest(
+                streamId: streamId,
+                version: VersionVector({h.localNode: 1}),
+              ),
+            ],
+          ),
         ],
       );
 
-      final response = await h.engine.handleDigestRequest(
-        request, [channel]);
+      final response = await h.engine.handleDigestRequest(request, [channel]);
 
-      expect(response.digests, isEmpty,
-          reason: 'the requester dominates us: echoing our vector back '
-              'is pure redundancy');
+      expect(
+        response.digests,
+        isEmpty,
+        reason:
+            'the requester dominates us: echoing our vector back '
+            'is pure redundancy',
+      );
     });
 
     test('includes streams where the requester is behind', () async {
@@ -54,17 +60,19 @@ void main() {
       final request = DigestRequest(
         sender: h.addPeer('peer1').id,
         digests: [
-          ChannelDigest(channelId: channelId, streams: [
-            StreamDigest(
-              streamId: streamId,
-              version: VersionVector({h.localNode: 1}),
-            ),
-          ]),
+          ChannelDigest(
+            channelId: channelId,
+            streams: [
+              StreamDigest(
+                streamId: streamId,
+                version: VersionVector({h.localNode: 1}),
+              ),
+            ],
+          ),
         ],
       );
 
-      final response = await h.engine.handleDigestRequest(
-        request, [channel]);
+      final response = await h.engine.handleDigestRequest(request, [channel]);
 
       expect(response.digests, hasLength(1));
       expect(response.digests.single.streams.single.version[h.localNode], 2);
