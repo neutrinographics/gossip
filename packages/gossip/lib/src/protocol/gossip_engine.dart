@@ -1141,6 +1141,11 @@ class GossipEngine {
           channelDigest.channelId,
           streamDigest.streamId,
         );
+        // Dominance filter (WIRE4-5): if the requester's vector already
+        // covers ours, echoing it back is pure redundancy. Safe: the
+        // requester pulls only when the response shows us ahead, and the
+        // responder-behind direction is our own reciprocal pull.
+        if (streamDigest.version.dominates(version)) continue;
         flat.add((
           channel: channelDigest.channelId,
           digest: StreamDigest(

@@ -182,7 +182,6 @@ void main() {
     test('handling an inbound DigestRequest records the exchange', () async {
       final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
       final peer = h.addPeer('peer1');
-      h.engine.startListening(const {});
       await h.deliverDigestRequest(from: peer); // empty digests are fine
 
       final recorded = h.peerRegistry.getPeer(peer.id)!.lastAntiEntropyMs;

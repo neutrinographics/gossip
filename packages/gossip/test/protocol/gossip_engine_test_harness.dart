@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
@@ -10,6 +11,7 @@ import 'package:gossip/src/domain/interfaces/retention_policy.dart';
 import 'package:gossip/src/domain/services/hlc_clock.dart';
 import 'package:gossip/src/domain/services/time_source.dart';
 import 'package:gossip/src/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/domain/value_objects/hlc.dart';
 import 'package:gossip/src/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/value_objects/stream_id.dart';
@@ -289,6 +291,30 @@ class GossipEngineTestHarness {
     LogEntry entry,
   ) async {
     await entryRepository.append(channelId, streamId, entry);
+  }
+
+  /// Appends a locally-authored log entry directly to the entry repository,
+  /// advancing this node's own high-water mark for [streamId] without going
+  /// through the wire. Fixes the author to [localNode] so the resulting
+  /// version vector reflects a local write (`{localNode: sequence}`) — the
+  /// same fixture shape [appendEntry] gives peer-authored entries, but for
+  /// tests that need "what do we, the responder, already have."
+  Future<void> appendLocalEntry(
+    ChannelId channelId,
+    StreamId streamId, {
+    required int sequence,
+    int timestampMs = 1000,
+  }) async {
+    await entryRepository.append(
+      channelId,
+      streamId,
+      LogEntry(
+        author: localNode,
+        sequence: sequence,
+        timestamp: Hlc(timestampMs + sequence, 0),
+        payload: Uint8List.fromList([0x42]),
+      ),
+    );
   }
 
   // -------------------------------------------------------------------------
