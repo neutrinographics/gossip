@@ -580,6 +580,15 @@ extension TestNodeOperations on TestNode {
     return peer?.status;
   }
 
+  /// The gossip engine's currently effective gossip interval, exposed via
+  /// [Coordinator.getAdaptiveTimingStatus] — the quiescence pacer's cadence
+  /// as observed from outside the engine.
+  ///
+  /// Null only if adaptive timing status is unavailable (no gossip engine
+  /// or failure detector wired up, e.g. before [start]).
+  Duration? get effectiveGossipInterval =>
+      coordinator.getAdaptiveTimingStatus()?.effectiveGossipInterval;
+
   /// Creates a channel on this node.
   Future<void> createChannel(ChannelId channelId) async {
     await coordinator.createChannel(channelId);
