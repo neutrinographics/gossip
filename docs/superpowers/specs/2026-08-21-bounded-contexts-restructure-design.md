@@ -116,8 +116,7 @@ layer" concept retires; ADR-010's rewrite records this.
 |---|---|
 | `shared/domain/value_objects/` | node_id, channel_id, stream_id, hlc, log_entry, log_entry_id, version_vector, rtt_estimate |
 | `shared/domain/errors/` | sync_error, domain_exception |
-| `shared/domain/events/` | domain_event (the WHOLE `sealed` family — Dart sealing requires one library; it references only shared types; deliberate, documented) |
-| `shared/domain/results/` | compaction_result (referenced by the sealed events; wart, documented) |
+| `shared/domain/events/` | domain_event — reduced to an **abstract base class only**. The concrete events split into per-context `sealed` families (see sync/membership tables): `sealed class SyncEvent extends DomainEvent` and `sealed class MembershipEvent extends DomainEvent`. Boundary purity gained (`PeerAdded` finally lives in membership); per-context switches stay exhaustive; the *global* switch loses exhaustiveness — verify at plan time that no production code switches exhaustively over the whole family (tests may need `default` arms). This mirrors Eventur's per-feature event files and fluent's per-context `domain/events.ts`, and it removes the compaction_result-in-shared wart entirely. |
 | `shared/domain/services/` | jitter, quiescence_pacer, rtt_tracker, time_source (`hlc_clock` is NOT shared — only sync stamps and merges; it goes to `sync/domain/`) |
 | `shared/domain/interfaces/` | time_port, message_port (ARCH3-1 fixed here), local_node_repository, message_codec (NEW), protocol_message (moved base) |
 | `shared/domain/observability/` | log_level |
@@ -127,7 +126,8 @@ layer" concept retires; ADR-010's rewrite records this.
 
 | Target | Files |
 |---|---|
-| `sync/domain/` | channel_aggregate, stream_config, hlc_clock, merge_result, channel_delta |
+| `sync/domain/` | channel_aggregate, stream_config, hlc_clock, merge_result, channel_delta, compaction_result |
+| `sync/domain/events/` | sync_events (NEW file: the `sealed SyncEvent` family — channel/stream/entry/compaction events extracted from today's domain_event.dart) |
 | `sync/domain/values/` | channel_digest, stream_digest |
 | `sync/domain/messages/` | digest_request, digest_response, delta_request, delta_response |
 | `sync/domain/interfaces/` | channel_repository, entry_repository, state_materializer, retention_policy, peer_directory (NEW, + sync_partner VO beside it) |
@@ -140,6 +140,7 @@ layer" concept retires; ADR-010's rewrite records this.
 | Target | Files |
 |---|---|
 | `membership/domain/` | peer, peer_metrics, peer_registry |
+| `membership/domain/events/` | membership_events (NEW file: the `sealed MembershipEvent` family — peer events extracted from today's domain_event.dart) |
 | `membership/domain/messages/` | ping, ack, ping_req |
 | `membership/domain/interfaces/` | peer_repository |
 | `membership/application/` | peer_service, failure_detector |
@@ -155,20 +156,36 @@ The test tree moves to mirror `lib/` (`test/protocol/` splits into
 `test/sync/`, `test/membership/`; `test/support/`, harnesses, and
 integration suites keep their roles with rewritten imports).
 
-## Boundary enforcement — architecture test
+## Boundary enforcement — the machine-checked edge table
 
-New `test/architecture/boundary_test.dart` walks every import in
-`lib/src` and fails on:
+New `test/architecture/boundary_test.dart`, shaped like fluent's
+`architecture-edges.test.ts` (its CA2-3 pattern): the test declares the
+intended edge table as data, then walks every import in `lib/src` and
+fails on any edge not in the table. The table doubles as in-repo
+documentation — adding an edge means editing the table, and the diff
+review sees the architecture change explicitly.
 
-1. `shared/` importing sync/membership/codec/coordinator;
-2. a context file outside `<context>/infrastructure/` importing another
-   context;
-3. membership importing sync anywhere (no current need — the concession
-   stays unexercised there until a real interface demands it);
-4. `codec/` importing anything beyond the two contexts'
-   `domain/messages/`, `domain/values/`, and shared;
-5. anything under `lib/src` importing `coordinator/` (composition root
-   is a sink, not a dependency).
+```dart
+// module            → may import
+const edges = {
+  'shared':            {'shared'},
+  'sync':              {'sync', 'shared'},
+  'membership':        {'membership', 'shared'},
+  'codec':             {'codec', 'shared', 'sync', 'membership'},
+  'coordinator':       {}, // sink: may import anything; nothing imports it
+};
+```
+
+Refinements the walker enforces beyond the table:
+
+1. a context file importing another context must sit under
+   `<context>/infrastructure/` (the ACL concession) — `sync/domain/` and
+   `sync/application/` may never name membership, and vice versa;
+2. membership currently exercises no concession (its row stays
+   `{membership, shared}` until a real interface demands more);
+3. `codec/` may reach only the contexts' `domain/messages/` and
+   `domain/values/` files, plus shared;
+4. nothing under `lib/src` imports `coordinator/`.
 
 ## Public API stability
 
@@ -188,11 +205,53 @@ in this repo); the new interfaces (PeerDirectory, MessageCodec,
 SyncPartner) are TDD'd (failing test first), moves are covered by the
 existing suites staying green.
 
+## Conventions adopted from the sample projects (Eventur `common/`, fluent)
+
+Scanned 2026-08-21 at Joel's request; both projects converge on the same
+target (contexts with `domain/application/infrastructure` interiors,
+cross-context imports only at infrastructure). Adopted here:
+
+- **Per-context sealed event families** (Eventur's per-feature
+  `domain/events/`, fluent's per-context `domain/events.ts`) — see the
+  shared/ table.
+- **The edge-table architecture test** (fluent's machine-checked
+  `architecture-edges.test.ts`) — see Boundary enforcement.
+- **ACL naming made explicit** (fluent names its cross-context adapters
+  `*-acl.ts`): `MembershipPeerDirectory` is documented as sync's
+  anti-corruption layer over membership, and the boundary test pins its
+  location under `sync/infrastructure/`.
+- **Context barrels** (fluent contexts export a curated `index.ts`):
+  each module gains a root barrel (`sync/sync.dart`,
+  `membership/membership.dart`, `shared/shared.dart`) naming its public
+  surface; `codec/` and `coordinator/` import through them.
+- **A ubiquitous-language glossary** (fluent's root `GLOSSARY.md`):
+  gossip gains `GLOSSARY.md` defining the terms of both contexts
+  (channel, stream, entry, digest, delta, dominance, quiescence, news,
+  partner; peer, probe, suspicion, liveness evidence, suppression).
+
+Deliberately NOT adopted, recorded so the divergence is a decision:
+
+- **Eventur's one-class-per-use-case** (`UseCase<Params, Response>`)
+  application layer: gossip's application layer hosts long-running
+  protocol orchestrators (the engines) and cohesive service facades —
+  request/response use-case classes are the wrong shape for a protocol
+  library.
+- **Eventur's `features/` parent folder**: with two contexts and three
+  modules, flat top-level directories already scream; fluent's
+  end-state also keeps contexts as top-level siblings.
+- **Fluent's Stage 2 (contexts promoted to real packages)**: a folder
+  boundary + edge test is Stage 1; promoting sync/membership to melos
+  packages (making the wall physical, as pnpm isolation does for
+  fluent) stays available later if the boundary test ever proves
+  insufficient. Non-goal now.
+
 ## Documentation
 
 - ADR-010 rewritten: the context map, the boundary rule + concession,
   the interior layer convention, the engines-as-application decision,
-  the codec crossing, the sealed-events compromise.
+  the codec crossing, the per-context sealed event families, and the
+  edge table (mirroring fluent's CLAUDE.md dependency diagram).
+- New root `GLOSSARY.md` (see adopted conventions).
 - ADR-011 amended where touched. CLAUDE.md architecture section updated
   (monorepo table + layer description). Backlog item closed on the
   roadmap.
