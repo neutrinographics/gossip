@@ -37,7 +37,10 @@ to port back to gossip-kt):
 3. kt homes `RttTracker` in `detection/model`, but both engines consume
    it (adaptive gossip interval, adaptive probe timeout) → shared kernel.
 4. kt's `messages/` owns every context's wire messages centrally. Here
-   each context owns its own messages; only the codec crosses.
+   each context owns its own messages AND its own codec — the central
+   codec is dissolved, not ported (owner decision, Joel 2026-08-21: no
+   standalone crossing module; see the codec paragraph under the
+   boundary rule).
 
 ### The map
 
@@ -46,7 +49,6 @@ lib/src/
   shared/        # kernel — true leaf; imports nothing outside itself
   sync/          # CORE DOMAIN: anti-entropy replication of the event log
   membership/    # SWIM liveness: peer model + the detector that maintains it
-  codec/         # wire codec — infrastructure module; the documented crossing
   coordinator/   # facade shell / composition root (not a bounded context)
 ```
 
@@ -69,15 +71,30 @@ Consequences enforced by this spec:
   WIRE4-19 digest-on-probe piggybacking later extends this port.
 - Membership imports nothing from sync (holds today; the boundary test
   keeps it true).
-- Engines depend on a **codec interface in shared/**
-  (`MessageCodec`: encode/decode `ProtocolMessage`), injected via
-  constructor (today both engines construct `ProtocolCodec()` inline —
-  that inline construction is replaced by the injected interface;
-  `Coordinator` and the test harnesses pass the concrete codec).
-  `codec/` holds `ProtocolCodec`, importing both contexts'
-  `domain/messages/` — the one documented crossing, exercised by a
-  standalone infrastructure module. Each engine `is`-checks only its
-  own context's message types, so neither names a foreign type.
+- **The central codec dissolves into per-context codecs — no crossing
+  module exists at all.** `ProtocolCodec` (internal-only: not exported
+  from the barrel, unused by the transports) splits into
+  `SyncMessageCodec` (`sync/infrastructure/`) and
+  `MembershipMessageCodec` (`membership/infrastructure/`), each
+  implementing the shared `MessageCodec` interface for its OWN message
+  family and answering "not mine" for foreign type bytes. The only
+  shared artifact is the envelope agreement: `wire_types.dart` in
+  `shared/domain/value_objects/` partitions the type-byte space (pure
+  constants; a shared test asserts the partition has no overlaps). The
+  wire format itself does not change — only which class encodes which
+  message. Engines take their context's codec injected via constructor
+  (today both construct `ProtocolCodec()` inline and already ignore
+  foreign message types after decoding, so behavior is equivalent);
+  `Coordinator` and the test harnesses wire the concrete codecs. The
+  static payload-budget helper (`maxEntryPayloadForBudget`, used by
+  `Coordinator`) moves with the sync codec — entries are a sync
+  concern. Future WIRE4-19 digest-on-probe piggybacking stays feasible
+  via an **opaque payload**: membership's Ping carries bytes a
+  sync-provided hook supplies and sync's codec decodes — neither codec
+  ever names the other context.
+- With the codec dissolved, the ACL adapter
+  (`MembershipPeerDirectory`) is the boundary rule's ONLY exercised
+  concession — there is no other exception class anywhere in the tree.
 
 ### PeerDirectory operations (derived from GossipEngine's real usage)
 
@@ -122,7 +139,7 @@ tree becomes `value_objects/`; no folder is ever called `values/`.)
 
 | Target | Files (from today's tree) |
 |---|---|
-| `shared/domain/value_objects/` | node_id, channel_id, stream_id, hlc, log_entry, log_entry_id, version_vector, rtt_estimate, log_level (from `application/observability/` — it is a plain enum VO of the logging seam) |
+| `shared/domain/value_objects/` | node_id, channel_id, stream_id, hlc, log_entry, log_entry_id, version_vector, rtt_estimate, log_level (from `application/observability/` — it is a plain enum VO of the logging seam), wire_types (NEW — the type-byte partition constants both codecs obey) |
 | `shared/domain/errors/` | sync_error, domain_exception |
 | `shared/domain/events/` | domain_event — reduced to an **abstract base class only**. The concrete events split into per-context `sealed` families (see sync/membership tables): `sealed class SyncEvent extends DomainEvent` and `sealed class MembershipEvent extends DomainEvent`. Boundary purity gained (`PeerAdded` finally lives in membership); per-context switches stay exhaustive; the *global* switch loses exhaustiveness — verify at plan time that no production code switches exhaustively over the whole family (tests may need `default` arms). This mirrors Eventur's per-feature event files and fluent's per-context `domain/events.ts`, and it removes the compaction_result-in-shared wart entirely. |
 | `shared/domain/services/` | jitter, quiescence_pacer, rtt_tracker, time_source (`hlc_clock` is NOT shared — only sync stamps and merges; it goes to `sync/domain/services/`) |
@@ -143,7 +160,7 @@ tree becomes `value_objects/`; no folder is ever called `values/`.)
 | `sync/domain/interfaces/` | channel_repository, entry_repository, state_materializer, retention_policy, peer_directory (NEW) |
 | `sync/application/` | channel_service, gossip_engine |
 | `sync/application/materialization/` | materialization_service, fold_cursor, materializer_state |
-| `sync/infrastructure/` | in_memory_channel_repository, caching_channel_repository, in_memory_entry_repository, membership_peer_directory (NEW — the concession) |
+| `sync/infrastructure/` | in_memory_channel_repository, caching_channel_repository, in_memory_entry_repository, membership_peer_directory (NEW — the ACL, the rule's only concession), sync_message_codec (NEW — sync's half of today's protocol_codec, incl. the `maxEntryPayloadForBudget` helper) |
 
 `membership/`:
 
@@ -155,9 +172,7 @@ tree becomes `value_objects/`; no folder is ever called `values/`.)
 | `membership/domain/messages/` | ping, ack, ping_req |
 | `membership/domain/interfaces/` | peer_repository |
 | `membership/application/` | peer_service, failure_detector |
-| `membership/infrastructure/` | in_memory_peer_repository |
-
-`codec/`: protocol_codec (implements shared `MessageCodec`).
+| `membership/infrastructure/` | in_memory_peer_repository, membership_message_codec (NEW — membership's half of today's protocol_codec) |
 
 `coordinator/`: coordinator, coordinator_config, channel, event_stream,
 adaptive_timing_status, gossip_sync_activity, health_status,
@@ -180,9 +195,8 @@ review sees the architecture change explicitly.
 // module            → may import
 const edges = {
   'shared':            {'shared'},
-  'sync':              {'sync', 'shared'},
+  'sync':              {'sync', 'shared', 'membership'}, // 'membership' ONLY from sync/infrastructure/ (the ACL)
   'membership':        {'membership', 'shared'},
-  'codec':             {'codec', 'shared', 'sync', 'membership'},
   'coordinator':       {}, // sink: may import anything; nothing imports it
 };
 ```
@@ -194,9 +208,7 @@ Refinements the walker enforces beyond the table:
    `sync/application/` may never name membership, and vice versa;
 2. membership currently exercises no concession (its row stays
    `{membership, shared}` until a real interface demands more);
-3. `codec/` may reach only the contexts' `domain/messages/` and
-   `domain/value_objects/` files, plus shared;
-4. nothing under `lib/src` imports `coordinator/`.
+3. nothing under `lib/src` imports `coordinator/`.
 
 ## Public API stability
 
@@ -209,7 +221,7 @@ untouched.
 
 One mechanical batch per module, each ending with the full gate green:
 `shared/` → `membership/` → `sync/` (incl. the new PeerDirectory port +
-adapter and codec-interface injection) → `codec/` → `coordinator/` →
+adapter, and each context's codec split with injection) → `coordinator/` →
 architecture test → docs. Import rewrites are scripted (Python precise
 string replacement — the proven pattern for bulk mechanical refactoring
 in this repo); the new interfaces (PeerDirectory, MessageCodec,
@@ -234,7 +246,7 @@ cross-context imports only at infrastructure). Adopted here:
 - **Context barrels** (fluent contexts export a curated `index.ts`):
   each module gains a root barrel (`sync/sync.dart`,
   `membership/membership.dart`, `shared/shared.dart`) naming its public
-  surface; `codec/` and `coordinator/` import through them.
+  surface; `coordinator/` imports through them.
 - **A ubiquitous-language glossary** (fluent's root `GLOSSARY.md`):
   gossip gains `GLOSSARY.md` defining the terms of both contexts
   (channel, stream, entry, digest, delta, dominance, quiescence, news,
@@ -260,8 +272,9 @@ Deliberately NOT adopted, recorded so the divergence is a decision:
 
 - ADR-010 rewritten: the context map, the boundary rule + concession,
   the interior layer convention, the engines-as-application decision,
-  the codec crossing, the per-context sealed event families, and the
-  edge table (mirroring fluent's CLAUDE.md dependency diagram).
+  the per-context codecs + wire-type partition (no crossing module),
+  the per-context sealed event families, and the edge table (mirroring
+  fluent's CLAUDE.md dependency diagram).
 - New root `GLOSSARY.md` (see adopted conventions).
 - ADR-011 amended where touched. CLAUDE.md architecture section updated
   (monorepo table + layer description). Backlog item closed on the
