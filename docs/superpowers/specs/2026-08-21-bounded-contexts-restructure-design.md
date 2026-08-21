@@ -129,11 +129,16 @@ layer" concept retires; ADR-010's rewrite records this.
 ## File mapping
 
 **Subfolder taxonomy (uniform across all contexts):** within a
-`domain/` folder, subfolders use the repo's existing kind names —
-`aggregates/`, `entities/`, `value_objects/`, `services/`,
-`interfaces/`, `events/`, `errors/`, `results/`, `messages/` — the same
-name for the same kind everywhere. (`protocol/values/` from today's
-tree becomes `value_objects/`; no folder is ever called `values/`.)
+`domain/` folder, subfolders name KINDS, not roles — `aggregates/`,
+`entities/`, `value_objects/`, `services/`, `interfaces/`, `events/`,
+`errors/`, `messages/` — the same name for the same kind everywhere.
+(`protocol/values/` from today's tree becomes `value_objects/`; no
+folder is ever called `values/`. Today's `results/` folder dissolves:
+operation results — MergeResult, ChannelDelta, CompactionResult — are
+plain value objects and live in `value_objects/`.) One deliberate
+role-named exception: `messages/` members are also value objects, but
+the grouping is load-bearing — it is the context's published-language
+seam, anchored by the codecs and the boundary test.
 
 `shared/` (kernel — every file verified to import only shared-bound files):
 
@@ -152,9 +157,8 @@ tree becomes `value_objects/`; no folder is ever called `values/`.)
 |---|---|
 | `sync/domain/aggregates/` | channel_aggregate |
 | `sync/domain/entities/` | stream_config |
-| `sync/domain/value_objects/` | channel_digest, stream_digest (today's `protocol/values/`), sync_partner (NEW) |
+| `sync/domain/value_objects/` | channel_digest, stream_digest (today's `protocol/values/`), sync_partner (NEW), merge_result, channel_delta, compaction_result (today's `domain/results/` — operation results are value objects) |
 | `sync/domain/services/` | hlc_clock |
-| `sync/domain/results/` | merge_result, channel_delta, compaction_result |
 | `sync/domain/events/` | sync_events (NEW file: the `sealed SyncEvent` family — channel/stream/entry/compaction events extracted from today's domain_event.dart) |
 | `sync/domain/messages/` | digest_request, digest_response, delta_request, delta_response |
 | `sync/domain/interfaces/` | channel_repository, entry_repository, state_materializer, retention_policy, peer_directory (NEW) |
