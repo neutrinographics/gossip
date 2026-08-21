@@ -61,6 +61,21 @@ void main() {
         occurredAt: DateTime.now(),
       );
 
+      // A local entry so our version is genuinely ahead of the peer's
+      // empty vector: empty-vs-empty is vacuously "dominated" by the
+      // WIRE4-5 dominance filter, which would otherwise swallow the very
+      // digest this test checks the shape of.
+      await entryRepo.append(
+        channelId,
+        streamId,
+        LogEntry(
+          author: localNode,
+          sequence: 1,
+          timestamp: Hlc(1, 0),
+          payload: Uint8List.fromList([0x1]),
+        ),
+      );
+
       // Peer advertises the shared stream (as a real DigestRequest does —
       // the responder scopes its reply to the requested streams).
       final peerDigest = ChannelDigest(
@@ -98,6 +113,24 @@ void main() {
             StreamId(s),
             KeepAllRetention(),
             occurredAt: DateTime.now(),
+          );
+        }
+
+        // A local entry in BOTH streams so each is genuinely ahead of an
+        // empty vector (see the dominance-filter comment in the previous
+        // test). s2 gets one too even though the request never asks about
+        // it, so s2's absence below proves the reply is scoped to the
+        // requested streams — not an artifact of the dominance filter.
+        for (final s in ['s1', 's2']) {
+          await entryRepo.append(
+            channelId,
+            StreamId(s),
+            LogEntry(
+              author: localNode,
+              sequence: 1,
+              timestamp: Hlc(1, 0),
+              payload: Uint8List.fromList([0x1]),
+            ),
           );
         }
 
