@@ -20,6 +20,15 @@ import '../entities/peer.dart';
 ///
 /// A persistent implementation is only useful if your application needs
 /// its own features around peer history (e.g., "recently seen devices").
+///
+/// ## What actually reaches this interface
+///
+/// Only peer membership (add/remove) is written here. SWIM-driven state —
+/// reachability status, contact times, RTT and traffic metrics — lives
+/// exclusively in the in-memory `PeerRegistry` and is never persisted, by
+/// design: it is ephemeral runtime observation, meaningless across
+/// restarts. A persistent implementation therefore sees peers appear and
+/// disappear, nothing else.
 abstract interface class PeerRepository {
   /// Retrieves a peer by node ID, or null if not found.
   Future<Peer?> findById(NodeId id);

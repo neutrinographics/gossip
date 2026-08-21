@@ -54,60 +54,16 @@ class _ScriptedLatencyRepository implements PeerRepository {
 void main() {
   group('PeerService persistence ordering', () {
     test(
-      'overlapping mutations persist the newest snapshot last',
-      () async {
-        final localNode = NodeId('local');
-        final peerId = NodeId('peer1');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
-        // Call 0 = addPeer's save (instant). Call 1 (status change) is
-        // SLOW; call 2 (contact) is instant — so without ordering, the
-        // stale suspected snapshot lands after the fresh reachable one.
-        final repository = _ScriptedLatencyRepository([
-          Duration.zero,
-          const Duration(milliseconds: 50),
-          Duration.zero,
-        ]);
-        final service = PeerService(
-          registry: registry,
-          repository: repository,
-        );
-
-        await service.addPeer(peerId);
-
-        // Two overlapping operations: suspect, then contact (recovers to
-        // reachable). Logical order says the peer ends reachable.
-        final statusUpdate = service.updatePeerStatus(
-          peerId,
-          PeerStatus.suspected,
-        );
-        final contact = service.recordPeerContact(peerId, 1000);
-        await Future.wait([statusUpdate, contact]);
-
-        expect(
-          registry.getPeer(peerId)!.status,
-          equals(PeerStatus.reachable),
-          reason: 'sanity: the registry itself is last-write-wins in order',
-        );
-        expect(
-          repository.stored[peerId]!.status,
-          equals(PeerStatus.reachable),
-          reason:
-              'storage must not end up with an older snapshot than the '
-              'registry because a slow save landed last',
-        );
-      },
-    );
-
-    test(
       'removePeer cannot be overtaken by an in-flight save (COR3-19)',
       () async {
         final localNode = NodeId('local');
         final peerId = NodeId('peer1');
         final registry = PeerRegistry(localNode: localNode);
-        // Call 0 = addPeer save (instant); call 1 = status change (SLOW —
-        // already past its registry snapshot when the peer is removed).
+        // Call 0 = first addPeer's save (instant); call 1 = second addPeer's
+        // save (SLOW — already past its registry snapshot when the peer is
+        // removed). The second addPeer is a no-op for the registry (the
+        // peer is already reachable) but PeerService still enqueues a
+        // persist for it, which is all this race needs.
         final repository = _ScriptedLatencyRepository([
           Duration.zero,
           const Duration(milliseconds: 50),
@@ -118,10 +74,7 @@ void main() {
         );
 
         await service.addPeer(peerId);
-        final slowSave = service.updatePeerStatus(
-          peerId,
-          PeerStatus.suspected,
-        );
+        final slowSave = service.addPeer(peerId);
         // Let the save chain pass its registry snapshot and enter the
         // repository write before the peer is removed.
         await Future<void>.delayed(Duration.zero);
