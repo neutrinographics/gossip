@@ -61,7 +61,8 @@ Consequences enforced by this spec:
 
 - Sync's use of peer state goes through a **sync-owned port**:
   `sync/domain/interfaces/peer_directory.dart` with a sync-owned
-  `SyncPartner` value object — not membership's `Peer`. The adapter
+  `SyncPartner` value object (`sync/domain/value_objects/`) — not
+  membership's `Peer`. The adapter
   `sync/infrastructure/membership_peer_directory.dart` imports
   `membership/domain` (the concession) and delegates to `PeerRegistry`.
   `Coordinator` wires it. This is the named sync↔membership contract;
@@ -110,27 +111,36 @@ layer" concept retires; ADR-010's rewrite records this.
 
 ## File mapping
 
+**Subfolder taxonomy (uniform across all contexts):** within a
+`domain/` folder, subfolders use the repo's existing kind names —
+`aggregates/`, `entities/`, `value_objects/`, `services/`,
+`interfaces/`, `events/`, `errors/`, `results/`, `messages/` — the same
+name for the same kind everywhere. (`protocol/values/` from today's
+tree becomes `value_objects/`; no folder is ever called `values/`.)
+
 `shared/` (kernel — every file verified to import only shared-bound files):
 
 | Target | Files (from today's tree) |
 |---|---|
-| `shared/domain/value_objects/` | node_id, channel_id, stream_id, hlc, log_entry, log_entry_id, version_vector, rtt_estimate |
+| `shared/domain/value_objects/` | node_id, channel_id, stream_id, hlc, log_entry, log_entry_id, version_vector, rtt_estimate, log_level (from `application/observability/` — it is a plain enum VO of the logging seam) |
 | `shared/domain/errors/` | sync_error, domain_exception |
 | `shared/domain/events/` | domain_event — reduced to an **abstract base class only**. The concrete events split into per-context `sealed` families (see sync/membership tables): `sealed class SyncEvent extends DomainEvent` and `sealed class MembershipEvent extends DomainEvent`. Boundary purity gained (`PeerAdded` finally lives in membership); per-context switches stay exhaustive; the *global* switch loses exhaustiveness — verify at plan time that no production code switches exhaustively over the whole family (tests may need `default` arms). This mirrors Eventur's per-feature event files and fluent's per-context `domain/events.ts`, and it removes the compaction_result-in-shared wart entirely. |
-| `shared/domain/services/` | jitter, quiescence_pacer, rtt_tracker, time_source (`hlc_clock` is NOT shared — only sync stamps and merges; it goes to `sync/domain/`) |
+| `shared/domain/services/` | jitter, quiescence_pacer, rtt_tracker, time_source (`hlc_clock` is NOT shared — only sync stamps and merges; it goes to `sync/domain/services/`) |
 | `shared/domain/interfaces/` | time_port, message_port (ARCH3-1 fixed here), local_node_repository, message_codec (NEW), protocol_message (moved base) |
-| `shared/domain/observability/` | log_level |
 | `shared/infrastructure/` | real_time_port, in_memory_time_port, in_memory_message_port, in_memory_local_node_repository |
 
 `sync/`:
 
 | Target | Files |
 |---|---|
-| `sync/domain/` | channel_aggregate, stream_config, hlc_clock, merge_result, channel_delta, compaction_result |
+| `sync/domain/aggregates/` | channel_aggregate |
+| `sync/domain/entities/` | stream_config |
+| `sync/domain/value_objects/` | channel_digest, stream_digest (today's `protocol/values/`), sync_partner (NEW) |
+| `sync/domain/services/` | hlc_clock |
+| `sync/domain/results/` | merge_result, channel_delta, compaction_result |
 | `sync/domain/events/` | sync_events (NEW file: the `sealed SyncEvent` family — channel/stream/entry/compaction events extracted from today's domain_event.dart) |
-| `sync/domain/values/` | channel_digest, stream_digest |
 | `sync/domain/messages/` | digest_request, digest_response, delta_request, delta_response |
-| `sync/domain/interfaces/` | channel_repository, entry_repository, state_materializer, retention_policy, peer_directory (NEW, + sync_partner VO beside it) |
+| `sync/domain/interfaces/` | channel_repository, entry_repository, state_materializer, retention_policy, peer_directory (NEW) |
 | `sync/application/` | channel_service, gossip_engine |
 | `sync/application/materialization/` | materialization_service, fold_cursor, materializer_state |
 | `sync/infrastructure/` | in_memory_channel_repository, caching_channel_repository, in_memory_entry_repository, membership_peer_directory (NEW — the concession) |
@@ -139,7 +149,8 @@ layer" concept retires; ADR-010's rewrite records this.
 
 | Target | Files |
 |---|---|
-| `membership/domain/` | peer, peer_metrics, peer_registry |
+| `membership/domain/aggregates/` | peer_registry |
+| `membership/domain/entities/` | peer, peer_metrics |
 | `membership/domain/events/` | membership_events (NEW file: the `sealed MembershipEvent` family — peer events extracted from today's domain_event.dart) |
 | `membership/domain/messages/` | ping, ack, ping_req |
 | `membership/domain/interfaces/` | peer_repository |
@@ -184,7 +195,7 @@ Refinements the walker enforces beyond the table:
 2. membership currently exercises no concession (its row stays
    `{membership, shared}` until a real interface demands more);
 3. `codec/` may reach only the contexts' `domain/messages/` and
-   `domain/values/` files, plus shared;
+   `domain/value_objects/` files, plus shared;
 4. nothing under `lib/src` imports `coordinator/`.
 
 ## Public API stability
