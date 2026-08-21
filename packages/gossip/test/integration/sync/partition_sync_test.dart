@@ -44,7 +44,13 @@ void main() {
 
         // Heal the partition
         network.heal('node2');
-        await network.runRounds(10);
+        // 40 rounds (not 10): with two-tier pacing (WIRE4-1/3/4) active on
+        // both the gossip and SWIM loops, a peer that looked "fresh" right
+        // up until the partition can take up to the documented 30s ceiling
+        // to be retried after healing — this is bounded, not a stall (see
+        // failure_detector_pacing_test.dart's "owner decision" note), but
+        // it means recovery isn't guaranteed inside a 10s window anymore.
+        await network.runRounds(40);
 
         // Now both should have all entries
         expect(await network.hasConverged(channelId, streamId), isTrue);

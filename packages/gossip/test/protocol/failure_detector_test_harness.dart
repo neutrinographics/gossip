@@ -51,6 +51,40 @@ class FailingSendMessagePort implements MessagePort {
   int get totalPendingSendCount => _delegate.totalPendingSendCount;
 }
 
+/// A MessagePort that counts every send, delegating the actual work.
+///
+/// Wraps whatever port the harness would otherwise hand the detector so
+/// suppression tests (WIRE4-3) can assert "no message went out this round"
+/// without caring which protocol message it would have been.
+class _CountingMessagePort implements MessagePort {
+  final MessagePort _delegate;
+  int sentCount = 0;
+
+  _CountingMessagePort(this._delegate);
+
+  @override
+  Future<void> send(
+    NodeId destination,
+    Uint8List bytes, {
+    MessagePriority priority = MessagePriority.normal,
+  }) async {
+    sentCount++;
+    await _delegate.send(destination, bytes, priority: priority);
+  }
+
+  @override
+  Stream<IncomingMessage> get incoming => _delegate.incoming;
+
+  @override
+  Future<void> close() => _delegate.close();
+
+  @override
+  int pendingSendCount(NodeId peer) => _delegate.pendingSendCount(peer);
+
+  @override
+  int get totalPendingSendCount => _delegate.totalPendingSendCount;
+}
+
 /// A MessagePort that captures the priority of each sent message.
 class PriorityCapturingMessagePort implements MessagePort {
   final InMemoryMessagePort _delegate;
@@ -147,6 +181,7 @@ class FailureDetectorTestHarness {
   final ProtocolCodec codec = ProtocolCodec();
   final RttTracker rttTracker;
   final List<SyncError> errors;
+  final _CountingMessagePort _sendCounter;
 
   final List<TestPeer> _peers = [];
 
@@ -159,7 +194,15 @@ class FailureDetectorTestHarness {
     required this.detector,
     required this.rttTracker,
     required this.errors,
-  });
+    required _CountingMessagePort sendCounter,
+  }) : _sendCounter = sendCounter;
+
+  /// Number of messages the local detector has sent (Ping/Ack/PingReq),
+  /// across whichever [MessagePort] the harness is using.
+  ///
+  /// Used by suppression tests (WIRE4-3) to assert an all-fresh probe
+  /// round is radio silence.
+  int get sentMessageCount => _sendCounter.sentCount;
 
   /// Creates a harness with the given configuration.
   ///
@@ -179,16 +222,28 @@ class FailureDetectorTestHarness {
     final localNode = NodeId(localName);
     final peerRegistry = PeerRegistry(localNode: localNode);
     final timePort = InMemoryTimePort();
+    // Start the fake clock well past zero (WIRE4-3): a peer's lastContactMs
+    // defaults to 0 ("never heard from"), and suppression compares it
+    // against timePort.nowMs. On a real device nowMs is a wall-clock epoch
+    // reading — always enormous — so a never-contacted peer is naturally
+    // "ancient" and probes normally on cold start. InMemoryTimePort starts
+    // at nowMs=0, which would make a peer added at test setup look exactly
+    // as fresh as one just contacted "now", indistinguishable from real
+    // freshness. Advancing once here (before anything is scheduled, so
+    // there's nothing for tick()/pending-delay resolution to touch) restores
+    // that real-world property for every test built on this harness.
+    timePort.advance(const Duration(minutes: 1));
     final bus = InMemoryMessageBus();
     final localPort = InMemoryMessagePort(localNode, bus);
     final tracker = rttTracker ?? RttTracker();
     final errors = <SyncError>[];
+    final sendCounter = _CountingMessagePort(messagePort ?? localPort);
 
     final detector = FailureDetector(
       localNode: localNode,
       peerRegistry: peerRegistry,
       timePort: timePort,
-      messagePort: messagePort ?? localPort,
+      messagePort: sendCounter,
       failureThreshold: failureThreshold,
       unreachableThreshold: unreachableThreshold,
       unreachableProbeInterval: unreachableProbeInterval,
@@ -208,6 +263,7 @@ class FailureDetectorTestHarness {
       detector: detector,
       rttTracker: tracker,
       errors: errors,
+      sendCounter: sendCounter,
     );
   }
 

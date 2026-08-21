@@ -45,6 +45,16 @@ void main() {
 
       h.addSilentPeer('deadpeer'); // never acks
 
+      // Age peer1's contact past the current interval (WIRE4-3): the loop
+      // above never advanced simulated time, so peer1's lastContactMs sits
+      // exactly at nowMs and would otherwise be suppressed as "still
+      // fresh" — dropping it from the probable set entirely and breaking
+      // the seed-0 round-robin assumption below (deadpeer would be the
+      // only candidate left, hanging this round on an unawaited timeout).
+      await h.timePort.advance(
+        h.detector.effectiveProbeInterval + const Duration(milliseconds: 1),
+      );
+
       // First round of the new post-add cycle lands on peer1 (answered):
       // proves the interval keeps growing after the peer is merely added
       // — adding a peer via the harness does not call probeNewPeer, so no

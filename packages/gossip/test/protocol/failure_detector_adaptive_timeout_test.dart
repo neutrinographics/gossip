@@ -193,6 +193,12 @@ void main() {
 
       // Simulate several fast RTT samples
       for (var i = 0; i < 10; i++) {
+        // Age the clock past the current interval first (WIRE4-3): the
+        // previous round's Ack just proved liveness, so without this the
+        // very next round would see a "fresh" peer, suppress the probe,
+        // and probeWithAck's expectPing would wait forever for a Ping
+        // that's never sent.
+        await h.timePort.advance(h.detector.effectiveProbeInterval);
         await h.probeWithAck(
           peer,
           afterDelay: const Duration(milliseconds: 100),

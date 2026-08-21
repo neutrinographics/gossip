@@ -350,7 +350,12 @@ class FailureDetector {
 
     // Regular probe round: select reachable or suspected peer.
     final peer = selectRandomPeer();
-    if (peer == null) return;
+    if (peer == null) {
+      // Nothing needs probing (empty registry or everyone fresh) —
+      // that is quiescence, not a stall.
+      if (peerRegistry.probablePeers.isNotEmpty) _pacer.quietRound();
+      return;
+    }
 
     final sequence = _nextSequence++;
     final pending = _trackPendingPing(peer.id, sequence);
@@ -492,10 +497,14 @@ class FailureDetector {
   /// H3's O(n · threshold) detection latency.
   Peer? selectRandomPeer() {
     final nowMs = timePort.nowMs;
+    final intervalMs = effectiveProbeInterval.inMilliseconds;
     final probable = peerRegistry.probablePeers.where((p) {
       final holdUntil = _probingHeldUntil[p.id];
-      if (holdUntil == null) return true;
-      return nowMs >= holdUntil;
+      if (holdUntil != null && nowMs < holdUntil) return false;
+      // Suppression (WIRE4-3): any inbound message already proved this
+      // peer alive within the current interval — a probe adds nothing.
+      if (nowMs - p.lastContactMs < intervalMs) return false;
+      return true;
     }).toList();
     if (probable.isEmpty) return null;
 
