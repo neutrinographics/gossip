@@ -177,9 +177,7 @@ class FailureDetectorTestHarness {
     MessagePort? messagePort,
   }) {
     final localNode = NodeId(localName);
-    final peerRegistry = PeerRegistry(
-      localNode: localNode,
-    );
+    final peerRegistry = PeerRegistry(localNode: localNode);
     final timePort = InMemoryTimePort();
     final bus = InMemoryMessageBus();
     final localPort = InMemoryMessagePort(localNode, bus);
@@ -226,6 +224,29 @@ class FailureDetectorTestHarness {
     _peers.add(peer);
     return peer;
   }
+
+  /// Adds a peer that automatically Acks every [Ping] it receives, as if
+  /// it were a healthy remote node running its own failure detector.
+  ///
+  /// Does not respond to [PingReq] — this peer is a dumb auto-responder,
+  /// not a full detector, so it never acts as an indirect-probe
+  /// intermediary.
+  TestPeer addAnsweringPeer(String name) {
+    final peer = addPeer(name);
+    peer.port.incoming.listen((msg) {
+      final decoded = codec.decode(msg.bytes);
+      if (decoded is Ping) {
+        final ack = Ack(sender: peer.id, sequence: decoded.sequence);
+        peer.port.send(localNode, codec.encode(ack));
+      }
+    });
+    return peer;
+  }
+
+  /// Adds a peer that never responds to anything — used to exercise the
+  /// probe-miss path. Equivalent to [addPeer]; named for clarity at call
+  /// sites that pair it with [addAnsweringPeer].
+  TestPeer addSilentPeer(String name) => addPeer(name);
 
   // -------------------------------------------------------------------------
   // Probe helpers

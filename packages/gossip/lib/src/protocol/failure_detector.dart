@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:gossip/src/application/observability/log_level.dart';
 import 'package:gossip/src/domain/errors/sync_error.dart';
 import 'package:gossip/src/domain/services/jitter.dart';
+import 'package:gossip/src/domain/services/quiescence_pacer.dart';
 import 'package:gossip/src/domain/services/rtt_tracker.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
@@ -147,6 +148,14 @@ class FailureDetector {
   // State
   // ---------------------------------------------------------------------------
 
+  /// Two-tier pacing for the probe loop (spec 2026-08-20).
+  ///
+  /// Independent from GossipEngine's pacer instance: each protocol loop
+  /// paces its own cadence toward its own ceiling. All-healthy rounds
+  /// stretch [effectiveProbeInterval] toward [_maxProbeInterval]; a full
+  /// miss or a membership change (new peer, recovery) snaps it back.
+  final QuiescencePacer _pacer = QuiescencePacer(ceiling: _maxProbeInterval);
+
   bool _isRunning = false;
 
   /// Generation token for the probe round loop.
@@ -256,13 +265,17 @@ class FailureDetector {
   /// Effective probe interval (time between probe rounds).
   ///
   /// Computed as 3× the effective ping timeout to allow time for both
-  /// direct and indirect probes within each interval.
+  /// direct and indirect probes within each interval, then paced: quiet
+  /// (all-answered) rounds stretch this toward [_maxProbeInterval]; a miss
+  /// or membership change snaps it back to the formula's raw value. A
+  /// static override bypasses the pacer entirely.
   Duration get effectiveProbeInterval {
     if (_staticProbeIntervalProvided) return _probeInterval;
     final baseInterval = effectivePingTimeout * _probeIntervalMultiplier;
-    if (baseInterval < _minProbeInterval) return _minProbeInterval;
-    if (baseInterval > _maxProbeInterval) return _maxProbeInterval;
-    return baseInterval;
+    final clampedBase = baseInterval < _minProbeInterval
+        ? _minProbeInterval
+        : (baseInterval > _maxProbeInterval ? _maxProbeInterval : baseInterval);
+    return _pacer.apply(clampedBase);
   }
 
   // ---------------------------------------------------------------------------
@@ -353,6 +366,8 @@ class FailureDetector {
       if (!gotDirectAck) {
         final gotIndirectAck = await _performIndirectPing(peer.id);
         _evaluateProbeOutcome(peer.id, sequence, pending, gotIndirectAck);
+      } else {
+        _pacer.quietRound();
       }
     } finally {
       // Always drop the pending entry — a throw above must not leave a
@@ -370,6 +385,7 @@ class FailureDetector {
   /// Called fire-and-forget from Coordinator.addPeer() to get the first
   /// RTT sample quickly instead of waiting for random probe selection.
   Future<bool> probeNewPeer(NodeId peerId) async {
+    _pacer.news();
     final peer = peerRegistry.getPeer(peerId);
     if (peer == null) return false;
 
@@ -606,25 +622,28 @@ class FailureDetector {
     if (!_isRunning || generation != _generation) return;
     // ±20% jitter decorrelates probe loops across nodes so they don't
     // phase-lock into correlated bursts (and correlated false suspicions).
-    timePort.delay(applyJitter(effectiveProbeInterval, _random)).then((_) {
-      if (_isRunning && generation == _generation) _probeRound(generation);
-    }).catchError((Object error, StackTrace stackTrace) {
-      // A broken timer must not kill the loop silently: surface the error
-      // and stop so isRunning reflects reality.
-      if (generation == _generation) {
-        _isRunning = false;
-        _generation++;
-      }
-      _emitError(
-        PeerSyncError(
-          localNode,
-          SyncErrorType.protocolError,
-          'Probe round scheduling failed: $error',
-          occurredAt: DateTime.now(),
-          cause: error,
-        ),
-      );
-    });
+    timePort
+        .delay(applyJitter(effectiveProbeInterval, _random))
+        .then((_) {
+          if (_isRunning && generation == _generation) _probeRound(generation);
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          // A broken timer must not kill the loop silently: surface the error
+          // and stop so isRunning reflects reality.
+          if (generation == _generation) {
+            _isRunning = false;
+            _generation++;
+          }
+          _emitError(
+            PeerSyncError(
+              localNode,
+              SyncErrorType.protocolError,
+              'Probe round scheduling failed: $error',
+              occurredAt: DateTime.now(),
+              cause: error,
+            ),
+          );
+        });
   }
 
   void _probeRound(int generation) {
@@ -664,6 +683,7 @@ class FailureDetector {
       // intermediaries stays suspected forever (excluded from gossip,
       // never unreachable, never recovered).
       _recordPeerContact(target, timePort.nowMs);
+      _pacer.quietRound();
       return;
     }
     _handleProbeFailure(target);
@@ -699,6 +719,7 @@ class FailureDetector {
   }
 
   void _handleProbeFailure(NodeId target) {
+    _pacer.news();
     final peer = peerRegistry.getPeer(target);
     final failedCount = peer?.failedProbeCount ?? 0;
     _log(
@@ -952,6 +973,7 @@ class FailureDetector {
     peerRegistry.updatePeerContact(peerId, timestampMs);
 
     if (oldStatus != null && oldStatus != PeerStatus.reachable) {
+      _pacer.news();
       _log(
         'Peer $peerId transitioning to REACHABLE '
         '(was: ${oldStatus.name}, '
