@@ -1,6 +1,6 @@
-import '../../domain/value_objects/channel_id.dart';
-import '../../domain/aggregates/channel_aggregate.dart';
-import '../../domain/interfaces/channel_repository.dart';
+import 'package:gossip/src/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
+import 'package:gossip/src/domain/interfaces/channel_repository.dart';
 
 /// In-memory implementation of [ChannelRepository] for testing.
 ///

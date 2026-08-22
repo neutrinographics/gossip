@@ -1,6 +1,6 @@
 /// Domain services.
 library;
 
-export 'hlc_clock.dart';
-export 'rtt_tracker.dart';
-export 'time_source.dart';
+export 'package:gossip/src/domain/services/hlc_clock.dart';
+export 'package:gossip/src/domain/services/rtt_tracker.dart';
+export 'package:gossip/src/domain/services/time_source.dart';

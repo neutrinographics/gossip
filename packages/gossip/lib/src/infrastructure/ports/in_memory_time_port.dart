@@ -1,5 +1,5 @@
 import 'dart:async';
-import 'time_port.dart';
+import 'package:gossip/src/infrastructure/ports/time_port.dart';
 
 /// In-memory timer handle for testing.
 class _InMemoryTimerHandle implements TimerHandle {

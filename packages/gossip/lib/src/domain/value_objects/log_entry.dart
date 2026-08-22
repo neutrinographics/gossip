@@ -1,7 +1,7 @@
 import 'dart:typed_data';
-import 'hlc.dart';
-import 'log_entry_id.dart';
-import 'node_id.dart';
+import 'package:gossip/src/domain/value_objects/hlc.dart';
+import 'package:gossip/src/domain/value_objects/log_entry_id.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
 
 /// Atomic unit of synchronization in a stream.
 ///

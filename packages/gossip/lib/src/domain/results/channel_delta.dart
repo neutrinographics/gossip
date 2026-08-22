@@ -1,6 +1,6 @@
-import '../value_objects/channel_id.dart';
-import '../value_objects/log_entry.dart';
-import '../value_objects/stream_id.dart';
+import 'package:gossip/src/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/domain/value_objects/log_entry.dart';
+import 'package:gossip/src/domain/value_objects/stream_id.dart';
 
 /// Delta containing entries a peer is missing.
 class ChannelDelta {

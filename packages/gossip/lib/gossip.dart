@@ -85,71 +85,71 @@
 library;
 
 // Facade layer (main public API)
-export 'src/facade/adaptive_timing_status.dart';
-export 'src/facade/coordinator.dart';
-export 'src/facade/coordinator_config.dart';
-export 'src/facade/channel.dart';
-export 'src/facade/event_stream.dart';
-export 'src/facade/gossip_sync_activity.dart';
-export 'src/facade/health_status.dart';
-export 'src/facade/resource_usage.dart';
-export 'src/facade/sync_state.dart';
+export 'package:gossip/src/facade/adaptive_timing_status.dart';
+export 'package:gossip/src/facade/coordinator.dart';
+export 'package:gossip/src/facade/coordinator_config.dart';
+export 'package:gossip/src/facade/channel.dart';
+export 'package:gossip/src/facade/event_stream.dart';
+export 'package:gossip/src/facade/gossip_sync_activity.dart';
+export 'package:gossip/src/facade/health_status.dart';
+export 'package:gossip/src/facade/resource_usage.dart';
+export 'package:gossip/src/facade/sync_state.dart';
 
 // Domain value objects
-export 'src/domain/value_objects/node_id.dart';
-export 'src/domain/value_objects/channel_id.dart';
-export 'src/domain/value_objects/stream_id.dart';
-export 'src/domain/value_objects/log_entry.dart';
-export 'src/domain/value_objects/log_entry_id.dart';
-export 'src/domain/value_objects/hlc.dart';
-export 'src/domain/value_objects/version_vector.dart';
+export 'package:gossip/src/domain/value_objects/node_id.dart';
+export 'package:gossip/src/domain/value_objects/channel_id.dart';
+export 'package:gossip/src/domain/value_objects/stream_id.dart';
+export 'package:gossip/src/domain/value_objects/log_entry.dart';
+export 'package:gossip/src/domain/value_objects/log_entry_id.dart';
+export 'package:gossip/src/domain/value_objects/hlc.dart';
+export 'package:gossip/src/domain/value_objects/version_vector.dart';
 
 // Domain aggregates
-export 'src/domain/aggregates/channel_aggregate.dart';
+export 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 
 // Domain entities
-export 'src/domain/entities/peer.dart';
-export 'src/domain/entities/peer_metrics.dart';
-export 'src/domain/entities/stream_config.dart';
+export 'package:gossip/src/domain/entities/peer.dart';
+export 'package:gossip/src/domain/entities/peer_metrics.dart';
+export 'package:gossip/src/domain/entities/stream_config.dart';
 
 // Domain events
-export 'src/domain/events/domain_event.dart';
-export 'src/sync/domain/events/sync_events.dart';
-export 'src/membership/domain/events/membership_events.dart';
+export 'package:gossip/src/domain/events/domain_event.dart';
+export 'package:gossip/src/sync/domain/events/sync_events.dart';
+export 'package:gossip/src/membership/domain/events/membership_events.dart';
 
 // Domain errors
-export 'src/domain/errors/sync_error.dart';
-export 'src/domain/errors/domain_exception.dart';
+export 'package:gossip/src/domain/errors/sync_error.dart';
+export 'package:gossip/src/domain/errors/domain_exception.dart';
 
 // Domain results
-export 'src/domain/results/compaction_result.dart';
+export 'package:gossip/src/domain/results/compaction_result.dart';
 
 // Domain interfaces (for custom implementations)
-export 'src/domain/interfaces/retention_policy.dart';
-export 'src/domain/interfaces/state_materializer.dart';
-export 'src/domain/interfaces/channel_repository.dart';
-export 'src/domain/interfaces/local_node_repository.dart';
-export 'src/domain/interfaces/peer_repository.dart';
-export 'src/domain/interfaces/entry_repository.dart';
+export 'package:gossip/src/domain/interfaces/retention_policy.dart';
+export 'package:gossip/src/domain/interfaces/state_materializer.dart';
+export 'package:gossip/src/domain/interfaces/channel_repository.dart';
+export 'package:gossip/src/domain/interfaces/local_node_repository.dart';
+export 'package:gossip/src/domain/interfaces/peer_repository.dart';
+export 'package:gossip/src/domain/interfaces/entry_repository.dart';
 
 // Infrastructure ports (for custom implementations)
-export 'src/infrastructure/ports/message_port.dart';
-export 'src/infrastructure/ports/time_port.dart';
+export 'package:gossip/src/infrastructure/ports/message_port.dart';
+export 'package:gossip/src/infrastructure/ports/time_port.dart';
 
 // In-memory implementations (for testing and simple use cases)
-export 'src/infrastructure/repositories/caching_channel_repository.dart';
-export 'src/infrastructure/repositories/in_memory_channel_repository.dart';
-export 'src/infrastructure/repositories/in_memory_local_node_repository.dart';
-export 'src/infrastructure/repositories/in_memory_peer_repository.dart';
-export 'src/infrastructure/stores/in_memory_entry_repository.dart';
-export 'src/infrastructure/ports/in_memory_message_port.dart';
-export 'src/infrastructure/ports/in_memory_time_port.dart';
+export 'package:gossip/src/infrastructure/repositories/caching_channel_repository.dart';
+export 'package:gossip/src/infrastructure/repositories/in_memory_channel_repository.dart';
+export 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
+export 'package:gossip/src/infrastructure/repositories/in_memory_peer_repository.dart';
+export 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
+export 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
+export 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
 
 // Production implementations
-export 'src/infrastructure/ports/real_time_port.dart';
+export 'package:gossip/src/infrastructure/ports/real_time_port.dart';
 
 // Domain services
-export 'src/domain/value_objects/rtt_estimate.dart';
+export 'package:gossip/src/domain/value_objects/rtt_estimate.dart';
 
 // Observability
-export 'src/application/observability/log_level.dart';
+export 'package:gossip/src/application/observability/log_level.dart';

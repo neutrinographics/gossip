@@ -1,5 +1,5 @@
 /// Domain errors and exceptions.
 library;
 
-export 'domain_exception.dart';
-export 'sync_error.dart';
+export 'package:gossip/src/domain/errors/domain_exception.dart';
+export 'package:gossip/src/domain/errors/sync_error.dart';

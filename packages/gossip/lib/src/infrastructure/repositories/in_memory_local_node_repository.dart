@@ -1,8 +1,8 @@
 import 'package:uuid/uuid.dart';
 
-import '../../domain/value_objects/hlc.dart';
-import '../../domain/value_objects/node_id.dart';
-import '../../domain/interfaces/local_node_repository.dart';
+import 'package:gossip/src/domain/value_objects/hlc.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/domain/interfaces/local_node_repository.dart';
 
 /// In-memory implementation of [LocalNodeRepository] for testing.
 ///

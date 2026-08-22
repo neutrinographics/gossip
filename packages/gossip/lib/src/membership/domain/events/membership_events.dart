@@ -1,5 +1,5 @@
-import '../../../domain/events/domain_event.dart';
-import '../../../domain/value_objects/node_id.dart';
+import 'package:gossip/src/domain/events/domain_event.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
 
 /// Sealed family root for domain events emitted by the membership context
 /// (peer registry, SWIM failure detection).

@@ -1,4 +1,4 @@
-import '../../domain/value_objects/node_id.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
 
 /// Base class for all wire protocol messages.
 ///

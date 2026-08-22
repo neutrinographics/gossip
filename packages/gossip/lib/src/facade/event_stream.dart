@@ -1,12 +1,12 @@
 import 'dart:typed_data';
 
-import '../application/services/channel_service.dart';
-import '../domain/interfaces/retention_policy.dart';
-import '../domain/interfaces/state_materializer.dart';
-import '../domain/results/compaction_result.dart';
-import '../domain/value_objects/channel_id.dart';
-import '../domain/value_objects/log_entry.dart';
-import '../domain/value_objects/stream_id.dart';
+import 'package:gossip/src/application/services/channel_service.dart';
+import 'package:gossip/src/domain/interfaces/retention_policy.dart';
+import 'package:gossip/src/domain/interfaces/state_materializer.dart';
+import 'package:gossip/src/domain/results/compaction_result.dart';
+import 'package:gossip/src/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/domain/value_objects/log_entry.dart';
+import 'package:gossip/src/domain/value_objects/stream_id.dart';
 
 /// Public API for stream-level read/write operations.
 ///

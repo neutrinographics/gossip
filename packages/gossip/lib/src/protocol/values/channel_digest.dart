@@ -1,6 +1,6 @@
 import 'package:meta/meta.dart';
-import '../../domain/value_objects/channel_id.dart';
-import 'stream_digest.dart';
+import 'package:gossip/src/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/protocol/values/stream_digest.dart';
 
 /// Compact summary of an entire channel's synchronization state.
 ///

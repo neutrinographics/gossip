@@ -1,5 +1,5 @@
-import '../value_objects/log_entry.dart';
-import '../value_objects/version_vector.dart';
+import 'package:gossip/src/domain/value_objects/log_entry.dart';
+import 'package:gossip/src/domain/value_objects/version_vector.dart';
 
 /// Result of merging remote entries.
 class MergeResult {

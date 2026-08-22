@@ -1,5 +1,5 @@
-import '../value_objects/channel_id.dart';
-import '../aggregates/channel_aggregate.dart';
+import 'package:gossip/src/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 
 /// Repository for persisting ChannelAggregate state.
 ///

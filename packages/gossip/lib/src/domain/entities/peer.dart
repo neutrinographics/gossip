@@ -1,8 +1,8 @@
 import 'package:meta/meta.dart';
 
-import '../value_objects/node_id.dart';
-import '../../membership/domain/events/membership_events.dart';
-import 'peer_metrics.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/membership/domain/events/membership_events.dart';
+import 'package:gossip/src/domain/entities/peer_metrics.dart';
 
 /// Represents a peer in the gossip network with its state and metrics.
 ///

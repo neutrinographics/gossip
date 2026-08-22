@@ -1,4 +1,4 @@
-import '../../infrastructure/ports/time_port.dart';
+import 'package:gossip/src/infrastructure/ports/time_port.dart';
 
 /// Abstraction for current time to enable deterministic testing.
 ///

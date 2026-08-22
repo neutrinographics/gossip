@@ -1,8 +1,8 @@
 /// Domain interfaces.
 library;
 
-export 'channel_repository.dart';
-export 'entry_repository.dart';
-export 'peer_repository.dart';
-export 'retention_policy.dart';
-export 'state_materializer.dart';
+export 'package:gossip/src/domain/interfaces/channel_repository.dart';
+export 'package:gossip/src/domain/interfaces/entry_repository.dart';
+export 'package:gossip/src/domain/interfaces/peer_repository.dart';
+export 'package:gossip/src/domain/interfaces/retention_policy.dart';
+export 'package:gossip/src/domain/interfaces/state_materializer.dart';

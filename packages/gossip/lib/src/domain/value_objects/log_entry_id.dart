@@ -1,4 +1,4 @@
-import 'node_id.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
 
 /// Unique identifier for a log entry within a stream.
 ///

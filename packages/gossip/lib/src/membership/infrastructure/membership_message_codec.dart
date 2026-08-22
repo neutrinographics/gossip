@@ -1,12 +1,12 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import '../../domain/value_objects/node_id.dart';
-import '../../protocol/messages/protocol_message.dart';
-import '../../protocol/messages/ping.dart';
-import '../../protocol/messages/ack.dart';
-import '../../protocol/messages/ping_req.dart';
-import '../../shared/domain/interfaces/message_codec.dart';
-import '../../shared/domain/value_objects/wire_types.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/protocol/messages/protocol_message.dart';
+import 'package:gossip/src/protocol/messages/ping.dart';
+import 'package:gossip/src/protocol/messages/ack.dart';
+import 'package:gossip/src/protocol/messages/ping_req.dart';
+import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_types.dart';
 
 /// Wire codec for the membership context's SWIM messages: [Ping], [Ack],
 /// [PingReq] — [WireTypes.membership] type bytes 0-2.

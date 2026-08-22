@@ -1,5 +1,5 @@
-import '../value_objects/node_id.dart';
-import '../entities/peer.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/domain/entities/peer.dart';
 
 /// Repository for peer state.
 ///

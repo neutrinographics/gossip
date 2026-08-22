@@ -1,7 +1,7 @@
 import 'dart:async';
 
-import '../../domain/interfaces/state_materializer.dart';
-import 'fold_cursor.dart';
+import 'package:gossip/src/domain/interfaces/state_materializer.dart';
+import 'package:gossip/src/application/services/fold_cursor.dart';
 
 /// Internal tracking state for a registered materializer.
 ///

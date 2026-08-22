@@ -1,7 +1,7 @@
-import '../../domain/errors/sync_error.dart';
-import '../../domain/value_objects/node_id.dart';
-import '../../domain/aggregates/peer_registry.dart';
-import '../../domain/interfaces/peer_repository.dart';
+import 'package:gossip/src/domain/errors/sync_error.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/domain/interfaces/peer_repository.dart';
 
 /// Application service for peer membership: add, remove, query.
 ///

@@ -1,4 +1,4 @@
-import '../value_objects/rtt_estimate.dart';
+import 'package:gossip/src/domain/value_objects/rtt_estimate.dart';
 
 /// Tracks communication metrics for a peer over time.
 ///

@@ -1,4 +1,4 @@
 /// Domain events.
 library;
 
-export 'domain_event.dart';
+export 'package:gossip/src/domain/events/domain_event.dart';

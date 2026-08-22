@@ -2,7 +2,7 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
-import 'message_port.dart';
+import 'package:gossip/src/infrastructure/ports/message_port.dart';
 
 /// Transforms message bytes in flight, simulating corruption on a link.
 typedef MessageTransform = Uint8List Function(Uint8List bytes);

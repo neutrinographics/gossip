@@ -1,11 +1,11 @@
 /// Domain layer exports.
 library;
 
-export 'value_objects/value_objects.dart';
-export 'errors/errors.dart';
-export 'events/domain_event.dart';
-export 'results/results.dart';
-export 'interfaces/interfaces.dart';
-export 'services/services.dart';
-export 'entities/entities.dart';
-export 'aggregates/aggregates.dart';
+export 'package:gossip/src/domain/value_objects/value_objects.dart';
+export 'package:gossip/src/domain/errors/errors.dart';
+export 'package:gossip/src/domain/events/domain_event.dart';
+export 'package:gossip/src/domain/results/results.dart';
+export 'package:gossip/src/domain/interfaces/interfaces.dart';
+export 'package:gossip/src/domain/services/services.dart';
+export 'package:gossip/src/domain/entities/entities.dart';
+export 'package:gossip/src/domain/aggregates/aggregates.dart';

@@ -1,23 +1,23 @@
 import 'dart:typed_data';
-import '../../domain/errors/sync_error.dart';
-import '../../domain/events/domain_event.dart';
-import '../../sync/domain/events/sync_events.dart';
-import '../../domain/value_objects/channel_id.dart';
-import '../../domain/value_objects/node_id.dart';
-import '../../domain/value_objects/stream_id.dart';
-import '../../domain/value_objects/log_entry.dart';
-import '../../domain/value_objects/log_entry_id.dart';
-import '../../domain/value_objects/hlc.dart';
-import '../../domain/aggregates/channel_aggregate.dart';
-import '../../domain/interfaces/channel_repository.dart';
-import '../../domain/interfaces/retention_policy.dart';
-import '../../domain/results/compaction_result.dart';
-import '../../domain/interfaces/entry_repository.dart';
-import '../../domain/interfaces/local_node_repository.dart';
-import '../../domain/interfaces/state_materializer.dart';
-import '../../domain/services/hlc_clock.dart';
-import '../../domain/value_objects/version_vector.dart';
-import 'materialization_service.dart';
+import 'package:gossip/src/domain/errors/sync_error.dart';
+import 'package:gossip/src/domain/events/domain_event.dart';
+import 'package:gossip/src/sync/domain/events/sync_events.dart';
+import 'package:gossip/src/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/domain/value_objects/log_entry.dart';
+import 'package:gossip/src/domain/value_objects/log_entry_id.dart';
+import 'package:gossip/src/domain/value_objects/hlc.dart';
+import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
+import 'package:gossip/src/domain/interfaces/channel_repository.dart';
+import 'package:gossip/src/domain/interfaces/retention_policy.dart';
+import 'package:gossip/src/domain/results/compaction_result.dart';
+import 'package:gossip/src/domain/interfaces/entry_repository.dart';
+import 'package:gossip/src/domain/interfaces/local_node_repository.dart';
+import 'package:gossip/src/domain/interfaces/state_materializer.dart';
+import 'package:gossip/src/domain/services/hlc_clock.dart';
+import 'package:gossip/src/domain/value_objects/version_vector.dart';
+import 'package:gossip/src/application/services/materialization_service.dart';
 
 /// Application service orchestrating channel and stream operations.
 ///

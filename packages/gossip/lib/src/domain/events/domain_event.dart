@@ -1,4 +1,4 @@
-import '../errors/sync_error.dart';
+import 'package:gossip/src/domain/errors/sync_error.dart';
 
 /// Base class for all domain events emitted by aggregates.
 ///

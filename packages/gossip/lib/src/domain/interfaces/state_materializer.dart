@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import '../value_objects/log_entry.dart';
+import 'package:gossip/src/domain/value_objects/log_entry.dart';
 
 /// Materializer folds log entries into derived application state.
 ///

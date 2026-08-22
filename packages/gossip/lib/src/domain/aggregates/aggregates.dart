@@ -1,5 +1,5 @@
 /// Domain aggregates.
 library;
 
-export 'peer_registry.dart';
-export 'channel_aggregate.dart';
+export 'package:gossip/src/domain/aggregates/peer_registry.dart';
+export 'package:gossip/src/domain/aggregates/channel_aggregate.dart';

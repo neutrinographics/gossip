@@ -1,10 +1,10 @@
 import 'dart:math';
 
-import '../../domain/aggregates/peer_registry.dart';
-import '../../domain/entities/peer.dart';
-import '../../domain/value_objects/node_id.dart';
-import '../domain/interfaces/peer_directory.dart';
-import '../domain/value_objects/sync_partner.dart';
+import 'package:gossip/src/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/domain/entities/peer.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/sync/domain/interfaces/peer_directory.dart';
+import 'package:gossip/src/sync/domain/value_objects/sync_partner.dart';
 
 /// Anti-corruption layer adapting membership's [PeerRegistry] to sync's
 /// [PeerDirectory] port.

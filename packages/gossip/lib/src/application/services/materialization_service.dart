@@ -1,10 +1,10 @@
-import '../../domain/interfaces/entry_repository.dart';
-import '../../domain/interfaces/state_materializer.dart';
-import '../../domain/value_objects/channel_id.dart';
-import '../../domain/value_objects/log_entry.dart';
-import '../../domain/value_objects/stream_id.dart';
-import 'fold_cursor.dart';
-import 'materializer_state.dart';
+import 'package:gossip/src/domain/interfaces/entry_repository.dart';
+import 'package:gossip/src/domain/interfaces/state_materializer.dart';
+import 'package:gossip/src/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/domain/value_objects/log_entry.dart';
+import 'package:gossip/src/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/application/services/fold_cursor.dart';
+import 'package:gossip/src/application/services/materializer_state.dart';
 
 /// Application service managing materialized state for event streams.
 ///

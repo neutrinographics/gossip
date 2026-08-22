@@ -1,5 +1,5 @@
 import 'dart:typed_data';
-import '../../../protocol/messages/protocol_message.dart'; // path updated in Task 5's move
+import 'package:gossip/src/protocol/messages/protocol_message.dart'; // path updated in Task 5's move
 
 /// Wire codec seam (Part 2 spec): each context implements this for its OWN
 /// message family and answers null for foreign type bytes.

@@ -1,5 +1,5 @@
-import '../value_objects/hlc.dart';
-import '../value_objects/node_id.dart';
+import 'package:gossip/src/domain/value_objects/hlc.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
 
 /// Repository for persisting local node state across application restarts.
 ///

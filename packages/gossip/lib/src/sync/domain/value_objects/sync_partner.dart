@@ -1,4 +1,4 @@
-import '../../../domain/value_objects/node_id.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
 
 /// Sync's own view of a gossip partner — deliberately NOT membership's
 /// `Peer`. Carries exactly what partner selection and pacing read: an

@@ -1,20 +1,20 @@
 import 'dart:convert';
 import 'dart:typed_data';
-import '../../domain/value_objects/node_id.dart';
-import '../../domain/value_objects/channel_id.dart';
-import '../../domain/value_objects/stream_id.dart';
-import '../../domain/value_objects/version_vector.dart';
-import '../../domain/value_objects/log_entry.dart';
-import '../../domain/value_objects/hlc.dart';
-import '../../protocol/messages/protocol_message.dart';
-import '../../protocol/messages/digest_request.dart';
-import '../../protocol/messages/digest_response.dart';
-import '../../protocol/messages/delta_request.dart';
-import '../../protocol/messages/delta_response.dart';
-import '../../protocol/values/channel_digest.dart';
-import '../../protocol/values/stream_digest.dart';
-import '../../shared/domain/interfaces/message_codec.dart';
-import '../../shared/domain/value_objects/wire_types.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/domain/value_objects/version_vector.dart';
+import 'package:gossip/src/domain/value_objects/log_entry.dart';
+import 'package:gossip/src/domain/value_objects/hlc.dart';
+import 'package:gossip/src/protocol/messages/protocol_message.dart';
+import 'package:gossip/src/protocol/messages/digest_request.dart';
+import 'package:gossip/src/protocol/messages/digest_response.dart';
+import 'package:gossip/src/protocol/messages/delta_request.dart';
+import 'package:gossip/src/protocol/messages/delta_response.dart';
+import 'package:gossip/src/protocol/values/channel_digest.dart';
+import 'package:gossip/src/protocol/values/stream_digest.dart';
+import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_types.dart';
 
 /// Wire codec for the sync context's anti-entropy messages: [DigestRequest],
 /// [DigestResponse], [DeltaRequest], [DeltaResponse] — [WireTypes.sync] type

@@ -1,5 +1,5 @@
 import 'dart:math';
-import 'node_id.dart';
+import 'package:gossip/src/domain/value_objects/node_id.dart';
 
 /// Version vector tracking synchronization state across peers.
 ///
