@@ -1,6 +1,6 @@
 import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:gossip_bluey/src/infrastructure/codec/frame_codec.dart';
+import 'package:gossip_bluey/src/protocol/frame_codec.dart';
 
 void main() {
   group('FrameEncoder', () {

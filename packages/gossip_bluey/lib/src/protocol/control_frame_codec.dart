@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
-import '../../domain/value_objects/rejection_reason.dart';
+import '../domain/value_objects/rejection_reason.dart';
 
-export '../../domain/value_objects/rejection_reason.dart'
+export '../domain/value_objects/rejection_reason.dart'
     show RejectionReason;
 
 /// Magic prefix for CONTROL frames, ASCII "GSP2". Data frames keep the

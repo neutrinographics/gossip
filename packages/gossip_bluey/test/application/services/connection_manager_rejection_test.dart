@@ -9,8 +9,8 @@ import 'package:gossip_bluey/src/domain/errors/connection_error.dart';
 import 'package:gossip_bluey/src/domain/events/connection_event.dart';
 import 'package:gossip_bluey/src/domain/interfaces/bluey_port.dart';
 import 'package:gossip_bluey/src/domain/value_objects/ble_address.dart';
-import 'package:gossip_bluey/src/infrastructure/codec/control_frame_codec.dart';
-import 'package:gossip_bluey/src/infrastructure/codec/frame_codec.dart';
+import 'package:gossip_bluey/src/protocol/control_frame_codec.dart';
+import 'package:gossip_bluey/src/protocol/frame_codec.dart';
 
 import '../../fakes/fake_bluey_port.dart';
 

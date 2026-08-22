@@ -14,7 +14,7 @@ import 'package:gossip_bluey/src/domain/interfaces/bluey_port.dart';
 import 'package:gossip_bluey/src/domain/value_objects/ble_address.dart';
 import 'package:gossip_bluey/src/domain/value_objects/scan_candidate.dart';
 import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
-import 'package:gossip_bluey/src/infrastructure/codec/frame_codec.dart';
+import 'package:gossip_bluey/src/protocol/frame_codec.dart';
 import '../../fakes/fake_bluey_port.dart';
 
 final _t0 = DateTime.utc(2026, 1, 1);

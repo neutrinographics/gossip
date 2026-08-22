@@ -7,7 +7,7 @@ import 'package:gossip_bluey/src/application/services/auto_connect_policy.dart';
 import 'package:gossip_bluey/src/application/services/connection_manager.dart';
 import 'package:gossip_bluey/src/application/services/discovery_service.dart';
 import 'package:gossip_bluey/src/domain/aggregates/connection_registry.dart';
-import 'package:gossip_bluey/src/infrastructure/codec/frame_codec.dart';
+import 'package:gossip_bluey/src/protocol/frame_codec.dart';
 import 'package:gossip_bluey/src/infrastructure/ports/bluey_message_port.dart';
 
 import '../fakes/fake_bluey_port.dart';

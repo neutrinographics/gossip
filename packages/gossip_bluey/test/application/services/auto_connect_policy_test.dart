@@ -10,7 +10,7 @@ import 'package:gossip_bluey/src/domain/value_objects/ble_address.dart';
 import 'package:gossip_bluey/src/domain/value_objects/connection_mode.dart';
 import 'package:gossip_bluey/src/domain/value_objects/scan_candidate.dart';
 import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
-import 'package:gossip_bluey/src/infrastructure/codec/control_frame_codec.dart';
+import 'package:gossip_bluey/src/protocol/control_frame_codec.dart';
 
 import '../../fakes/fake_bluey_port.dart';
 

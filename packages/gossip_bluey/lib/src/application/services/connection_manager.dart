@@ -13,8 +13,8 @@ import '../../domain/events/connection_event.dart';
 import '../../domain/interfaces/bluey_port.dart';
 import '../../domain/value_objects/ble_address.dart';
 import '../../domain/value_objects/scan_candidate.dart';
-import '../../infrastructure/codec/control_frame_codec.dart';
-import '../../infrastructure/codec/frame_codec.dart';
+import '../../protocol/control_frame_codec.dart';
+import '../../protocol/frame_codec.dart';
 import '../../infrastructure/ports/bluey_message_port.dart';
 import '../observability/bluey_metrics.dart';
 

@@ -3,7 +3,7 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/gossip_bluey.dart';
-import 'package:gossip_bluey/src/infrastructure/codec/control_frame_codec.dart';
+import 'package:gossip_bluey/src/protocol/control_frame_codec.dart';
 
 import '../fakes/fake_bluey_port.dart';
 import '_adverse_link_harness.dart';
