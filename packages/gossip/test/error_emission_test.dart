@@ -13,6 +13,7 @@ import 'package:gossip/src/infrastructure/ports/message_port.dart';
 import 'package:gossip/src/infrastructure/ports/time_port.dart';
 import 'package:gossip/src/protocol/gossip_engine.dart';
 import 'package:gossip/src/protocol/failure_detector.dart';
+import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:gossip/src/application/services/channel_service.dart';
@@ -93,7 +94,7 @@ void main() {
       final engine = GossipEngine(
         codec: SyncMessageCodec(),
         localNode: localNode,
-        peerRegistry: peerRegistry,
+        peerDirectory: MembershipPeerDirectory(peerRegistry),
         entryRepository: entryRepo,
         timePort: timerPort,
         messagePort: throwingPort,
@@ -126,7 +127,7 @@ void main() {
       final engine = GossipEngine(
         codec: SyncMessageCodec(),
         localNode: localNode,
-        peerRegistry: peerRegistry,
+        peerDirectory: MembershipPeerDirectory(peerRegistry),
         entryRepository: entryRepo,
         timePort: timerPort,
         messagePort: messagePort,

@@ -17,6 +17,7 @@ import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
 import 'package:gossip/src/protocol/gossip_engine.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
+import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:gossip/src/protocol/messages/digest_request.dart';
 import 'package:gossip/src/protocol/messages/digest_response.dart';
@@ -38,7 +39,7 @@ void main() {
     return GossipEngine(
       codec: SyncMessageCodec(),
       localNode: localNode,
-      peerRegistry: registry,
+      peerDirectory: MembershipPeerDirectory(registry),
       entryRepository: entryRepo,
       timePort: timer,
       messagePort: messagePort,
@@ -86,7 +87,7 @@ void main() {
       final peer = engine.selectRandomPeer();
 
       expect(peer, isNotNull);
-      expect(peer!.id, equals(peerId));
+      expect(peer!.nodeId, equals(peerId));
     });
 
     test('generateDigest creates digest for channel with no streams', () async {
@@ -252,7 +253,7 @@ void main() {
       final engine = GossipEngine(
         codec: SyncMessageCodec(),
         localNode: localNode,
-        peerRegistry: registry,
+        peerDirectory: MembershipPeerDirectory(registry),
         entryRepository: entryRepo,
         timePort: timer,
         messagePort: localPort,
@@ -307,7 +308,7 @@ void main() {
         final engine = GossipEngine(
           codec: SyncMessageCodec(),
           localNode: localNode,
-          peerRegistry: registry,
+          peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
           timePort: timer,
           messagePort: localPort,
@@ -374,7 +375,7 @@ void main() {
       final engine = GossipEngine(
         codec: SyncMessageCodec(),
         localNode: localNode,
-        peerRegistry: peerRegistry,
+        peerDirectory: MembershipPeerDirectory(peerRegistry),
         entryRepository: entryRepo,
         messagePort: port,
         localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
@@ -417,7 +418,7 @@ void main() {
         final engine = GossipEngine(
           codec: SyncMessageCodec(),
           localNode: localNode,
-          peerRegistry: registry,
+          peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
@@ -449,7 +450,7 @@ void main() {
         final engine = GossipEngine(
           codec: SyncMessageCodec(),
           localNode: localNode,
-          peerRegistry: registry,
+          peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
@@ -489,7 +490,7 @@ void main() {
         final engine = GossipEngine(
           codec: SyncMessageCodec(),
           localNode: localNode,
-          peerRegistry: registry,
+          peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
@@ -525,7 +526,7 @@ void main() {
         final engine = GossipEngine(
           codec: SyncMessageCodec(),
           localNode: localNode,
-          peerRegistry: registry,
+          peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
@@ -557,7 +558,7 @@ void main() {
         final engine = GossipEngine(
           codec: SyncMessageCodec(),
           localNode: localNode,
-          peerRegistry: registry,
+          peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
@@ -598,7 +599,7 @@ void main() {
           final engine = GossipEngine(
             codec: SyncMessageCodec(),
             localNode: localNode,
-            peerRegistry: registry,
+            peerDirectory: MembershipPeerDirectory(registry),
             entryRepository: entryRepo,
             timePort: timerPort,
             messagePort: messagePort,
@@ -635,7 +636,7 @@ void main() {
           final engine = GossipEngine(
             codec: SyncMessageCodec(),
             localNode: localNode,
-            peerRegistry: registry,
+            peerDirectory: MembershipPeerDirectory(registry),
             entryRepository: entryRepo,
             timePort: timerPort,
             messagePort: messagePort,
@@ -678,7 +679,7 @@ void main() {
         final engine = GossipEngine(
           codec: SyncMessageCodec(),
           localNode: localNode,
-          peerRegistry: registry,
+          peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
@@ -712,7 +713,7 @@ void main() {
         final engine = GossipEngine(
           codec: SyncMessageCodec(),
           localNode: localNode,
-          peerRegistry: registry,
+          peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
@@ -754,7 +755,7 @@ void main() {
         final engine = GossipEngine(
           codec: SyncMessageCodec(),
           localNode: localNode,
-          peerRegistry: registry,
+          peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
@@ -799,7 +800,7 @@ void main() {
         final engine = GossipEngine(
           codec: SyncMessageCodec(),
           localNode: localNode,
-          peerRegistry: registry,
+          peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
@@ -855,7 +856,7 @@ void main() {
           final engine = GossipEngine(
             codec: SyncMessageCodec(),
             localNode: localNode,
-            peerRegistry: registry,
+            peerDirectory: MembershipPeerDirectory(registry),
             entryRepository: entryRepo,
             timePort: timerPort,
             messagePort: messagePort,
@@ -911,7 +912,7 @@ void main() {
         final engine = GossipEngine(
           codec: SyncMessageCodec(),
           localNode: localNode,
-          peerRegistry: registry,
+          peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
           timePort: timerPort,
           messagePort: messagePort,
@@ -1002,7 +1003,7 @@ void main() {
         final engineA = GossipEngine(
           codec: SyncMessageCodec(),
           localNode: nodeA,
-          peerRegistry: registryA,
+          peerDirectory: MembershipPeerDirectory(registryA),
           entryRepository: entryRepoA,
           timePort: timePortA,
           messagePort: portA,
@@ -1012,7 +1013,7 @@ void main() {
         final engineB = GossipEngine(
           codec: SyncMessageCodec(),
           localNode: nodeB,
-          peerRegistry: registryB,
+          peerDirectory: MembershipPeerDirectory(registryB),
           entryRepository: entryRepoB,
           timePort: timePortB,
           messagePort: portB,

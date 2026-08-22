@@ -17,6 +17,7 @@ import 'package:gossip/src/infrastructure/ports/message_port.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:gossip/src/protocol/gossip_engine.dart';
+import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:gossip/src/protocol/messages/digest_request.dart';
 import 'package:gossip/src/protocol/messages/digest_response.dart';
@@ -322,7 +323,7 @@ void main() {
             GossipEngine(
               codec: SyncMessageCodec(),
               localNode: node,
-              peerRegistry: registry,
+              peerDirectory: MembershipPeerDirectory(registry),
               entryRepository: repo,
               timePort: InMemoryTimePort(),
               messagePort: InMemoryMessagePort(node, bus),

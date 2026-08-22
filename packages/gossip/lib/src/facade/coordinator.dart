@@ -32,6 +32,7 @@ import '../infrastructure/ports/time_port.dart';
 import '../protocol/gossip_engine.dart';
 import '../protocol/failure_detector.dart';
 import '../membership/infrastructure/membership_message_codec.dart';
+import '../sync/infrastructure/membership_peer_directory.dart';
 import '../sync/infrastructure/sync_message_codec.dart';
 import 'adaptive_timing_status.dart';
 import 'channel.dart';
@@ -342,7 +343,7 @@ class Coordinator {
       coordinator._gossipEngine = GossipEngine(
         codec: SyncMessageCodec(),
         localNode: localNode,
-        peerRegistry: peerRegistry,
+        peerDirectory: MembershipPeerDirectory(peerRegistry),
         entryRepository: entryRepository,
         timePort: timerPort,
         messagePort: messagePort,

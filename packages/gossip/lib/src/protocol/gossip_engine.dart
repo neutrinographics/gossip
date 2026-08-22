@@ -13,13 +13,13 @@ import '../domain/value_objects/channel_id.dart';
 import '../domain/value_objects/stream_id.dart';
 import '../domain/value_objects/version_vector.dart';
 import '../domain/value_objects/log_entry.dart';
-import '../domain/aggregates/peer_registry.dart';
 import '../domain/aggregates/channel_aggregate.dart';
-import '../domain/entities/peer.dart';
 import '../domain/interfaces/entry_repository.dart';
 import '../infrastructure/ports/time_port.dart';
 import '../infrastructure/ports/message_port.dart';
 import '../shared/domain/interfaces/message_codec.dart';
+import '../sync/domain/interfaces/peer_directory.dart';
+import '../sync/domain/value_objects/sync_partner.dart';
 import '../sync/infrastructure/sync_message_codec.dart';
 import 'messages/protocol_message.dart';
 import 'values/channel_digest.dart';
@@ -86,8 +86,11 @@ class GossipEngine {
   /// Local node identifier for this instance.
   final NodeId localNode;
 
-  /// Peer registry for selecting random peers to gossip with.
-  final PeerRegistry peerRegistry;
+  /// Sync's port onto peer state (membership context), for selecting
+  /// partners to gossip with and recording contact/anti-entropy telemetry.
+  /// Implemented by `MembershipPeerDirectory`, an ACL over `PeerRegistry` —
+  /// see `sync/domain/interfaces/peer_directory.dart`.
+  final PeerDirectory peerDirectory;
 
   /// Entry store for reading/writing log entries during sync.
   final EntryRepository entryRepository;
@@ -185,8 +188,8 @@ class GossipEngine {
 
   /// Whether adaptive timing is enabled.
   ///
-  /// When true, gossip interval is computed from per-peer RTT data in
-  /// [PeerRegistry]. When false, uses static gossip interval.
+  /// When true, gossip interval is computed from per-peer RTT data via
+  /// [PeerDirectory]. When false, uses static gossip interval.
   final bool _adaptiveTimingEnabled;
 
   /// Static gossip interval (used when RTT tracker not provided).
@@ -292,7 +295,7 @@ class GossipEngine {
   GossipEngine({
     required MessageCodec codec,
     required this.localNode,
-    required this.peerRegistry,
+    required this.peerDirectory,
     required this.entryRepository,
     required this.timePort,
     required this.messagePort,
@@ -374,9 +377,9 @@ class GossipEngine {
   /// payload. The median is robust to a single outlier at either end.
   Duration get _adaptiveBaseInterval {
     final srtts = <Duration>[];
-    for (final peer in peerRegistry.reachablePeers) {
-      final rttEstimate = peer.metrics.rttEstimate;
-      if (rttEstimate != null) srtts.add(rttEstimate.smoothedRtt);
+    for (final partner in peerDirectory.reachablePartners()) {
+      final smoothedRtt = partner.smoothedRtt;
+      if (smoothedRtt != null) srtts.add(smoothedRtt);
     }
 
     // Fall back to conservative default when no peers have RTT estimates
@@ -561,8 +564,8 @@ class GossipEngine {
     final batches = Map.of(_pendingPush);
     _pendingPush.clear();
 
-    final peers = peerRegistry.reachablePeers;
-    if (peers.isEmpty) return;
+    final partners = peerDirectory.reachablePartners();
+    if (partners.isEmpty) return;
 
     for (final batch in batches.entries) {
       final (channelId, streamId) = batch.key;
@@ -573,8 +576,8 @@ class GossipEngine {
         entries: batch.value,
       );
       if (_codec.encode(push).length > maxDeltaResponseBytes) continue;
-      for (final peer in peers) {
-        await _sendMessage(peer.id, push);
+      for (final partner in partners) {
+        await _sendMessage(partner.nodeId, push);
       }
     }
   }
@@ -636,7 +639,7 @@ class GossipEngine {
   /// 1. Get reachable peers and filter out congested ones (per-peer
   ///    backpressure) and ones we already exchanged with inside the
   ///    current interval (recency suppression, time-based — see
-  ///    [Peer.lastAntiEntropyMs])
+  ///    [SyncPartner.lastAntiEntropyMs])
   /// 2. Select the least-recently-gossiped uncongested candidate (bounded
   ///    coverage; random tiebreak) and mark it gossiped
   /// 3. Generate digests for all channels via [generateDigest]
@@ -657,7 +660,7 @@ class GossipEngine {
       _pacer.quietRound();
     }
 
-    final reachable = peerRegistry.reachablePeers;
+    final reachable = peerDirectory.reachablePartners();
     if (reachable.isEmpty) return;
 
     // Filter out congested peers (per-peer backpressure) AND peers we
@@ -675,7 +678,7 @@ class GossipEngine {
     final candidates = reachable
         .where(
           (p) =>
-              messagePort.pendingSendCount(p.id) <=
+              messagePort.pendingSendCount(p.nodeId) <=
                   _perPeerCongestionThreshold &&
               // Recency suppression (time-based — deliberately NOT
               // cached-VV state): skip peers we exchanged with inside
@@ -694,11 +697,11 @@ class GossipEngine {
       return;
     }
 
-    final peer = _selectGossipPartner(candidates);
+    final partner = _selectGossipPartner(candidates);
     // Record that we're gossiping with this peer now, so the next rounds
     // prefer peers we haven't synced with recently (bounded coverage).
-    peerRegistry.updatePeerAntiEntropy(peer.id, timePort.nowMs);
-    await _sendMessage(peer.id, await _buildDigestRequest());
+    peerDirectory.recordAntiEntropy(partner.nodeId, timePort.nowMs);
+    await _sendMessage(partner.nodeId, await _buildDigestRequest());
   }
 
   /// Selects the gossip partner from [candidates], preferring the
@@ -710,9 +713,9 @@ class GossipEngine {
   /// selection's geometric distribution (the same win H3 gave SWIM probing),
   /// while the tiebreak keeps selection decorrelated across nodes — each node
   /// holds its own per-peer anti-entropy timestamps.
-  Peer _selectGossipPartner(List<Peer> candidates) {
+  SyncPartner _selectGossipPartner(List<SyncPartner> candidates) {
     // Never-gossiped (null) sorts before any real timestamp: -1 < 0 <= nowMs.
-    int staleKey(Peer p) => p.lastAntiEntropyMs ?? -1;
+    int staleKey(SyncPartner p) => p.lastAntiEntropyMs ?? -1;
 
     var minKey = staleKey(candidates.first);
     for (final p in candidates.skip(1)) {
@@ -862,7 +865,7 @@ class GossipEngine {
   Future<void> _handleIncomingMessage(IncomingMessage message) async {
     // Record metrics before processing (even if decode fails)
     final nowMs = timePort.nowMs;
-    peerRegistry.recordMessageReceived(
+    peerDirectory.recordMessageReceived(
       message.sender,
       message.bytes.length,
       nowMs,
@@ -874,7 +877,7 @@ class GossipEngine {
     // evicted from the gossip set just because its (lower-frequency) pings
     // were starved behind gossip traffic on a slow transport. No-op for
     // unknown/removed peers.
-    peerRegistry.updatePeerContact(message.sender, nowMs);
+    peerDirectory.recordContact(message.sender, nowMs);
 
     try {
       final protocolMessage = _codec.decode(message.bytes);
@@ -893,7 +896,7 @@ class GossipEngine {
         // A reciprocated exchange is coverage for BOTH sides: record it
         // so our own selector/suppression see this peer as fresh
         // (missing half of WIRE4-1).
-        peerRegistry.updatePeerAntiEntropy(message.sender, nowMs);
+        peerDirectory.recordAntiEntropy(message.sender, nowMs);
         final response = await _handleDigestRequest(protocolMessage);
         await _sendMessage(message.sender, response);
         // Push-pull: the request already carries the initiator's version
@@ -999,7 +1002,7 @@ class GossipEngine {
     _logOutgoingMessage(recipient, message, bytes.length);
     try {
       await messagePort.send(recipient, bytes);
-      peerRegistry.recordMessageSent(recipient, bytes.length);
+      peerDirectory.recordMessageSent(recipient, bytes.length);
       return true;
     } catch (e) {
       _emitError(
@@ -1093,11 +1096,11 @@ class GossipEngine {
 
   /// Selects a random reachable peer for gossip.
   ///
-  /// Delegates to [PeerRegistry.selectRandomReachablePeer].
+  /// Delegates to [PeerDirectory.selectRandomPartner].
   ///
   /// Returns null if no reachable peers exist.
-  Peer? selectRandomPeer() {
-    return peerRegistry.selectRandomReachablePeer(_random);
+  SyncPartner? selectRandomPeer() {
+    return peerDirectory.selectRandomPartner(_random);
   }
 
   /// Generates a digest (version vector summary) for a channel.
