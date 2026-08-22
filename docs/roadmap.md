@@ -54,3 +54,4 @@ runtime behavior changes.
 
 - ◐ **Medium** — [Realign the module layout and make the architecture scream](backlog/health-architecture-alignment.md) · part 1 shipped (202bf6d..00420fc); part 2: concept-first packages (sync / detection / shared kernel, per gossip-kt) + an explicit sync↔detection contract — sequence after the WIRE4 pacing redesign
 - ☐ **High** — [Sweep the remaining minor audit findings](backlog/health-minor-findings-sweep.md) · three correctness latents (unbudgeted sync-request size, non-rotating responder digests, uncopied payload buffers) + transport minors + hygiene
+- ☐ **Low** — [Converge the transports' MessagePort close() semantics](backlog/health-transport-port-close-semantics.md) · nearby gates its own view only, bluey's close() tears down the whole connection layer — converge on port-gates-itself, facade owns teardown
