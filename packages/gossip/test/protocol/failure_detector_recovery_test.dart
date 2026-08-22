@@ -1,4 +1,5 @@
-import 'package:gossip/src/domain/events/domain_event.dart' show PeerStatus;
+import 'package:gossip/src/membership/domain/events/membership_events.dart'
+    show PeerStatus;
 import 'package:gossip/src/protocol/messages/ack.dart';
 import 'package:gossip/src/protocol/messages/ping.dart';
 import 'package:gossip/src/protocol/messages/ping_req.dart';

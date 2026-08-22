@@ -1,6 +1,6 @@
 import 'dart:math';
 
-import 'package:gossip/src/domain/events/domain_event.dart'
+import 'package:gossip/src/membership/domain/events/membership_events.dart'
     show PeerStatus, PeerStatusChanged;
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';

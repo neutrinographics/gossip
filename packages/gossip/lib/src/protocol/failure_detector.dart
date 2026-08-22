@@ -10,7 +10,7 @@ import 'package:gossip/src/domain/services/rtt_tracker.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/domain/entities/peer.dart';
-import 'package:gossip/src/domain/events/domain_event.dart';
+import 'package:gossip/src/membership/domain/events/membership_events.dart';
 import 'package:gossip/src/infrastructure/ports/time_port.dart';
 import 'package:gossip/src/infrastructure/ports/message_port.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';

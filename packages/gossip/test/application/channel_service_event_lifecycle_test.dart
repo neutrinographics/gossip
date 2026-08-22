@@ -1,5 +1,6 @@
 import 'package:gossip/src/application/services/channel_service.dart';
 import 'package:gossip/src/domain/events/domain_event.dart';
+import 'package:gossip/src/sync/domain/events/sync_events.dart';
 import 'package:gossip/src/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_channel_repository.dart';

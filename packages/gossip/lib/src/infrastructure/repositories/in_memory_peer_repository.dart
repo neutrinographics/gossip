@@ -1,7 +1,7 @@
 import '../../domain/value_objects/node_id.dart';
 import '../../domain/entities/peer.dart';
 import '../../domain/interfaces/peer_repository.dart';
-import '../../domain/events/domain_event.dart';
+import '../../membership/domain/events/membership_events.dart';
 
 /// In-memory implementation of [PeerRepository] for testing.
 ///

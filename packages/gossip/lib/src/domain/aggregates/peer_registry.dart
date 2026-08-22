@@ -4,6 +4,7 @@ import '../value_objects/node_id.dart';
 import '../entities/peer.dart';
 import '../entities/peer_metrics.dart';
 import '../events/domain_event.dart';
+import '../../membership/domain/events/membership_events.dart';
 
 /// Aggregate root managing peer membership and SWIM failure detection state.
 ///

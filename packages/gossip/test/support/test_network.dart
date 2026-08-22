@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:gossip/src/facade/coordinator.dart';
 import 'package:gossip/src/facade/coordinator_config.dart';
 import 'package:gossip/src/domain/entities/peer.dart';
-import 'package:gossip/src/domain/events/domain_event.dart';
+import 'package:gossip/src/membership/domain/events/membership_events.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/domain/value_objects/stream_id.dart';

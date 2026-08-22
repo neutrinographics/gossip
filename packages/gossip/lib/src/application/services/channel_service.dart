@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 import '../../domain/errors/sync_error.dart';
 import '../../domain/events/domain_event.dart';
+import '../../sync/domain/events/sync_events.dart';
 import '../../domain/value_objects/channel_id.dart';
 import '../../domain/value_objects/node_id.dart';
 import '../../domain/value_objects/stream_id.dart';

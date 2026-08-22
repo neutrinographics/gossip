@@ -3,7 +3,7 @@ import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/domain/interfaces/peer_repository.dart';
 import 'package:gossip/src/domain/entities/peer.dart';
-import 'package:gossip/src/domain/events/domain_event.dart';
+import 'package:gossip/src/membership/domain/events/membership_events.dart';
 import 'package:gossip/src/application/services/peer_service.dart';
 
 class FakePeerRepository implements PeerRepository {

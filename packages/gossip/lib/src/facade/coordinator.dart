@@ -20,6 +20,7 @@ import '../domain/value_objects/log_entry.dart';
 import '../domain/value_objects/node_id.dart';
 import '../domain/value_objects/stream_id.dart';
 import '../domain/events/domain_event.dart';
+import '../sync/domain/events/sync_events.dart';
 import '../domain/errors/sync_error.dart';
 import '../domain/services/hlc_clock.dart';
 import '../domain/services/rtt_tracker.dart';

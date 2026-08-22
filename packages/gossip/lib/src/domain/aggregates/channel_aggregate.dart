@@ -3,6 +3,7 @@ import '../value_objects/node_id.dart';
 import '../value_objects/stream_id.dart';
 import '../interfaces/retention_policy.dart';
 import '../events/domain_event.dart';
+import '../../sync/domain/events/sync_events.dart';
 
 /// Aggregate root managing channel membership and stream metadata.
 ///

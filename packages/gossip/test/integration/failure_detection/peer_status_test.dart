@@ -1,5 +1,5 @@
 import 'package:test/test.dart';
-import 'package:gossip/src/domain/events/domain_event.dart';
+import 'package:gossip/src/membership/domain/events/membership_events.dart';
 import 'package:gossip/src/facade/coordinator_config.dart';
 
 import '../../support/test_network.dart';

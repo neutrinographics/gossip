@@ -114,6 +114,8 @@ export 'src/domain/entities/stream_config.dart';
 
 // Domain events
 export 'src/domain/events/domain_event.dart';
+export 'src/sync/domain/events/sync_events.dart';
+export 'src/membership/domain/events/membership_events.dart';
 
 // Domain errors
 export 'src/domain/errors/sync_error.dart';
