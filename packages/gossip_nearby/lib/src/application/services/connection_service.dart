@@ -12,8 +12,8 @@ import '../../domain/events/connection_event.dart';
 import '../../domain/interfaces/nearby_port.dart';
 import '../../domain/value_objects/endpoint.dart';
 import '../../domain/value_objects/endpoint_id.dart';
-import '../../infrastructure/codec/handshake_codec.dart'
-    show HandshakeCodec, MessageType, WireFormat;
+import '../../protocol/handshake_codec.dart' show HandshakeCodec, MessageType;
+import '../../protocol/wire_dispatcher.dart';
 import '../observability/nearby_metrics.dart';
 
 /// Callback for receiving gossip messages.
@@ -59,6 +59,7 @@ class ConnectionService {
   final NearbyPort _nearbyPort;
   final ConnectionRegistry _registry;
   final HandshakeCodec _codec;
+  final WireDispatcher _wireDispatcher;
   final NearbyMetrics _metrics;
   final LogCallback? _onLog;
   final TimePort _timePort;
@@ -108,6 +109,7 @@ class ConnectionService {
     required NearbyPort nearbyPort,
     required ConnectionRegistry registry,
     HandshakeCodec codec = const HandshakeCodec(),
+    WireDispatcher? wireDispatcher,
     NearbyMetrics? metrics,
     LogCallback? onLog,
     TimePort? timePort,
@@ -119,6 +121,7 @@ class ConnectionService {
        _nearbyPort = nearbyPort,
        _registry = registry,
        _codec = codec,
+       _wireDispatcher = wireDispatcher ?? WireDispatcher(),
        _metrics = metrics ?? NearbyMetrics(),
        _onLog = onLog,
        _timePort = timePort ?? RealTimePort(),
@@ -468,7 +471,7 @@ class ConnectionService {
     _lastMessageTime = now;
 
     _metrics.recordBytesReceived(bytes.length);
-    final messageType = bytes[WireFormat.typeOffset];
+    final messageType = _wireDispatcher.classify(bytes);
     _log(
       LogLevel.trace,
       'Received ${bytes.length} bytes from $id (type: 0x${messageType.toRadixString(16)})',

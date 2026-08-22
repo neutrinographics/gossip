@@ -89,7 +89,8 @@ Implements `MessagePort` using Android/iOS Nearby Connections.
 - `ConnectionService` (application): Handshake orchestration, message routing
 - `ConnectionRegistry` (domain aggregate): Enforces NodeId → EndpointId uniqueness
 - `NearbyAdapter` (infrastructure): Platform integration via `nearby_connections`
-- `HandshakeCodec` (infrastructure): Binary wire format
+- `HandshakeCodec` (protocol): Binary wire format
+- `WireDispatcher` (protocol): Classifies inbound bytes into a `MessageType` — the only place outside `HandshakeCodec` that reads wire byte offsets
 
 **Handshake protocol:**
 ```

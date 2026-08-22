@@ -2,7 +2,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
-import 'package:gossip_nearby/src/infrastructure/codec/handshake_codec.dart';
+import 'package:gossip_nearby/src/protocol/handshake_codec.dart';
 
 void main() {
   group('HandshakeCodec', () {
