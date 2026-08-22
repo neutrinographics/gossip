@@ -19,7 +19,8 @@ import '../domain/entities/peer.dart';
 import '../domain/interfaces/entry_repository.dart';
 import '../infrastructure/ports/time_port.dart';
 import '../infrastructure/ports/message_port.dart';
-import 'protocol_codec.dart';
+import '../shared/domain/interfaces/message_codec.dart';
+import '../sync/infrastructure/sync_message_codec.dart';
 import 'messages/protocol_message.dart';
 import 'values/channel_digest.dart';
 import 'values/stream_digest.dart';
@@ -136,8 +137,27 @@ class GossipEngine {
   /// limit.
   final int maxDeltaResponseBytes;
 
-  /// Codec for serializing/deserializing protocol messages.
-  final ProtocolCodec _codec = ProtocolCodec();
+  /// Codec for serializing/deserializing this context's (sync's) protocol
+  /// messages.
+  ///
+  /// Injected by the composition root (`Coordinator` wires a
+  /// [SyncMessageCodec]; test harnesses do the same) rather than
+  /// constructed inline, so the engine depends only on the shared
+  /// [MessageCodec] seam and not on the (now-composite) `ProtocolCodec`.
+  /// [decode] answers null for a frame outside this codec's family (e.g. a
+  /// membership Ping/Ack/PingReq sharing the same transport) — see the
+  /// null-check in [_handleIncomingMessage].
+  final MessageCodec _codec;
+
+  /// Byte-budget helpers ([SyncMessageCodec.encodedEntrySize],
+  /// [SyncMessageCodec.encodedStreamDigestSize]) aren't part of the shared
+  /// [MessageCodec] seam — sizing entries/digests against the transport
+  /// limit is a sync-specific concern, not something membership's codec
+  /// needs. The gossip engine is a sync-context component, so its injected
+  /// codec is always a [SyncMessageCodec] in practice (`Coordinator` and
+  /// every test harness wire exactly that); this getter makes that
+  /// assumption explicit at its two call sites instead of scattering casts.
+  SyncMessageCodec get _syncCodec => _codec as SyncMessageCodec;
 
   /// Random number generator for peer selection.
   /// Injectable for deterministic testing with seeded Random.
@@ -270,6 +290,7 @@ class GossipEngine {
   static const int _perPeerCongestionThreshold = 3;
 
   GossipEngine({
+    required MessageCodec codec,
     required this.localNode,
     required this.peerRegistry,
     required this.entryRepository,
@@ -284,7 +305,8 @@ class GossipEngine {
     Duration? gossipInterval,
     bool adaptiveTimingEnabled = false,
     this.maxDeltaResponseBytes = 30 * 1024,
-  }) : _hlcClock = hlcClock,
+  }) : _codec = codec,
+       _hlcClock = hlcClock,
        _localNodeRepository = localNodeRepository,
        _random = random ?? Random(),
        _staticGossipInterval =
@@ -770,7 +792,7 @@ class GossipEngine {
       // (channelId + structural JSON), so we never exceed the budget even
       // when a stream is the first of its channel.
       final cost =
-          _codec.encodedStreamDigestSize(item.digest) +
+          _syncCodec.encodedStreamDigestSize(item.digest) +
           item.channel.value.length +
           40;
 
@@ -856,6 +878,11 @@ class GossipEngine {
 
     try {
       final protocolMessage = _codec.decode(message.bytes);
+      // Foreign-family frame (e.g. a membership Ping/Ack/PingReq sharing
+      // the same transport) — not ours to handle. Routine traffic, not an
+      // error: mirrors the pre-injection behavior where the type-dispatch
+      // below simply had no matching branch for it.
+      if (protocolMessage == null) return;
 
       if (protocolMessage is DigestRequest) {
         _log(
@@ -1484,7 +1511,7 @@ class GossipEngine {
     var size = baseSize;
     for (final entry in delta) {
       if (blockedAuthors.contains(entry.author)) continue;
-      final cost = _codec.encodedEntrySize(entry) + 1;
+      final cost = _syncCodec.encodedEntrySize(entry) + 1;
 
       if (baseSize + cost > maxDeltaResponseBytes) {
         // Undeliverable: no message can ever carry this entry.

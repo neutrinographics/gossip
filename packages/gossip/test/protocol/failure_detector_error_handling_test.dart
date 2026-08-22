@@ -6,6 +6,7 @@ import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
 import 'package:gossip/src/protocol/failure_detector.dart';
+import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:gossip/src/protocol/messages/ack.dart';
 import 'package:gossip/src/protocol/messages/ping.dart';
 import 'package:gossip/src/protocol/messages/ping_req.dart';
@@ -301,6 +302,7 @@ void main() {
       final errors = <SyncError>[];
 
       final detector = FailureDetector(
+        codec: MembershipMessageCodec(),
         localNode: localNode,
         peerRegistry: peerRegistry,
         timePort: timePort,
@@ -337,6 +339,7 @@ void main() {
       final errors = <SyncError>[];
 
       final detector = FailureDetector(
+        codec: MembershipMessageCodec(),
         localNode: localNode,
         peerRegistry: peerRegistry,
         timePort: timePort,
@@ -374,6 +377,7 @@ void main() {
       final errors = <SyncError>[];
 
       final detector = FailureDetector(
+        codec: MembershipMessageCodec(),
         localNode: localNode,
         peerRegistry: peerRegistry,
         timePort: timePort,

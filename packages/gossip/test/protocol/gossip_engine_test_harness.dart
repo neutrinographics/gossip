@@ -27,6 +27,7 @@ import 'package:gossip/src/protocol/messages/delta_response.dart';
 import 'package:gossip/src/protocol/messages/digest_request.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
 import 'package:gossip/src/protocol/values/channel_digest.dart';
+import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 
 // ---------------------------------------------------------------------------
 // Test peer
@@ -137,6 +138,7 @@ class GossipEngineTestHarness {
     }
 
     final engine = GossipEngine(
+      codec: SyncMessageCodec(),
       localNode: localNode,
       peerRegistry: peerRegistry,
       entryRepository: entryRepository,
@@ -193,6 +195,7 @@ class GossipEngineTestHarness {
   }) {
     final bus = InMemoryMessageBus();
     return GossipEngine(
+      codec: SyncMessageCodec(),
       localNode: localNode,
       peerRegistry: peerRegistry,
       entryRepository: InMemoryEntryRepository(),

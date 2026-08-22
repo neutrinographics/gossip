@@ -6,4 +6,8 @@ void main() {
     expect(WireTypes.membership.intersection(WireTypes.sync), isEmpty);
     expect(WireTypes.membership.union(WireTypes.sync), {0, 1, 2, 3, 4, 5, 6});
   });
+
+  test('known is exactly the union of every context family', () {
+    expect(WireTypes.known, equals(WireTypes.membership.union(WireTypes.sync)));
+  });
 }

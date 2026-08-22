@@ -45,6 +45,14 @@ class SyncMessageCodec implements MessageCodec {
 
     final messageType = bytes[0];
     if (!WireTypes.sync.contains(messageType)) {
+      // A byte owned by a sibling context (membership) is routine "not
+      // mine" traffic sharing the transport; a byte owned by NO known
+      // context is a genuinely corrupt frame and must surface as an error
+      // rather than being silently dropped as if it were healthy foreign
+      // traffic.
+      if (!WireTypes.known.contains(messageType)) {
+        throw ArgumentError('Unknown message type: $messageType');
+      }
       return null;
     }
     final data = bytes.sublist(1);

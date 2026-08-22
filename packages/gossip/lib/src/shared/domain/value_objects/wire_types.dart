@@ -17,4 +17,15 @@ abstract final class WireTypes {
     deltaRequest,
     deltaResponse,
   };
+
+  /// Union of every type byte owned by any current bounded context.
+  ///
+  /// Lets a per-context codec's `decode` distinguish a genuinely unknown
+  /// (corrupt) type byte — outside [known] entirely — from a byte that
+  /// belongs to a sibling context's family (in [known], just not this
+  /// codec's own set): the former must throw (malformed frame), the latter
+  /// must answer null ("not mine", routine traffic to ignore). Referencing
+  /// this shared constant is not a context-to-context dependency — it's the
+  /// same envelope-partition agreement both families already publish here.
+  static const Set<int> known = {...membership, ...sync};
 }

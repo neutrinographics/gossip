@@ -31,6 +31,7 @@ import '../infrastructure/ports/message_port.dart';
 import '../infrastructure/ports/time_port.dart';
 import '../protocol/gossip_engine.dart';
 import '../protocol/failure_detector.dart';
+import '../membership/infrastructure/membership_message_codec.dart';
 import '../sync/infrastructure/sync_message_codec.dart';
 import 'adaptive_timing_status.dart';
 import 'channel.dart';
@@ -339,6 +340,7 @@ class Coordinator {
       final failureDetectorRttTracker = RttTracker();
 
       coordinator._gossipEngine = GossipEngine(
+        codec: SyncMessageCodec(),
         localNode: localNode,
         peerRegistry: peerRegistry,
         entryRepository: entryRepository,
@@ -356,6 +358,7 @@ class Coordinator {
       );
 
       coordinator._failureDetector = FailureDetector(
+        codec: MembershipMessageCodec(),
         localNode: localNode,
         peerRegistry: peerRegistry,
         timePort: timerPort,

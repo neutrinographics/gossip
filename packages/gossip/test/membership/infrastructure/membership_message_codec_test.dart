@@ -106,5 +106,24 @@ void main() {
 
       expect(() => codec.decode(bytes), throwsA(isA<Object>()));
     });
+
+    test('decode throws ArgumentError for a type byte outside every known '
+        'family (genuinely corrupt, not just "not mine")', () {
+      // 255 belongs to neither membership (0-2) nor sync (3-6) — unlike
+      // the sync-family test above, this must NOT be treated as routine
+      // foreign traffic.
+      final bytes = Uint8List.fromList([255, 0, 1, 2, 3]);
+
+      expect(
+        () => codec.decode(bytes),
+        throwsA(
+          isA<ArgumentError>().having(
+            (e) => e.message,
+            'message',
+            'Unknown message type: 255',
+          ),
+        ),
+      );
+    });
   });
 }

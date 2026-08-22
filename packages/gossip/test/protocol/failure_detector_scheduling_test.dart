@@ -3,6 +3,7 @@ import 'package:gossip/src/domain/errors/sync_error.dart';
 import 'package:gossip/src/domain/value_objects/node_id.dart';
 import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
 import 'package:gossip/src/protocol/failure_detector.dart';
+import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:test/test.dart';
 
 import 'failing_delay_time_port.dart';
@@ -82,6 +83,7 @@ void main() {
         final localNode = NodeId('local');
         final errors = <SyncError>[];
         final detector = FailureDetector(
+          codec: MembershipMessageCodec(),
           localNode: localNode,
           peerRegistry: PeerRegistry(
             localNode: localNode,

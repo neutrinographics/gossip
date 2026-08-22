@@ -13,7 +13,8 @@ import 'package:gossip/src/domain/entities/peer.dart';
 import 'package:gossip/src/membership/domain/events/membership_events.dart';
 import 'package:gossip/src/infrastructure/ports/time_port.dart';
 import 'package:gossip/src/infrastructure/ports/message_port.dart';
-import 'package:gossip/src/protocol/protocol_codec.dart';
+import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
+import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
 import 'package:gossip/src/protocol/messages/ping.dart';
 import 'package:gossip/src/protocol/messages/ack.dart';
 import 'package:gossip/src/protocol/messages/ping_req.dart';
@@ -111,9 +112,21 @@ class FailureDetector {
   final bool _staticPingTimeoutProvided;
   final bool _staticProbeIntervalProvided;
   final Random _random;
-  final ProtocolCodec _codec = ProtocolCodec();
+
+  /// Codec for serializing/deserializing this context's (membership's)
+  /// protocol messages.
+  ///
+  /// Injected by the composition root (`Coordinator` wires a
+  /// [MembershipMessageCodec]; test harnesses do the same) rather than
+  /// constructed inline, so the detector depends only on the shared
+  /// [MessageCodec] seam and not on the (now-composite) `ProtocolCodec`.
+  /// [decode] answers null for a frame outside this codec's family (e.g. a
+  /// sync DigestRequest/Response or DeltaRequest/Response sharing the same
+  /// transport) — see the null-check in [_handleIncomingMessage].
+  final MessageCodec _codec;
 
   FailureDetector({
+    required MessageCodec codec,
     required this.localNode,
     required this.peerRegistry,
     this.failureThreshold = 3,
@@ -127,7 +140,8 @@ class FailureDetector {
     Duration? probeInterval,
     Random? random,
     RttTracker? rttTracker,
-  }) : _pingTimeout = pingTimeout ?? const Duration(milliseconds: 500),
+  }) : _codec = codec,
+       _pingTimeout = pingTimeout ?? const Duration(milliseconds: 500),
        _probeInterval = probeInterval ?? const Duration(milliseconds: 1000),
        _random = random ?? Random(),
        _rttTracker = rttTracker ?? RttTracker(),
@@ -810,6 +824,12 @@ class FailureDetector {
     // every rate/byte metric applications throttle on.
     try {
       final protocolMessage = _codec.decode(message.bytes);
+      // Foreign-family frame (e.g. a sync DigestRequest/DigestResponse or
+      // DeltaRequest/DeltaResponse sharing the same transport) — not ours
+      // to handle. Routine traffic, not an error: mirrors the
+      // pre-injection behavior where the type-dispatch below simply had no
+      // matching branch for it.
+      if (protocolMessage == null) return;
 
       if (protocolMessage is Ping) {
         await _handleIncomingPing(protocolMessage, message.sender);
