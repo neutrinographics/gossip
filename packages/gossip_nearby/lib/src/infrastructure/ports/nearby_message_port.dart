@@ -3,28 +3,19 @@ import 'dart:typed_data';
 
 import 'package:gossip/gossip.dart';
 
-import '../../application/services/connection_service.dart';
+import '../../application/interfaces/message_dispatcher.dart';
 
-/// Implements gossip's [MessagePort] interface using [ConnectionService].
+/// Implements gossip's [MessagePort] interface using a [MessageDispatcher].
 ///
 /// This adapter bridges the gossip library's messaging abstraction with
-/// the Nearby Connections transport layer.
+/// the Nearby Connections transport layer, depending only on the
+/// application-owned dispatcher seam (ARCH3-4) rather than the concrete
+/// `ConnectionService`.
 class NearbyMessagePort implements MessagePort {
-  final ConnectionService _connectionService;
-  final _incomingController = StreamController<IncomingMessage>.broadcast();
+  final MessageDispatcher _dispatcher;
   bool _closed = false;
 
-  NearbyMessagePort(this._connectionService) {
-    _connectionService.onGossipMessage = _onGossipMessage;
-  }
-
-  void _onGossipMessage(NodeId sender, Uint8List bytes) {
-    if (_closed) return;
-
-    _incomingController.add(
-      IncomingMessage(sender: sender, bytes: bytes, receivedAt: DateTime.now()),
-    );
-  }
+  NearbyMessagePort(this._dispatcher);
 
   @override
   Future<void> send(
@@ -33,28 +24,20 @@ class NearbyMessagePort implements MessagePort {
     MessagePriority priority = MessagePriority.normal,
   }) async {
     if (_closed) return;
-    await _connectionService.sendGossipMessage(
-      destination,
-      bytes,
-      priority: priority,
-    );
+    await _dispatcher.sendGossipMessage(destination, bytes, priority: priority);
   }
 
   @override
-  Stream<IncomingMessage> get incoming => _incomingController.stream;
+  Stream<IncomingMessage> get incoming => _dispatcher.incomingMessages;
 
   @override
   Future<void> close() async {
-    if (_closed) return;
     _closed = true;
-    _connectionService.onGossipMessage = null;
-    await _incomingController.close();
   }
 
   @override
-  int pendingSendCount(NodeId peer) =>
-      _connectionService.pendingSendCount(peer);
+  int pendingSendCount(NodeId peer) => _dispatcher.pendingSendCount(peer);
 
   @override
-  int get totalPendingSendCount => _connectionService.totalPendingSendCount;
+  int get totalPendingSendCount => _dispatcher.totalPendingSendCount;
 }

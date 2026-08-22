@@ -3,94 +3,68 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
-import 'package:gossip_nearby/src/application/services/connection_service.dart';
-import 'package:gossip_nearby/src/domain/events/connection_event.dart';
+import 'package:gossip_nearby/src/application/interfaces/message_dispatcher.dart';
 import 'package:gossip_nearby/src/infrastructure/ports/nearby_message_port.dart';
-import 'package:mocktail/mocktail.dart';
 
-class MockConnectionService extends Mock implements ConnectionService {}
+class _FakeDispatcher implements MessageDispatcher {
+  final sent = <(NodeId, Uint8List)>[];
+  final _incoming = StreamController<IncomingMessage>.broadcast();
+
+  @override
+  Future<void> sendGossipMessage(
+    NodeId destination,
+    Uint8List bytes, {
+    MessagePriority priority = MessagePriority.normal,
+  }) async {
+    sent.add((destination, bytes));
+  }
+
+  @override
+  Stream<IncomingMessage> get incomingMessages => _incoming.stream;
+
+  @override
+  int pendingSendCount(NodeId peer) => 0;
+
+  @override
+  int get totalPendingSendCount => 0;
+
+  void emit(IncomingMessage m) => _incoming.add(m);
+}
 
 void main() {
-  setUpAll(() {
-    registerFallbackValue(NodeId('fallback'));
-    registerFallbackValue(Uint8List(0));
+  final peer = NodeId('22222222-2222-2222-2222-222222222222');
+
+  test('port sends through the dispatcher interface', () async {
+    final dispatcher = _FakeDispatcher();
+    final port = NearbyMessagePort(dispatcher);
+    await port.send(peer, Uint8List.fromList([1, 2, 3]));
+    expect(dispatcher.sent.single.$1, peer);
   });
 
-  group('NearbyMessagePort', () {
-    late NearbyMessagePort messagePort;
-    late MockConnectionService mockConnectionService;
-    late StreamController<ConnectionEvent> eventController;
+  test('port forwards the dispatcher incoming stream', () async {
+    final dispatcher = _FakeDispatcher();
+    final port = NearbyMessagePort(dispatcher);
+    final received = <IncomingMessage>[];
+    final sub = port.incoming.listen(received.add);
 
-    setUp(() {
-      mockConnectionService = MockConnectionService();
-      eventController = StreamController<ConnectionEvent>.broadcast();
+    dispatcher.emit(
+      IncomingMessage(
+        sender: peer,
+        bytes: Uint8List.fromList([7]),
+        receivedAt: DateTime.now(),
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
 
-      when(
-        () => mockConnectionService.events,
-      ).thenAnswer((_) => eventController.stream);
-      when(
-        () => mockConnectionService.sendGossipMessage(any(), any()),
-      ).thenAnswer((_) async {});
+    expect(received.single.sender, peer);
+    await sub.cancel();
+  });
 
-      messagePort = NearbyMessagePort(mockConnectionService);
-    });
-
-    tearDown(() async {
-      await eventController.close();
-      await messagePort.close();
-    });
-
-    group('send', () {
-      test('delegates to ConnectionService.sendGossipMessage', () async {
-        final destination = NodeId('dest-node');
-        final bytes = Uint8List.fromList([1, 2, 3, 4]);
-
-        await messagePort.send(destination, bytes);
-
-        verify(
-          () => mockConnectionService.sendGossipMessage(destination, bytes),
-        ).called(1);
-      });
-    });
-
-    group('incoming', () {
-      test('emits IncomingMessage when gossip message received', () async {
-        final sender = NodeId('sender-node');
-        final bytes = Uint8List.fromList([1, 2, 3, 4]);
-
-        // Set up callback capture
-        GossipMessageCallback? capturedCallback;
-        when(() => mockConnectionService.onGossipMessage = any()).thenAnswer((
-          invocation,
-        ) {
-          capturedCallback =
-              invocation.positionalArguments[0] as GossipMessageCallback?;
-          return null;
-        });
-
-        // Re-create to capture callback
-        messagePort = NearbyMessagePort(mockConnectionService);
-
-        final messages = <IncomingMessage>[];
-        messagePort.incoming.listen(messages.add);
-
-        // Simulate receiving a message
-        capturedCallback?.call(sender, bytes);
-
-        await Future.delayed(Duration.zero);
-
-        expect(messages, hasLength(1));
-        expect(messages.first.sender, equals(sender));
-        expect(messages.first.bytes, equals(bytes));
-      });
-    });
-
-    group('close', () {
-      test('can be called multiple times without error', () async {
-        await messagePort.close();
-        await messagePort.close();
-        // No exception = pass
-      });
-    });
+  test('close can be called multiple times without error', () async {
+    final dispatcher = _FakeDispatcher();
+    final port = NearbyMessagePort(dispatcher);
+    await port.close();
+    await port.close();
+    // No exception = pass
   });
 }

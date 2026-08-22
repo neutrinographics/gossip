@@ -229,7 +229,7 @@ void main() {
     });
 
     group('message forwarding', () {
-      test('forwards gossip messages to onGossipMessage callback', () async {
+      test('forwards gossip messages via incomingMessages stream', () async {
         final endpointId = EndpointId('remote-ep');
         final remoteNodeId = NodeId('remote-node-456');
         final gossipPayload = Uint8List.fromList([0x02, 1, 2, 3, 4]);
@@ -246,9 +246,8 @@ void main() {
         await Future.delayed(Duration.zero);
 
         // Capture gossip messages
-        final messages = <(NodeId, Uint8List)>[];
-        service.onGossipMessage = (nodeId, bytes) =>
-            messages.add((nodeId, bytes));
+        final messages = <IncomingMessage>[];
+        service.incomingMessages.listen(messages.add);
 
         // Send gossip message
         nearbyEventController.add(
@@ -257,8 +256,8 @@ void main() {
         await Future.delayed(Duration.zero);
 
         expect(messages, hasLength(1));
-        expect(messages.first.$1, equals(remoteNodeId));
-        expect(messages.first.$2, equals(Uint8List.fromList([1, 2, 3, 4])));
+        expect(messages.first.sender, equals(remoteNodeId));
+        expect(messages.first.bytes, equals(Uint8List.fromList([1, 2, 3, 4])));
       });
     });
 

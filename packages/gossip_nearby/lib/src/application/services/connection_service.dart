@@ -14,10 +14,8 @@ import '../../domain/value_objects/endpoint.dart';
 import '../../domain/value_objects/endpoint_id.dart';
 import '../../protocol/handshake_codec.dart' show HandshakeCodec, MessageType;
 import '../../protocol/wire_dispatcher.dart';
+import '../interfaces/message_dispatcher.dart';
 import '../observability/nearby_metrics.dart';
-
-/// Callback for receiving gossip messages.
-typedef GossipMessageCallback = void Function(NodeId sender, Uint8List bytes);
 
 /// A queued message waiting to be sent.
 class _QueuedMessage {
@@ -53,7 +51,7 @@ class _PendingDiscovery {
 /// - Manages handshake protocol (send/receive NodeIds)
 /// - Forwards gossip messages to/from the domain
 /// - Emits domain events for connection state changes
-class ConnectionService {
+class ConnectionService implements MessageDispatcher {
   final NodeId _localNodeId;
   final String? _displayName;
   final NearbyPort _nearbyPort;
@@ -100,8 +98,9 @@ class ConnectionService {
       (_registry.connectionCount + _registry.pendingHandshakeCount) >=
           maxConnections!;
 
-  /// Callback invoked when a gossip message is received from a connected peer.
-  GossipMessageCallback? onGossipMessage;
+  /// Decoded inbound gossip messages, delivered to whoever adapts this
+  /// service to gossip's [MessagePort] (ARCH3-4 dispatcher seam).
+  final _incomingController = StreamController<IncomingMessage>.broadcast();
 
   ConnectionService({
     required NodeId localNodeId,
@@ -137,6 +136,10 @@ class ConnectionService {
   /// Stream of connection errors for observability.
   Stream<ConnectionError> get errors => _errorController.stream;
 
+  /// Broadcast stream of decoded inbound gossip messages (ARCH3-4).
+  @override
+  Stream<IncomingMessage> get incomingMessages => _incomingController.stream;
+
   // Emissions guarded against closed controllers: a send failure or a late
   // port callback landing after dispose() must not throw StateError into
   // its awaiter.
@@ -148,6 +151,10 @@ class ConnectionService {
     if (!_errorController.isClosed) _errorController.add(error);
   }
 
+  void _emitIncoming(IncomingMessage message) {
+    if (!_incomingController.isClosed) _incomingController.add(message);
+  }
+
   /// Metrics for this service.
   NearbyMetrics get metrics => _metrics;
 
@@ -156,6 +163,7 @@ class ConnectionService {
   /// Messages are queued by priority. High-priority messages (SWIM pings/acks)
   /// are processed before normal-priority messages (gossip data) to ensure
   /// failure detection isn't delayed during congestion.
+  @override
   Future<void> sendGossipMessage(
     NodeId destination,
     Uint8List bytes, {
@@ -201,6 +209,7 @@ class ConnectionService {
   }
 
   /// Returns the number of messages waiting to be sent to a specific peer.
+  @override
   int pendingSendCount(NodeId peer) {
     final endpointId = _registry.getEndpointIdForNodeId(peer);
     if (endpointId == null) return 0;
@@ -216,6 +225,7 @@ class ConnectionService {
   }
 
   /// Returns the total number of messages waiting to be sent across all peers.
+  @override
   int get totalPendingSendCount =>
       _highPriorityQueue.length + _normalPriorityQueue.length;
 
@@ -275,6 +285,7 @@ class ConnectionService {
     _drainQueue(_normalPriorityQueue);
     await _eventController.close();
     await _errorController.close();
+    await _incomingController.close();
   }
 
   /// Completes every message in [queue] with a disposal error.
@@ -574,7 +585,13 @@ class ConnectionService {
       LogLevel.trace,
       'Gossip message from $nodeId: ${payload.length} bytes',
     );
-    onGossipMessage?.call(nodeId, payload);
+    _emitIncoming(
+      IncomingMessage(
+        sender: nodeId,
+        bytes: payload,
+        receivedAt: DateTime.now(),
+      ),
+    );
   }
 
   /// Schedules the next retry check with a jittered interval.
