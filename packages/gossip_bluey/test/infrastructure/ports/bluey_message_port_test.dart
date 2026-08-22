@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
+import 'package:gossip_bluey/src/application/interfaces/message_dispatcher.dart';
 import 'package:gossip_bluey/src/infrastructure/ports/bluey_message_port.dart';
 
 class _FakeService implements MessageDispatcher {

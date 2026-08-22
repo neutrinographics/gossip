@@ -15,7 +15,7 @@ import '../../domain/value_objects/ble_address.dart';
 import '../../domain/value_objects/scan_candidate.dart';
 import '../../protocol/control_frame_codec.dart';
 import '../../protocol/frame_codec.dart';
-import '../../infrastructure/ports/bluey_message_port.dart';
+import '../interfaces/message_dispatcher.dart';
 import '../observability/bluey_metrics.dart';
 
 /// Trivial clock seam for tests.

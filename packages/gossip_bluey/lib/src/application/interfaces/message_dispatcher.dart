@@ -1,0 +1,32 @@
+import 'dart:typed_data';
+
+import 'package:gossip/gossip.dart';
+
+/// Minimal interface that BlueyMessagePort needs from the connection service.
+/// Lets the message port and connection service be tested independently.
+abstract interface class MessageDispatcher {
+  /// Sends a gossip message to a destination peer.
+  ///
+  /// Completes normally once the message has been handed to the
+  /// transport; completes with an error when the send is KNOWN to have
+  /// failed (connection gone, chunk write failed or timed out, transport
+  /// disposed) so `MessagePort.send` propagates it and the core engine
+  /// can roll back optimistic state immediately (MessagePort contract).
+  Future<void> sendGossipMessage(
+    NodeId destination,
+    Uint8List bytes, {
+    MessagePriority priority = MessagePriority.normal,
+  });
+
+  /// Stream of incoming messages from peers.
+  Stream<IncomingMessage> get incomingMessages;
+
+  /// Returns the number of messages waiting to be sent to a specific peer.
+  int pendingSendCount(NodeId peer);
+
+  /// Returns the total number of messages waiting to be sent across all peers.
+  int get totalPendingSendCount;
+
+  /// Closes the dispatcher and releases resources.
+  Future<void> close();
+}
