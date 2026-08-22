@@ -1,5 +1,5 @@
-import 'package:gossip/src/domain/value_objects/node_id.dart';
-import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/protocol/messages/ack.dart';
 import 'package:test/test.dart';
 

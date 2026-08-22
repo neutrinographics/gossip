@@ -1,5 +1,5 @@
 import 'package:test/test.dart';
-import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/entities/peer.dart';
 import 'package:gossip/src/membership/domain/events/membership_events.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_peer_repository.dart';

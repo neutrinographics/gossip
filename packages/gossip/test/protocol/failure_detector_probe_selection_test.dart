@@ -1,6 +1,6 @@
 import 'dart:math';
 
-import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:test/test.dart';
 
 import 'failure_detector_test_harness.dart';

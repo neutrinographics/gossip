@@ -1,9 +1,9 @@
-import 'package:gossip/src/domain/events/domain_event.dart';
-import 'package:gossip/src/domain/value_objects/channel_id.dart';
-import 'package:gossip/src/domain/value_objects/log_entry.dart';
-import 'package:gossip/src/domain/value_objects/node_id.dart';
-import 'package:gossip/src/domain/value_objects/stream_id.dart';
-import 'package:gossip/src/domain/value_objects/version_vector.dart';
+import 'package:gossip/src/shared/domain/events/domain_event.dart';
+import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/domain/results/compaction_result.dart';
 
 /// Sealed family root for domain events emitted by the sync context

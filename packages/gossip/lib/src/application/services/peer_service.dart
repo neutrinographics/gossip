@@ -1,5 +1,5 @@
-import 'package:gossip/src/domain/errors/sync_error.dart';
-import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/errors/sync_error.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/domain/interfaces/peer_repository.dart';
 

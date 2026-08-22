@@ -1,6 +1,6 @@
 import 'dart:math';
-import 'package:gossip/src/domain/value_objects/hlc.dart';
-import 'package:gossip/src/domain/services/time_source.dart';
+import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
+import 'package:gossip/src/shared/domain/services/time_source.dart';
 
 /// Service for generating hybrid logical clock timestamps.
 ///

@@ -1,10 +1,10 @@
 import 'dart:typed_data';
 import 'package:test/test.dart';
-import 'package:gossip/src/domain/value_objects/node_id.dart';
-import 'package:gossip/src/domain/value_objects/channel_id.dart';
-import 'package:gossip/src/domain/value_objects/stream_id.dart';
-import 'package:gossip/src/domain/value_objects/log_entry.dart';
-import 'package:gossip/src/domain/value_objects/hlc.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
+import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
 import 'package:gossip/src/protocol/messages/delta_response.dart';
 
 void main() {

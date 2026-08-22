@@ -1,4 +1,4 @@
-import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/domain/entities/peer.dart';
 import 'package:gossip/src/domain/interfaces/peer_repository.dart';
 import 'package:gossip/src/membership/domain/events/membership_events.dart';

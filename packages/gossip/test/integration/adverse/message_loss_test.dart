@@ -1,7 +1,7 @@
 import 'package:test/test.dart';
 import 'package:gossip/src/facade/coordinator_config.dart';
-import 'package:gossip/src/domain/value_objects/channel_id.dart';
-import 'package:gossip/src/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 
 import '../../support/test_network.dart';
 

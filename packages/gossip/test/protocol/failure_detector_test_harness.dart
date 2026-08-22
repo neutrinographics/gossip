@@ -3,12 +3,12 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
-import 'package:gossip/src/domain/errors/sync_error.dart';
-import 'package:gossip/src/domain/services/rtt_tracker.dart';
-import 'package:gossip/src/domain/value_objects/node_id.dart';
-import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
-import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
-import 'package:gossip/src/infrastructure/ports/message_port.dart';
+import 'package:gossip/src/shared/domain/errors/sync_error.dart';
+import 'package:gossip/src/shared/domain/services/rtt_tracker.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
+import 'package:gossip/src/shared/domain/interfaces/message_port.dart';
 import 'package:gossip/src/protocol/failure_detector.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:gossip/src/protocol/messages/ack.dart';

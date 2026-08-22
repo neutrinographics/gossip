@@ -1,5 +1,5 @@
-import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
-import 'package:gossip/src/infrastructure/ports/time_port.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
+import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 
 /// A [TimePort] whose [delay] can be made to fail on demand.
 ///

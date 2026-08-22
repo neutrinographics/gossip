@@ -2,15 +2,15 @@ import 'dart:async';
 import 'dart:typed_data';
 
 import 'package:test/test.dart';
-import 'package:gossip/src/domain/errors/sync_error.dart';
-import 'package:gossip/src/domain/value_objects/node_id.dart';
-import 'package:gossip/src/domain/value_objects/channel_id.dart';
-import 'package:gossip/src/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/shared/domain/errors/sync_error.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/membership/domain/events/membership_events.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
-import 'package:gossip/src/infrastructure/ports/message_port.dart';
-import 'package:gossip/src/infrastructure/ports/time_port.dart';
+import 'package:gossip/src/shared/domain/interfaces/message_port.dart';
+import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 import 'package:gossip/src/protocol/gossip_engine.dart';
 import 'package:gossip/src/protocol/failure_detector.dart';
 import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
@@ -18,7 +18,7 @@ import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:gossip/src/application/services/channel_service.dart';
 import 'package:gossip/src/application/services/peer_service.dart';
-import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
 
 /// A mock MessagePort that throws on send for testing error handling.
 class ThrowingMessagePort implements MessagePort {

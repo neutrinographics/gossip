@@ -1,11 +1,11 @@
 import 'package:gossip/src/domain/interfaces/entry_repository.dart';
-import 'package:gossip/src/domain/value_objects/channel_id.dart';
-import 'package:gossip/src/domain/value_objects/hlc.dart';
-import 'package:gossip/src/domain/value_objects/log_entry.dart';
-import 'package:gossip/src/domain/value_objects/log_entry_id.dart';
-import 'package:gossip/src/domain/value_objects/node_id.dart';
-import 'package:gossip/src/domain/value_objects/stream_id.dart';
-import 'package:gossip/src/domain/value_objects/version_vector.dart';
+import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
+import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
+import 'package:gossip/src/shared/domain/value_objects/log_entry_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 
 /// In-memory implementation of [EntryRepository] for testing.
 ///

@@ -1,15 +1,15 @@
 import 'dart:typed_data';
 import 'package:test/test.dart';
-import 'package:gossip/src/domain/events/domain_event.dart';
+import 'package:gossip/src/shared/domain/events/domain_event.dart';
 import 'package:gossip/src/sync/domain/events/sync_events.dart';
-import 'package:gossip/src/domain/value_objects/channel_id.dart';
-import 'package:gossip/src/domain/value_objects/stream_id.dart';
-import 'package:gossip/src/domain/value_objects/node_id.dart';
-import 'package:gossip/src/domain/value_objects/log_entry.dart';
-import 'package:gossip/src/domain/value_objects/hlc.dart';
-import 'package:gossip/src/domain/value_objects/version_vector.dart';
+import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
+import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
+import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/domain/results/compaction_result.dart';
-import 'package:gossip/src/domain/errors/sync_error.dart';
+import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 
 void main() {
   group('Channel Events', () {

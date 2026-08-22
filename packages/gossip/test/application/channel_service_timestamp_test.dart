@@ -1,10 +1,10 @@
 import 'package:gossip/src/application/services/channel_service.dart';
 import 'package:gossip/src/domain/services/hlc_clock.dart';
-import 'package:gossip/src/domain/services/time_source.dart';
-import 'package:gossip/src/domain/value_objects/hlc.dart';
-import 'package:gossip/src/domain/value_objects/node_id.dart';
-import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
-import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
+import 'package:gossip/src/shared/domain/services/time_source.dart';
+import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
 import 'package:test/test.dart';
 
 void main() {

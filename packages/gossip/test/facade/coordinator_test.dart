@@ -1,20 +1,20 @@
 import 'dart:typed_data';
-import 'package:gossip/src/domain/events/domain_event.dart';
+import 'package:gossip/src/shared/domain/events/domain_event.dart';
 import 'package:gossip/src/sync/domain/events/sync_events.dart';
 import 'package:gossip/src/membership/domain/events/membership_events.dart';
-import 'package:gossip/src/domain/value_objects/channel_id.dart';
-import 'package:gossip/src/domain/value_objects/hlc.dart';
-import 'package:gossip/src/domain/value_objects/node_id.dart';
-import 'package:gossip/src/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/facade/coordinator.dart';
 import 'package:gossip/src/facade/coordinator_config.dart';
 import 'package:gossip/src/facade/sync_state.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_channel_repository.dart';
-import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_peer_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
-import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
-import 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 import 'package:test/test.dart';
 
 void main() {

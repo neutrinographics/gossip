@@ -1,9 +1,9 @@
 import 'package:gossip/src/domain/aggregates/peer_registry.dart';
-import 'package:gossip/src/domain/errors/sync_error.dart';
-import 'package:gossip/src/domain/value_objects/channel_id.dart';
-import 'package:gossip/src/domain/value_objects/node_id.dart';
-import 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
-import 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
+import 'package:gossip/src/shared/domain/errors/sync_error.dart';
+import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:gossip/src/protocol/gossip_engine.dart';
 import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';

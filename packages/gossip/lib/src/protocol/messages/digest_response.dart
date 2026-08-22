@@ -1,6 +1,6 @@
-import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/protocol/values/channel_digest.dart';
-import 'package:gossip/src/protocol/messages/protocol_message.dart';
+import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
 
 /// Anti-entropy response containing recipient's sync state digests.
 ///

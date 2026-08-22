@@ -1,7 +1,7 @@
-import 'package:gossip/src/domain/value_objects/hlc.dart';
-import 'package:gossip/src/domain/value_objects/log_entry.dart';
-import 'package:gossip/src/domain/value_objects/log_entry_id.dart';
-import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
+import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
+import 'package:gossip/src/shared/domain/value_objects/log_entry_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 
 /// Strategy for determining which entries to keep during stream compaction.
 ///

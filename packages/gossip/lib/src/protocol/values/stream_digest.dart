@@ -1,6 +1,6 @@
 import 'package:meta/meta.dart';
-import 'package:gossip/src/domain/value_objects/stream_id.dart';
-import 'package:gossip/src/domain/value_objects/version_vector.dart';
+import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 
 /// Compact summary of a single stream's synchronization state.
 ///

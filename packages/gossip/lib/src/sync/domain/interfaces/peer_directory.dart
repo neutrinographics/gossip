@@ -1,6 +1,6 @@
 import 'dart:math';
 
-import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/sync/domain/value_objects/sync_partner.dart';
 
 /// Sync's port onto peer state: THE sync↔membership contract.

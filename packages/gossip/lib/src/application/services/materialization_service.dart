@@ -1,8 +1,8 @@
 import 'package:gossip/src/domain/interfaces/entry_repository.dart';
 import 'package:gossip/src/domain/interfaces/state_materializer.dart';
-import 'package:gossip/src/domain/value_objects/channel_id.dart';
-import 'package:gossip/src/domain/value_objects/log_entry.dart';
-import 'package:gossip/src/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
+import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/application/services/fold_cursor.dart';
 import 'package:gossip/src/application/services/materializer_state.dart';
 

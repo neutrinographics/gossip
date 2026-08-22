@@ -1,7 +1,7 @@
 import 'package:test/test.dart';
 import 'package:gossip/src/domain/results/compaction_result.dart';
-import 'package:gossip/src/domain/value_objects/version_vector.dart';
-import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 
 void main() {
   group('CompactionResult', () {

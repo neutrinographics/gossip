@@ -1,4 +1,4 @@
-import 'package:gossip/src/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/facade/resource_usage.dart';
 import 'package:gossip/src/facade/sync_state.dart';
 

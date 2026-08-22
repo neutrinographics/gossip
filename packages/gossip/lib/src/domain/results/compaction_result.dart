@@ -1,4 +1,4 @@
-import 'package:gossip/src/domain/value_objects/version_vector.dart';
+import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 
 /// Result of running compaction.
 class CompactionResult {

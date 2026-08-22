@@ -96,13 +96,13 @@ export 'package:gossip/src/facade/resource_usage.dart';
 export 'package:gossip/src/facade/sync_state.dart';
 
 // Domain value objects
-export 'package:gossip/src/domain/value_objects/node_id.dart';
-export 'package:gossip/src/domain/value_objects/channel_id.dart';
-export 'package:gossip/src/domain/value_objects/stream_id.dart';
-export 'package:gossip/src/domain/value_objects/log_entry.dart';
-export 'package:gossip/src/domain/value_objects/log_entry_id.dart';
-export 'package:gossip/src/domain/value_objects/hlc.dart';
-export 'package:gossip/src/domain/value_objects/version_vector.dart';
+export 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+export 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
+export 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
+export 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
+export 'package:gossip/src/shared/domain/value_objects/log_entry_id.dart';
+export 'package:gossip/src/shared/domain/value_objects/hlc.dart';
+export 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 
 // Domain aggregates
 export 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
@@ -113,13 +113,13 @@ export 'package:gossip/src/domain/entities/peer_metrics.dart';
 export 'package:gossip/src/domain/entities/stream_config.dart';
 
 // Domain events
-export 'package:gossip/src/domain/events/domain_event.dart';
+export 'package:gossip/src/shared/domain/events/domain_event.dart';
 export 'package:gossip/src/sync/domain/events/sync_events.dart';
 export 'package:gossip/src/membership/domain/events/membership_events.dart';
 
 // Domain errors
-export 'package:gossip/src/domain/errors/sync_error.dart';
-export 'package:gossip/src/domain/errors/domain_exception.dart';
+export 'package:gossip/src/shared/domain/errors/sync_error.dart';
+export 'package:gossip/src/shared/domain/errors/domain_exception.dart';
 
 // Domain results
 export 'package:gossip/src/domain/results/compaction_result.dart';
@@ -128,28 +128,28 @@ export 'package:gossip/src/domain/results/compaction_result.dart';
 export 'package:gossip/src/domain/interfaces/retention_policy.dart';
 export 'package:gossip/src/domain/interfaces/state_materializer.dart';
 export 'package:gossip/src/domain/interfaces/channel_repository.dart';
-export 'package:gossip/src/domain/interfaces/local_node_repository.dart';
+export 'package:gossip/src/shared/domain/interfaces/local_node_repository.dart';
 export 'package:gossip/src/domain/interfaces/peer_repository.dart';
 export 'package:gossip/src/domain/interfaces/entry_repository.dart';
 
 // Infrastructure ports (for custom implementations)
-export 'package:gossip/src/infrastructure/ports/message_port.dart';
-export 'package:gossip/src/infrastructure/ports/time_port.dart';
+export 'package:gossip/src/shared/domain/interfaces/message_port.dart';
+export 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 
 // In-memory implementations (for testing and simple use cases)
 export 'package:gossip/src/infrastructure/repositories/caching_channel_repository.dart';
 export 'package:gossip/src/infrastructure/repositories/in_memory_channel_repository.dart';
-export 'package:gossip/src/infrastructure/repositories/in_memory_local_node_repository.dart';
+export 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
 export 'package:gossip/src/infrastructure/repositories/in_memory_peer_repository.dart';
 export 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
-export 'package:gossip/src/infrastructure/ports/in_memory_message_port.dart';
-export 'package:gossip/src/infrastructure/ports/in_memory_time_port.dart';
+export 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
+export 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 
 // Production implementations
-export 'package:gossip/src/infrastructure/ports/real_time_port.dart';
+export 'package:gossip/src/shared/infrastructure/real_time_port.dart';
 
 // Domain services
-export 'package:gossip/src/domain/value_objects/rtt_estimate.dart';
+export 'package:gossip/src/shared/domain/value_objects/rtt_estimate.dart';
 
 // Observability
-export 'package:gossip/src/application/observability/log_level.dart';
+export 'package:gossip/src/shared/domain/value_objects/log_level.dart';
