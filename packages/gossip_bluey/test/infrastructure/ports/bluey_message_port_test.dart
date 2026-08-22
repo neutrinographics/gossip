@@ -35,6 +35,13 @@ class _FakeService implements MessageDispatcher {
     closed = true;
     await incoming.close();
   }
+
+  /// Mirrors the real `ConnectionManager`'s `_emitIncoming` guard: a port
+  /// event that arrives after dispose must not throw into its emitter, so
+  /// production never calls `add` on an already-closed controller.
+  void emit(IncomingMessage message) {
+    if (!incoming.isClosed) incoming.add(message);
+  }
 }
 
 void main() {
@@ -75,6 +82,28 @@ void main() {
       final port = BlueyMessagePort(svc);
       await port.close();
       expect(svc.closed, isTrue);
+    });
+
+    test('a closed port delivers nothing', () async {
+      final svc = _FakeService();
+      final port = BlueyMessagePort(svc);
+      final destination = NodeId('11111111-1111-1111-1111-111111111111');
+      final received = <IncomingMessage>[];
+      final sub = port.incoming.listen(received.add);
+
+      await port.close();
+
+      svc.emit(
+        IncomingMessage(
+          sender: destination,
+          bytes: Uint8List.fromList([9]),
+          receivedAt: DateTime(2026, 5, 4),
+        ),
+      );
+      await Future<void>.delayed(Duration.zero);
+
+      expect(received, isEmpty);
+      await sub.cancel();
     });
   });
 }

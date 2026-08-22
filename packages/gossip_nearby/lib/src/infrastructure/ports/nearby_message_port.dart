@@ -15,7 +15,15 @@ class NearbyMessagePort implements MessagePort {
   final MessageDispatcher _dispatcher;
   bool _closed = false;
 
-  NearbyMessagePort(this._dispatcher);
+  final StreamController<IncomingMessage> _incomingController =
+      StreamController<IncomingMessage>.broadcast();
+  late final StreamSubscription<IncomingMessage> _incomingSubscription;
+
+  NearbyMessagePort(this._dispatcher) {
+    _incomingSubscription = _dispatcher.incomingMessages.listen(
+      _incomingController.add,
+    );
+  }
 
   @override
   Future<void> send(
@@ -28,11 +36,14 @@ class NearbyMessagePort implements MessagePort {
   }
 
   @override
-  Stream<IncomingMessage> get incoming => _dispatcher.incomingMessages;
+  Stream<IncomingMessage> get incoming => _incomingController.stream;
 
   @override
   Future<void> close() async {
+    if (_closed) return;
     _closed = true;
+    await _incomingSubscription.cancel();
+    await _incomingController.close();
   }
 
   @override

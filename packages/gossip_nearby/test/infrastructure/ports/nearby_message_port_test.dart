@@ -67,4 +67,25 @@ void main() {
     await port.close();
     // No exception = pass
   });
+
+  test('a closed port delivers nothing', () async {
+    final dispatcher = _FakeDispatcher();
+    final port = NearbyMessagePort(dispatcher);
+    final received = <IncomingMessage>[];
+    final sub = port.incoming.listen(received.add);
+
+    await port.close();
+
+    dispatcher.emit(
+      IncomingMessage(
+        sender: peer,
+        bytes: Uint8List.fromList([7]),
+        receivedAt: DateTime.now(),
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+
+    expect(received, isEmpty);
+    await sub.cancel();
+  });
 }

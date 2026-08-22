@@ -15,6 +15,13 @@ class _ScriptedLatencyRepository implements PeerRepository {
   final List<Duration> saveLatencies;
   int _saveCall = 0;
 
+  /// Number of `save()` calls currently between their await and their
+  /// write to [stored]. Chained writes never let this exceed 1; a
+  /// regression that lets overlapping mutations race their I/O would
+  /// push it to 2+.
+  int _inFlightSaves = 0;
+  int maxConcurrentSaves = 0;
+
   _ScriptedLatencyRepository(this.saveLatencies);
 
   @override
@@ -23,8 +30,13 @@ class _ScriptedLatencyRepository implements PeerRepository {
     final latency = index < saveLatencies.length
         ? saveLatencies[index]
         : Duration.zero;
+    _inFlightSaves++;
+    if (_inFlightSaves > maxConcurrentSaves) {
+      maxConcurrentSaves = _inFlightSaves;
+    }
     await Future<void>.delayed(latency);
     stored[peer.id] = peer;
+    _inFlightSaves--;
   }
 
   @override
@@ -37,9 +49,8 @@ class _ScriptedLatencyRepository implements PeerRepository {
   Future<List<Peer>> findAll() async => stored.values.toList();
 
   @override
-  Future<List<Peer>> findReachable() async => stored.values
-      .where((p) => p.status == PeerStatus.reachable)
-      .toList();
+  Future<List<Peer>> findReachable() async =>
+      stored.values.where((p) => p.status == PeerStatus.reachable).toList();
 
   @override
   Future<bool> exists(NodeId id) async => stored.containsKey(id);
@@ -68,10 +79,7 @@ void main() {
           Duration.zero,
           const Duration(milliseconds: 50),
         ]);
-        final service = PeerService(
-          registry: registry,
-          repository: repository,
-        );
+        final service = PeerService(registry: registry, repository: repository);
 
         await service.addPeer(peerId);
         final slowSave = service.addPeer(peerId);
@@ -90,5 +98,40 @@ void main() {
         );
       },
     );
+
+    test('overlapping addPeer calls for the same peer chain their writes '
+        '(no interleaved corruption)', () async {
+      final localNode = NodeId('local');
+      final peerId = NodeId('peer1');
+      final registry = PeerRegistry(localNode: localNode);
+      // First save is slow, second is fast. If the second call's write
+      // were not chained behind the first, it would start (and likely
+      // finish) while the first is still in flight.
+      final repository = _ScriptedLatencyRepository([
+        const Duration(milliseconds: 30),
+        const Duration(milliseconds: 5),
+      ]);
+      final service = PeerService(registry: registry, repository: repository);
+
+      final first = service.addPeer(peerId);
+      final second = service.addPeer(peerId);
+      await Future.wait([first, second]);
+
+      expect(
+        repository.maxConcurrentSaves,
+        1,
+        reason:
+            'overlapping addPeer calls for the same peer must serialize '
+            'their persistence writes, never racing two saves at once',
+      );
+      expect(
+        repository.stored,
+        hasLength(1),
+        reason:
+            'the chained writes must leave exactly one final '
+            'snapshot for the peer, not a duplicated or corrupted entry',
+      );
+      expect(repository.stored[peerId], isNotNull);
+    });
   });
 }
