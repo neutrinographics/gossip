@@ -126,3 +126,21 @@ This ADR implements:
 - **Repository Pattern** (for external system access)
 
 The NearbyPort is conceptually similar to how gossip's `MessagePort` abstracts message delivery, and how `EntryRepository` abstracts storage.
+
+## Amendment (2026-08-22): wire knowledge lives in the protocol layer
+
+This ADR's `ConnectionService` example depends only on the `NearbyPort`
+interface — but until ARCH3-3, `ConnectionService` also read the wire byte
+layout directly (`bytes[WireFormat.typeOffset]`) via an import of
+`HandshakeCodec` and `WireFormat` from `infrastructure/codec/`, contradicting
+the dependency-inversion boundary this ADR establishes: the application
+layer should depend on stable abstractions, not on infrastructure-level wire
+format details.
+
+`HandshakeCodec` (encode/decode of handshake and gossip frames) and byte
+classification (`WireDispatcher.classify()`) now live in a `protocol/` layer.
+`ConnectionService` constructs/receives a `WireDispatcher`, calls
+`classify(bytes)`, and switches on the returned `MessageType` constant only
+— it no longer imports or reads `WireFormat` byte offsets. See
+`packages/gossip_nearby/README.md`'s Architecture section for the current
+layer diagram.
