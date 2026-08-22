@@ -86,6 +86,7 @@ Dart-specific reason argues otherwise.
 
 ## Related
 
+- Part 1 shipped: [design spec](../superpowers/specs/2026-08-21-architecture-honesty-fixes-design.md), [implementation plan](../superpowers/plans/2026-08-21-architecture-honesty-fixes.md).
 - Findings ARCH3-1..6 in
   [audits/2026-07-08-comprehensive-audit.md](../audits/2026-07-08-comprehensive-audit.md)
   (round "R12" plus R13's unfinished half).

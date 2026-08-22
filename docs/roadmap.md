@@ -52,5 +52,5 @@ enough to exercise the failure modes the protocol logic exists for.
 Internal structure, documentation honesty, and audit-hygiene work — no
 runtime behavior changes.
 
-- ☐ **Medium** — [Realign the module layout and make the architecture scream](backlog/health-architecture-alignment.md) · part 1: ports to domain, dead bridge, codec re-homing, lifecycle enums, ARCH3-6, ADR amendments; part 2: concept-first packages (sync / detection / shared kernel, per gossip-kt) + an explicit sync↔detection contract — sequence after the WIRE4 pacing redesign
+- ◐ **Medium** — [Realign the module layout and make the architecture scream](backlog/health-architecture-alignment.md) · part 1 shipped (202bf6d..00420fc); part 2: concept-first packages (sync / detection / shared kernel, per gossip-kt) + an explicit sync↔detection contract — sequence after the WIRE4 pacing redesign
 - ☐ **High** — [Sweep the remaining minor audit findings](backlog/health-minor-findings-sweep.md) · three correctness latents (unbudgeted sync-request size, non-rotating responder digests, uncopied payload buffers) + transport minors + hygiene
