@@ -1,8 +1,8 @@
 import 'package:test/test.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
-import 'package:gossip/src/domain/entities/peer.dart';
-import 'package:gossip/src/membership/domain/events/membership_events.dart';
-import 'package:gossip/src/infrastructure/repositories/in_memory_peer_repository.dart';
+import 'package:gossip/src/membership/domain/entities/peer.dart';
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
+import 'package:gossip/src/membership/infrastructure/in_memory_peer_repository.dart';
 
 void main() {
   group('InMemoryPeerRepository', () {

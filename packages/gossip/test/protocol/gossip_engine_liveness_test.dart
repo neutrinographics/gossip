@@ -1,5 +1,4 @@
-import 'package:gossip/src/membership/domain/events/membership_events.dart'
-    show PeerStatus;
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/protocol/messages/digest_request.dart';
 import 'package:gossip/src/protocol/values/channel_digest.dart';

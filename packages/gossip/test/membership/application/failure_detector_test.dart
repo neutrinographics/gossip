@@ -1,13 +1,14 @@
 import 'dart:math';
 
 import 'package:gossip/src/membership/domain/events/membership_events.dart'
-    show PeerStatus, PeerStatusChanged;
+    show PeerStatusChanged;
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_port.dart';
-import 'package:gossip/src/protocol/messages/ack.dart';
-import 'package:gossip/src/protocol/messages/ping.dart';
-import 'package:gossip/src/protocol/messages/ping_req.dart';
+import 'package:gossip/src/membership/domain/messages/ack.dart';
+import 'package:gossip/src/membership/domain/messages/ping.dart';
+import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
 import 'package:test/test.dart';
 

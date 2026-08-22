@@ -1,11 +1,10 @@
 import 'dart:async';
 
-import 'package:gossip/src/application/services/peer_service.dart';
-import 'package:gossip/src/domain/aggregates/peer_registry.dart';
-import 'package:gossip/src/domain/entities/peer.dart';
-import 'package:gossip/src/membership/domain/events/membership_events.dart'
-    show PeerStatus;
-import 'package:gossip/src/domain/interfaces/peer_repository.dart';
+import 'package:gossip/src/membership/application/peer_service.dart';
+import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/membership/domain/entities/peer.dart';
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
+import 'package:gossip/src/membership/domain/interfaces/peer_repository.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:test/test.dart';
 

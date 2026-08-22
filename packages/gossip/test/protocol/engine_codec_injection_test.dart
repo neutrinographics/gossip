@@ -9,11 +9,11 @@
 // new null-check-and-return preserves that "ignore what isn't mine" behavior.
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:gossip/src/protocol/messages/digest_request.dart';
-import 'package:gossip/src/protocol/messages/ping.dart';
+import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:test/test.dart';
 
-import 'failure_detector_test_harness.dart';
+import '../membership/application/failure_detector_test_harness.dart';
 import 'gossip_engine_test_harness.dart';
 
 void main() {

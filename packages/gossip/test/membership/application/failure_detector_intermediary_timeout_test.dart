@@ -1,5 +1,5 @@
-import 'package:gossip/src/protocol/messages/ack.dart';
-import 'package:gossip/src/protocol/messages/ping.dart';
+import 'package:gossip/src/membership/domain/messages/ack.dart';
+import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:test/test.dart';
 
 import 'failure_detector_test_harness.dart';

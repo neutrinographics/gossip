@@ -8,16 +8,16 @@ import 'package:gossip/src/shared/domain/services/jitter.dart';
 import 'package:gossip/src/shared/domain/services/quiescence_pacer.dart';
 import 'package:gossip/src/shared/domain/services/rtt_tracker.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
-import 'package:gossip/src/domain/aggregates/peer_registry.dart';
-import 'package:gossip/src/domain/entities/peer.dart';
-import 'package:gossip/src/membership/domain/events/membership_events.dart';
+import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/membership/domain/entities/peer.dart';
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_port.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
-import 'package:gossip/src/protocol/messages/ping.dart';
-import 'package:gossip/src/protocol/messages/ack.dart';
-import 'package:gossip/src/protocol/messages/ping_req.dart';
+import 'package:gossip/src/membership/domain/messages/ping.dart';
+import 'package:gossip/src/membership/domain/messages/ack.dart';
+import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 
 /// Tracks a pending ping awaiting Ack response.
 ///

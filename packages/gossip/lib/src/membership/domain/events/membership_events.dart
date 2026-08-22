@@ -1,5 +1,6 @@
 import 'package:gossip/src/shared/domain/events/domain_event.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 
 /// Sealed family root for domain events emitted by the membership context
 /// (peer registry, SWIM failure detection).
@@ -15,14 +16,6 @@ sealed class MembershipEvent extends DomainEvent {
 // ─────────────────────────────────────────────────────────────
 // Peer Events
 // ─────────────────────────────────────────────────────────────
-
-/// Reachability status for a peer in SWIM failure detection.
-///
-/// Lifecycle progression:
-/// - **reachable**: Peer responds to probes (healthy)
-/// - **suspected**: Probe failed, indirect probe in progress
-/// - **unreachable**: Confirmed failed (direct and indirect probes failed)
-enum PeerStatus { reachable, suspected, unreachable }
 
 /// Emitted when a new peer is added to the peer registry.
 ///

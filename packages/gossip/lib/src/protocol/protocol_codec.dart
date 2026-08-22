@@ -1,9 +1,9 @@
 import 'dart:typed_data';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
-import 'package:gossip/src/protocol/messages/ping.dart';
-import 'package:gossip/src/protocol/messages/ack.dart';
-import 'package:gossip/src/protocol/messages/ping_req.dart';
+import 'package:gossip/src/membership/domain/messages/ping.dart';
+import 'package:gossip/src/membership/domain/messages/ack.dart';
+import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 import 'package:gossip/src/protocol/messages/digest_request.dart';
 import 'package:gossip/src/protocol/messages/digest_response.dart';
 import 'package:gossip/src/protocol/messages/delta_request.dart';

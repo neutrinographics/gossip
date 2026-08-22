@@ -10,7 +10,7 @@ import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_channel_repository.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
-import 'package:gossip/src/infrastructure/repositories/in_memory_peer_repository.dart';
+import 'package:gossip/src/membership/infrastructure/in_memory_peer_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:test/test.dart';
 

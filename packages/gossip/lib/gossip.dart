@@ -108,14 +108,15 @@ export 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 export 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
 
 // Domain entities
-export 'package:gossip/src/domain/entities/peer.dart';
-export 'package:gossip/src/domain/entities/peer_metrics.dart';
+export 'package:gossip/src/membership/domain/entities/peer.dart';
+export 'package:gossip/src/membership/domain/entities/peer_metrics.dart';
 export 'package:gossip/src/domain/entities/stream_config.dart';
 
 // Domain events
 export 'package:gossip/src/shared/domain/events/domain_event.dart';
 export 'package:gossip/src/sync/domain/events/sync_events.dart';
 export 'package:gossip/src/membership/domain/events/membership_events.dart';
+export 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 
 // Domain errors
 export 'package:gossip/src/shared/domain/errors/sync_error.dart';
@@ -129,7 +130,7 @@ export 'package:gossip/src/domain/interfaces/retention_policy.dart';
 export 'package:gossip/src/domain/interfaces/state_materializer.dart';
 export 'package:gossip/src/domain/interfaces/channel_repository.dart';
 export 'package:gossip/src/shared/domain/interfaces/local_node_repository.dart';
-export 'package:gossip/src/domain/interfaces/peer_repository.dart';
+export 'package:gossip/src/membership/domain/interfaces/peer_repository.dart';
 export 'package:gossip/src/domain/interfaces/entry_repository.dart';
 
 // Infrastructure ports (for custom implementations)
@@ -140,7 +141,7 @@ export 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 export 'package:gossip/src/infrastructure/repositories/caching_channel_repository.dart';
 export 'package:gossip/src/infrastructure/repositories/in_memory_channel_repository.dart';
 export 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
-export 'package:gossip/src/infrastructure/repositories/in_memory_peer_repository.dart';
+export 'package:gossip/src/membership/infrastructure/in_memory_peer_repository.dart';
 export 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 export 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 export 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';

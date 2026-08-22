@@ -7,7 +7,7 @@ import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
-import 'package:gossip/src/protocol/messages/ping.dart';
+import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/protocol/messages/digest_request.dart';
 import 'package:gossip/src/protocol/messages/digest_response.dart';
 import 'package:gossip/src/protocol/messages/delta_request.dart';

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
-import 'package:gossip/src/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/domain/interfaces/retention_policy.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/hlc.dart';

@@ -14,7 +14,8 @@ import 'package:gossip/src/protocol/values/channel_digest.dart';
 import 'package:gossip/src/protocol/values/stream_digest.dart';
 import 'package:test/test.dart';
 
-import 'failure_detector_test_harness.dart' show FailingSendMessagePort;
+import '../membership/application/failure_detector_test_harness.dart'
+    show FailingSendMessagePort;
 import 'gossip_engine_test_harness.dart';
 
 void main() {

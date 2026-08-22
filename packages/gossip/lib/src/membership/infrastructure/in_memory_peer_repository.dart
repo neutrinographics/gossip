@@ -1,7 +1,7 @@
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
-import 'package:gossip/src/domain/entities/peer.dart';
-import 'package:gossip/src/domain/interfaces/peer_repository.dart';
-import 'package:gossip/src/membership/domain/events/membership_events.dart';
+import 'package:gossip/src/membership/domain/entities/peer.dart';
+import 'package:gossip/src/membership/domain/interfaces/peer_repository.dart';
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 
 /// In-memory implementation of [PeerRepository] for testing.
 ///

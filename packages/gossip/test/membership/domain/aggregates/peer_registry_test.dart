@@ -1,8 +1,9 @@
 import 'package:test/test.dart';
-import 'package:gossip/src/domain/aggregates/peer_registry.dart';
-import 'package:gossip/src/domain/entities/peer.dart';
+import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/membership/domain/entities/peer.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/events/membership_events.dart';
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 
 void main() {
   group('PeerRegistry', () {

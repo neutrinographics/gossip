@@ -3,7 +3,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:gossip/src/domain/aggregates/channel_aggregate.dart';
-import 'package:gossip/src/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_level.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/interfaces/local_node_repository.dart';

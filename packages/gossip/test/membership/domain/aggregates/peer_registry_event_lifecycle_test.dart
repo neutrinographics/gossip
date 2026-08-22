@@ -1,6 +1,7 @@
-import 'package:gossip/src/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/shared/domain/events/domain_event.dart';
 import 'package:gossip/src/membership/domain/events/membership_events.dart';
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:test/test.dart';
 

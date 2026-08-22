@@ -1,6 +1,6 @@
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
-import 'package:gossip/src/protocol/messages/ack.dart';
+import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:test/test.dart';
 
 import 'failure_detector_test_harness.dart';

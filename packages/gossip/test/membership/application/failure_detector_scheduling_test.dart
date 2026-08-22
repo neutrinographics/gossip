@@ -1,12 +1,12 @@
-import 'package:gossip/src/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
-import 'package:gossip/src/protocol/failure_detector.dart';
+import 'package:gossip/src/membership/application/failure_detector.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:test/test.dart';
 
-import 'failing_delay_time_port.dart';
+import '../../protocol/failing_delay_time_port.dart';
 import 'failure_detector_test_harness.dart';
 
 void main() {

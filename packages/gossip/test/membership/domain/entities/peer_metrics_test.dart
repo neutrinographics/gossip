@@ -1,5 +1,5 @@
 import 'package:test/test.dart';
-import 'package:gossip/src/domain/entities/peer_metrics.dart';
+import 'package:gossip/src/membership/domain/entities/peer_metrics.dart';
 import 'package:gossip/src/shared/domain/value_objects/rtt_estimate.dart';
 
 void main() {

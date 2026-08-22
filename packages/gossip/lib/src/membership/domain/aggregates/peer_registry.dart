@@ -1,10 +1,11 @@
 import 'dart:math';
 
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
-import 'package:gossip/src/domain/entities/peer.dart';
-import 'package:gossip/src/domain/entities/peer_metrics.dart';
+import 'package:gossip/src/membership/domain/entities/peer.dart';
+import 'package:gossip/src/membership/domain/entities/peer_metrics.dart';
 import 'package:gossip/src/shared/domain/events/domain_event.dart';
 import 'package:gossip/src/membership/domain/events/membership_events.dart';
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 
 /// Aggregate root managing peer membership and SWIM failure detection state.
 ///

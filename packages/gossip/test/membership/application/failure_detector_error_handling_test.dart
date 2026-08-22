@@ -1,15 +1,15 @@
 import 'dart:typed_data';
 
-import 'package:gossip/src/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
-import 'package:gossip/src/protocol/failure_detector.dart';
+import 'package:gossip/src/membership/application/failure_detector.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
-import 'package:gossip/src/protocol/messages/ack.dart';
-import 'package:gossip/src/protocol/messages/ping.dart';
-import 'package:gossip/src/protocol/messages/ping_req.dart';
+import 'package:gossip/src/membership/domain/messages/ack.dart';
+import 'package:gossip/src/membership/domain/messages/ping.dart';
+import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
 import 'package:test/test.dart';
 

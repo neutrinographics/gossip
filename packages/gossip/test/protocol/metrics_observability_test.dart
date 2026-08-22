@@ -1,7 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:gossip/src/shared/domain/value_objects/log_level.dart';
-import 'package:gossip/src/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
@@ -14,11 +14,11 @@ import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 import 'package:gossip/src/infrastructure/repositories/in_memory_channel_repository.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
-import 'package:gossip/src/infrastructure/repositories/in_memory_peer_repository.dart';
+import 'package:gossip/src/membership/infrastructure/in_memory_peer_repository.dart';
 import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
 import 'package:gossip/src/protocol/messages/delta_response.dart';
 import 'package:gossip/src/protocol/messages/digest_response.dart';
-import 'package:gossip/src/protocol/messages/ping.dart';
+import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
 import 'package:gossip/src/protocol/values/channel_digest.dart';
 import 'package:gossip/src/protocol/values/stream_digest.dart';

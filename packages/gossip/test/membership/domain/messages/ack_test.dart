@@ -1,6 +1,6 @@
 import 'package:test/test.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
-import 'package:gossip/src/protocol/messages/ack.dart';
+import 'package:gossip/src/membership/domain/messages/ack.dart';
 
 void main() {
   group('Ack', () {

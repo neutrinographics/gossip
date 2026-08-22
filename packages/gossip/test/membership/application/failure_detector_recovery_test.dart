@@ -1,8 +1,7 @@
-import 'package:gossip/src/membership/domain/events/membership_events.dart'
-    show PeerStatus;
-import 'package:gossip/src/protocol/messages/ack.dart';
-import 'package:gossip/src/protocol/messages/ping.dart';
-import 'package:gossip/src/protocol/messages/ping_req.dart';
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
+import 'package:gossip/src/membership/domain/messages/ack.dart';
+import 'package:gossip/src/membership/domain/messages/ping.dart';
+import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 import 'package:gossip/src/protocol/protocol_codec.dart';
 import 'package:test/test.dart';
 

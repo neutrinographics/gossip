@@ -1,9 +1,9 @@
 import 'dart:math';
 
 import 'package:test/test.dart';
-import 'package:gossip/src/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
-import 'package:gossip/src/membership/domain/events/membership_events.dart';
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 
 /// Contract tests for the sync↔membership ACL: [MembershipPeerDirectory]
