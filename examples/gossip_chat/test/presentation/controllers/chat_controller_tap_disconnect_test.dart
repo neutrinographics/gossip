@@ -2,7 +2,6 @@
 
 import 'dart:async';
 
-import 'package:bluey/bluey.dart' as bluey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart' as gossip;
 import 'package:gossip_bluey/gossip_bluey.dart';
@@ -28,10 +27,10 @@ class FakeConnectionService implements ConnectionService {
       StreamController<ScanCandidate>.broadcast();
   final StreamController<BluetoothAdapterState> bluetoothStateCtrl =
       StreamController<BluetoothAdapterState>.broadcast();
-  final StreamController<bluey.AdvertisingState> advertisingStateCtrl =
-      StreamController<bluey.AdvertisingState>.broadcast();
-  final StreamController<bluey.ScanState> scanStateCtrl =
-      StreamController<bluey.ScanState>.broadcast();
+  final StreamController<AdvertisingState> advertisingStateCtrl =
+      StreamController<AdvertisingState>.broadcast();
+  final StreamController<ScanState> scanStateCtrl =
+      StreamController<ScanState>.broadcast();
 
   /// Candidates the controller will see via [currentCandidates].
   final List<ScanCandidate> stagedCandidates = [];
@@ -102,11 +101,11 @@ class FakeConnectionService implements ConnectionService {
       bluetoothStateCtrl.stream;
 
   @override
-  Stream<bluey.AdvertisingState> get advertisingStateStream =>
+  Stream<AdvertisingState> get advertisingStateStream =>
       advertisingStateCtrl.stream;
 
   @override
-  Stream<bluey.ScanState> get scanStateStream => scanStateCtrl.stream;
+  Stream<ScanState> get scanStateStream => scanStateCtrl.stream;
 
   @override
   List<ScanCandidate> get currentCandidates => stagedCandidates;

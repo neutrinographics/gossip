@@ -1,4 +1,3 @@
-import 'package:bluey/bluey.dart' as bluey;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip_bluey/gossip_bluey.dart';
@@ -7,8 +6,8 @@ import 'package:gossip_chat/presentation/widgets/topology_controls.dart';
 void main() {
   Future<void> pump(
     WidgetTester t, {
-    bluey.AdvertisingState adv = bluey.AdvertisingState.idle,
-    bluey.ScanState scan = bluey.ScanState.stopped,
+    AdvertisingState adv = AdvertisingState.idle,
+    ScanState scan = ScanState.stopped,
     ConnectionMode mode = ConnectionMode.manual,
     VoidCallback? onToggleAdvertise,
     VoidCallback? onToggleDiscover,
@@ -32,32 +31,32 @@ void main() {
 
   group('TopologyControls', () {
     testWidgets('renders for every AdvertisingState value', (t) async {
-      for (final s in bluey.AdvertisingState.values) {
+      for (final s in AdvertisingState.values) {
         await pump(t, adv: s);
         expect(find.byType(TopologyControls), findsOneWidget);
       }
     });
 
     testWidgets('renders for every ScanState value', (t) async {
-      for (final s in bluey.ScanState.values) {
+      for (final s in ScanState.values) {
         await pump(t, scan: s);
         expect(find.byType(TopologyControls), findsOneWidget);
       }
     });
 
     testWidgets('advertising state shows "Advertising"', (t) async {
-      await pump(t, adv: bluey.AdvertisingState.advertising);
+      await pump(t, adv: AdvertisingState.advertising);
       expect(find.text('Advertising'), findsOneWidget);
     });
 
     testWidgets('starting shows transient spinner + "Starting…"', (t) async {
-      await pump(t, adv: bluey.AdvertisingState.starting);
+      await pump(t, adv: AdvertisingState.starting);
       expect(find.text('Starting…'), findsWidgets);
       expect(find.byType(CircularProgressIndicator), findsWidgets);
     });
 
     testWidgets('invalidated shows "Reset" label', (t) async {
-      await pump(t, adv: bluey.AdvertisingState.invalidated);
+      await pump(t, adv: AdvertisingState.invalidated);
       expect(find.text('Reset advertise'), findsOneWidget);
     });
 
@@ -65,7 +64,7 @@ void main() {
       var taps = 0;
       await pump(
         t,
-        adv: bluey.AdvertisingState.idle,
+        adv: AdvertisingState.idle,
         onToggleAdvertise: () => taps++,
       );
       await t.tap(find.text('Advertise'));
@@ -77,7 +76,7 @@ void main() {
       var taps = 0;
       await pump(
         t,
-        scan: bluey.ScanState.stopped,
+        scan: ScanState.stopped,
         onToggleDiscover: () => taps++,
       );
       await t.tap(find.text('Discover'));
@@ -89,7 +88,7 @@ void main() {
       var taps = 0;
       await pump(
         t,
-        adv: bluey.AdvertisingState.starting,
+        adv: AdvertisingState.starting,
         onToggleAdvertise: () => taps++,
       );
       // Find the InkWell wrapping "Starting…" and verify onTap is null.
@@ -122,15 +121,15 @@ void main() {
       await pump(
         t,
         mode: ConnectionMode.auto,
-        adv: bluey.AdvertisingState.advertising,
-        scan: bluey.ScanState.scanning,
+        adv: AdvertisingState.advertising,
+        scan: ScanState.scanning,
       );
       expect(find.byType(TopologyControls), findsOneWidget);
       await pump(
         t,
         mode: ConnectionMode.manual,
-        adv: bluey.AdvertisingState.advertising,
-        scan: bluey.ScanState.stopped,
+        adv: AdvertisingState.advertising,
+        scan: ScanState.stopped,
       );
       expect(find.byType(TopologyControls), findsOneWidget);
     });

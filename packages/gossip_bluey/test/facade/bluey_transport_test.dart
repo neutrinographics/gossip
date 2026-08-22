@@ -1,4 +1,3 @@
-import 'package:bluey/bluey.dart' as bluey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/gossip_bluey.dart';
@@ -54,11 +53,11 @@ void main() {
           displayName: 'phone',
           port: port,
         );
-        expect(transport.advertisingState, bluey.AdvertisingState.idle);
+        expect(transport.advertisingState, AdvertisingState.idle);
         await transport.startAdvertising();
-        expect(transport.advertisingState, bluey.AdvertisingState.advertising);
+        expect(transport.advertisingState, AdvertisingState.advertising);
         await transport.stopAdvertising();
-        expect(transport.advertisingState, bluey.AdvertisingState.idle);
+        expect(transport.advertisingState, AdvertisingState.idle);
         await transport.dispose();
       },
     );
@@ -134,15 +133,15 @@ void main() {
           await transport.startDiscovery();
           expect(
             transport.advertisingState,
-            bluey.AdvertisingState.advertising,
+            AdvertisingState.advertising,
           );
-          expect(transport.scanState, bluey.ScanState.scanning);
+          expect(transport.scanState, ScanState.scanning);
 
           port.setBluetoothAdapterStateForTest(BluetoothAdapterState.off);
           await Future<void>.delayed(Duration.zero);
 
-          expect(transport.advertisingState, bluey.AdvertisingState.idle);
-          expect(transport.scanState, bluey.ScanState.stopped);
+          expect(transport.advertisingState, AdvertisingState.idle);
+          expect(transport.scanState, ScanState.stopped);
 
           await transport.dispose();
         },

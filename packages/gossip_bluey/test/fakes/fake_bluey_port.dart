@@ -1,16 +1,17 @@
 import 'dart:async';
 import 'dart:typed_data';
 
-import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/src/domain/errors/not_a_bluey_peer_exception.dart';
 import 'package:gossip_bluey/src/domain/interfaces/bluey_port.dart';
 import 'package:gossip_bluey/src/domain/value_objects/advertise_mode.dart';
+import 'package:gossip_bluey/src/domain/value_objects/advertising_state.dart';
 import 'package:gossip_bluey/src/domain/value_objects/ble_address.dart';
 import 'package:gossip_bluey/src/domain/value_objects/bluetooth_adapter_state.dart';
 import 'package:gossip_bluey/src/domain/value_objects/discovered_peer.dart';
 import 'package:gossip_bluey/src/domain/value_objects/scan_candidate.dart';
 import 'package:gossip_bluey/src/domain/value_objects/scan_mode.dart';
+import 'package:gossip_bluey/src/domain/value_objects/scan_state.dart';
 import 'package:gossip_bluey/src/domain/value_objects/service_uuid.dart';
 
 final _testCandidateInstant = DateTime.utc(2026, 1, 1);
@@ -70,12 +71,12 @@ class FakeBlueyPort implements BlueyPort {
 
   final StreamController<BlueyPortEvent> _events =
       StreamController<BlueyPortEvent>.broadcast();
-  bluey.AdvertisingState _advertisingState = bluey.AdvertisingState.idle;
-  bluey.ScanState _scanState = bluey.ScanState.stopped;
-  final StreamController<bluey.AdvertisingState> _advertisingStateChanges =
-      StreamController<bluey.AdvertisingState>.broadcast();
-  final StreamController<bluey.ScanState> _scanStateChanges =
-      StreamController<bluey.ScanState>.broadcast();
+  AdvertisingState _advertisingState = AdvertisingState.idle;
+  ScanState _scanState = ScanState.stopped;
+  final StreamController<AdvertisingState> _advertisingStateChanges =
+      StreamController<AdvertisingState>.broadcast();
+  final StreamController<ScanState> _scanStateChanges =
+      StreamController<ScanState>.broadcast();
   ServiceUuid? _advertisedServiceUuid;
   String? _advertisedDisplayName;
   final Set<NodeId> _connectedAsCentral = {};
@@ -108,15 +109,15 @@ class FakeBlueyPort implements BlueyPort {
   final Set<NodeId> _rejectedPeripheralLinks = {};
 
   /// Internal convenience: peers are visible to network scans iff
-  /// advertising state is [bluey.AdvertisingState.advertising].
+  /// advertising state is [AdvertisingState.advertising].
   bool get _isAdvertisingInternal =>
-      _advertisingState == bluey.AdvertisingState.advertising;
+      _advertisingState == AdvertisingState.advertising;
 
   @override
-  bluey.AdvertisingState get advertisingState => _advertisingState;
+  AdvertisingState get advertisingState => _advertisingState;
 
   @override
-  Stream<bluey.AdvertisingState> get advertisingStateStream =>
+  Stream<AdvertisingState> get advertisingStateStream =>
       Stream.multi((controller) {
         controller.add(_advertisingState);
         final sub = _advertisingStateChanges.stream.listen(
@@ -128,10 +129,10 @@ class FakeBlueyPort implements BlueyPort {
       });
 
   @override
-  bluey.ScanState get scanState => _scanState;
+  ScanState get scanState => _scanState;
 
   @override
-  Stream<bluey.ScanState> get scanStateStream => Stream.multi((controller) {
+  Stream<ScanState> get scanStateStream => Stream.multi((controller) {
     controller.add(_scanState);
     final sub = _scanStateChanges.stream.listen(
       controller.add,
@@ -143,7 +144,7 @@ class FakeBlueyPort implements BlueyPort {
 
   /// Test hook: drive an advertising-state transition. Updates the
   /// cached value and emits on [advertisingStateStream].
-  void setAdvertisingStateForTest(bluey.AdvertisingState s) {
+  void setAdvertisingStateForTest(AdvertisingState s) {
     _advertisingState = s;
     if (!_advertisingStateChanges.isClosed) {
       _advertisingStateChanges.add(s);
@@ -151,7 +152,7 @@ class FakeBlueyPort implements BlueyPort {
   }
 
   /// Test hook: drive a scan-state transition.
-  void setScanStateForTest(bluey.ScanState s) {
+  void setScanStateForTest(ScanState s) {
     _scanState = s;
     if (!_scanStateChanges.isClosed) {
       _scanStateChanges.add(s);
@@ -305,8 +306,8 @@ class FakeBlueyPort implements BlueyPort {
   void setBluetoothAdapterStateForTest(BluetoothAdapterState state) {
     _adapterState = state;
     if (state != BluetoothAdapterState.on) {
-      setAdvertisingStateForTest(bluey.AdvertisingState.idle);
-      setScanStateForTest(bluey.ScanState.stopped);
+      setAdvertisingStateForTest(AdvertisingState.idle);
+      setScanStateForTest(ScanState.stopped);
     }
     if (!_adapterStateController.isClosed) {
       _adapterStateController.add(state);
@@ -356,12 +357,12 @@ class FakeBlueyPort implements BlueyPort {
     _advertisedServiceUuid = serviceUuid;
     _advertisedDisplayName = displayName;
     lastAdvertiseMode = mode;
-    setAdvertisingStateForTest(bluey.AdvertisingState.advertising);
+    setAdvertisingStateForTest(AdvertisingState.advertising);
   }
 
   @override
   Future<void> stopAdvertising() async {
-    setAdvertisingStateForTest(bluey.AdvertisingState.idle);
+    setAdvertisingStateForTest(AdvertisingState.idle);
   }
 
   @override
@@ -563,7 +564,7 @@ class FakeBlueyPort implements BlueyPort {
   }) {
     lastScanMode = mode;
     scanForCandidatesCallCount++;
-    setScanStateForTest(bluey.ScanState.scanning);
+    setScanStateForTest(ScanState.scanning);
     // Closed in [stopScan] and [dispose].
     // ignore: close_sinks
     final controller = StreamController<ScanCandidate>.broadcast();
@@ -593,7 +594,7 @@ class FakeBlueyPort implements BlueyPort {
   @override
   Future<void> stopScan() async {
     stopScanCallCount++;
-    setScanStateForTest(bluey.ScanState.stopped);
+    setScanStateForTest(ScanState.stopped);
     _scanRebroadcastTimer?.cancel();
     _scanRebroadcastTimer = null;
     final c = _scanController;

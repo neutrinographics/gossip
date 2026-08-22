@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/gossip_bluey.dart';
 
@@ -74,7 +73,7 @@ class ConnectionService {
   // distinguish "starting up" from "running" and "stopping" from "off"
   // without polling.
   bool get isAdvertising =>
-      _transport.advertisingState == bluey.AdvertisingState.advertising;
+      _transport.advertisingState == AdvertisingState.advertising;
 
   /// Whether discovery is currently active.
   // TODO(Phase D): rewrite to consume transport.scanStateStream and
@@ -84,7 +83,7 @@ class ConnectionService {
   // "starting up" from "running" and "stopping" from "off" without
   // polling.
   bool get isDiscovering =>
-      _transport.scanState == bluey.ScanState.scanning;
+      _transport.scanState == ScanState.scanning;
 
   /// Current Bluetooth adapter state.
   BluetoothAdapterState get bluetoothAdapterState =>
@@ -98,13 +97,13 @@ class ConnectionService {
   /// Stream of advertising lifecycle transitions
   /// (idle/starting/advertising/stopping/invalidated). Replays the
   /// current value on subscription.
-  Stream<bluey.AdvertisingState> get advertisingStateStream =>
+  Stream<AdvertisingState> get advertisingStateStream =>
       _transport.advertisingStateStream;
 
   /// Stream of scan lifecycle transitions
   /// (stopped/starting/scanning/stopping/invalidated). Replays the
   /// current value on subscription.
-  Stream<bluey.ScanState> get scanStateStream => _transport.scanStateStream;
+  Stream<ScanState> get scanStateStream => _transport.scanStateStream;
 
   /// Currently connected peer count.
   int get connectedPeerCount => _transport.connectedPeerCount;

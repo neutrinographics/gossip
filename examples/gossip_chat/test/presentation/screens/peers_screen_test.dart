@@ -2,7 +2,6 @@
 
 import 'dart:async';
 
-import 'package:bluey/bluey.dart' as bluey;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart' as gossip;
@@ -31,10 +30,10 @@ class FakeConnectionService implements ConnectionService {
       StreamController<ScanCandidate>.broadcast();
   final StreamController<BluetoothAdapterState> bluetoothStateCtrl =
       StreamController<BluetoothAdapterState>.broadcast();
-  final StreamController<bluey.AdvertisingState> advertisingStateCtrl =
-      StreamController<bluey.AdvertisingState>.broadcast();
-  final StreamController<bluey.ScanState> scanStateCtrl =
-      StreamController<bluey.ScanState>.broadcast();
+  final StreamController<AdvertisingState> advertisingStateCtrl =
+      StreamController<AdvertisingState>.broadcast();
+  final StreamController<ScanState> scanStateCtrl =
+      StreamController<ScanState>.broadcast();
 
   final List<ScanCandidate> stagedCandidates = [];
 
@@ -91,11 +90,11 @@ class FakeConnectionService implements ConnectionService {
       bluetoothStateCtrl.stream;
 
   @override
-  Stream<bluey.AdvertisingState> get advertisingStateStream =>
+  Stream<AdvertisingState> get advertisingStateStream =>
       advertisingStateCtrl.stream;
 
   @override
-  Stream<bluey.ScanState> get scanStateStream => scanStateCtrl.stream;
+  Stream<ScanState> get scanStateStream => scanStateCtrl.stream;
 
   @override
   List<ScanCandidate> get currentCandidates => stagedCandidates;
@@ -290,13 +289,13 @@ void main() {
 
       bundle.connection.bluetoothStateCtrl.add(BluetoothAdapterState.on);
       bundle.connection.advertisingStateCtrl
-          .add(bluey.AdvertisingState.advertising);
-      bundle.connection.scanStateCtrl.add(bluey.ScanState.scanning);
+          .add(AdvertisingState.advertising);
+      bundle.connection.scanStateCtrl.add(ScanState.scanning);
       await _pump(t, bundle.controller);
 
       final controls = t.widget<TopologyControls>(find.byType(TopologyControls));
-      expect(controls.advertisingState, bluey.AdvertisingState.advertising);
-      expect(controls.scanState, bluey.ScanState.scanning);
+      expect(controls.advertisingState, AdvertisingState.advertising);
+      expect(controls.scanState, ScanState.scanning);
       expect(controls.enabled, isTrue);
 
       bundle.controller.dispose();

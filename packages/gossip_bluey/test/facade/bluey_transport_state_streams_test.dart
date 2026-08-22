@@ -1,4 +1,3 @@
-import 'package:bluey/bluey.dart' as bluey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip/gossip.dart';
 import 'package:gossip_bluey/gossip_bluey.dart';
@@ -22,12 +21,12 @@ void main() {
       final port = FakeBlueyPort(localNodeId: localId, network: network);
       final transport = makeTransport(port);
 
-      expect(transport.advertisingState, equals(bluey.AdvertisingState.idle));
+      expect(transport.advertisingState, equals(AdvertisingState.idle));
 
-      port.setAdvertisingStateForTest(bluey.AdvertisingState.advertising);
+      port.setAdvertisingStateForTest(AdvertisingState.advertising);
       expect(
         transport.advertisingState,
-        equals(bluey.AdvertisingState.advertising),
+        equals(AdvertisingState.advertising),
       );
 
       await transport.dispose();
@@ -36,11 +35,11 @@ void main() {
     test('advertisingStateStream replays current value on subscribe', () async {
       final network = FakeBlueyNetwork();
       final port = FakeBlueyPort(localNodeId: localId, network: network);
-      port.setAdvertisingStateForTest(bluey.AdvertisingState.advertising);
+      port.setAdvertisingStateForTest(AdvertisingState.advertising);
       final transport = makeTransport(port);
 
       final first = await transport.advertisingStateStream.first;
-      expect(first, equals(bluey.AdvertisingState.advertising));
+      expect(first, equals(AdvertisingState.advertising));
 
       await transport.dispose();
     });
@@ -50,22 +49,22 @@ void main() {
       final port = FakeBlueyPort(localNodeId: localId, network: network);
       final transport = makeTransport(port);
 
-      final received = <bluey.AdvertisingState>[];
+      final received = <AdvertisingState>[];
       final sub = transport.advertisingStateStream.listen(received.add);
       await Future<void>.delayed(Duration.zero);
 
-      port.setAdvertisingStateForTest(bluey.AdvertisingState.starting);
-      port.setAdvertisingStateForTest(bluey.AdvertisingState.advertising);
-      port.setAdvertisingStateForTest(bluey.AdvertisingState.stopping);
-      port.setAdvertisingStateForTest(bluey.AdvertisingState.idle);
+      port.setAdvertisingStateForTest(AdvertisingState.starting);
+      port.setAdvertisingStateForTest(AdvertisingState.advertising);
+      port.setAdvertisingStateForTest(AdvertisingState.stopping);
+      port.setAdvertisingStateForTest(AdvertisingState.idle);
       await Future<void>.delayed(Duration.zero);
 
       expect(received, [
-        bluey.AdvertisingState.idle, // replay-current
-        bluey.AdvertisingState.starting,
-        bluey.AdvertisingState.advertising,
-        bluey.AdvertisingState.stopping,
-        bluey.AdvertisingState.idle,
+        AdvertisingState.idle, // replay-current
+        AdvertisingState.starting,
+        AdvertisingState.advertising,
+        AdvertisingState.stopping,
+        AdvertisingState.idle,
       ]);
 
       await sub.cancel();
@@ -77,10 +76,10 @@ void main() {
       final port = FakeBlueyPort(localNodeId: localId, network: network);
       final transport = makeTransport(port);
 
-      expect(transport.scanState, equals(bluey.ScanState.stopped));
+      expect(transport.scanState, equals(ScanState.stopped));
 
-      port.setScanStateForTest(bluey.ScanState.scanning);
-      expect(transport.scanState, equals(bluey.ScanState.scanning));
+      port.setScanStateForTest(ScanState.scanning);
+      expect(transport.scanState, equals(ScanState.scanning));
 
       await transport.dispose();
     });
@@ -88,11 +87,11 @@ void main() {
     test('scanStateStream replays current value on subscribe', () async {
       final network = FakeBlueyNetwork();
       final port = FakeBlueyPort(localNodeId: localId, network: network);
-      port.setScanStateForTest(bluey.ScanState.scanning);
+      port.setScanStateForTest(ScanState.scanning);
       final transport = makeTransport(port);
 
       final first = await transport.scanStateStream.first;
-      expect(first, equals(bluey.ScanState.scanning));
+      expect(first, equals(ScanState.scanning));
 
       await transport.dispose();
     });
@@ -102,22 +101,22 @@ void main() {
       final port = FakeBlueyPort(localNodeId: localId, network: network);
       final transport = makeTransport(port);
 
-      final received = <bluey.ScanState>[];
+      final received = <ScanState>[];
       final sub = transport.scanStateStream.listen(received.add);
       await Future<void>.delayed(Duration.zero);
 
-      port.setScanStateForTest(bluey.ScanState.starting);
-      port.setScanStateForTest(bluey.ScanState.scanning);
-      port.setScanStateForTest(bluey.ScanState.stopping);
-      port.setScanStateForTest(bluey.ScanState.stopped);
+      port.setScanStateForTest(ScanState.starting);
+      port.setScanStateForTest(ScanState.scanning);
+      port.setScanStateForTest(ScanState.stopping);
+      port.setScanStateForTest(ScanState.stopped);
       await Future<void>.delayed(Duration.zero);
 
       expect(received, [
-        bluey.ScanState.stopped, // replay-current
-        bluey.ScanState.starting,
-        bluey.ScanState.scanning,
-        bluey.ScanState.stopping,
-        bluey.ScanState.stopped,
+        ScanState.stopped, // replay-current
+        ScanState.starting,
+        ScanState.scanning,
+        ScanState.stopping,
+        ScanState.stopped,
       ]);
 
       await sub.cancel();
@@ -130,33 +129,33 @@ void main() {
       () async {
         final network = FakeBlueyNetwork();
         final port = FakeBlueyPort(localNodeId: localId, network: network);
-        port.setAdvertisingStateForTest(bluey.AdvertisingState.advertising);
+        port.setAdvertisingStateForTest(AdvertisingState.advertising);
         final transport = makeTransport(port);
 
         // Subscriber A subscribes while state is `advertising`.
-        final aReceived = <bluey.AdvertisingState>[];
+        final aReceived = <AdvertisingState>[];
         final subA = transport.advertisingStateStream.listen(aReceived.add);
         await Future<void>.delayed(Duration.zero);
 
         // Transition state.
-        port.setAdvertisingStateForTest(bluey.AdvertisingState.stopping);
+        port.setAdvertisingStateForTest(AdvertisingState.stopping);
         await Future<void>.delayed(Duration.zero);
 
         // Subscriber B subscribes AFTER the transition — should replay
         // the current value (`stopping`), not the historical first
         // emission A saw. A shared replay impl would (incorrectly) hand
         // B `advertising` as its first emission.
-        final bReceived = <bluey.AdvertisingState>[];
+        final bReceived = <AdvertisingState>[];
         final subB = transport.advertisingStateStream.listen(bReceived.add);
         await Future<void>.delayed(Duration.zero);
 
-        expect(aReceived.first, equals(bluey.AdvertisingState.advertising));
-        expect(bReceived.first, equals(bluey.AdvertisingState.stopping));
+        expect(aReceived.first, equals(AdvertisingState.advertising));
+        expect(bReceived.first, equals(AdvertisingState.stopping));
         // Confirm A saw the transition as its SECOND emission (not its
         // first), i.e. replay then live stream.
         expect(aReceived, [
-          bluey.AdvertisingState.advertising,
-          bluey.AdvertisingState.stopping,
+          AdvertisingState.advertising,
+          AdvertisingState.stopping,
         ]);
 
         await subA.cancel();
@@ -171,29 +170,29 @@ void main() {
       () async {
         final network = FakeBlueyNetwork();
         final port = FakeBlueyPort(localNodeId: localId, network: network);
-        port.setScanStateForTest(bluey.ScanState.scanning);
+        port.setScanStateForTest(ScanState.scanning);
         final transport = makeTransport(port);
 
         // Subscriber A subscribes while state is `scanning`.
-        final aReceived = <bluey.ScanState>[];
+        final aReceived = <ScanState>[];
         final subA = transport.scanStateStream.listen(aReceived.add);
         await Future<void>.delayed(Duration.zero);
 
         // Transition state.
-        port.setScanStateForTest(bluey.ScanState.stopping);
+        port.setScanStateForTest(ScanState.stopping);
         await Future<void>.delayed(Duration.zero);
 
         // Subscriber B subscribes AFTER the transition — should replay
         // the current value (`stopping`), not what A saw first.
-        final bReceived = <bluey.ScanState>[];
+        final bReceived = <ScanState>[];
         final subB = transport.scanStateStream.listen(bReceived.add);
         await Future<void>.delayed(Duration.zero);
 
-        expect(aReceived.first, equals(bluey.ScanState.scanning));
-        expect(bReceived.first, equals(bluey.ScanState.stopping));
+        expect(aReceived.first, equals(ScanState.scanning));
+        expect(bReceived.first, equals(ScanState.stopping));
         expect(aReceived, [
-          bluey.ScanState.scanning,
-          bluey.ScanState.stopping,
+          ScanState.scanning,
+          ScanState.stopping,
         ]);
 
         await subA.cancel();

@@ -15,7 +15,7 @@ void main() {
       service = IndirectPeerService(localNodeId: localNodeId);
     });
 
-    LogEntry _createEntry(NodeId author, int physicalMs) {
+    LogEntry createEntry(NodeId author, int physicalMs) {
       return LogEntry(
         author: author,
         sequence: 1,
@@ -169,7 +169,7 @@ void main() {
         final author = NodeId('author-1');
         final now = DateTime.now().millisecondsSinceEpoch;
         service.onEntriesMerged(VersionVector({author: 1}), [
-          _createEntry(author, now),
+          createEntry(author, now),
         ]);
         expect(service.getLastSeenAt(author), isNotNull);
 
@@ -189,7 +189,7 @@ void main() {
 
         // Act
         service.onEntriesMerged(VersionVector({author: 1}), [
-          _createEntry(author, timestamp),
+          createEntry(author, timestamp),
         ]);
 
         // Assert
@@ -206,10 +206,10 @@ void main() {
 
         // Act
         service.onEntriesMerged(VersionVector({author: 1}), [
-          _createEntry(author, olderTime),
+          createEntry(author, olderTime),
         ]);
         service.onEntriesMerged(VersionVector({author: 2}), [
-          _createEntry(author, newerTime),
+          createEntry(author, newerTime),
         ]);
 
         // Assert
@@ -225,10 +225,10 @@ void main() {
 
         // Act
         service.onEntriesMerged(VersionVector({author: 1}), [
-          _createEntry(author, newerTime),
+          createEntry(author, newerTime),
         ]);
         service.onEntriesMerged(VersionVector({author: 2}), [
-          _createEntry(author, olderTime),
+          createEntry(author, olderTime),
         ]);
 
         // Assert
@@ -245,8 +245,8 @@ void main() {
 
         // Act
         service.onEntriesMerged(VersionVector({author1: 1, author2: 1}), [
-          _createEntry(author1, time1),
-          _createEntry(author2, time2),
+          createEntry(author1, time1),
+          createEntry(author2, time2),
         ]);
 
         // Assert
@@ -260,7 +260,7 @@ void main() {
 
         // Act
         service.onEntriesMerged(VersionVector({localNodeId: 1}), [
-          _createEntry(localNodeId, now),
+          createEntry(localNodeId, now),
         ]);
 
         // Assert
@@ -284,7 +284,7 @@ void main() {
         final recentTime = now.subtract(const Duration(seconds: 10));
 
         service.onEntriesMerged(VersionVector({author: 1}), [
-          _createEntry(author, recentTime.millisecondsSinceEpoch),
+          createEntry(author, recentTime.millisecondsSinceEpoch),
         ]);
 
         // Act
@@ -301,7 +301,7 @@ void main() {
         final time = now.subtract(const Duration(seconds: 30));
 
         service.onEntriesMerged(VersionVector({author: 1}), [
-          _createEntry(author, time.millisecondsSinceEpoch),
+          createEntry(author, time.millisecondsSinceEpoch),
         ]);
 
         // Act
@@ -318,7 +318,7 @@ void main() {
         final time = now.subtract(const Duration(minutes: 3));
 
         service.onEntriesMerged(VersionVector({author: 1}), [
-          _createEntry(author, time.millisecondsSinceEpoch),
+          createEntry(author, time.millisecondsSinceEpoch),
         ]);
 
         // Act
@@ -335,7 +335,7 @@ void main() {
         final time = now.subtract(const Duration(minutes: 10));
 
         service.onEntriesMerged(VersionVector({author: 1}), [
-          _createEntry(author, time.millisecondsSinceEpoch),
+          createEntry(author, time.millisecondsSinceEpoch),
         ]);
 
         // Act

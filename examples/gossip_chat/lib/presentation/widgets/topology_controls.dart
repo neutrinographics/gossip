@@ -1,4 +1,3 @@
-import 'package:bluey/bluey.dart' as bluey;
 import 'package:flutter/material.dart';
 import 'package:gossip_bluey/gossip_bluey.dart';
 
@@ -20,8 +19,8 @@ import 'package:gossip_bluey/gossip_bluey.dart';
 /// - `invalidated`: error-tinted with warning glyph, label "Reset …",
 ///   tappable (tap = restart via [onToggleAdvertise] / [onToggleDiscover]).
 class TopologyControls extends StatelessWidget {
-  final bluey.AdvertisingState advertisingState;
-  final bluey.ScanState scanState;
+  final AdvertisingState advertisingState;
+  final ScanState scanState;
   final ConnectionMode mode;
   final VoidCallback onToggleAdvertise;
   final VoidCallback onToggleDiscover;
@@ -86,18 +85,18 @@ class TopologyControls extends StatelessWidget {
                     label: _advertiseLabel(advertisingState),
                     icon: _advertiseIcon(advertisingState),
                     active:
-                        advertisingState == bluey.AdvertisingState.advertising,
+                        advertisingState == AdvertisingState.advertising,
                     invalidated:
-                        advertisingState == bluey.AdvertisingState.invalidated,
+                        advertisingState == AdvertisingState.invalidated,
                     transient:
-                        advertisingState == bluey.AdvertisingState.starting ||
+                        advertisingState == AdvertisingState.starting ||
                             advertisingState ==
-                                bluey.AdvertisingState.stopping,
+                                AdvertisingState.stopping,
                     onTap: enabled &&
                             advertisingState !=
-                                bluey.AdvertisingState.starting &&
+                                AdvertisingState.starting &&
                             advertisingState !=
-                                bluey.AdvertisingState.stopping
+                                AdvertisingState.stopping
                         ? onToggleAdvertise
                         : null,
                   ),
@@ -107,13 +106,13 @@ class TopologyControls extends StatelessWidget {
                   child: _StateChip(
                     label: _discoverLabel(scanState),
                     icon: _discoverIcon(scanState),
-                    active: scanState == bluey.ScanState.scanning,
-                    invalidated: scanState == bluey.ScanState.invalidated,
-                    transient: scanState == bluey.ScanState.starting ||
-                        scanState == bluey.ScanState.stopping,
+                    active: scanState == ScanState.scanning,
+                    invalidated: scanState == ScanState.invalidated,
+                    transient: scanState == ScanState.starting ||
+                        scanState == ScanState.stopping,
                     onTap: enabled &&
-                            scanState != bluey.ScanState.starting &&
-                            scanState != bluey.ScanState.stopping
+                            scanState != ScanState.starting &&
+                            scanState != ScanState.stopping
                         ? onToggleDiscover
                         : null,
                   ),
@@ -126,36 +125,36 @@ class TopologyControls extends StatelessWidget {
     );
   }
 
-  String _advertiseLabel(bluey.AdvertisingState s) => switch (s) {
-        bluey.AdvertisingState.idle => 'Advertise',
-        bluey.AdvertisingState.starting => 'Starting…',
-        bluey.AdvertisingState.advertising => 'Advertising',
-        bluey.AdvertisingState.stopping => 'Stopping…',
-        bluey.AdvertisingState.invalidated => 'Reset advertise',
+  String _advertiseLabel(AdvertisingState s) => switch (s) {
+        AdvertisingState.idle => 'Advertise',
+        AdvertisingState.starting => 'Starting…',
+        AdvertisingState.advertising => 'Advertising',
+        AdvertisingState.stopping => 'Stopping…',
+        AdvertisingState.invalidated => 'Reset advertise',
       };
 
-  IconData _advertiseIcon(bluey.AdvertisingState s) => switch (s) {
-        bluey.AdvertisingState.idle => Icons.cell_tower_outlined,
-        bluey.AdvertisingState.starting => Icons.hourglass_empty,
-        bluey.AdvertisingState.advertising => Icons.check_circle_outline,
-        bluey.AdvertisingState.stopping => Icons.hourglass_empty,
-        bluey.AdvertisingState.invalidated => Icons.warning_amber_outlined,
+  IconData _advertiseIcon(AdvertisingState s) => switch (s) {
+        AdvertisingState.idle => Icons.cell_tower_outlined,
+        AdvertisingState.starting => Icons.hourglass_empty,
+        AdvertisingState.advertising => Icons.check_circle_outline,
+        AdvertisingState.stopping => Icons.hourglass_empty,
+        AdvertisingState.invalidated => Icons.warning_amber_outlined,
       };
 
-  String _discoverLabel(bluey.ScanState s) => switch (s) {
-        bluey.ScanState.stopped => 'Discover',
-        bluey.ScanState.starting => 'Starting…',
-        bluey.ScanState.scanning => 'Discovering',
-        bluey.ScanState.stopping => 'Stopping…',
-        bluey.ScanState.invalidated => 'Reset discover',
+  String _discoverLabel(ScanState s) => switch (s) {
+        ScanState.stopped => 'Discover',
+        ScanState.starting => 'Starting…',
+        ScanState.scanning => 'Discovering',
+        ScanState.stopping => 'Stopping…',
+        ScanState.invalidated => 'Reset discover',
       };
 
-  IconData _discoverIcon(bluey.ScanState s) => switch (s) {
-        bluey.ScanState.stopped => Icons.radar,
-        bluey.ScanState.starting => Icons.hourglass_empty,
-        bluey.ScanState.scanning => Icons.check_circle_outline,
-        bluey.ScanState.stopping => Icons.hourglass_empty,
-        bluey.ScanState.invalidated => Icons.warning_amber_outlined,
+  IconData _discoverIcon(ScanState s) => switch (s) {
+        ScanState.stopped => Icons.radar,
+        ScanState.starting => Icons.hourglass_empty,
+        ScanState.scanning => Icons.check_circle_outline,
+        ScanState.stopping => Icons.hourglass_empty,
+        ScanState.invalidated => Icons.warning_amber_outlined,
       };
 }
 

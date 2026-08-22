@@ -1,4 +1,3 @@
-import 'package:bluey/bluey.dart' as bluey;
 import 'package:flutter/material.dart';
 import 'package:gossip_bluey/gossip_bluey.dart';
 
@@ -58,10 +57,10 @@ class PeersScreen extends StatelessWidget {
                 mode: controller.connectionMode,
                 onToggleAdvertise: () => controller.setAdvertising(
                   controller.advertisingState !=
-                      bluey.AdvertisingState.advertising,
+                      AdvertisingState.advertising,
                 ),
                 onToggleDiscover: () => controller.setDiscovering(
-                  controller.scanState != bluey.ScanState.scanning,
+                  controller.scanState != ScanState.scanning,
                 ),
                 onModeChanged: controller.setMode,
                 enabled: controller.bluetoothAdapterState ==
@@ -100,8 +99,8 @@ class PeersScreen extends StatelessWidget {
           );
       }
     }
-    final isSearching = controller.scanState == bluey.ScanState.scanning ||
-        controller.scanState == bluey.ScanState.starting;
+    final isSearching = controller.scanState == ScanState.scanning ||
+        controller.scanState == ScanState.starting;
     return AnimatedEmptyState(
       icon: isSearching ? Icons.radar : Icons.people_outline,
       title: isSearching ? 'Searching for peers…' : 'No peers found',
@@ -115,7 +114,7 @@ class PeersScreen extends StatelessWidget {
     final hasDirect = controller.peers.isNotEmpty;
     final hasIndirect = controller.indirectPeers.isNotEmpty;
     final scanningActive =
-        controller.scanState == bluey.ScanState.scanning;
+        controller.scanState == ScanState.scanning;
 
     return ListView(
       children: [

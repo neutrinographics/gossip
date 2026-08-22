@@ -1,14 +1,13 @@
 // ignore_for_file: invalid_use_of_visible_for_testing_member
 
-import 'package:bluey/bluey.dart' as bluey;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:gossip_bluey/gossip_bluey.dart';
 import 'package:gossip_chat/presentation/controllers/chat_controller.dart';
 
 ConnectionStatus _compute({
   BluetoothAdapterState bluetooth = BluetoothAdapterState.on,
-  bluey.AdvertisingState adv = bluey.AdvertisingState.idle,
-  bluey.ScanState scan = bluey.ScanState.stopped,
+  AdvertisingState adv = AdvertisingState.idle,
+  ScanState scan = ScanState.stopped,
   int peers = 0,
 }) =>
     computeConnectionStatus(
@@ -25,8 +24,8 @@ void main() {
       expect(
         _compute(
           bluetooth: BluetoothAdapterState.off,
-          adv: bluey.AdvertisingState.advertising,
-          scan: bluey.ScanState.scanning,
+          adv: AdvertisingState.advertising,
+          scan: ScanState.scanning,
           peers: 3,
         ),
         ConnectionStatus.bluetoothOff,
@@ -36,16 +35,16 @@ void main() {
     test('invalidated wins over connected and meshActive', () {
       expect(
         _compute(
-          adv: bluey.AdvertisingState.invalidated,
-          scan: bluey.ScanState.scanning,
+          adv: AdvertisingState.invalidated,
+          scan: ScanState.scanning,
           peers: 5,
         ),
         ConnectionStatus.invalidated,
       );
       expect(
         _compute(
-          adv: bluey.AdvertisingState.advertising,
-          scan: bluey.ScanState.invalidated,
+          adv: AdvertisingState.advertising,
+          scan: ScanState.invalidated,
           peers: 5,
         ),
         ConnectionStatus.invalidated,
@@ -55,8 +54,8 @@ void main() {
     test('connected when peers > 0 (and not invalidated)', () {
       expect(
         _compute(
-          adv: bluey.AdvertisingState.advertising,
-          scan: bluey.ScanState.scanning,
+          adv: AdvertisingState.advertising,
+          scan: ScanState.scanning,
           peers: 1,
         ),
         ConnectionStatus.connected,
@@ -66,28 +65,28 @@ void main() {
     test('meshActive when both adv + scan active and no peers', () {
       expect(
         _compute(
-          adv: bluey.AdvertisingState.advertising,
-          scan: bluey.ScanState.scanning,
+          adv: AdvertisingState.advertising,
+          scan: ScanState.scanning,
         ),
         ConnectionStatus.meshActive,
       );
     });
 
     test('advertising transients map correctly', () {
-      expect(_compute(adv: bluey.AdvertisingState.starting),
+      expect(_compute(adv: AdvertisingState.starting),
           ConnectionStatus.advertisingStarting);
-      expect(_compute(adv: bluey.AdvertisingState.advertising),
+      expect(_compute(adv: AdvertisingState.advertising),
           ConnectionStatus.advertising);
-      expect(_compute(adv: bluey.AdvertisingState.stopping),
+      expect(_compute(adv: AdvertisingState.stopping),
           ConnectionStatus.advertisingStopping);
     });
 
     test('discovery transients map correctly', () {
-      expect(_compute(scan: bluey.ScanState.starting),
+      expect(_compute(scan: ScanState.starting),
           ConnectionStatus.discoveryStarting);
-      expect(_compute(scan: bluey.ScanState.scanning),
+      expect(_compute(scan: ScanState.scanning),
           ConnectionStatus.discovering);
-      expect(_compute(scan: bluey.ScanState.stopping),
+      expect(_compute(scan: ScanState.stopping),
           ConnectionStatus.discoveryStopping);
     });
 
@@ -101,8 +100,8 @@ void main() {
       // documented precedence (adv transients listed before scan).
       expect(
         _compute(
-          adv: bluey.AdvertisingState.starting,
-          scan: bluey.ScanState.starting,
+          adv: AdvertisingState.starting,
+          scan: ScanState.starting,
         ),
         ConnectionStatus.advertisingStarting,
       );

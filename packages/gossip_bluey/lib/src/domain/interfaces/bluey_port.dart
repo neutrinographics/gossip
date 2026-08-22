@@ -1,14 +1,15 @@
 import 'dart:typed_data';
 
-import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 
 import '../value_objects/advertise_mode.dart';
+import '../value_objects/advertising_state.dart';
 import '../value_objects/ble_address.dart';
 import '../value_objects/bluetooth_adapter_state.dart';
 import '../value_objects/discovered_peer.dart';
 import '../value_objects/scan_candidate.dart';
 import '../value_objects/scan_mode.dart';
+import '../value_objects/scan_state.dart';
 import '../value_objects/service_uuid.dart';
 
 /// Domain abstraction over the bluey library. Speaks only in domain types
@@ -105,28 +106,28 @@ abstract interface class BlueyPort {
   /// bluey `Server.advertisingState`. Reflects platform reality, not the
   /// consumer's last call to [startAdvertising]. Stable across the
   /// starting/stopping transient windows; transitions to
-  /// [bluey.AdvertisingState.invalidated] after an adapter cycle. The
+  /// [AdvertisingState.invalidated] after an adapter cycle. The
   /// matching [advertisingStateStream] replays this value on subscribe.
-  bluey.AdvertisingState get advertisingState;
+  AdvertisingState get advertisingState;
 
   /// Stream of advertising-state transitions. Replays the current value
   /// on subscribe (Stream.multi pattern; matches bluey's I334 convention
   /// for `Server.advertisingStateChanges`), then emits every subsequent
   /// transition. Multi-listener — each subscriber gets its own
   /// replay-current emission.
-  Stream<bluey.AdvertisingState> get advertisingStateStream;
+  Stream<AdvertisingState> get advertisingStateStream;
 
   /// Current scan lifecycle state — derived from the underlying bluey
   /// `Scanner.state`. Reflects platform reality, not the consumer's last
   /// call to [scanForCandidates]. Stable across the starting/stopping
-  /// transient windows; transitions to [bluey.ScanState.invalidated]
+  /// transient windows; transitions to [ScanState.invalidated]
   /// after an adapter cycle. The matching [scanStateStream] replays this
   /// value on subscribe.
-  bluey.ScanState get scanState;
+  ScanState get scanState;
 
   /// Stream of scan-state transitions. Replays the current value on
   /// subscribe, then emits every subsequent transition. Multi-listener.
-  Stream<bluey.ScanState> get scanStateStream;
+  Stream<ScanState> get scanStateStream;
 
   /// Stream of role-agnostic transport events.
   Stream<BlueyPortEvent> get events;

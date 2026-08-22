@@ -423,6 +423,12 @@ class DebugLogger {
           'BLUEY',
           '[$timestamp] Connection lost: $nodeId - ${error.message}',
         );
+      case ConnectionRejectedByPeerError(:final nodeId, :final reason):
+        _logError(
+          'BLUEY',
+          '[$timestamp] Connection rejected by peer: $nodeId reason=$reason '
+              '- ${error.message}',
+        );
     }
   }
 

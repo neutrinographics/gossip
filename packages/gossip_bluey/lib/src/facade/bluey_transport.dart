@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:bluey/bluey.dart' as bluey;
 import 'package:gossip/gossip.dart';
 import 'package:meta/meta.dart';
 
@@ -13,11 +12,13 @@ import '../domain/errors/connection_error.dart';
 import '../domain/events/connection_event.dart';
 import '../domain/interfaces/bluey_port.dart';
 import '../domain/value_objects/advertise_mode.dart';
+import '../domain/value_objects/advertising_state.dart';
 import '../domain/value_objects/ble_address.dart';
 import '../domain/value_objects/bluetooth_adapter_state.dart';
 import '../domain/value_objects/connection_mode.dart';
 import '../domain/value_objects/scan_candidate.dart';
 import '../domain/value_objects/scan_mode.dart';
+import '../domain/value_objects/scan_state.dart';
 import '../domain/value_objects/service_uuid.dart';
 import '../infrastructure/adapters/bluey_port_impl.dart';
 import '../infrastructure/ports/bluey_message_port.dart';
@@ -204,23 +205,23 @@ class BlueyTransport {
   /// bluey `Server.advertisingState`; reflects platform reality, not the
   /// consumer's last call to [startAdvertising]. The matching
   /// [advertisingStateStream] replays this value on subscribe.
-  bluey.AdvertisingState get advertisingState => _port.advertisingState;
+  AdvertisingState get advertisingState => _port.advertisingState;
 
   /// Stream of advertising-state transitions. Replays the current value
   /// on subscribe (Stream.multi pattern), then emits every subsequent
   /// transition. Multi-listener.
-  Stream<bluey.AdvertisingState> get advertisingStateStream =>
+  Stream<AdvertisingState> get advertisingStateStream =>
       _port.advertisingStateStream;
 
   /// Current scan lifecycle state. Derived from the underlying bluey
   /// `Scanner.state`; reflects platform reality, not the consumer's
   /// last call to [startDiscovery]. The matching [scanStateStream]
   /// replays this value on subscribe.
-  bluey.ScanState get scanState => _port.scanState;
+  ScanState get scanState => _port.scanState;
 
   /// Stream of scan-state transitions. Replays the current value on
   /// subscribe, then emits every subsequent transition. Multi-listener.
-  Stream<bluey.ScanState> get scanStateStream => _port.scanStateStream;
+  Stream<ScanState> get scanStateStream => _port.scanStateStream;
   MessagePort get messagePort => _messagePort;
   Stream<PeerEvent> get peerEvents => _peers.stream;
   Stream<ConnectionError> get errors => _service.errors;

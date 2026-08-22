@@ -15,10 +15,6 @@ dependencies:
     path: ../../packages/gossip
   gossip_bluey:
     path: ../../packages/gossip_bluey
-  bluey:
-    git:
-      url: https://github.com/neutrinographics/bluey.git
-      path: bluey
 
   # Utilities
   uuid: ^4.0.0
@@ -38,26 +34,30 @@ dev_dependencies:
   flutter_lints: ^6.0.0
 
 dependency_overrides:
+  # Kept aligned with the root workspace's bluey pin (packages/gossip_bluey
+  # targets f29ec98's Scanner.scan ScanMode API) — this app isn't a
+  # workspace member, so its lock can drift independently if not bumped
+  # alongside the root override.
   bluey:
     git:
       url: https://github.com/neutrinographics/bluey.git
       path: bluey
-      ref: "3863358"
+      ref: "f29ec98"
   bluey_platform_interface:
     git:
       url: https://github.com/neutrinographics/bluey.git
       path: bluey_platform_interface
-      ref: "3863358"
+      ref: "f29ec98"
   bluey_android:
     git:
       url: https://github.com/neutrinographics/bluey.git
       path: bluey_android
-      ref: "3863358"
+      ref: "f29ec98"
   bluey_ios:
     git:
       url: https://github.com/neutrinographics/bluey.git
       path: bluey_ios
-      ref: "3863358"
+      ref: "f29ec98"
 
 flutter:
   uses-material-design: true

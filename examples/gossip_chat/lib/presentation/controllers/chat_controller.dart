@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:bluey/bluey.dart' as bluey;
 import 'package:flutter/foundation.dart';
 import 'package:gossip/gossip.dart' as gossip;
 import 'package:gossip_bluey/gossip_bluey.dart';
@@ -13,7 +12,7 @@ import '../view_models/view_models.dart';
 
 /// Connection status for the transport layer.
 ///
-/// Composes bluey's [bluey.AdvertisingState] and [bluey.ScanState] into a
+/// Composes bluey's [AdvertisingState] and [ScanState] into a
 /// single status used by the UI. Ordering of branches in
 /// [ChatController._updateConnectionStatus] determines precedence:
 /// bluetoothOff > invalidated > connected > meshActive > advertising/scan
@@ -26,7 +25,7 @@ enum ConnectionStatus {
   disconnected,
 
   // Transient advertising / scanning lifecycle (sourced from
-  // bluey.AdvertisingState / bluey.ScanState).
+  // AdvertisingState / ScanState).
   advertisingStarting,
   advertising,
   advertisingStopping,
@@ -205,38 +204,38 @@ void pruneUnconnected(Map<Object, DiscoveredPeer> peers) {
 @visibleForTesting
 ConnectionStatus computeConnectionStatus({
   required BluetoothAdapterState bluetoothState,
-  required bluey.AdvertisingState advertisingState,
-  required bluey.ScanState scanState,
+  required AdvertisingState advertisingState,
+  required ScanState scanState,
   required int connectedPeerCount,
 }) {
   if (bluetoothState != BluetoothAdapterState.on) {
     return ConnectionStatus.bluetoothOff;
   }
-  if (advertisingState == bluey.AdvertisingState.invalidated ||
-      scanState == bluey.ScanState.invalidated) {
+  if (advertisingState == AdvertisingState.invalidated ||
+      scanState == ScanState.invalidated) {
     return ConnectionStatus.invalidated;
   }
   if (connectedPeerCount > 0) return ConnectionStatus.connected;
-  if (advertisingState == bluey.AdvertisingState.advertising &&
-      scanState == bluey.ScanState.scanning) {
+  if (advertisingState == AdvertisingState.advertising &&
+      scanState == ScanState.scanning) {
     return ConnectionStatus.meshActive;
   }
-  if (advertisingState == bluey.AdvertisingState.starting) {
+  if (advertisingState == AdvertisingState.starting) {
     return ConnectionStatus.advertisingStarting;
   }
-  if (advertisingState == bluey.AdvertisingState.advertising) {
+  if (advertisingState == AdvertisingState.advertising) {
     return ConnectionStatus.advertising;
   }
-  if (advertisingState == bluey.AdvertisingState.stopping) {
+  if (advertisingState == AdvertisingState.stopping) {
     return ConnectionStatus.advertisingStopping;
   }
-  if (scanState == bluey.ScanState.starting) {
+  if (scanState == ScanState.starting) {
     return ConnectionStatus.discoveryStarting;
   }
-  if (scanState == bluey.ScanState.scanning) {
+  if (scanState == ScanState.scanning) {
     return ConnectionStatus.discovering;
   }
-  if (scanState == bluey.ScanState.stopping) {
+  if (scanState == ScanState.stopping) {
     return ConnectionStatus.discoveryStopping;
   }
   return ConnectionStatus.disconnected;
@@ -281,8 +280,8 @@ class ChatController extends ChangeNotifier {
   Map<gossip.NodeId, TypingEvent> _typingUsers = {};
   ConnectionStatus _connectionStatus = ConnectionStatus.disconnected;
   BluetoothAdapterState _bluetoothState = BluetoothAdapterState.unknown;
-  bluey.AdvertisingState _advertisingState = bluey.AdvertisingState.idle;
-  bluey.ScanState _scanState = bluey.ScanState.stopped;
+  AdvertisingState _advertisingState = AdvertisingState.idle;
+  ScanState _scanState = ScanState.stopped;
   bool _isTyping = false;
 
   /// Tracks delivery status for locally sent messages.
@@ -305,8 +304,8 @@ class ChatController extends ChangeNotifier {
   StreamSubscription<PeerEvent>? _peerSubscription;
   StreamSubscription<ScanCandidate>? _candidateSubscription;
   StreamSubscription<BluetoothAdapterState>? _bluetoothStateSubscription;
-  StreamSubscription<bluey.AdvertisingState>? _advertisingStateSubscription;
-  StreamSubscription<bluey.ScanState>? _scanStateSubscription;
+  StreamSubscription<AdvertisingState>? _advertisingStateSubscription;
+  StreamSubscription<ScanState>? _scanStateSubscription;
   Timer? _typingTimer;
   Timer? _typingExpirationTimer;
   Timer? _signalDecayTimer;
@@ -354,8 +353,8 @@ class ChatController extends ChangeNotifier {
 
   ConnectionStatus get connectionStatus => _connectionStatus;
   BluetoothAdapterState get bluetoothAdapterState => _bluetoothState;
-  bluey.AdvertisingState get advertisingState => _advertisingState;
-  bluey.ScanState get scanState => _scanState;
+  AdvertisingState get advertisingState => _advertisingState;
+  ScanState get scanState => _scanState;
   bool get isTyping => _isTyping;
   gossip.NodeId get localNodeId => _chatService.localNodeId;
   MetricsState get metrics => _metrics;
@@ -514,15 +513,15 @@ class ChatController extends ChangeNotifier {
     notifyListeners();
   }
 
-  void _onAdvertisingStateChanged(bluey.AdvertisingState state) {
+  void _onAdvertisingStateChanged(AdvertisingState state) {
     _advertisingState = state;
     _updateConnectionStatus();
   }
 
-  void _onScanStateChanged(bluey.ScanState state) {
+  void _onScanStateChanged(ScanState state) {
     _scanState = state;
     _updateConnectionStatus();
-    if (state != bluey.ScanState.scanning) {
+    if (state != ScanState.scanning) {
       final before = _peers.length;
       pruneUnconnected(_peers);
       if (_peers.length != before) notifyListeners();
