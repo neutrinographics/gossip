@@ -31,7 +31,7 @@ import '../infrastructure/ports/message_port.dart';
 import '../infrastructure/ports/time_port.dart';
 import '../protocol/gossip_engine.dart';
 import '../protocol/failure_detector.dart';
-import '../protocol/protocol_codec.dart';
+import '../sync/infrastructure/sync_message_codec.dart';
 import 'adaptive_timing_status.dart';
 import 'channel.dart';
 import 'coordinator_config.dart';
@@ -299,7 +299,7 @@ class Coordinator {
       channelRepository: cachedChannelRepo,
       entryRepository: entryRepository,
       localNodeRepository: localNodeRepository,
-      maxPayloadBytes: ProtocolCodec.maxEntryPayloadForBudget(
+      maxPayloadBytes: SyncMessageCodec.maxEntryPayloadForBudget(
         cfg.maxDeltaResponseBytes,
       ),
       materializationService: materializationService,
@@ -446,33 +446,37 @@ class Coordinator {
     if (_state != SyncState.running || generation != _compactionGeneration) {
       return;
     }
-    timerPort.delay(interval).then((_) async {
-      if (_state != SyncState.running || generation != _compactionGeneration) {
-        return;
-      }
-      try {
-        await _channelService.compactAll();
-      } catch (error) {
-        _handleError(
-          StorageSyncError(
-            SyncErrorType.storageFailure,
-            'Auto-compaction failed: $error',
-            occurredAt: DateTime.now(),
-            cause: error,
-          ),
-        );
-      }
-      _scheduleNextCompaction(generation, timerPort, interval);
-    }).catchError((Object error, StackTrace stackTrace) {
-      _handleError(
-        StorageSyncError(
-          SyncErrorType.storageFailure,
-          'Auto-compaction scheduling failed: $error',
-          occurredAt: DateTime.now(),
-          cause: error,
-        ),
-      );
-    });
+    timerPort
+        .delay(interval)
+        .then((_) async {
+          if (_state != SyncState.running ||
+              generation != _compactionGeneration) {
+            return;
+          }
+          try {
+            await _channelService.compactAll();
+          } catch (error) {
+            _handleError(
+              StorageSyncError(
+                SyncErrorType.storageFailure,
+                'Auto-compaction failed: $error',
+                occurredAt: DateTime.now(),
+                cause: error,
+              ),
+            );
+          }
+          _scheduleNextCompaction(generation, timerPort, interval);
+        })
+        .catchError((Object error, StackTrace stackTrace) {
+          _handleError(
+            StorageSyncError(
+              SyncErrorType.storageFailure,
+              'Auto-compaction scheduling failed: $error',
+              occurredAt: DateTime.now(),
+              cause: error,
+            ),
+          );
+        });
   }
 
   /// Handles entries merged from peers and emits EntriesMerged events.
