@@ -146,8 +146,8 @@ final class StreamCompacted extends SyncEvent {
 
 /// Emitted when the out-of-order buffer overflows for an author.
 ///
-/// Currently never emitted — the compaction pipeline does not yet fire
-/// this event; retained pending an emit-or-remove decision.
+/// Currently never emitted — no buffering subsystem exists to fire it;
+/// retained pending an emit-or-remove decision.
 final class BufferOverflowOccurred extends SyncEvent {
   final ChannelId channelId;
   final StreamId streamId;

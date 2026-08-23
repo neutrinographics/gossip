@@ -84,27 +84,27 @@ class Channel {
 
   /// Returns the set of member node IDs in this channel.
   ///
-  /// Membership is replicated local metadata (see ADR-007): it names who
-  /// the app considers part of the channel, but the protocol does not
-  /// gate synchronization on it. Enforcement is an application concern.
+  /// Membership is local metadata (see ADR-007): it names who this node
+  /// considers part of the channel, but it is never encoded in any wire
+  /// message and the protocol does not gate synchronization on it.
+  /// Enforcement is an application concern.
   Future<Set<NodeId>> get members async {
     return await channelService.getMembers(id);
   }
 
-  /// Adds a member to the channel's replicated metadata.
-  ///
-  /// This records intent for the app's own UI/logic; it grants nothing at
-  /// the protocol level (see ADR-007).
+  /// Adds a member to the channel's local metadata — this records intent
+  /// for the app's own logic; it grants nothing at the protocol level
+  /// (see ADR-007).
   Future<void> addMember(NodeId memberId) async {
     await channelService.addMember(id, memberId);
   }
 
-  /// Removes a member from the channel's replicated metadata.
+  /// Removes a member from the channel's local metadata.
   ///
-  /// This does NOT stop the peer from replicating the channel: any node
-  /// still holding the channel keeps receiving and serving its entries
-  /// (see ADR-007). Do not use this as access revocation — key rotation
-  /// or app-level encryption is the tool for that.
+  /// This does NOT stop the peer from replicating the channel's entries:
+  /// any node still holding the channel keeps receiving and serving its
+  /// data (see ADR-007). Do not use this as access revocation — key
+  /// rotation or app-level encryption is the tool for that.
   Future<void> removeMember(NodeId memberId) async {
     await channelService.removeMember(id, memberId);
   }

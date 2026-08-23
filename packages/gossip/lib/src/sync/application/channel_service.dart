@@ -162,13 +162,13 @@ class ChannelService {
 
   /// Removes a channel and all its associated data.
   ///
-  /// This operation:
-  /// 1. Deletes the [ChannelAggregate] from the repository
-  /// 2. Clears all entries for this channel from the entry store
+  /// This is entirely local: it deletes this node's copy of the channel,
+  /// its entries, and its materializer state. Peers that still hold the
+  /// channel are unaffected — they keep replicating its entries among
+  /// themselves — so this is not a way to delete data mesh-wide or revoke
+  /// access.
   ///
   /// Used when: Local node leaves or deletes a channel.
-  ///
-  /// Transaction: Delete aggregate and clear entries.
   ///
   /// Returns true if the channel was removed, false if it didn't exist.
   Future<bool> removeChannel(ChannelId channelId) async {
@@ -205,7 +205,7 @@ class ChannelService {
 
   /// Adds a peer to the channel's member set.
   ///
-  /// Records the member in replicated channel metadata (see ADR-007 — no
+  /// Records the member in local channel metadata (see ADR-007 — no
   /// protocol gating) and emits [MemberAdded].
   ///
   /// Used when: Peer joins channel via gossip or explicit invitation.
@@ -224,7 +224,7 @@ class ChannelService {
 
   /// Removes a peer from the channel's member set.
   ///
-  /// Removes the member from replicated channel metadata (see ADR-007 — no
+  /// Removes the member from local channel metadata (see ADR-007 — no
   /// protocol gating; the removed peer can still sync entries it already
   /// has) and emits [MemberRemoved].
   ///
@@ -319,7 +319,10 @@ class ChannelService {
   ///
   /// Used when: Application writes new data to a stream.
   ///
-  /// Transaction: Query latest sequence → create entry → append to store.
+  /// Guarantees monotonically increasing per-author sequence numbers and
+  /// that the entry is written to [EntryRepository] before the returned
+  /// future completes — callers can treat a completed append as stored,
+  /// not merely queued.
   ///
   /// Appends to the same stream are serialized: there are awaits between
   /// reading the latest sequence and storing the entry, so unserialized
