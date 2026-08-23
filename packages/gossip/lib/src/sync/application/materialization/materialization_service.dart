@@ -1,5 +1,6 @@
 import 'package:gossip/src/sync/domain/interfaces/entry_repository.dart';
 import 'package:gossip/src/sync/domain/interfaces/state_materializer.dart';
+import 'package:gossip/src/shared/domain/services/keyed_task_chain.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
@@ -19,6 +20,18 @@ class MaterializationService {
 
   final Map<(ChannelId, StreamId, Type), MaterializerState<dynamic>> _states =
       {};
+
+  /// Chain serializing all fold-engine operations (initialize, fold,
+  /// rebuild) per materializer. Operations have awaits between reading and
+  /// publishing state; running them concurrently lets a slow initialization
+  /// clobber a fold that completed meanwhile.
+  ///
+  /// Keyed by the [MaterializerState] instance itself (identity, not `==`)
+  /// — it has no `==` override, which is exactly right here: each
+  /// registration owns one long-lived state object, so identity is already
+  /// the correct notion of "same materializer" and there's nothing a
+  /// value-based `==` would add.
+  final KeyedTaskChain<MaterializerState<dynamic>> _ops = KeyedTaskChain();
 
   MaterializationService({required EntryRepository entryRepository})
     : _entryRepository = entryRepository;
@@ -52,7 +65,7 @@ class MaterializationService {
     final typed = matState as MaterializerState<T>;
 
     if (!typed.isInitialized) {
-      await _enqueue(typed, () async {
+      await _ops.enqueue(typed, () async {
         // Re-check inside the chain: a queued-ahead operation may have
         // initialized already.
         if (!typed.isInitialized) {
@@ -62,19 +75,6 @@ class MaterializationService {
     }
 
     return typed.cachedState;
-  }
-
-  /// Runs [op] serialized behind all previous operations for [matState].
-  ///
-  /// A failed predecessor doesn't block the chain; its error surfaces to
-  /// its own awaiter.
-  Future<void> _enqueue(
-    MaterializerState<dynamic> matState,
-    Future<void> Function() op,
-  ) {
-    final task = matState.opChain.catchError((_) {}).then((_) => op());
-    matState.opChain = task;
-    return task;
   }
 
   /// Returns the broadcast stream of state updates.
@@ -103,7 +103,7 @@ class MaterializationService {
     // every fold finish and still surfaces the first failure.
     final tasks = [
       for (final matState in _statesForStream(channelId, streamId).toList())
-        _enqueue(
+        _ops.enqueue(
           matState,
           () => _foldForState(
             matState,
@@ -121,7 +121,10 @@ class MaterializationService {
   Future<void> reset(ChannelId channelId, StreamId streamId) async {
     final tasks = [
       for (final matState in _statesForStream(channelId, streamId).toList())
-        _enqueue(matState, () => _fullRebuild(matState, channelId, streamId)),
+        _ops.enqueue(
+          matState,
+          () => _fullRebuild(matState, channelId, streamId),
+        ),
     ];
     await Future.wait(tasks);
   }

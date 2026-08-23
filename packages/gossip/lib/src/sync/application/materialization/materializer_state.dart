@@ -16,12 +16,6 @@ class MaterializerState<T> {
   FoldCursor? cursor;
   bool isInitialized = false;
 
-  /// Chain serializing all fold-engine operations (initialize, fold,
-  /// rebuild) for this materializer. Operations have awaits between
-  /// reading and publishing state; running them concurrently lets a
-  /// slow initialization clobber a fold that completed meanwhile.
-  Future<void> opChain = Future<void>.value();
-
   final StreamController<T> _stateController = StreamController<T>.broadcast();
 
   MaterializerState(this.materializer);
