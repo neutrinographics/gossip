@@ -9,11 +9,12 @@ import 'package:gossip/src/sync/domain/interfaces/entry_repository.dart';
 /// prevent memory exhaustion.
 ///
 /// ## Persistence Scope
-/// Each [ChannelAggregate] aggregate includes:
-/// - Channel ID
-/// - Member node IDs
-/// - Stream IDs and configurations
-/// - Version vectors per stream (sync state)
+/// Each [ChannelAggregate] aggregate includes: Channel ID · Member node IDs
+/// · Stream IDs and retention policies.
+///
+/// Version vectors are NOT stored here — they are [EntryRepository]'s
+/// responsibility; persisting sync state in this store is the corruption
+/// path its invariants section forbids.
 ///
 /// ## Usage
 ///

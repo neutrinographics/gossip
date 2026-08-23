@@ -10,8 +10,9 @@ import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 ///
 /// [EntryRepository] manages the persistent storage of log entries outside of
 /// domain aggregates. This separation prevents memory exhaustion when streams
-/// contain many entries. The `ChannelAggregate` maintains only metadata
-/// (version vectors, stream IDs), while actual entries live in the repository.
+/// contain many entries. The `ChannelAggregate` holds membership and stream
+/// metadata; version vectors are this repository's responsibility, not the
+/// aggregate's (see [getVersionVector]).
 ///
 /// ## Why Separate Entry Storage?
 ///
@@ -113,11 +114,13 @@ abstract interface class EntryRepository {
     List<LogEntry> entries,
   );
 
-  /// Returns all entries for a stream, ordered by timestamp.
+  /// Returns all entries for a stream.
   ///
-  /// Entries are sorted by HLC timestamp to preserve causal ordering.
-  /// For large streams (10K+ entries), implementations should consider
-  /// pagination or streaming results.
+  /// Returns entries in the full [LogEntry.compareTo] total order —
+  /// timestamp, then author, then sequence. Timestamp alone is not
+  /// sufficient: HLC ties ordered by arrival diverge across peers (see
+  /// Ordering Guarantees above). For large streams (10K+ entries),
+  /// implementations should consider pagination or streaming results.
   ///
   /// Used when: Computing version vectors, applying retention policies.
   Future<List<LogEntry>> getAll(ChannelId channel, StreamId stream);
@@ -128,7 +131,10 @@ abstract interface class EntryRepository {
   /// This efficiently identifies which entries to send during anti-entropy
   /// without transmitting the entire log.
   ///
-  /// Returns entries in timestamp order.
+  /// Returns entries in the full [LogEntry.compareTo] total order —
+  /// timestamp, then author, then sequence. Timestamp alone is not
+  /// sufficient: HLC ties ordered by arrival diverge across peers (see
+  /// Ordering Guarantees above).
   ///
   /// Used when: Responding to delta requests during gossip.
   Future<List<LogEntry>> entriesSince(

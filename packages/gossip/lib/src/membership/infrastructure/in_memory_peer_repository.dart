@@ -3,19 +3,15 @@ import 'package:gossip/src/membership/domain/entities/peer.dart';
 import 'package:gossip/src/membership/domain/interfaces/peer_repository.dart';
 import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 
-/// In-memory implementation of [PeerRepository] for testing.
+/// In-memory implementation of [PeerRepository] — the default and
+/// recommended repository for most applications.
 ///
-/// This implementation stores peers in a simple [Map] with no persistence.
-/// All data is lost when the application terminates.
-///
-/// **Use only for testing and prototyping.**
-///
-/// For production applications, implement [PeerRepository] with persistent
-/// storage:
-/// - SQLite for mobile/desktop apps with SQL queries by status
-/// - IndexedDB for web apps
-/// - Serialize peers to JSON for storage
-/// - Consider TTL for unreachable peers to limit storage growth
+/// Peers are discovered at runtime and re-add themselves on reconnection, so
+/// nothing is lost by not persisting them; SWIM-driven status is never
+/// persisted by contract regardless of implementation (see
+/// [PeerRepository]). A persistent implementation is only useful for
+/// app-level features built around peer history (e.g., "recently seen
+/// devices").
 ///
 /// All operations complete synchronously but return [Future] to match the
 /// repository interface contract.
