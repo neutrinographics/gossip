@@ -7,7 +7,7 @@
 The catch-all closing round ("R14") of the 2026-07-08 audit — everything
 small that remains open, enumerated here so nothing hides behind a label.
 
-**Three latent correctness bugs** (small, but real bugs waiting on
+**Two latent correctness bugs** (small, but real bugs waiting on
 unlucky inputs):
 
 - **Unbudgeted sync-request size (COR3-28).** The "what I already have"
@@ -15,11 +15,6 @@ unlucky inputs):
   whose summary for one stream outgrows the message size limit can
   advertise that stream but never pull it — a permanent, silent stall.
   Bound it the same way the digests were.
-- **The responder's digest fitting never rotates (OBS-3).** The same
-  size-budget theme on the serving side: a paused or serve-only node with
-  over-budget version summaries truncates the same tail forever, so some
-  streams are never advertised by it at all. The requester side rotates;
-  the responder side passes a fixed starting offset.
 - **Payloads are held by reference, not copied (COR3-30).** An application
   that reuses a scratch buffer after appending can corrupt what gets
   stored and synced — and because entry equality ignores payload bytes,
@@ -45,7 +40,11 @@ dead types and phantom events (MIN-4/5/6/7, OBS-9's vestigial API),
 retention-policy input validation, safe parsing (`tryParse`),
 documentation drift, unused dependencies, persistence-call multiplicity
 for pluggable stores (MIN-10/OBS-6), and naming normalization across the
-transports (OBS-7).
+transports (OBS-7). A reusable `EntryRepository` conformance suite
+(restart-survival of high-water marks and compaction floors across a
+process restart) is where COR3-8's guarantee ultimately lives for a
+persistent implementation — there's only the in-memory one today, so
+"restart" is moot until one exists; future work when it does.
 
 **Wire-scheduling audit minors (the 2026-08 audit's R9 tail):** the
 remaining small findings WIRE4-16, -17, -18, -21, -22, -24, -26, -28,
@@ -61,13 +60,17 @@ update every inbound link (GLOSSARY, backlog files, specs) in one sweep.
 ## Why it matters
 
 Individually small; collectively they are the gap between "audited" and
-"clean". The three latents above deserve to be fixed first — they are
+"clean". The two latents above deserve to be fixed first — they are
 bugs, not polish.
 
 ## Related
 
-- Findings COR3-28, COR3-30, OBS-3, and the MIN-/OBS-series in
+- Findings COR3-28, COR3-30, and the MIN-/OBS-series in
   [audits/2026-07-08-comprehensive-audit.md](../audits/2026-07-08-comprehensive-audit.md).
+- **OBS-3 (the responder's digest fitting never rotated) shipped** — the
+  responder path now has its own rotation cursor, independent of the
+  requester's, so an over-budget response covers every stream across
+  successive exchanges instead of truncating the same tail forever.
 - SWIM probe-timing observations (OBS-4/OBS-5) live with
   [the failure-detection threshold item](engine-swim-threshold-tuning.md).
 - Test-port production-fidelity (MIN-13) lives with
