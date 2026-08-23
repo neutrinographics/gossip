@@ -35,6 +35,11 @@ class HlcClock {
   int _lastPhysicalMs = 0;
   int _logicalCounter = 0;
 
+  /// Highest value the logical counter may hold before it must roll over
+  /// into physical time (see [_rolloverIfNeeded] and "Overflow Handling"
+  /// above). 16 bits, matching [Hlc]'s on-wire logical field width.
+  static const int _maxLogicalCounter = 0xFFFF;
+
   /// Maximum amount a remote timestamp may drag this clock ahead of the
   /// local wall clock.
   ///
@@ -69,10 +74,7 @@ class HlcClock {
       _logicalCounter = 0;
     } else {
       _logicalCounter++;
-      if (_logicalCounter > 65535) {
-        _lastPhysicalMs++;
-        _logicalCounter = 0;
-      }
+      _rolloverIfNeeded();
     }
     return Hlc(_lastPhysicalMs, _logicalCounter);
   }
@@ -119,13 +121,23 @@ class HlcClock {
       _logicalCounter = 0;
     }
     _lastPhysicalMs = maxPhysical;
+    _rolloverIfNeeded();
 
-    if (_logicalCounter > 65535) {
+    return Hlc(_lastPhysicalMs, _logicalCounter);
+  }
+
+  /// Advances physical time by one millisecond and resets the logical
+  /// counter to 0 when it has exceeded [_maxLogicalCounter].
+  ///
+  /// Shared by [now] and [receive] so both stay bound by the same 16-bit
+  /// logical-counter ceiling that [Hlc] enforces on the wire — diverging
+  /// here would let one of the two call sites emit a timestamp the other
+  /// side rejects.
+  void _rolloverIfNeeded() {
+    if (_logicalCounter > _maxLogicalCounter) {
       _lastPhysicalMs++;
       _logicalCounter = 0;
     }
-
-    return Hlc(_lastPhysicalMs, _logicalCounter);
   }
 
   /// Returns the current clock state without advancing it.

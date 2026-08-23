@@ -162,6 +162,11 @@ class FailureDetector {
   static const Duration _maxProbeInterval = Duration(seconds: 30);
   static const int _probeIntervalMultiplier = 3;
 
+  /// SWIM's k: number of intermediaries asked to relay a ping when a
+  /// direct probe times out, before falling back to (or alongside) waiting
+  /// out the grace period for a late direct Ack.
+  static const int _indirectProbeFanout = 3;
+
   /// Hard cap on how long freshness alone may suppress a probe: 4× the
   /// 30 s ceiling, so freshness alone can never suppress a probe for more
   /// than 2 minutes. Freshness-only suppression (below) keys on INBOUND
@@ -781,7 +786,10 @@ class FailureDetector {
   /// target. When no intermediaries are available (2-device scenario),
   /// waits for a grace period to allow late Acks to arrive.
   Future<bool> _performIndirectPing(NodeId target) async {
-    final intermediaries = _selectRandomIntermediaries(target, 3);
+    final intermediaries = _selectRandomIntermediaries(
+      target,
+      _indirectProbeFanout,
+    );
     final peerTimeout = effectivePingTimeoutForPeer(target);
 
     if (intermediaries.isEmpty) {

@@ -398,14 +398,7 @@ class ChannelService {
         await _entryRepository.latestSequence(channelId, streamId, localNode) +
         1;
 
-    // Generate timestamp from HlcClock if available, otherwise fallback to system time
-    final timestamp =
-        _hlcClock?.now() ?? Hlc(DateTime.now().millisecondsSinceEpoch, 0);
-
-    // Persist clock state for restart recovery
-    if (_hlcClock != null) {
-      await _localNodeRepository.saveClockState(_hlcClock.current);
-    }
+    final timestamp = await takeTimestamp();
 
     final entry = LogEntry(
       author: localNode,

@@ -265,10 +265,14 @@ class GossipEngine {
   static const Duration _minPendingTimeout = Duration(seconds: 2);
   static const Duration _maxPendingTimeout = Duration(seconds: 30);
 
-  /// Window duration for metrics sliding window (10 seconds).
-  ///
-  /// Used to track message rates within a fixed time window for rate limiting.
-  static const int _metricsWindowDurationMs = 10000;
+  /// Conservative per-item overhead budgeted for a channel's envelope
+  /// (channelId field, structural JSON) in [_fitDigests]'s cost estimate.
+  /// Deliberately approximate — [SyncMessageCodec] owns the real encoded
+  /// format; this only has to never underestimate it, so the budget check
+  /// never lets an over-size message through.
+  static const int _channelEnvelopeOverheadBytes = 40;
+
+  static const Duration _metricsWindow = Duration(seconds: 10);
 
   /// Debounce window for coalescing a burst of local writes into a single
   /// reactive push (rumor mongering — see [notifyLocalWrite]).
@@ -807,7 +811,7 @@ class GossipEngine {
       final cost =
           _syncCodec.encodedStreamDigestSize(item.digest) +
           item.channel.value.length +
-          40;
+          _channelEnvelopeOverheadBytes;
 
       if (base + cost > maxDeltaResponseBytes) {
         _emitError(
@@ -880,7 +884,7 @@ class GossipEngine {
       message.sender,
       message.bytes.length,
       nowMs,
-      _metricsWindowDurationMs,
+      _metricsWindow.inMilliseconds,
     );
 
     // Receiving gossip from a peer is unambiguous proof of life. Feed it
@@ -1527,10 +1531,10 @@ class GossipEngine {
     final selected = <LogEntry>[];
     final blockedAuthors = <NodeId>{};
     var truncated = false;
-    // +1 per entry for the JSON array separator.
     var size = baseSize;
     for (final entry in delta) {
       if (blockedAuthors.contains(entry.author)) continue;
+      // +1 per entry for the JSON array separator.
       final cost = _syncCodec.encodedEntrySize(entry) + 1;
 
       if (baseSize + cost > maxDeltaResponseBytes) {
