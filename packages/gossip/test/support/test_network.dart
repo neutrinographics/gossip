@@ -58,10 +58,9 @@ class TestNode {
 class TestNetwork {
   final InMemoryMessageBus _messageBus;
   final Map<String, TestNode> _nodes;
-  final Map<String, InMemoryMessagePort> _originalPorts;
   final Set<String> _partitionedNodes = {};
 
-  TestNetwork._(this._messageBus, this._nodes, this._originalPorts);
+  TestNetwork._(this._messageBus, this._nodes);
 
   /// Creates a test network with the given node names.
   ///
@@ -76,11 +75,15 @@ class TestNetwork {
     int seed = 42,
     CoordinatorConfig? config,
   }) async {
+    if (nodeNames.toSet().length != nodeNames.length) {
+      throw ArgumentError('duplicate node names: $nodeNames');
+    }
+
     final messageBus = InMemoryMessageBus();
     final nodes = <String, TestNode>{};
-    final originalPorts = <String, InMemoryMessagePort>{};
 
-    for (final name in nodeNames) {
+    for (var nodeIndex = 0; nodeIndex < nodeNames.length; nodeIndex++) {
+      final name = nodeNames[nodeIndex];
       final nodeId = NodeId(name);
       final timePort = InMemoryTimePort();
       final messagePort = InMemoryMessagePort(nodeId, messageBus);
@@ -88,7 +91,6 @@ class TestNetwork {
       // Each node gets its own seeded Random for deterministic peer selection.
       // Using different seeds per node (based on index) ensures varied but
       // reproducible behavior across nodes.
-      final nodeIndex = nodeNames.indexOf(name);
       final random = Random(seed + nodeIndex);
 
       final coordinator = await Coordinator.create(
@@ -108,10 +110,9 @@ class TestNetwork {
         timePort: timePort,
         messagePort: messagePort,
       );
-      originalPorts[name] = messagePort;
     }
 
-    return TestNetwork._(messageBus, nodes, originalPorts);
+    return TestNetwork._(messageBus, nodes);
   }
 
   /// Returns the node with the given name.
@@ -256,11 +257,10 @@ class TestNetwork {
 
   /// Heals a partitioned node, restoring network connectivity.
   ///
-  /// Note: This re-registers the original port. The node may need
+  /// Note: This re-registers the node's port. The node may need
   /// probe rounds to recover from suspected/unreachable status.
   void heal(String nodeName) {
-    final port = _originalPorts[nodeName]!;
-    port.reregister();
+    _nodes[nodeName]!.messagePort.reregister();
     _partitionedNodes.remove(nodeName);
   }
 
@@ -661,27 +661,32 @@ extension TestNodeOperations on TestNode {
 
   /// Gets the entry count for a stream.
   ///
-  /// Note: Creates the stream if it doesn't exist (returns 0 in that case).
+  /// A query must not mutate the node it observes: convergence and
+  /// diagnostic checks (e.g. [TestNetwork.hasConverged]) call this on nodes
+  /// that may never have created the stream, and creating it as a side
+  /// effect would manufacture or mask the propagation behavior under test.
+  /// Reads via [Channel.getStream], which never creates a stream. A missing
+  /// stream reads as 0 entries, not an error.
   Future<int> entryCount(ChannelId channelId, StreamId streamId) async {
     final channel = coordinator.getChannel(channelId);
     if (channel == null) {
       throw StateError('Channel $channelId not found on node $id');
     }
-    final stream = await channel.getOrCreateStream(streamId);
-    final entries = await stream.getAll();
+    final entries = await channel.getStream(streamId).getAll();
     return entries.length;
   }
 
   /// Gets all entries for a stream.
   ///
-  /// Note: Creates the stream if it doesn't exist (returns empty list).
+  /// A query must not mutate the node it observes — see [entryCount] for
+  /// why. Reads via [Channel.getStream], which never creates a stream. A
+  /// missing stream reads as an empty list, not an error.
   Future<List<LogEntry>> entries(ChannelId channelId, StreamId streamId) async {
     final channel = coordinator.getChannel(channelId);
     if (channel == null) {
       throw StateError('Channel $channelId not found on node $id');
     }
-    final stream = await channel.getOrCreateStream(streamId);
-    final results = await stream.getAll();
+    final results = await channel.getStream(streamId).getAll();
     return results.cast<LogEntry>();
   }
 }
