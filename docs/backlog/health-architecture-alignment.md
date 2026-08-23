@@ -86,13 +86,18 @@ Dart-specific reason argues otherwise.
 
 ## Related
 
-- Part 1 shipped: [design spec](../superpowers/specs/2026-08-21-architecture-honesty-fixes-design.md), [implementation plan](../superpowers/plans/2026-08-21-architecture-honesty-fixes.md).
+- Part 1: [design spec](../superpowers/specs/2026-08-21-architecture-honesty-fixes-design.md), [implementation plan](../superpowers/plans/2026-08-21-architecture-honesty-fixes.md).
+- Part 2: [design spec](../superpowers/specs/2026-08-21-bounded-contexts-restructure-design.md), [implementation plan](../superpowers/plans/2026-08-22-bounded-contexts-restructure.md) — the shipped layout is `shared/ sync/ membership/ coordinator/`, documented in
+  [ADR-010](../../packages/gossip/docs/adr/010-ddd-layered-architecture.md)
+  and the root [GLOSSARY.md](../../GLOSSARY.md).
 - Findings ARCH3-1..6 in
   [audits/2026-07-08-comprehensive-audit.md](../audits/2026-07-08-comprehensive-audit.md)
   (round "R12" plus R13's unfinished half).
 - Findings WIRE4-3 and WIRE4-19 in
   [audits/2026-08-20-wire-scheduling-audit.md](../audits/2026-08-20-wire-scheduling-audit.md)
   motivate the explicit sync↔detection contract.
-- The proven target layout: the Kotlin port (`gossip-kt` repository), design
-  doc `docs/plans/2026-03-09-gossip-kt-design.md` — screaming architecture
-  with `sync/`, `detection/`, and a leaf `shared/` package.
+- The Kotlin port (`gossip-kt` repository), design doc
+  `docs/plans/2026-03-09-gossip-kt-design.md`: its `sync/`, `detection/`,
+  `shared/` layout was evaluated against the real Dart import graph and
+  diverged in four places when this part shipped (recorded in ADR-010 as
+  findings to port back to `gossip-kt`).

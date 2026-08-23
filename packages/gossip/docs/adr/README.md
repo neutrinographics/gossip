@@ -19,7 +19,7 @@ An ADR captures an important architectural decision along with its context and c
 | [007](007-membership-local-metadata.md) | Membership as Local Metadata | Accepted |
 | [008](008-anti-entropy-gossip-protocol.md) | Anti-Entropy Gossip Protocol | Accepted |
 | [009](009-version-vectors-for-sync.md) | Version Vectors for Sync State Tracking | Accepted |
-| [010](010-ddd-layered-architecture.md) | DDD Layered Architecture | Accepted |
+| [010](010-ddd-layered-architecture.md) | Bounded-Context Architecture | Accepted |
 | [011](011-error-callback-pattern.md) | Error Callback Pattern for Recoverable Errors | Accepted |
 | [012](012-swim-late-ack-handling.md) | SWIM Late-Ack Handling | Accepted |
 

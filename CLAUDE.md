@@ -26,7 +26,7 @@ cd packages/gossip && dart test
 cd packages/gossip_nearby && flutter test
 
 # Run a single test file
-dart test test/protocol/gossip_engine_test.dart
+dart test test/sync/application/gossip_engine_test.dart
 
 # Run tests with name filter
 dart test --name "test name pattern"
@@ -51,29 +51,53 @@ melos exec --scope="gossip_nearby" -- flutter test
 
 ## Architecture Overview
 
-Both packages follow **DDD Layered Architecture** (see ADR-010):
+The core package (`gossip`) and the transport packages follow different
+architectures — see ADR-010 for the core package's rationale.
+
+**Core package (`gossip`)** is organized as **bounded contexts** (concept-first
+modules, not DDD layers):
 
 ```
-Facade Layer         → Public API (Coordinator, NearbyTransport)
+lib/src/
+  shared/        # kernel — true leaf; imports nothing outside itself
+  sync/          # anti-entropy replication of the event log (channels, streams, entries)
+  membership/    # SWIM liveness: peer model + the detector that maintains it
+  coordinator/   # facade shell / composition root (not a bounded context)
+```
+
+**Boundary rule**: a context may import `shared/` and itself — nothing else.
+The single exception: a context's `infrastructure/` layer may import another
+context, as a concession, to implement an adapter for an interface its own
+domain defines. Today the only exercised concession is
+`sync/infrastructure/membership_peer_directory.dart` (`MembershipPeerDirectory`),
+sync's anti-corruption layer over membership's `PeerRegistry`. Machine-checked
+by `packages/gossip/test/architecture/boundary_test.dart`.
+
+**Transport packages** (`gossip_nearby`, `gossip_bluey`) stay **layer-first,
+single-context packages**:
+
+```
+Facade Layer         → Public API (NearbyTransport, BlueyTransport)
 Application Layer    → Use case orchestration (services)
 Domain Layer         → Pure business logic (aggregates, entities, value objects)
-Protocol Layer       → Wire protocols (gossip only: GossipEngine, FailureDetector)
-Infrastructure Layer → External adapters (repositories, ports)
+Protocol Layer       → Wire protocols (codecs, dispatchers)
+Infrastructure Layer → External adapters (platform integration)
 ```
 
-**Dependency rule**: Dependencies point inward. Domain has no external dependencies. Infrastructure implements domain interfaces (ports).
+**Dependency rule** (transports): Dependencies point inward. Domain has no
+external dependencies. Infrastructure implements domain interfaces (ports).
 
 ## Core Package (gossip)
 
 Synchronizes event streams across devices using anti-entropy gossip protocol.
 
 **Key components:**
-- `Coordinator` (facade): Main entry point, manages sync lifecycle
-- `GossipEngine` (protocol): Gossip round scheduling, digest/delta exchange
-- `FailureDetector` (protocol): SWIM protocol for peer health
-- `Channel` (domain aggregate): Sync group with membership
-- `HlcClock` (domain service): Hybrid logical clock for causal ordering
-- `MessagePort` (interface): Transport abstraction - app provides implementation
+- `Coordinator` (`coordinator/`): Main entry point, manages sync lifecycle
+- `GossipEngine` (`sync/application/`): Gossip round scheduling, digest/delta exchange
+- `FailureDetector` (`membership/application/`): SWIM protocol for peer health
+- `Channel` (aggregate in `sync/domain/aggregates/`, facade in `coordinator/`): Sync group with membership
+- `HlcClock` (`sync/domain/services/`): Hybrid logical clock for causal ordering
+- `MessagePort` (`shared/domain/interfaces/`): Transport abstraction - app provides implementation
 
 **Design constraints:**
 - Single-isolate execution (no locks, accessing from multiple isolates causes corruption)
@@ -110,7 +134,7 @@ Implements `MessagePort` using BLE via the [bluey](https://github.com/neutrinogr
 - `ConnectionManager` / `AutoConnectPolicy` (application): connection registry + send/receive paths; discovery-driven auto-connect with per-address backoff and caps
 - `ConnectionRegistry` (domain aggregate): One handle per NodeId
 - `BlueyPort` (domain interface): Adapter abstraction; `BlueyPortImpl` wraps the real `Bluey` instance
-- `FrameEncoder`/`FrameDecoder` (infrastructure): 4-byte length-prefix framing for chunked BLE writes
+- `FrameEncoder`/`FrameDecoder` (protocol): 4-byte length-prefix framing for chunked BLE writes
 
 **Identity model:** `NodeId.value` is fed directly into bluey's `ServerId` — no handshake required for the initiator's view of the responder. (See spec for the known peripheral-side limitation when running on real hardware.)
 
