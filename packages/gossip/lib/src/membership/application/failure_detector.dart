@@ -119,7 +119,7 @@ class FailureDetector {
   /// Injected by the composition root (`Coordinator` wires a
   /// [MembershipMessageCodec]; test harnesses do the same) rather than
   /// constructed inline, so the detector depends only on the shared
-  /// [MessageCodec] seam and not on the (now-composite) `ProtocolCodec`.
+  /// [MessageCodec] seam, not a concrete codec class.
   /// [decode] answers null for a frame outside this codec's family (e.g. a
   /// sync DigestRequest/Response or DeltaRequest/Response sharing the same
   /// transport) — see the null-check in [_handleIncomingMessage].

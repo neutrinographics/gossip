@@ -10,13 +10,12 @@ import 'package:gossip/src/membership/infrastructure/membership_message_codec.da
 import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/membership/domain/messages/ping_req.dart';
-import 'package:gossip/src/protocol/protocol_codec.dart';
 import 'package:test/test.dart';
 
 import 'failure_detector_test_harness.dart';
 
 void main() {
-  final codec = ProtocolCodec();
+  final codec = MembershipMessageCodec();
 
   // ---------------------------------------------------------------------------
   // Intermediary role (_handlePingReq)

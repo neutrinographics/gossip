@@ -7,18 +7,18 @@ import 'package:gossip/src/facade/coordinator.dart';
 import 'package:gossip/src/facade/coordinator_config.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
-import 'package:gossip/src/infrastructure/repositories/in_memory_channel_repository.dart';
+import 'package:gossip/src/sync/infrastructure/in_memory_channel_repository.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
 import 'package:gossip/src/membership/infrastructure/in_memory_peer_repository.dart';
-import 'package:gossip/src/infrastructure/stores/in_memory_entry_repository.dart';
-import 'package:gossip/src/protocol/messages/delta_response.dart';
-import 'package:gossip/src/protocol/protocol_codec.dart';
+import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
+import 'package:gossip/src/sync/domain/messages/delta_response.dart';
+import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:test/test.dart';
 
 void main() {
   final localNode = NodeId('local');
   final peerId = NodeId('peer1');
-  final codec = ProtocolCodec();
+  final codec = SyncMessageCodec();
 
   test(
     'a local write is reactively pushed to a connected peer (G1 wiring)',

@@ -4,7 +4,7 @@ import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
-import 'package:gossip/src/domain/results/compaction_result.dart';
+import 'package:gossip/src/sync/domain/value_objects/compaction_result.dart';
 
 /// Sealed family root for domain events emitted by the sync context
 /// (channels, streams, and entry synchronization).

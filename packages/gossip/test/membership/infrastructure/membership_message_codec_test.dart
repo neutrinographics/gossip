@@ -5,83 +5,46 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping_req.dart';
-import 'package:gossip/src/protocol/messages/digest_request.dart';
-import 'package:gossip/src/protocol/protocol_codec.dart';
+import 'package:gossip/src/sync/domain/messages/digest_request.dart';
+import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 
 void main() {
   group('MembershipMessageCodec', () {
     final codec = MembershipMessageCodec();
-    final legacyCodec = ProtocolCodec();
 
-    test(
-      'wire-freeze: round-trips Ping byte-identically with ProtocolCodec',
-      () {
-        final ping = Ping(sender: NodeId('peer1'), sequence: 42);
+    test('round-trips Ping', () {
+      final ping = Ping(sender: NodeId('peer1'), sequence: 42);
 
-        final bytesFromNew = codec.encode(ping);
-        final bytesFromLegacy = legacyCodec.encode(ping);
-        expect(bytesFromNew, equals(bytesFromLegacy));
+      final decoded = codec.decode(codec.encode(ping)) as Ping;
+      expect(decoded.sender, equals(ping.sender));
+      expect(decoded.sequence, equals(ping.sequence));
+    });
 
-        // encode with new, decode with legacy
-        final decodedByLegacy = legacyCodec.decode(bytesFromNew) as Ping;
-        expect(decodedByLegacy.sender, equals(ping.sender));
-        expect(decodedByLegacy.sequence, equals(ping.sequence));
+    test('round-trips Ack', () {
+      final ack = Ack(sender: NodeId('peer2'), sequence: 123);
 
-        // encode with legacy, decode with new
-        final decodedByNew = codec.decode(bytesFromLegacy) as Ping;
-        expect(decodedByNew.sender, equals(ping.sender));
-        expect(decodedByNew.sequence, equals(ping.sequence));
-      },
-    );
+      final decoded = codec.decode(codec.encode(ack)) as Ack;
+      expect(decoded.sender, equals(ack.sender));
+      expect(decoded.sequence, equals(ack.sequence));
+    });
 
-    test(
-      'wire-freeze: round-trips Ack byte-identically with ProtocolCodec',
-      () {
-        final ack = Ack(sender: NodeId('peer2'), sequence: 123);
+    test('round-trips PingReq', () {
+      final pingReq = PingReq(
+        sender: NodeId('peer1'),
+        sequence: 456,
+        target: NodeId('peer3'),
+      );
 
-        final bytesFromNew = codec.encode(ack);
-        final bytesFromLegacy = legacyCodec.encode(ack);
-        expect(bytesFromNew, equals(bytesFromLegacy));
-
-        final decodedByLegacy = legacyCodec.decode(bytesFromNew) as Ack;
-        expect(decodedByLegacy.sender, equals(ack.sender));
-        expect(decodedByLegacy.sequence, equals(ack.sequence));
-
-        final decodedByNew = codec.decode(bytesFromLegacy) as Ack;
-        expect(decodedByNew.sender, equals(ack.sender));
-        expect(decodedByNew.sequence, equals(ack.sequence));
-      },
-    );
-
-    test(
-      'wire-freeze: round-trips PingReq byte-identically with ProtocolCodec',
-      () {
-        final pingReq = PingReq(
-          sender: NodeId('peer1'),
-          sequence: 456,
-          target: NodeId('peer3'),
-        );
-
-        final bytesFromNew = codec.encode(pingReq);
-        final bytesFromLegacy = legacyCodec.encode(pingReq);
-        expect(bytesFromNew, equals(bytesFromLegacy));
-
-        final decodedByLegacy = legacyCodec.decode(bytesFromNew) as PingReq;
-        expect(decodedByLegacy.sender, equals(pingReq.sender));
-        expect(decodedByLegacy.sequence, equals(pingReq.sequence));
-        expect(decodedByLegacy.target, equals(pingReq.target));
-
-        final decodedByNew = codec.decode(bytesFromLegacy) as PingReq;
-        expect(decodedByNew.sender, equals(pingReq.sender));
-        expect(decodedByNew.sequence, equals(pingReq.sequence));
-        expect(decodedByNew.target, equals(pingReq.target));
-      },
-    );
+      final decoded = codec.decode(codec.encode(pingReq)) as PingReq;
+      expect(decoded.sender, equals(pingReq.sender));
+      expect(decoded.sequence, equals(pingReq.sequence));
+      expect(decoded.target, equals(pingReq.target));
+    });
 
     test('decode returns null for a frame from the sync family', () {
       final digestRequest = DigestRequest(sender: NodeId('peer1'), digests: []);
-      final bytes = legacyCodec.encode(digestRequest);
+      final bytes = SyncMessageCodec().encode(digestRequest);
 
       expect(codec.decode(bytes), isNull);
     });

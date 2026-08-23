@@ -9,7 +9,7 @@ import 'package:gossip/src/shared/domain/interfaces/message_port.dart';
 import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/membership/domain/messages/ping_req.dart';
-import 'package:gossip/src/protocol/protocol_codec.dart';
+import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:test/test.dart';
 
 import 'failure_detector_test_harness.dart';
@@ -206,7 +206,7 @@ void main() {
       );
 
       // Send a Ping to detector so it responds with Ack
-      final codec = ProtocolCodec();
+      final codec = MembershipMessageCodec();
       final pingMsg = Ping(sender: NodeId('peer1'), sequence: 99);
       await peerPort.send(NodeId('local'), codec.encode(pingMsg));
       await hCap.flush();
@@ -772,7 +772,7 @@ void main() {
           pingTimeout: const Duration(milliseconds: 500),
         );
         final peer = h.addPeer('peer1');
-        final codec = ProtocolCodec();
+        final codec = MembershipMessageCodec();
 
         h.startListening();
 
@@ -914,7 +914,7 @@ void main() {
       );
       final peer1 = h.addPeer('peer1');
       final peer2 = h.addPeer('peer2');
-      final codec = ProtocolCodec();
+      final codec = MembershipMessageCodec();
 
       h.startListening();
 
@@ -987,7 +987,7 @@ void main() {
         );
         final target = h.addPeer('target');
         final intermediary = h.addPeer('intermediary');
-        final codec = ProtocolCodec();
+        final codec = MembershipMessageCodec();
 
         h.startListening();
 
@@ -1070,7 +1070,7 @@ void main() {
   // ---------------------------------------------------------------------------
 
   group('Lifecycle', () {
-    final codec = ProtocolCodec();
+    final codec = MembershipMessageCodec();
 
     test('start begins periodic probes', () {
       final h = FailureDetectorTestHarness();

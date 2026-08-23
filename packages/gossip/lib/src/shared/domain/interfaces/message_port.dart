@@ -29,7 +29,8 @@ class IncomingMessage {
   /// The node that sent this message.
   final NodeId sender;
 
-  /// The raw message bytes (to be decoded by ProtocolCodec).
+  /// The raw message bytes (to be decoded by the owning context's
+  /// [MessageCodec]).
   final Uint8List bytes;
 
   /// When this message was received (local wall-clock time).

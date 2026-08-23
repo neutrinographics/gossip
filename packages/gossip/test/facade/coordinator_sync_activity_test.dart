@@ -1,8 +1,8 @@
 import 'package:gossip/gossip.dart';
-import 'package:gossip/src/protocol/messages/digest_response.dart';
-import 'package:gossip/src/protocol/protocol_codec.dart';
-import 'package:gossip/src/protocol/values/channel_digest.dart';
-import 'package:gossip/src/protocol/values/stream_digest.dart';
+import 'package:gossip/src/sync/domain/messages/digest_response.dart';
+import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
+import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:test/test.dart';
 
 void main() {
@@ -53,7 +53,7 @@ void main() {
         // pull and sends it a DeltaRequest (which the peer never answers).
         await peerPort.send(
           localNode,
-          ProtocolCodec().encode(
+          SyncMessageCodec().encode(
             DigestResponse(
               sender: peerId,
               digests: [

@@ -11,11 +11,9 @@ import 'package:gossip/src/shared/domain/value_objects/wire_types.dart';
 /// Wire codec for the membership context's SWIM messages: [Ping], [Ack],
 /// [PingReq] — [WireTypes.membership] type bytes 0-2.
 ///
-/// Encode/decode logic here is moved VERBATIM from `ProtocolCodec` (see that
-/// class's doc comment for the wire format rationale: `[Type Byte][JSON
-/// Payload]`). [decode] returns null when the type byte belongs to the sync
-/// family, so callers such as the composite `ProtocolCodec` can fall through
-/// to `SyncMessageCodec`.
+/// Wire format: `[Type Byte][JSON Payload]`. [decode] returns null when the
+/// type byte belongs to the sync family, so callers can fall through to
+/// `SyncMessageCodec`.
 class MembershipMessageCodec implements MessageCodec {
   @override
   Uint8List encode(ProtocolMessage message) {

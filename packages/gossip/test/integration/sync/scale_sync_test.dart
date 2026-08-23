@@ -4,7 +4,7 @@ import 'package:test/test.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/facade/coordinator_config.dart';
-import 'package:gossip/src/protocol/protocol_codec.dart';
+import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 
 import '../../support/test_network.dart';
 
@@ -72,7 +72,7 @@ void main() {
 
         // Create a payload at the maximum syncable size: the largest
         // entry that fits one delta message under the default budget.
-        final maxPayload = ProtocolCodec.maxEntryPayloadForBudget(
+        final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(
           CoordinatorConfig.defaults.maxDeltaResponseBytes,
         );
         final largePayload = Uint8List(maxPayload);
@@ -167,7 +167,7 @@ void main() {
         // One byte past the largest payload that can ever fit a delta
         // message: it could never sync, so append must fail loudly
         // instead of storing an entry that livelocks the stream.
-        final maxPayload = ProtocolCodec.maxEntryPayloadForBudget(
+        final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(
           CoordinatorConfig.defaults.maxDeltaResponseBytes,
         );
         final oversized = List.generate(maxPayload + 1, (i) => i % 256);

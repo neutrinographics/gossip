@@ -1,8 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:gossip/gossip.dart';
-import 'package:gossip/src/protocol/messages/delta_response.dart';
-import 'package:gossip/src/protocol/protocol_codec.dart';
+import 'package:gossip/src/sync/domain/messages/delta_response.dart';
+import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:test/test.dart';
 
 /// A buggy app materializer: folding always throws.
@@ -58,7 +58,7 @@ void main() {
       // the materializer's fold then throws.
       await peerPort.send(
         localNode,
-        ProtocolCodec().encode(
+        SyncMessageCodec().encode(
           DeltaResponse(
             sender: peerId,
             channelId: channelId,

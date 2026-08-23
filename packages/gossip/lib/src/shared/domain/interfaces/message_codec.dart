@@ -12,6 +12,7 @@ abstract interface class MessageCodec {
   /// [bytes] is empty, when the type byte belongs to NO known context
   /// (genuinely corrupt — implementations check this via
   /// `WireTypes.known`), or on a malformed frame of its own family —
-  /// preserving `ProtocolCodec`'s current error behavior in every case.
+  /// preserving each context codec's established error behavior in every
+  /// case.
   ProtocolMessage? decode(Uint8List bytes);
 }

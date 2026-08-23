@@ -6,7 +6,7 @@ import 'package:gossip/src/membership/application/failure_detector.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:test/test.dart';
 
-import '../../protocol/failing_delay_time_port.dart';
+import '../../support/failing_delay_time_port.dart';
 import 'failure_detector_test_harness.dart';
 
 void main() {

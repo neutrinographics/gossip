@@ -8,22 +8,30 @@ import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
-import 'package:gossip/src/protocol/messages/digest_request.dart';
-import 'package:gossip/src/protocol/messages/digest_response.dart';
-import 'package:gossip/src/protocol/messages/delta_request.dart';
-import 'package:gossip/src/protocol/messages/delta_response.dart';
-import 'package:gossip/src/protocol/values/channel_digest.dart';
-import 'package:gossip/src/protocol/values/stream_digest.dart';
-import 'package:gossip/src/protocol/protocol_codec.dart';
+import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
+import 'package:gossip/src/sync/domain/messages/digest_request.dart';
+import 'package:gossip/src/sync/domain/messages/digest_response.dart';
+import 'package:gossip/src/sync/domain/messages/delta_request.dart';
+import 'package:gossip/src/sync/domain/messages/delta_response.dart';
+import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
+import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 
 void main() {
   group('SyncMessageCodec', () {
     final codec = SyncMessageCodec();
-    final legacyCodec = ProtocolCodec();
 
-    test('wire-freeze: round-trips DigestRequest byte-identically with '
-        'ProtocolCodec', () {
+    DeltaResponse responseWith(List<LogEntry> entries) => DeltaResponse(
+      sender: NodeId('sender'),
+      channelId: ChannelId('ch1'),
+      streamId: StreamId('s1'),
+      entries: entries,
+    );
+
+    Map<String, dynamic> jsonOf(Uint8List encoded) =>
+        jsonDecode(utf8.decode(encoded.sublist(1))) as Map<String, dynamic>;
+
+    test('round-trips DigestRequest', () {
       final sender = NodeId('peer1');
       final channelId = ChannelId('channel1');
       final streamId = StreamId('stream1');
@@ -35,21 +43,12 @@ void main() {
       );
       final request = DigestRequest(sender: sender, digests: [channelDigest]);
 
-      final bytesFromNew = codec.encode(request);
-      final bytesFromLegacy = legacyCodec.encode(request);
-      expect(bytesFromNew, equals(bytesFromLegacy));
-
-      final decodedByLegacy = legacyCodec.decode(bytesFromNew) as DigestRequest;
-      expect(decodedByLegacy.sender, equals(sender));
-      expect(decodedByLegacy.digests[0].streams[0].version[sender], equals(5));
-
-      final decodedByNew = codec.decode(bytesFromLegacy) as DigestRequest;
-      expect(decodedByNew.sender, equals(sender));
-      expect(decodedByNew.digests[0].streams[0].version[sender], equals(5));
+      final decoded = codec.decode(codec.encode(request)) as DigestRequest;
+      expect(decoded.sender, equals(sender));
+      expect(decoded.digests[0].streams[0].version[sender], equals(5));
     });
 
-    test('wire-freeze: round-trips DigestResponse byte-identically with '
-        'ProtocolCodec', () {
+    test('round-trips DigestResponse', () {
       final sender = NodeId('peer2');
       final channelId = ChannelId('channel1');
       final streamId = StreamId('stream1');
@@ -62,20 +61,11 @@ void main() {
       );
       final response = DigestResponse(sender: sender, digests: [channelDigest]);
 
-      final bytesFromNew = codec.encode(response);
-      final bytesFromLegacy = legacyCodec.encode(response);
-      expect(bytesFromNew, equals(bytesFromLegacy));
-
-      final decodedByLegacy =
-          legacyCodec.decode(bytesFromNew) as DigestResponse;
-      expect(decodedByLegacy.digests[0].streams[0].version[author], 3);
-
-      final decodedByNew = codec.decode(bytesFromLegacy) as DigestResponse;
-      expect(decodedByNew.digests[0].streams[0].version[author], 3);
+      final decoded = codec.decode(codec.encode(response)) as DigestResponse;
+      expect(decoded.digests[0].streams[0].version[author], 3);
     });
 
-    test('wire-freeze: round-trips DeltaRequest byte-identically with '
-        'ProtocolCodec', () {
+    test('round-trips DeltaRequest', () {
       final sender = NodeId('peer1');
       final channelId = ChannelId('channel1');
       final streamId = StreamId('stream1');
@@ -88,21 +78,12 @@ void main() {
         since: since,
       );
 
-      final bytesFromNew = codec.encode(request);
-      final bytesFromLegacy = legacyCodec.encode(request);
-      expect(bytesFromNew, equals(bytesFromLegacy));
-
-      final decodedByLegacy = legacyCodec.decode(bytesFromNew) as DeltaRequest;
-      expect(decodedByLegacy.channelId, equals(channelId));
-      expect(decodedByLegacy.since[author], equals(2));
-
-      final decodedByNew = codec.decode(bytesFromLegacy) as DeltaRequest;
-      expect(decodedByNew.channelId, equals(channelId));
-      expect(decodedByNew.since[author], equals(2));
+      final decoded = codec.decode(codec.encode(request)) as DeltaRequest;
+      expect(decoded.channelId, equals(channelId));
+      expect(decoded.since[author], equals(2));
     });
 
-    test('wire-freeze: round-trips DeltaResponse (incl. floor + hasMore) '
-        'byte-identically with ProtocolCodec', () {
+    test('round-trips DeltaResponse (incl. floor + hasMore)', () {
       final sender = NodeId('peer2');
       final channelId = ChannelId('channel1');
       final streamId = StreamId('stream1');
@@ -123,24 +104,51 @@ void main() {
         floor: VersionVector({author: 10}),
       );
 
-      final bytesFromNew = codec.encode(response);
-      final bytesFromLegacy = legacyCodec.encode(response);
-      expect(bytesFromNew, equals(bytesFromLegacy));
+      final decoded = codec.decode(codec.encode(response)) as DeltaResponse;
+      expect(decoded.entries.single.payload, equals(entry1.payload));
+      expect(decoded.hasMore, isTrue);
+      expect(decoded.floor[author], equals(10));
+    });
 
-      final decodedByLegacy = legacyCodec.decode(bytesFromNew) as DeltaResponse;
-      expect(decodedByLegacy.entries.single.payload, equals(entry1.payload));
-      expect(decodedByLegacy.hasMore, isTrue);
-      expect(decodedByLegacy.floor[author], equals(10));
+    test('DeltaResponse round-trips with no floor set (default)', () {
+      final response = DeltaResponse(
+        sender: NodeId('peer2'),
+        channelId: ChannelId('channel1'),
+        streamId: StreamId('stream1'),
+        entries: const [],
+      );
 
-      final decodedByNew = codec.decode(bytesFromLegacy) as DeltaResponse;
-      expect(decodedByNew.entries.single.payload, equals(entry1.payload));
-      expect(decodedByNew.hasMore, isTrue);
-      expect(decodedByNew.floor[author], equals(10));
+      final decoded = codec.decode(codec.encode(response)) as DeltaResponse;
+      expect(
+        decoded.floor.entries,
+        isEmpty,
+        reason: 'no floor was set',
+      );
+    });
+
+    test('DeltaResponse without a floor field decodes to an empty floor '
+        '(legacy senders, COR3-1)', () {
+      // A legacy sender's message: same wire format minus the floor key.
+      final legacyJson = utf8.encode(
+        jsonEncode({
+          'sender': 'peer2',
+          'channelId': 'channel1',
+          'streamId': 'stream1',
+          'entries': <Object>[],
+          'hasMore': false,
+        }),
+      );
+      final bytes = Uint8List(legacyJson.length + 1);
+      bytes[0] = 6; // DeltaResponse type byte
+      bytes.setRange(1, bytes.length, legacyJson);
+
+      final decoded = codec.decode(bytes) as DeltaResponse;
+      expect(decoded.floor.entries, isEmpty);
     });
 
     test('decode returns null for a frame from the membership family', () {
       final ping = Ping(sender: NodeId('peer1'), sequence: 1);
-      final bytes = legacyCodec.encode(ping);
+      final bytes = MembershipMessageCodec().encode(ping);
 
       expect(codec.decode(bytes), isNull);
     });
@@ -185,62 +193,158 @@ void main() {
       );
     });
 
-    test('maxEntryPayloadForBudget-sized payload fits the budget', () {
-      const budget = 30 * 1024;
-      final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(budget);
-
-      expect(maxPayload, greaterThan(20 * 1024));
-      expect(maxPayload, lessThan(budget));
-
-      final encoded = codec.encode(
-        DeltaResponse(
-          sender: NodeId('sender'),
-          channelId: ChannelId('ch1'),
-          streamId: StreamId('s1'),
-          entries: [
+    group('payload encoding', () {
+      test('encodes entry payloads as base64 strings, not int lists', () {
+        final payload = Uint8List.fromList(List.generate(256, (i) => i));
+        final encoded = codec.encode(
+          responseWith([
             LogEntry(
-              author: NodeId('a' * 64),
+              author: NodeId('a'),
+              sequence: 1,
+              timestamp: Hlc(1000, 0),
+              payload: payload,
+            ),
+          ]),
+        );
+
+        final entryJson =
+            (jsonOf(encoded)['entries'] as List).first as Map<String, dynamic>;
+        expect(
+          entryJson['payload'],
+          isA<String>(),
+          reason: 'JSON int lists inflate payloads ~3.6x; base64 is ~1.33x',
+        );
+
+        // Round trip must preserve the exact bytes.
+        final decoded = codec.decode(encoded) as DeltaResponse;
+        expect(decoded.entries.single.payload, equals(payload));
+      });
+
+      test('encoded size stays near base64 overhead for binary payloads', () {
+        final payload = Uint8List.fromList(
+          List.generate(8 * 1024, (i) => (i * 37 + 11) % 256),
+        );
+        final encoded = codec.encode(
+          responseWith([
+            LogEntry(
+              author: NodeId('a'),
+              sequence: 1,
+              timestamp: Hlc(1000, 0),
+              payload: payload,
+            ),
+          ]),
+        );
+
+        // 8KB base64 ≈ 10.9KB; allow generous envelope slack. The legacy
+        // int-list encoding averaged ~3.6 chars/byte (~29KB) and must be gone.
+        expect(encoded.length, lessThan(12 * 1024));
+      });
+
+      test('round-trips the DeltaResponse hasMore flag', () {
+        final encoded = codec.encode(
+          DeltaResponse(
+            sender: NodeId('sender'),
+            channelId: ChannelId('ch1'),
+            streamId: StreamId('s1'),
+            entries: const [],
+            hasMore: true,
+          ),
+        );
+        final decoded = codec.decode(encoded) as DeltaResponse;
+        expect(decoded.hasMore, isTrue);
+      });
+
+      test('a legacy DeltaResponse without hasMore decodes to false', () {
+        final legacyJson = {
+          'sender': 'sender',
+          'channelId': 'ch1',
+          'streamId': 's1',
+          'entries': <dynamic>[],
+        };
+        final bytes = Uint8List.fromList([
+          6, // DeltaResponse type byte
+          ...utf8.encode(jsonEncode(legacyJson)),
+        ]);
+        final decoded = codec.decode(bytes) as DeltaResponse;
+        expect(decoded.hasMore, isFalse);
+      });
+
+      test('still decodes legacy int-list payloads', () {
+        final legacyJson = {
+          'sender': 'sender',
+          'channelId': 'ch1',
+          'streamId': 's1',
+          'entries': [
+            {
+              'author': 'a',
+              'sequence': 1,
+              'timestamp': {'physicalMs': 1000, 'logical': 0},
+              'payload': [1, 2, 3, 255],
+            },
+          ],
+        };
+        final bytes = Uint8List.fromList([
+          6, // DeltaResponse type byte
+          ...utf8.encode(jsonEncode(legacyJson)),
+        ]);
+
+        final decoded = codec.decode(bytes) as DeltaResponse;
+        expect(
+          decoded.entries.single.payload,
+          equals(Uint8List.fromList([1, 2, 3, 255])),
+        );
+      });
+
+      test('maxEntryPayloadForBudget-sized payload fits the budget', () {
+        const budget = 30 * 1024;
+        final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(budget);
+
+        // Sanity: base64 + envelope means roughly 3/4 of the budget.
+        expect(maxPayload, greaterThan(20 * 1024));
+        expect(maxPayload, lessThan(budget));
+
+        // A single-entry DeltaResponse at exactly the derived max must
+        // encode within the budget (worst-case author/id lengths).
+        final encoded = codec.encode(
+          responseWith([
+            LogEntry(
+              author: NodeId('a' * 64), // longer than a UUID
               sequence: 1 << 40,
-              timestamp: Hlc(281474976710655, 65535),
+              timestamp: Hlc(281474976710655, 65535), // max HLC fields
               payload: Uint8List.fromList(
                 List.generate(maxPayload, (i) => i % 256),
               ),
             ),
+          ]),
+        );
+        expect(encoded.length, lessThanOrEqualTo(budget));
+      });
+
+      test('rejects legacy payload bytes outside 0-255 instead of truncating', () {
+        final malformedJson = {
+          'sender': 'sender',
+          'channelId': 'ch1',
+          'streamId': 's1',
+          'entries': [
+            {
+              'author': 'a',
+              'sequence': 1,
+              'timestamp': {'physicalMs': 1000, 'logical': 0},
+              'payload': [300, -1],
+            },
           ],
-        ),
-      );
-      expect(encoded.length, lessThanOrEqualTo(budget));
+        };
+        final bytes = Uint8List.fromList([
+          6,
+          ...utf8.encode(jsonEncode(malformedJson)),
+        ]);
 
-      // Must match ProtocolCodec's static helper (delegation, not drift).
-      expect(
-        maxPayload,
-        equals(ProtocolCodec.maxEntryPayloadForBudget(budget)),
-      );
+        expect(
+          () => codec.decode(bytes),
+          throwsA(isA<Object>()),
+          reason: 'out-of-range bytes are corruption, not data to mod-256',
+        );
+      });
     });
-
-    test(
-      'encodedEntrySize and encodedStreamDigestSize match ProtocolCodec',
-      () {
-        final entry = LogEntry(
-          author: NodeId('a'),
-          sequence: 1,
-          timestamp: Hlc(1000, 0),
-          payload: Uint8List.fromList([1, 2, 3]),
-        );
-        expect(
-          codec.encodedEntrySize(entry),
-          equals(legacyCodec.encodedEntrySize(entry)),
-        );
-
-        final digest = StreamDigest(
-          streamId: StreamId('s1'),
-          version: VersionVector({NodeId('a'): 1}),
-        );
-        expect(
-          codec.encodedStreamDigestSize(digest),
-          equals(legacyCodec.encodedStreamDigestSize(digest)),
-        );
-      },
-    );
   });
 }

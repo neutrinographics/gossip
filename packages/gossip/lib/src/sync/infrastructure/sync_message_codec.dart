@@ -7,12 +7,12 @@ import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
 import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
-import 'package:gossip/src/protocol/messages/digest_request.dart';
-import 'package:gossip/src/protocol/messages/digest_response.dart';
-import 'package:gossip/src/protocol/messages/delta_request.dart';
-import 'package:gossip/src/protocol/messages/delta_response.dart';
-import 'package:gossip/src/protocol/values/channel_digest.dart';
-import 'package:gossip/src/protocol/values/stream_digest.dart';
+import 'package:gossip/src/sync/domain/messages/digest_request.dart';
+import 'package:gossip/src/sync/domain/messages/digest_response.dart';
+import 'package:gossip/src/sync/domain/messages/delta_request.dart';
+import 'package:gossip/src/sync/domain/messages/delta_response.dart';
+import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
+import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
 import 'package:gossip/src/shared/domain/value_objects/wire_types.dart';
 
@@ -20,11 +20,9 @@ import 'package:gossip/src/shared/domain/value_objects/wire_types.dart';
 /// [DigestResponse], [DeltaRequest], [DeltaResponse] — [WireTypes.sync] type
 /// bytes 3-6.
 ///
-/// Encode/decode logic here is moved VERBATIM from `ProtocolCodec` (see that
-/// class's doc comment for the wire format rationale: `[Type Byte][JSON
-/// Payload]`). [decode] returns null when the type byte belongs to the
-/// membership family, so callers such as the composite `ProtocolCodec` can
-/// fall through to `MembershipMessageCodec`.
+/// Wire format: `[Type Byte][JSON Payload]`. [decode] returns null when the
+/// type byte belongs to the membership family, so callers can fall through
+/// to `MembershipMessageCodec`.
 class SyncMessageCodec implements MessageCodec {
   @override
   Uint8List encode(ProtocolMessage message) {

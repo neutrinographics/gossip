@@ -14,7 +14,6 @@ import 'package:gossip/src/membership/infrastructure/membership_message_codec.da
 import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/membership/domain/messages/ping_req.dart';
-import 'package:gossip/src/protocol/protocol_codec.dart';
 
 // ---------------------------------------------------------------------------
 // Reusable test doubles
@@ -130,7 +129,7 @@ class TestPeer {
   /// Captures the next [Ping] arriving at this peer.
   ///
   /// Sets up a subscription eagerly, so call this **before** the Ping is sent.
-  Future<Ping> capturePing(ProtocolCodec codec) {
+  Future<Ping> capturePing(MembershipMessageCodec codec) {
     final completer = Completer<Ping>();
     late StreamSubscription<IncomingMessage> sub;
     sub = port.incoming.listen((msg) {
@@ -179,7 +178,7 @@ class FailureDetectorTestHarness {
   final InMemoryMessageBus bus;
   final InMemoryMessagePort localPort;
   final FailureDetector detector;
-  final ProtocolCodec codec = ProtocolCodec();
+  final MembershipMessageCodec codec = MembershipMessageCodec();
   final RttTracker rttTracker;
   final List<SyncError> errors;
   final _CountingMessagePort _sendCounter;

@@ -5,11 +5,11 @@ import 'package:test/test.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
-import 'package:gossip/src/protocol/messages/delta_request.dart';
-import 'package:gossip/src/protocol/messages/delta_response.dart';
-import 'package:gossip/src/protocol/messages/digest_request.dart';
-import 'package:gossip/src/protocol/messages/digest_response.dart';
-import 'package:gossip/src/protocol/protocol_codec.dart';
+import 'package:gossip/src/sync/domain/messages/delta_request.dart';
+import 'package:gossip/src/sync/domain/messages/delta_response.dart';
+import 'package:gossip/src/sync/domain/messages/digest_request.dart';
+import 'package:gossip/src/sync/domain/messages/digest_response.dart';
+import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 
 import '../../support/test_network.dart';
 
@@ -27,7 +27,7 @@ void main() {
     late List<StreamSubscription<SyncError>> errorSubscriptions;
     final channelId = ChannelId('duplicate-frames-channel');
     final streamId = StreamId('data');
-    final codec = ProtocolCodec();
+    final codec = SyncMessageCodec();
 
     setUp(() async {
       network = await TestNetwork.create(['node1', 'node2']);
