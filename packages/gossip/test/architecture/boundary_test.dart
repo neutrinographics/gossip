@@ -54,6 +54,21 @@ void main() {
           'form first (Task 5), then re-run this test',
         );
       }
+      // Relative EXPORTS are legitimate only within a context (the barrels
+      // hold same-context relative exports). Any `..` segment in a relative
+      // import OR export can leave the context while matching neither regex
+      // above — ban it outright; zero false positives against the tree.
+      final parentEscapes = RegExp(
+        r"^(import|export)\s+'(?!dart:|package:)[^']*\.\.[^']*'",
+        multiLine: true,
+      ).allMatches(contents);
+      for (final match in parentEscapes) {
+        violations.add(
+          '${file.path}: relative ${match.group(1)} with a ".." segment '
+          '"${match.group(0)}" — could cross a context boundary unseen; '
+          'use package:gossip/src/... form',
+        );
+      }
       // Scans both `import` and `export` directives: the context barrels
       // are entirely `export` lines, so a walker that only matched `import`
       // would let a future cross-context `export` through silently.
