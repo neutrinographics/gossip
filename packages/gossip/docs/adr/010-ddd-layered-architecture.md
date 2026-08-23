@@ -205,6 +205,14 @@ context-specific emitter. The concrete events split into two per-context
   `membership/domain/value_objects/peer_status.dart`'s `PeerStatus`),
   `PeerOperationSkipped`.
 
+**Deliberate deviation:** `SyncErrorOccurred` is the one concrete event that
+stays in `shared/domain/events/` beside the abstract `DomainEvent` base
+rather than joining either sealed family above. It wraps shared's
+`SyncError` and is constructed by applications wiring up
+`ErrorCallback`-style error emission (ADR-011), not by either context's own
+aggregates — it belongs to neither `SyncEvent` nor `MembershipEvent`'s
+sealed switch, so forcing it into one would be a fiction.
+
 Boundary purity is gained by this split — `PeerAdded` and friends finally
 live inside `membership/` instead of a shared file — and it removes the
 `CompactionResult`-living-in-`shared/` wart the old layout had. Each
