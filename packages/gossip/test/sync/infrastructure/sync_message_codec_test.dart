@@ -45,6 +45,10 @@ void main() {
 
       final decoded = codec.decode(codec.encode(request)) as DigestRequest;
       expect(decoded.sender, equals(sender));
+      expect(decoded.digests, hasLength(1));
+      expect(decoded.digests[0].channelId, equals(channelId));
+      expect(decoded.digests[0].streams, hasLength(1));
+      expect(decoded.digests[0].streams[0].streamId, equals(streamId));
       expect(decoded.digests[0].streams[0].version[sender], equals(5));
     });
 
@@ -62,7 +66,12 @@ void main() {
       final response = DigestResponse(sender: sender, digests: [channelDigest]);
 
       final decoded = codec.decode(codec.encode(response)) as DigestResponse;
-      expect(decoded.digests[0].streams[0].version[author], 3);
+      expect(decoded.sender, equals(sender));
+      expect(decoded.digests, hasLength(1));
+      expect(decoded.digests[0].channelId, equals(channelId));
+      expect(decoded.digests[0].streams, hasLength(1));
+      expect(decoded.digests[0].streams[0].streamId, equals(streamId));
+      expect(decoded.digests[0].streams[0].version[author], equals(3));
     });
 
     test('round-trips DeltaRequest', () {
@@ -79,7 +88,9 @@ void main() {
       );
 
       final decoded = codec.decode(codec.encode(request)) as DeltaRequest;
+      expect(decoded.sender, equals(sender));
       expect(decoded.channelId, equals(channelId));
+      expect(decoded.streamId, equals(streamId));
       expect(decoded.since[author], equals(2));
     });
 
@@ -108,6 +119,61 @@ void main() {
       expect(decoded.entries.single.payload, equals(entry1.payload));
       expect(decoded.hasMore, isTrue);
       expect(decoded.floor[author], equals(10));
+    });
+
+    test('round-trips a DeltaResponse with multiple entries '
+        '(per-entry field fidelity)', () {
+      final sender = NodeId('peer2');
+      final channelId = ChannelId('channel1');
+      final streamId = StreamId('stream1');
+      final author = NodeId('author1');
+
+      final entry1 = LogEntry(
+        author: author,
+        sequence: 1,
+        timestamp: Hlc(1000, 0),
+        payload: Uint8List.fromList([1, 2, 3]),
+      );
+      final entry2 = LogEntry(
+        author: author,
+        sequence: 2,
+        timestamp: Hlc(2000, 1),
+        payload: Uint8List.fromList([4, 5, 6]),
+      );
+
+      final response = DeltaResponse(
+        sender: sender,
+        channelId: channelId,
+        streamId: streamId,
+        entries: [entry1, entry2],
+      );
+
+      final decoded = codec.decode(codec.encode(response)) as DeltaResponse;
+      expect(decoded.sender, equals(sender));
+      expect(decoded.channelId, equals(channelId));
+      expect(decoded.streamId, equals(streamId));
+      expect(decoded.entries, hasLength(2));
+
+      expect(decoded.entries[0].author, equals(author));
+      expect(decoded.entries[0].sequence, equals(1));
+      expect(decoded.entries[0].timestamp, equals(Hlc(1000, 0)));
+      expect(
+        decoded.entries[0].payload,
+        equals(Uint8List.fromList([1, 2, 3])),
+      );
+
+      expect(decoded.entries[1].author, equals(author));
+      expect(decoded.entries[1].sequence, equals(2));
+      expect(decoded.entries[1].timestamp, equals(Hlc(2000, 1)));
+      expect(
+        decoded.entries[1].payload,
+        equals(Uint8List.fromList([4, 5, 6])),
+      );
+      expect(
+        decoded.floor.entries,
+        isEmpty,
+        reason: 'no floor was set',
+      );
     });
 
     test('DeltaResponse round-trips with no floor set (default)', () {
@@ -343,6 +409,58 @@ void main() {
           () => codec.decode(bytes),
           throwsA(isA<Object>()),
           reason: 'out-of-range bytes are corruption, not data to mod-256',
+        );
+      });
+    });
+
+    group('byte-budget helpers', () {
+      // gossip_engine.dart uses these to budget DeltaResponse/DigestRequest
+      // messages against the 32KB transport limit without repeatedly
+      // encoding whole messages (see gossip_engine.dart:798,1517). The
+      // expectations here are derived from an *actual* encoded message,
+      // not by re-running the helper's own formula, so a drift between
+      // the estimate and the real wire size would fail this test.
+      test('encodedEntrySize equals the entry\'s actual size inside an '
+          'encoded DeltaResponse', () {
+        final entry = LogEntry(
+          author: NodeId('author-with-a-realistic-length-id'),
+          sequence: 99999,
+          timestamp: Hlc(281474976710655, 65535), // max HLC fields
+          payload: Uint8List.fromList(List.generate(37, (i) => i)),
+        );
+        final encoded = codec.encode(responseWith([entry]));
+
+        final entryJson = (jsonOf(encoded)['entries'] as List).single;
+        final actualEntrySize = utf8.encode(jsonEncode(entryJson)).length;
+
+        expect(codec.encodedEntrySize(entry), equals(actualEntrySize));
+      });
+
+      test('encodedStreamDigestSize equals the stream digest\'s actual '
+          'size inside an encoded DigestResponse', () {
+        final digest = StreamDigest(
+          streamId: StreamId('stream-with-a-realistic-length-id'),
+          version: VersionVector({
+            NodeId('author1'): 42,
+            NodeId('author2'): 7,
+          }),
+        );
+        final response = DigestResponse(
+          sender: NodeId('sender'),
+          digests: [
+            ChannelDigest(channelId: ChannelId('ch1'), streams: [digest]),
+          ],
+        );
+        final encoded = codec.encode(response);
+
+        final channelJson = (jsonOf(encoded)['digests'] as List).single
+            as Map<String, dynamic>;
+        final streamJson = (channelJson['streams'] as List).single;
+        final actualDigestSize = utf8.encode(jsonEncode(streamJson)).length;
+
+        expect(
+          codec.encodedStreamDigestSize(digest),
+          equals(actualDigestSize),
         );
       });
     });

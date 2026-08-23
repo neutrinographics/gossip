@@ -1,3 +1,6 @@
+// Exercises GossipEngine + FailureDetector cross-cutting metrics; lives
+// here (not under membership/) because the sync engine's test harness is
+// what drives both collaborators.
 import 'dart:typed_data';
 
 import 'package:gossip/src/shared/domain/value_objects/log_level.dart';
