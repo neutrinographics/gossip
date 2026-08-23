@@ -209,8 +209,7 @@ class Coordinator {
   ///
   /// [random] lets callers inject a seeded Random for deterministic tests.
   ///
-  /// [onLog] receives diagnostic logs; also the fallback error sink after
-  /// dispose.
+  /// [onLog] receives diagnostic logs.
   static Future<Coordinator> create({
     required LocalNodeRepository localNodeRepository,
     required ChannelRepository channelRepository,
