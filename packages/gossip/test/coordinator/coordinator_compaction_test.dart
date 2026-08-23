@@ -155,6 +155,20 @@ void main() {
         reason: 'BD2: a scheduling failure must surface via ErrorCallback',
       );
 
+      // The errors-stream assertions alone can't distinguish "loop is
+      // dead" from "loop is retrying but ticking a no-op" (compactAll()
+      // with no channels registered is silently a no-op either way).
+      // Assert isRunning directly: a retrying scheduler would still
+      // report itself running.
+      expect(
+        coordinator.compactionSchedulerForTesting!.isRunning,
+        isFalse,
+        reason:
+            'a scheduler that retries after a scheduling failure would '
+            'still report isRunning == true here — BD2 requires it to '
+            'have stopped itself',
+      );
+
       // Advancing time well past several intervals ticks nothing further —
       // the scheduler stopped itself rather than silently dying.
       await timePort.inner.advance(const Duration(seconds: 1));

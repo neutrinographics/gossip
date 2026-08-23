@@ -718,6 +718,11 @@ class Coordinator {
   @visibleForTesting
   GossipEngine? get gossipEngineForTesting => _gossipEngine;
 
+  /// The internal compaction scheduler, exposed for tests only.
+  @visibleForTesting
+  GenerationScheduler? get compactionSchedulerForTesting =>
+      _compactionScheduler;
+
   /// Returns all registered peers.
   ///
   /// This includes peers in any status (reachable, suspected, unreachable).
