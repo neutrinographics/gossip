@@ -15,7 +15,7 @@ const Map<String, Set<String>> edges = {
 };
 
 void main() {
-  test('every import in lib/src obeys the edge table', () {
+  test('every import and export in lib/src obeys the edge table', () {
     final violations = <String>[];
     final files = Directory('lib/src')
         .listSync(recursive: true)
@@ -33,12 +33,18 @@ void main() {
       }
       final contents = file.readAsStringSync();
       // Adaptation (per Task 5's normalization): every lib import must
-      // already be package-form. A relative import would silently escape
-      // this walker's regex, so fail loudly instead of trying to resolve
-      // it — that means a file regressed to relative imports and must be
-      // normalized first, not that the table is wrong.
+      // already be package-form — the context barrels (shared.dart,
+      // sync.dart, membership.dart) are the one documented exception,
+      // using relative *export* directives for their mechanical, full
+      // re-export of their own context's files (ADR-010), which can never
+      // reach outside that context without a relative import. A relative
+      // *import* would silently escape the package-form regex below, so
+      // fail loudly instead of trying to resolve it — that means a file
+      // regressed to relative imports and must be normalized first, not
+      // that the table is wrong. Un-anchored (no trailing `;` requirement)
+      // so combinator forms like `import 'x.dart' show Y;` don't slip past.
       final relativeImports = RegExp(
-        r"^import\s+'(?!dart:|package:)[^']*';",
+        r"^import\s+'(?!dart:|package:)[^']*'",
         multiLine: true,
       ).allMatches(contents);
       for (final match in relativeImports) {
@@ -48,12 +54,17 @@ void main() {
           'form first (Task 5), then re-run this test',
         );
       }
-      final imports = RegExp(
-        "import 'package:gossip/src/([a-z_]+)/",
-      ).allMatches(contents).map((m) => m.group(1)!);
-      for (final target in imports) {
+      // Scans both `import` and `export` directives: the context barrels
+      // are entirely `export` lines, so a walker that only matched `import`
+      // would let a future cross-context `export` through silently.
+      final crossModuleRefs = RegExp(
+        r"(import|export)\s+'package:gossip/src/([a-z_]+)/",
+      ).allMatches(contents);
+      for (final match in crossModuleRefs) {
+        final directive = match.group(1)!; // 'import' or 'export'
+        final target = match.group(2)!;
         if (!allowed.contains(target)) {
-          violations.add('${file.path} imports $target');
+          violations.add('${file.path} ${directive}s $target');
         }
         // The concession: a context importing another context must sit
         // under its own infrastructure/.
@@ -62,7 +73,7 @@ void main() {
             module != 'coordinator' &&
             !file.path.contains('/$module/infrastructure/')) {
           violations.add(
-            '${file.path} imports $target outside '
+            '${file.path} ${directive}s $target outside '
             'infrastructure/ (ACL concession violated)',
           );
         }
