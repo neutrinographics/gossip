@@ -57,10 +57,9 @@ final class PeerStatusChanged extends MembershipEvent {
 
 /// Emitted when an operation on a peer is skipped because the peer is not found.
 ///
-/// Fired when: Operations like PeerRegistry.updatePeerStatus,
-/// PeerRegistry.updatePeerContact, etc.
-/// are called for a peer that doesn't exist in the registry. This is for
-/// observability only - not an error, just a trace event.
+/// Fired only by PeerRegistry.updatePeerStatus on a missing peer. Other
+/// mutators deliberately no-op silently — one event per message from an
+/// unknown peer would grow without bound.
 final class PeerOperationSkipped extends MembershipEvent {
   final NodeId peerId;
   final String operation;

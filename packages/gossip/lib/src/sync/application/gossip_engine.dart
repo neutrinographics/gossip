@@ -37,7 +37,7 @@ import 'package:gossip/src/sync/domain/events/sync_events.dart';
 ///
 /// ## Anti-Entropy Protocol (4 Steps)
 ///
-/// **Step 1: Digest Request (adaptive: 2× median RTT, clamped 100 ms–5 s active, backed off to 30 s when idle)**
+/// **Step 1: Digest Request** (see [effectiveGossipInterval] for the interval policy)
 /// - Select random reachable peer
 /// - Generate digests (version vectors) for all local channels/streams
 /// - Send [DigestRequest] containing our sync state
@@ -355,19 +355,23 @@ class GossipEngine {
   ///
   /// If a static `gossipInterval` was provided at construction, uses that value.
   /// Otherwise computes from the *median* per-peer smoothed RTT across all
-  /// reachable peers, multiplied by [_gossipIntervalMultiplier] (2x).
+  /// reachable peers ([_adaptiveBaseInterval]: multiplied by
+  /// [_gossipIntervalMultiplier] (2x), clamped to [_minGossipInterval] and
+  /// [_maxGossipInterval] (100ms-5s active), with a
+  /// [_defaultConservativeInterval] (1000ms) fallback when no peer has an
+  /// RTT estimate yet).
   ///
   /// Median (not min) pacing keeps a single fast peer from pinning the loop
   /// to a fast cadence that over-drives slower links, while a single very
-  /// slow peer can't stall the whole mesh either. Latency-sensitive delivery
-  /// is handled by reactive push-on-write; this is the anti-entropy safety
-  /// net, so a steadier median cadence is the right trade-off.
-  ///
-  /// Falls back to a conservative default (1000ms) when no peers have
-  /// RTT estimates yet.
+  /// slow peer can't stall the whole mesh either — each uniform-random round
+  /// is ~(n-1)/n likely to target a slower-than-fastest peer with a
+  /// potentially large payload, so the median is robust to an outlier at
+  /// either end. Latency-sensitive delivery is handled by reactive
+  /// push-on-write; this is the anti-entropy safety net, so a steadier
+  /// median cadence is the right trade-off.
   ///
   /// During quiet rounds this adaptive base is further stretched toward the
-  /// 30s idle ceiling by the quiescence pacer (see [_adaptiveBaseInterval]).
+  /// 30s idle ceiling by the quiescence pacer.
   Duration get effectiveGossipInterval {
     // Use static interval if explicitly provided (for backward compatibility)
     if (_staticIntervalProvided || !_adaptiveTimingEnabled) {
@@ -376,16 +380,8 @@ class GossipEngine {
     return _pacer.apply(_adaptiveBaseInterval);
   }
 
-  /// Today's latency-derived cadence, unchanged (median SRTT x 2, clamped
-  /// [_minGossipInterval]..[_maxGossipInterval]; [_defaultConservativeInterval]
-  /// fallback without samples). [effectiveGossipInterval] stretches THIS
-  /// toward the idle ceiling via [_pacer].
-  ///
-  /// Pace off the MEDIAN per-peer SRTT across reachable peers, not the min.
-  /// The min let a single fast peer pin the whole loop to a fast cadence,
-  /// over-driving slower links — and each uniform-random round is ~(n-1)/n
-  /// likely to target a slower-than-fastest peer with a potentially large
-  /// payload. The median is robust to a single outlier at either end.
+  /// Latency-derived cadence input to [effectiveGossipInterval] — see there
+  /// for the interval policy (median SRTT × 2, clamping, and fallback).
   Duration get _adaptiveBaseInterval {
     final srtts = <Duration>[];
     for (final partner in peerDirectory.reachablePartners()) {
@@ -644,7 +640,7 @@ class GossipEngine {
     _channels = channels;
   }
 
-  /// Performs a single gossip round (called at adaptive: 2× median RTT, clamped 100 ms–5 s active, backed off to 30 s when idle).
+  /// Performs a single gossip round (see [effectiveGossipInterval] for cadence).
   ///
   /// Implements Step 1 of the anti-entropy protocol:
   /// 1. Get reachable peers and filter out congested ones (per-peer
@@ -871,8 +867,9 @@ class GossipEngine {
   /// - [DeltaRequest] → Compute delta, send [DeltaResponse] with entries (Step 4)
   /// - [DeltaResponse] → Merge received entries into [EntryRepository]
   ///
-  /// Malformed messages are silently ignored to prevent denial-of-service
-  /// via protocol violations.
+  /// Malformed messages are dropped non-fatally and reported via
+  /// [ErrorCallback] (DoS containment) rather than allowed to crash the
+  /// message-handling loop.
   Future<void> _handleIncomingMessage(IncomingMessage message) async {
     // Record metrics before processing (even if decode fails)
     final nowMs = timePort.nowMs;
@@ -1564,25 +1561,19 @@ class GossipEngine {
     return (selected, truncated);
   }
 
-  /// Handles delta response from a peer (final step).
+  /// Handles a delta response from a peer — the final step of anti-entropy.
   ///
-  /// Merges received entries into our [EntryRepository]. This completes the
-  /// anti-entropy protocol. The entries are now synchronized.
-  ///
-  /// Also updates the local HLC clock to ensure subsequent local writes
-  /// have timestamps that are causally after the received entries.
-  ///
-  /// Clears the pending request flag to allow future delta requests for
-  /// this stream.
-  ///
-  /// Exposed as public for testing. Called by [_handleIncomingMessage].
-  /// Merges a [DeltaResponse] into the entry store.
+  /// Merges received entries into our [EntryRepository] and advances the
+  /// local HLC clock so subsequent local writes are causally after the
+  /// received entries. Exposed as public for testing; production callers
+  /// reach it via [_handleIncomingMessage].
   ///
   /// Returns a continuation [DeltaRequest] (for the dispatcher to send) when
-  /// the sender truncated the response to the size budget ([DeltaResponse.hasMore]) AND we
-  /// applied new entries — draining a backlog at link speed instead of one
-  /// page per periodic round. Returns null otherwise (no more, or no
-  /// progress — the latter guards against an infinite continuation loop).
+  /// the sender truncated the response to the size budget
+  /// ([DeltaResponse.hasMore]) AND we applied new entries — draining a
+  /// backlog at link speed instead of one page per periodic round. Returns
+  /// null otherwise (no more, or no progress — the latter guards against an
+  /// infinite continuation loop).
   Future<DeltaRequest?> handleDeltaResponse(DeltaResponse response) {
     // Ingest only channels/streams this node actually has. Reactive pushes
     // fan out to every reachable peer, so receiving data for a channel we

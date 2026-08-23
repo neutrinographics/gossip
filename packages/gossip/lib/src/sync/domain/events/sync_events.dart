@@ -5,8 +5,6 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/sync/domain/value_objects/compaction_result.dart';
-import 'package:gossip/src/sync/domain/interfaces/entry_repository.dart';
-import 'package:gossip/src/sync/domain/entities/stream_config.dart';
 
 /// Sealed family root for domain events emitted by the sync context
 /// (channels, streams, and entry synchronization).
@@ -72,7 +70,7 @@ final class MemberRemoved extends SyncEvent {
 
 /// Emitted when a new stream is created within a channel.
 ///
-/// Fired when: `Channel.addStream` successfully adds a new stream.
+/// Fired when: `Channel.createStream` successfully adds a new stream.
 final class StreamCreated extends SyncEvent {
   final ChannelId channelId;
   final StreamId streamId;
@@ -86,8 +84,9 @@ final class StreamCreated extends SyncEvent {
 
 /// Emitted when a local entry is appended to a stream.
 ///
-/// Fired when: [EntryRepository.append] successfully adds a locally-authored entry.
-/// This is for entries created on this node, not received from peers.
+/// Fired when: `ChannelService.appendEntry` successfully appends a
+/// locally-authored entry. This is for entries created on this node, not
+/// received from peers.
 final class EntryAppended extends SyncEvent {
   final ChannelId channelId;
   final StreamId streamId;
@@ -103,9 +102,10 @@ final class EntryAppended extends SyncEvent {
 
 /// Emitted when entries from a peer are merged into a stream.
 ///
-/// Fired when: [EntryRepository.appendAll] successfully merges received entries
-/// during anti-entropy synchronization. The [newVersion] reflects the
-/// stream's updated version vector after the merge.
+/// Fired when: the coordinator's merge fan-out
+/// (`Coordinator._handleEntriesMerged`) constructs this after entries are
+/// merged during anti-entropy synchronization. The [newVersion] reflects
+/// the stream's updated version vector after the merge.
 final class EntriesMerged extends SyncEvent {
   final ChannelId channelId;
   final StreamId streamId;
@@ -129,8 +129,8 @@ final class EntriesMerged extends SyncEvent {
 
 /// Emitted when a stream is compacted to free storage space.
 ///
-/// Fired when: `EntryRepository.compact` applies retention policies and removes
-/// old entries. The [result] contains statistics about what was removed.
+/// Currently never emitted — the compaction pipeline does not yet fire
+/// this event; retained pending an emit-or-remove decision.
 final class StreamCompacted extends SyncEvent {
   final ChannelId channelId;
   final StreamId streamId;
@@ -146,9 +146,8 @@ final class StreamCompacted extends SyncEvent {
 
 /// Emitted when the out-of-order buffer overflows for an author.
 ///
-/// Fired when: [EntryRepository] receives entries that exceed buffer limits
-/// defined in [StreamConfig]. Entries are dropped to prevent memory
-/// exhaustion from malicious or buggy peers.
+/// Currently never emitted — the compaction pipeline does not yet fire
+/// this event; retained pending an emit-or-remove decision.
 final class BufferOverflowOccurred extends SyncEvent {
   final ChannelId channelId;
   final StreamId streamId;

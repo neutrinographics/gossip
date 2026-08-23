@@ -21,7 +21,7 @@ import 'package:gossip/src/sync/application/materialization/materialization_serv
 
 /// Application service orchestrating channel and stream operations.
 ///
-/// [ChannelService] coordinates between the domain layer ([ChannelAggregate] aggregate)
+/// [ChannelService] coordinates between the domain layer ([ChannelAggregate])
 /// and infrastructure layer ([ChannelRepository], [EntryRepository]). It handles:
 ///
 /// - **Channel lifecycle**: Creating channels and managing membership
@@ -60,7 +60,7 @@ class ChannelService {
   /// When null, falls back to system time (not recommended for production).
   final HlcClock? _hlcClock;
 
-  /// Persistence layer for [ChannelAggregate] aggregates.
+  /// Persistence layer for [ChannelAggregate] instances.
   ///
   /// When null, aggregates are not persisted (in-memory only).
   final ChannelRepository? _channelRepository;
@@ -135,15 +135,12 @@ class ChannelService {
   /// Creates a new channel with the given identifier, or keeps the
   /// existing one (get-or-create).
   ///
-  /// Initializes a new [ChannelAggregate] aggregate and persists it to the
-  /// repository. The channel starts with no members and no streams. If a
-  /// channel with this ID already exists it is left untouched and no
-  /// events are emitted — silently replacing it would wipe membership and
-  /// every stream registration (COR3-16).
+  /// Establishes the channel with no members and no streams. If a channel
+  /// with this ID already exists it is left untouched and no events are
+  /// emitted — silently replacing it would wipe membership and every
+  /// stream registration (COR3-16).
   ///
   /// Used when: Local node discovers or creates a new channel.
-  ///
-  /// Transaction: Creates and saves a new aggregate.
   ///
   /// Returns: List of domain events emitted during creation (e.g., [ChannelCreated]).
   Future<List<DomainEvent>> createChannel(ChannelId channelId) async {
@@ -208,12 +205,10 @@ class ChannelService {
 
   /// Adds a peer to the channel's member set.
   ///
-  /// Loads the [ChannelAggregate] aggregate, adds the member, and persists the change.
-  /// Fires [MemberAdded] domain event.
+  /// Records the member in replicated channel metadata (see ADR-007 — no
+  /// protocol gating) and emits [MemberAdded].
   ///
   /// Used when: Peer joins channel via gossip or explicit invitation.
-  ///
-  /// Transaction: Load → modify → save.
   ///
   /// Throws [Exception] if channel doesn't exist in repository.
   ///
@@ -229,12 +224,11 @@ class ChannelService {
 
   /// Removes a peer from the channel's member set.
   ///
-  /// Loads the [ChannelAggregate] aggregate, removes the member, and persists the change.
-  /// Fires [MemberRemoved] domain event.
+  /// Removes the member from replicated channel metadata (see ADR-007 — no
+  /// protocol gating; the removed peer can still sync entries it already
+  /// has) and emits [MemberRemoved].
   ///
   /// Used when: Peer leaves channel or is evicted.
-  ///
-  /// Transaction: Load → modify → save.
   ///
   /// Throws [Exception] if channel doesn't exist in repository.
   ///
@@ -250,16 +244,11 @@ class ChannelService {
 
   /// Creates a new stream within a channel.
   ///
-  /// Loads the [ChannelAggregate] aggregate, creates the stream with the specified
-  /// retention policy, and persists the change. Fires [StreamCreated] domain
-  /// event.
-  ///
-  /// The stream starts with an empty version vector and no entries. Entries
-  /// are appended separately via [appendEntry].
+  /// The stream starts with an empty version vector and no entries, ready
+  /// to accept writes via [appendEntry] under the given retention policy.
+  /// Emits [StreamCreated] once the stream is registered.
   ///
   /// Used when: Application defines a new data stream to synchronize.
-  ///
-  /// Transaction: Load → modify → save.
   ///
   /// Throws [Exception] if channel doesn't exist in repository.
   ///
@@ -324,8 +313,8 @@ class ChannelService {
   /// Generates the next sequence number for the local node's author chain,
   /// creates a [LogEntry] with current timestamp, and appends to [EntryRepository].
   ///
-  /// Note: This does NOT update the `Channel` aggregate's version vector.
-  /// That happens separately during sync protocol when entries are confirmed
+  /// Note: This does NOT update [ChannelAggregate]'s version vector. That
+  /// happens separately during sync protocol when entries are confirmed
   /// by remote peers.
   ///
   /// Used when: Application writes new data to a stream.

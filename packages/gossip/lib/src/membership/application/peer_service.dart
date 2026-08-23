@@ -65,7 +65,8 @@ class PeerService {
   /// Used when: Discovering a new peer via application-provided peer list
   /// or gossip membership updates.
   ///
-  /// Transaction: Add to registry → retrieve entity → save to repository.
+  /// Registry is the source of truth; persistence is best-effort and
+  /// serialized per peer (see [_saveQueue]).
   Future<void> addPeer(NodeId peerId, {String? displayName}) async {
     registry.addPeer(
       peerId,
@@ -82,7 +83,8 @@ class PeerService {
   ///
   /// Used when: Peer explicitly leaves or is administratively removed.
   ///
-  /// Transaction: Remove from registry → delete from repository.
+  /// Registry is the source of truth; persistence is best-effort and
+  /// serialized per peer (see [_saveQueue]).
   Future<void> removePeer(NodeId peerId) async {
     registry.removePeer(peerId, occurredAt: DateTime.now());
     await _deletePeer(peerId);

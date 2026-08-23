@@ -15,7 +15,7 @@ import 'package:gossip/src/shared/domain/value_objects/rtt_estimate.dart';
 /// - **Sliding window**: Recent message count within a time window
 /// - **RTT estimate**: Per-peer round-trip time for adaptive timeouts
 ///
-/// Entities are compared by value equality (immutable value semantics).
+/// Value object with immutable value semantics.
 class PeerMetrics {
   /// Total messages received from this peer (lifetime).
   final int messagesReceived;
