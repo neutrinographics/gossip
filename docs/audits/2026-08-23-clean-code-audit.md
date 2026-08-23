@@ -232,3 +232,24 @@ Ten deep-read auditors, each responsible for reading its full territory; every `
 | `test/integration/` + `test/shared/` | 40 files, 7,304 | ✅ |
 
 Orchestrator ran the gates (`dart test`: 1033/1033 green; `dart analyze`: clean) and personally re-verified every finding's citation against source, including all cross-file duplication claims at both ends. Not covered: `example/` (out of scope, not audited), `docs/` prose, and the transport packages. No other gaps.
+
+---
+
+## Remediation — Batch A (2026-08-23)
+
+Commits `11b2558..5e5cc15` on branch `cc5-batch-a`. Ten tasks (A1–A10), each independently reviewed against this report; two fix rounds total across the batch (A4: one finding — a missed VV-mis-homing site in `channel_repository.dart`'s intro; A6: four items — see correction below).
+
+**Closed in full:** CC5-4 (with correction — see below), CC5-15, CC5-16, CC5-17, CC5-36, CC5-37, CC5-38, CC5-39, CC5-40, CC5-42, CC5-44, CC5-54, and baseline MIN-22's coordinator/kernel doc items.
+
+**Closed as a docs-only slice** (API surface unchanged; removal decisions deferred to Batch H): CC5-18.
+
+**Closed as a Batch-A slice** (remainder owned by Batch D): CC5-34 (`TestNetwork` non-creating reads — done), CC5-35 (`gossip_experiment_test.dart` deleted; scenario consolidation across the remaining owning files remains), CC5-53 (`TestNetwork`'s `_originalPorts`/seeding items — done; other test-hygiene smalls in the finding remain).
+
+**Correction to this report's own text**, discovered during remediation (Task A6): CC5-4's fix direction, as written above, says the reworded docs should read "edits replicated local metadata" — that phrasing is itself wrong. Channel membership metadata is **local** and never crosses the wire (ADR-007; no member data appears in any codec). The shipped docs instead say "local channel metadata." Treat the fix-direction wording above as superseded by this correction, not as what was implemented.
+
+**Also landed:**
+- `comment_references` lint now enforced package-wide (was D6).
+- `InMemoryTimePort.tick()` is now formally `@Deprecated` (previously "legacy" only in prose — CC5-37).
+- Suite count changed 1033 → 1031: `gossip_experiment_test.dart` (CC5-35) deleted as a strict subset of `coordinator_test.dart`, dropping its two duplicate test cases.
+
+Gates: `melos run test` (gossip 1031, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages) both pass as of `5e5cc15`; `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
