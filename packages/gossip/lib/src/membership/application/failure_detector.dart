@@ -86,6 +86,9 @@ class _PendingPing {
 /// Call [start] to begin probe rounds and [startListening] to handle
 /// incoming messages. Both are independent; typically both are started
 /// together.
+///
+/// Comment keys like COR3-n / WIRE4-n / H-n refer to findings in
+/// `docs/audits/`.
 class FailureDetector {
   // ---------------------------------------------------------------------------
   // Construction & configuration
@@ -159,14 +162,15 @@ class FailureDetector {
   static const Duration _maxProbeInterval = Duration(seconds: 30);
   static const int _probeIntervalMultiplier = 3;
 
-  /// Hard cap on how long freshness alone may suppress a probe (final
-  /// review, item 2): 4× the 30 s ceiling. Freshness-only suppression
-  /// (below) keys on INBOUND evidence — under asymmetric one-way loss
-  /// (our probes to a peer die, but the peer's own traffic to us, e.g. its
-  /// own unreachable-probing of us, keeps arriving) that inbound evidence
-  /// never stops, so we would never probe the peer and never detect the
-  /// failure. This bounds half-open detection instead of suppressing
-  /// forever. Not configurable — no new knobs.
+  /// Hard cap on how long freshness alone may suppress a probe: 4× the
+  /// 30 s ceiling, so freshness alone can never suppress a probe for more
+  /// than 2 minutes. Freshness-only suppression (below) keys on INBOUND
+  /// evidence — under asymmetric one-way loss (our probes to a peer die,
+  /// but the peer's own traffic to us, e.g. its own unreachable-probing of
+  /// us, keeps arriving) that inbound evidence never stops, so we would
+  /// never probe the peer and never detect the failure. This bounds
+  /// half-open detection instead of suppressing forever. Not configurable —
+  /// no new knobs.
   static const Duration _maxProbeSuppression = Duration(minutes: 2);
 
   // ---------------------------------------------------------------------------
@@ -225,7 +229,7 @@ class FailureDetector {
   /// [_probeUnreachablePeer] (all funnel through [_sendPing]). Distinct from
   /// [Peer.lastContactMs] (inbound evidence only): this tracks our own
   /// outbound attempts, so [selectRandomPeer] can bound how long freshness
-  /// alone may suppress a peer (item 2 — see [_maxProbeSuppression]).
+  /// alone may suppress a peer (see [_maxProbeSuppression]).
   ///
   /// A missing entry means "never probed" — on a real device `nowMs` is a
   /// huge wall-clock epoch reading, so treating a missing entry as 0 makes
@@ -270,8 +274,8 @@ class FailureDetector {
   /// Unlike [clearProbingHold] — which is also called when [probeNewPeer]
   /// merely *confirms* connectivity, and so must not touch probe-attempt
   /// history — this is for actual removal: the peer is gone, so its
-  /// probing hold and its [_maxProbeSuppression] tracking (item 2) are
-  /// both moot and would otherwise accumulate under peer churn.
+  /// probing hold and its [_maxProbeSuppression] tracking are both moot
+  /// and would otherwise accumulate under peer churn.
   void forgetPeer(NodeId peerId) {
     _probingHeldUntil.remove(peerId);
     _lastProbeAttemptMs.remove(peerId);
@@ -566,7 +570,7 @@ class FailureDetector {
       // peer alive within the current interval — a probe adds nothing.
       final isFresh = nowMs - p.lastContactMs < intervalMs;
       if (!isFresh) return true;
-      // Cap (item 2): freshness alone keys on INBOUND evidence, which
+      // Cap: freshness alone keys on INBOUND evidence, which
       // under asymmetric one-way loss can be perpetually refreshed by the
       // peer's own traffic (e.g. it probing us) even though OUR probes to
       // IT are the ones dying — suppressing forever and never detecting
@@ -974,7 +978,7 @@ class FailureDetector {
     // Single choke point for all 3 of our own probe-selection Pings
     // (performProbeRound, probeNewPeer, _probeUnreachablePeer) — records
     // that this peer was actually probed, resetting its suppression-cap
-    // clock (item 2). Deliberately NOT used by the PingReq intermediary
+    // clock. Deliberately NOT used by the PingReq intermediary
     // role (_handlePingReq sends its relay Ping directly via _safeSend):
     // relaying on someone else's behalf isn't our own scheduling decision.
     _lastProbeAttemptMs[target] = timePort.nowMs;

@@ -1,7 +1,7 @@
 import 'dart:typed_data';
-import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart'; // path updated in Task 5's move
+import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
 
-/// Wire codec seam (Part 2 spec): each context implements this for its OWN
+/// Wire codec seam: each context implements this for its OWN
 /// message family and answers null for foreign type bytes.
 abstract interface class MessageCodec {
   Uint8List encode(ProtocolMessage message);

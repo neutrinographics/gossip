@@ -28,8 +28,8 @@ void main() {
     test('a missed probe snaps the interval back to base', () async {
       // Seeded so the round-robin shuffle (FailureDetector.selectRandomPeer)
       // is deterministic: with two probable peers, seed 0 visits peer1
-      // before deadpeer in the first post-add cycle (verified empirically
-      // — see task-6-report.md). This replaces the brief's blind
+      // before deadpeer in the first post-add cycle (verified empirically).
+      // This replaces the brief's blind
       // "3 rounds and hope the miss lands" loop, which both risked
       // flaking on peer selection and would hang forever on the miss
       // round: InMemoryTimePort's delay() never resolves without an

@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:test/test.dart';
 
-/// Part 2 spec: the machine-checked edge table (fluent's CA2-3 pattern).
+/// Part 2 spec: the machine-checked edge table.
 /// The table IS the architecture; adding an edge means editing this test
 /// in a reviewed diff.
 const Map<String, Set<String>> edges = {
@@ -32,7 +32,7 @@ void main() {
         continue;
       }
       final contents = file.readAsStringSync();
-      // Adaptation (per Task 5's normalization): every lib import must
+      // Adaptation: every lib import must
       // already be package-form — the context barrels (shared.dart,
       // sync.dart, membership.dart) are the one documented exception,
       // using relative *export* directives for their mechanical, full
@@ -51,7 +51,7 @@ void main() {
         violations.add(
           '${file.path}: relative import '
           '"${match.group(0)}" — normalize to package:gossip/src/... '
-          'form first (Task 5), then re-run this test',
+          'form first, then re-run this test',
         );
       }
       // Relative EXPORTS are legitimate only within a context (the barrels

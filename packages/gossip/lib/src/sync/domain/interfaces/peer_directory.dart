@@ -15,8 +15,8 @@ import 'package:gossip/src/sync/domain/value_objects/sync_partner.dart';
 /// the engine calls today, so the ACL can be a pure pass-through/mapping —
 /// no new semantics are introduced at this seam.
 ///
-/// WIRE4-19 (piggybacking pending-send counts onto gossip messages) is
-/// expected to extend this port later.
+/// Designed to be extended with piggybacked liveness data; keep the
+/// pass-through purity when extending.
 abstract interface class PeerDirectory {
   /// All partners currently reachable for gossip (mirrors
   /// `PeerRegistry.reachablePeers`).

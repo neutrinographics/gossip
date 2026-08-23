@@ -83,6 +83,9 @@ import 'package:gossip/src/sync/domain/events/sync_events.dart';
 /// incoming messages. Both are independent; typically both are started together.
 ///
 /// Used by: Application facades (Coordinator) to manage data synchronization.
+///
+/// Comment keys like COR3-n / WIRE4-n / H-n refer to findings in
+/// `docs/audits/`.
 class GossipEngine {
   /// Local node identifier for this instance.
   final NodeId localNode;

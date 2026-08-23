@@ -1,6 +1,6 @@
-/// Wire type-byte partition (Part 2 spec). Membership owns 0-2, sync owns
-/// 3-6. The partition test asserts no overlap; changing an existing value
-/// is a wire-format break and is forbidden.
+/// Wire type-byte partition. Membership owns 0-2, sync owns 3-6. The
+/// partition test asserts no overlap; changing an existing value is a
+/// wire-format break and is forbidden.
 abstract final class WireTypes {
   static const int ping = 0;
   static const int ack = 1;
