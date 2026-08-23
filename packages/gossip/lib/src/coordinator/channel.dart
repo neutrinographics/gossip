@@ -84,25 +84,27 @@ class Channel {
 
   /// Returns the set of member node IDs in this channel.
   ///
-  /// Members are peers that can read and write to the channel's streams.
+  /// Membership is replicated local metadata (see ADR-007): it names who
+  /// the app considers part of the channel, but the protocol does not
+  /// gate synchronization on it. Enforcement is an application concern.
   Future<Set<NodeId>> get members async {
     return await channelService.getMembers(id);
   }
 
-  /// Adds a member to the channel.
+  /// Adds a member to the channel's replicated metadata.
   ///
-  /// The member will be able to read and write to all streams in the channel.
-  ///
-  /// Used when: Inviting a peer to collaborate on a channel.
+  /// This records intent for the app's own UI/logic; it grants nothing at
+  /// the protocol level (see ADR-007).
   Future<void> addMember(NodeId memberId) async {
     await channelService.addMember(id, memberId);
   }
 
-  /// Removes a member from the channel.
+  /// Removes a member from the channel's replicated metadata.
   ///
-  /// The member will no longer receive updates or be able to write to streams.
-  ///
-  /// Used when: Revoking access or peer leaves channel.
+  /// This does NOT stop the peer from replicating the channel: any node
+  /// still holding the channel keeps receiving and serving its entries
+  /// (see ADR-007). Do not use this as access revocation — key rotation
+  /// or app-level encryption is the tool for that.
   Future<void> removeMember(NodeId memberId) async {
     await channelService.removeMember(id, memberId);
   }
