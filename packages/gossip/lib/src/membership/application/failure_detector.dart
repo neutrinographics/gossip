@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:gossip/src/shared/domain/value_objects/log_level.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
+import 'package:gossip/src/shared/domain/services/generation_scheduler.dart';
 import 'package:gossip/src/shared/domain/services/jitter.dart';
 import 'package:gossip/src/shared/domain/services/quiescence_pacer.dart';
 import 'package:gossip/src/shared/domain/services/rtt_tracker.dart';
@@ -150,7 +151,35 @@ class FailureDetector {
        _random = random ?? Random(),
        _rttTracker = rttTracker ?? RttTracker(),
        _staticPingTimeoutProvided = pingTimeout != null,
-       _staticProbeIntervalProvided = probeInterval != null;
+       _staticProbeIntervalProvided = probeInterval != null {
+    _scheduler = GenerationScheduler(
+      timePort: timePort,
+      // ±20% jitter decorrelates probe loops across nodes so they don't
+      // phase-lock into correlated bursts (and correlated false
+      // suspicions); recomputed fresh so the pacer's growth/reset each
+      // round is reflected in the next tick's delay.
+      nextDelay: () => applyJitter(effectiveProbeInterval, _random),
+      tick: performProbeRound,
+      onTickError: (error, stackTrace) => _emitError(
+        PeerSyncError(
+          localNode,
+          SyncErrorType.protocolError,
+          'Probe round failed: $error',
+          occurredAt: DateTime.now(),
+          cause: error,
+        ),
+      ),
+      onSchedulingError: (error, stackTrace) => _emitError(
+        PeerSyncError(
+          localNode,
+          SyncErrorType.protocolError,
+          'Probe round scheduling failed: $error',
+          occurredAt: DateTime.now(),
+          cause: error,
+        ),
+      ),
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Constants
@@ -190,15 +219,13 @@ class FailureDetector {
   /// miss or a membership change (new peer, recovery) snaps it back.
   final QuiescencePacer _pacer = QuiescencePacer(ceiling: _maxProbeInterval);
 
-  bool _isRunning = false;
+  /// Drives the periodic probe round loop: computes each tick's delay
+  /// (jittered [effectiveProbeInterval]), runs [performProbeRound], and
+  /// reports tick vs. scheduling failures separately. Built eagerly in the
+  /// constructor — unlike Coordinator's compaction scheduler, [timePort]
+  /// is always available here, so there is no lazy-construction case.
+  late final GenerationScheduler _scheduler;
 
-  /// Generation token for the probe round loop.
-  ///
-  /// Incremented on every [start] and [stop] so that delay callbacks
-  /// scheduled by a previous run become stale and cannot fork a second
-  /// concurrent probe loop when the detector is restarted within one
-  /// interval (e.g. Coordinator pause()/resume()).
-  int _generation = 0;
   int _nextSequence = 1;
   int _unreachableProbeCounter = 0;
   int _unreachableProbeIndex = 0;
@@ -290,7 +317,7 @@ class FailureDetector {
   // Public API: adaptive timing
   // ---------------------------------------------------------------------------
 
-  bool get isRunning => _isRunning;
+  bool get isRunning => _scheduler.isRunning;
 
   RttTracker get rttTracker => _rttTracker;
 
@@ -344,19 +371,15 @@ class FailureDetector {
 
   /// Starts periodic probe rounds at adaptive intervals.
   void start() {
-    if (_isRunning) return;
-    _isRunning = true;
+    if (_scheduler.isRunning) return;
     // A restart is news — never resume mid-backoff into a stale world.
     _pacer.news();
-    _generation++;
-    _scheduleNextProbeRound(_generation);
+    _scheduler.start();
   }
 
   /// Stops periodic probe rounds.
   void stop() {
-    if (!_isRunning) return;
-    _isRunning = false;
-    _generation++;
+    _scheduler.stop();
   }
 
   /// Starts listening to incoming SWIM protocol messages.
@@ -697,60 +720,6 @@ class FailureDetector {
         occurredAt: occurredAt,
       );
     }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Private: probe round internals
-  // ---------------------------------------------------------------------------
-
-  /// Schedules the next probe round.
-  ///
-  /// [generation] identifies the run that scheduled this callback; if it
-  /// no longer matches [_generation] when the delay fires, the detector
-  /// was stopped (and possibly restarted) in the meantime and this stale
-  /// callback must not run a round or reschedule itself.
-  void _scheduleNextProbeRound(int generation) {
-    if (!_isRunning || generation != _generation) return;
-    // ±20% jitter decorrelates probe loops across nodes so they don't
-    // phase-lock into correlated bursts (and correlated false suspicions).
-    timePort
-        .delay(applyJitter(effectiveProbeInterval, _random))
-        .then((_) {
-          if (_isRunning && generation == _generation) _probeRound(generation);
-        })
-        .catchError((Object error, StackTrace stackTrace) {
-          // A broken timer must not kill the loop silently: surface the error
-          // and stop so isRunning reflects reality.
-          if (generation == _generation) {
-            _isRunning = false;
-            _generation++;
-          }
-          _emitError(
-            PeerSyncError(
-              localNode,
-              SyncErrorType.protocolError,
-              'Probe round scheduling failed: $error',
-              occurredAt: DateTime.now(),
-              cause: error,
-            ),
-          );
-        });
-  }
-
-  void _probeRound(int generation) {
-    performProbeRound()
-        .catchError((error, stackTrace) {
-          _emitError(
-            PeerSyncError(
-              localNode,
-              SyncErrorType.protocolError,
-              'Probe round failed: $error',
-              occurredAt: DateTime.now(),
-              cause: error,
-            ),
-          );
-        })
-        .whenComplete(() => _scheduleNextProbeRound(generation));
   }
 
   /// Evaluates the outcome after a direct ping timeout + indirect phase.
