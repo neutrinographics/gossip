@@ -146,7 +146,9 @@ class InMemoryEntryRepository implements EntryRepository {
     final stored = _storage
         .putIfAbsent(channel, () => {})
         .putIfAbsent(stream, () => []);
-    final seen = <(NodeId, int)>{for (final e in stored) (e.author, e.sequence)};
+    final seen = <(NodeId, int)>{
+      for (final e in stored) (e.author, e.sequence),
+    };
     for (final entry in entries) {
       if (!seen.add((entry.author, entry.sequence))) {
         throw StateError(
@@ -324,5 +326,4 @@ class InMemoryEntryRepository implements EntryRepository {
         ? entries.last.timestamp
         : null;
   }
-
 }

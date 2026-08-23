@@ -57,22 +57,24 @@ void main() {
   final channelId = ChannelId('ch1');
   final localNode = NodeId('local');
 
-  test('a failed save does not leave the aggregate visible in the cache',
-      () async {
-    final inner = _PersistentishInner();
-    final caching = CachingChannelRepository(inner);
-    final channel = ChannelAggregate(id: channelId, localNode: localNode);
+  test(
+    'a failed save does not leave the aggregate visible in the cache',
+    () async {
+      final inner = _PersistentishInner();
+      final caching = CachingChannelRepository(inner);
+      final channel = ChannelAggregate(id: channelId, localNode: localNode);
 
-    inner.failNextSave = true;
-    await expectLater(caching.save(channel), throwsStateError);
+      inner.failNextSave = true;
+      await expectLater(caching.save(channel), throwsStateError);
 
-    expect(
-      await caching.findById(channelId),
-      isNull,
-      reason: 'cache and store must agree: the save failed',
-    );
-    expect(await caching.exists(channelId), isFalse);
-  });
+      expect(
+        await caching.findById(channelId),
+        isNull,
+        reason: 'cache and store must agree: the save failed',
+      );
+      expect(await caching.exists(channelId), isFalse);
+    },
+  );
 
   test('findById on a cache miss completes', () async {
     // Regression: whenComplete(() => _inFlight.remove(id)) returned the
@@ -88,27 +90,29 @@ void main() {
     expect(loaded, isNull);
   });
 
-  test('concurrent cache misses resolve to a single aggregate instance',
-      () async {
-    final inner = _PersistentishInner();
-    final caching = CachingChannelRepository(inner);
-    final channel = ChannelAggregate(id: channelId, localNode: localNode);
-    await caching.save(channel);
-    // A fresh caching layer (e.g. after restart) with a warm inner store.
-    final cold = CachingChannelRepository(inner);
+  test(
+    'concurrent cache misses resolve to a single aggregate instance',
+    () async {
+      final inner = _PersistentishInner();
+      final caching = CachingChannelRepository(inner);
+      final channel = ChannelAggregate(id: channelId, localNode: localNode);
+      await caching.save(channel);
+      // A fresh caching layer (e.g. after restart) with a warm inner store.
+      final cold = CachingChannelRepository(inner);
 
-    final results = await Future.wait([
-      cold.findById(channelId),
-      cold.findById(channelId),
-    ]);
+      final results = await Future.wait([
+        cold.findById(channelId),
+        cold.findById(channelId),
+      ]);
 
-    expect(results[0], isNotNull);
-    expect(
-      identical(results[0], results[1]),
-      isTrue,
-      reason:
-          'two loaded instances break the in-place-mutation assumption '
-          'the identity map exists to protect',
-    );
-  });
+      expect(results[0], isNotNull);
+      expect(
+        identical(results[0], results[1]),
+        isTrue,
+        reason:
+            'two loaded instances break the in-place-mutation assumption '
+            'the identity map exists to protect',
+      );
+    },
+  );
 }

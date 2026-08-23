@@ -69,46 +69,48 @@ void main() {
       },
     );
 
-    test('auto-compaction is disabled when compactionInterval is null',
-        () async {
-      final timePort = InMemoryTimePort();
-      final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: InMemoryChannelRepository(),
-        peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
-        messagePort: InMemoryMessagePort(localNode, InMemoryMessageBus()),
-        timerPort: timePort,
-        config: const CoordinatorConfig(
-          gossipInterval: Duration(seconds: 100),
-          probeInterval: Duration(seconds: 100),
-          pingTimeout: Duration(seconds: 100),
-          startupGracePeriod: Duration.zero,
-          compactionInterval: null,
-        ),
-      );
-      await coordinator.start();
-      final channel = await coordinator.createChannel(channelId);
-      final stream = await channel.getOrCreateStream(
-        streamId,
-        retention: const CountBasedRetention(1),
-      );
-      for (var i = 0; i < 5; i++) {
-        await stream.append(Uint8List.fromList([i]));
-      }
+    test(
+      'auto-compaction is disabled when compactionInterval is null',
+      () async {
+        final timePort = InMemoryTimePort();
+        final coordinator = await Coordinator.create(
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          channelRepository: InMemoryChannelRepository(),
+          peerRepository: InMemoryPeerRepository(),
+          entryRepository: InMemoryEntryRepository(),
+          messagePort: InMemoryMessagePort(localNode, InMemoryMessageBus()),
+          timerPort: timePort,
+          config: const CoordinatorConfig(
+            gossipInterval: Duration(seconds: 100),
+            probeInterval: Duration(seconds: 100),
+            pingTimeout: Duration(seconds: 100),
+            startupGracePeriod: Duration.zero,
+            compactionInterval: null,
+          ),
+        );
+        await coordinator.start();
+        final channel = await coordinator.createChannel(channelId);
+        final stream = await channel.getOrCreateStream(
+          streamId,
+          retention: const CountBasedRetention(1),
+        );
+        for (var i = 0; i < 5; i++) {
+          await stream.append(Uint8List.fromList([i]));
+        }
 
-      await timePort.advance(const Duration(hours: 1));
-      for (var i = 0; i < 5; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
+        await timePort.advance(const Duration(hours: 1));
+        for (var i = 0; i < 5; i++) {
+          await Future<void>.delayed(Duration.zero);
+        }
 
-      expect(
-        (await stream.getAll()).length,
-        equals(5),
-        reason: 'null interval opts out of auto-compaction',
-      );
+        expect(
+          (await stream.getAll()).length,
+          equals(5),
+          reason: 'null interval opts out of auto-compaction',
+        );
 
-      await coordinator.dispose();
-    });
+        await coordinator.dispose();
+      },
+    );
   });
 }

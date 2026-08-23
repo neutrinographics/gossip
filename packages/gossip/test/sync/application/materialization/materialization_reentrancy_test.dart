@@ -106,7 +106,8 @@ void main() {
       expect(
         emissions.isNotEmpty && emissions.last == 2,
         isTrue,
-        reason: 'the stream must not end on a stale (regressed) state: '
+        reason:
+            'the stream must not end on a stale (regressed) state: '
             'emissions were $emissions',
       );
 

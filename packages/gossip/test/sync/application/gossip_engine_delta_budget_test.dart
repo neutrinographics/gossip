@@ -32,9 +32,7 @@ void main() {
     test(
       'handleDeltaRequest caps the encoded DeltaResponse under the budget',
       () async {
-        final h = GossipEngineTestHarness(
-          maxDeltaResponseBytes: 30 * 1024,
-        );
+        final h = GossipEngineTestHarness(maxDeltaResponseBytes: 30 * 1024);
         h.createChannel('ch1', streamIds: ['s1']);
 
         // 20 entries x 4KB: far more than one 30KB message can carry.
@@ -78,97 +76,87 @@ void main() {
       },
     );
 
-    test(
-      'truncated deltas converge over repeated request cycles',
-      () async {
-        final h = GossipEngineTestHarness(
-          maxDeltaResponseBytes: 30 * 1024,
+    test('truncated deltas converge over repeated request cycles', () async {
+      final h = GossipEngineTestHarness(maxDeltaResponseBytes: 30 * 1024);
+      h.createChannel('ch1', streamIds: ['s1']);
+
+      for (var i = 1; i <= 20; i++) {
+        await h.appendEntry(
+          channelId,
+          streamId,
+          entryOf('author-a', i, 1000 + i, 4 * 1024),
         );
-        h.createChannel('ch1', streamIds: ['s1']);
+      }
 
-        for (var i = 1; i <= 20; i++) {
-          await h.appendEntry(
-            channelId,
-            streamId,
-            entryOf('author-a', i, 1000 + i, 4 * 1024),
-          );
-        }
-
-        // Simulate the requester: re-request with an advanced version
-        // vector until the responder has nothing more to give.
-        final received = <LogEntry>[];
-        var since = <NodeId, int>{};
-        var pages = 0;
-        while (pages < 20) {
-          final response = await h.engine.handleDeltaRequest(
-            DeltaRequest(
-              sender: NodeId('peer1'),
-              channelId: channelId,
-              streamId: streamId,
-              since: VersionVector(Map.of(since)),
-            ),
-          );
-          if (response.entries.isEmpty) break;
-          pages++;
-          received.addAll(response.entries);
-          for (final e in response.entries) {
-            final current = since[e.author] ?? 0;
-            if (e.sequence > current) since[e.author] = e.sequence;
-          }
-        }
-
-        expect(received.length, equals(20));
-        expect(
-          pages,
-          greaterThan(1),
-          reason: '80KB of entries cannot arrive in a single 30KB page',
-        );
-      },
-    );
-
-    test(
-      'an entry that can never fit emits an error and does not block '
-      'other authors',
-      () async {
-        final h = GossipEngineTestHarness(
-          maxDeltaResponseBytes: 30 * 1024,
-        );
-        h.createChannel('ch1', streamIds: ['s1']);
-
-        // Author A's entry is oversized even alone (40KB raw payload);
-        // it sorts FIRST by timestamp.
-        final oversized = entryOf('author-a', 1, 500, 40 * 1024);
-        await h.appendEntry(channelId, streamId, oversized);
-        // Author B has small, deliverable entries with later timestamps.
-        final small = <LogEntry>[];
-        for (var i = 1; i <= 3; i++) {
-          final entry = entryOf('author-b', i, 1000 + i, 100);
-          small.add(entry);
-          await h.appendEntry(channelId, streamId, entry);
-        }
-
+      // Simulate the requester: re-request with an advanced version
+      // vector until the responder has nothing more to give.
+      final received = <LogEntry>[];
+      var since = <NodeId, int>{};
+      var pages = 0;
+      while (pages < 20) {
         final response = await h.engine.handleDeltaRequest(
           DeltaRequest(
             sender: NodeId('peer1'),
             channelId: channelId,
             streamId: streamId,
-            since: VersionVector.empty,
+            since: VersionVector(Map.of(since)),
           ),
         );
+        if (response.entries.isEmpty) break;
+        pages++;
+        received.addAll(response.entries);
+        for (final e in response.entries) {
+          final current = since[e.author] ?? 0;
+          if (e.sequence > current) since[e.author] = e.sequence;
+        }
+      }
 
-        expect(
-          response.entries.map((e) => e.author.value),
-          everyElement(equals('author-b')),
-          reason: 'the poison entry must not starve other authors',
-        );
-        expect(response.entries.length, equals(3));
-        expect(
-          h.errors,
-          isNotEmpty,
-          reason: 'an undeliverable entry must surface via ErrorCallback',
-        );
-      },
-    );
+      expect(received.length, equals(20));
+      expect(
+        pages,
+        greaterThan(1),
+        reason: '80KB of entries cannot arrive in a single 30KB page',
+      );
+    });
+
+    test('an entry that can never fit emits an error and does not block '
+        'other authors', () async {
+      final h = GossipEngineTestHarness(maxDeltaResponseBytes: 30 * 1024);
+      h.createChannel('ch1', streamIds: ['s1']);
+
+      // Author A's entry is oversized even alone (40KB raw payload);
+      // it sorts FIRST by timestamp.
+      final oversized = entryOf('author-a', 1, 500, 40 * 1024);
+      await h.appendEntry(channelId, streamId, oversized);
+      // Author B has small, deliverable entries with later timestamps.
+      final small = <LogEntry>[];
+      for (var i = 1; i <= 3; i++) {
+        final entry = entryOf('author-b', i, 1000 + i, 100);
+        small.add(entry);
+        await h.appendEntry(channelId, streamId, entry);
+      }
+
+      final response = await h.engine.handleDeltaRequest(
+        DeltaRequest(
+          sender: NodeId('peer1'),
+          channelId: channelId,
+          streamId: streamId,
+          since: VersionVector.empty,
+        ),
+      );
+
+      expect(
+        response.entries.map((e) => e.author.value),
+        everyElement(equals('author-b')),
+        reason: 'the poison entry must not starve other authors',
+      );
+      expect(response.entries.length, equals(3));
+      expect(
+        h.errors,
+        isNotEmpty,
+        reason: 'an undeliverable entry must surface via ErrorCallback',
+      );
+    });
   });
 
   group('GossipEngine pending delta request dedup', () {
@@ -213,32 +201,26 @@ void main() {
   });
 
   group('GossipEngine duplicate DeltaResponse handling', () {
-    test(
-      'a duplicate DeltaResponse does not re-emit EntriesMerged',
-      () async {
-        final h = GossipEngineTestHarness();
-        h.createChannel('ch1', streamIds: ['s1']);
+    test('a duplicate DeltaResponse does not re-emit EntriesMerged', () async {
+      final h = GossipEngineTestHarness();
+      h.createChannel('ch1', streamIds: ['s1']);
 
-        final response = DeltaResponse(
-          sender: NodeId('peer1'),
-          channelId: channelId,
-          streamId: streamId,
-          entries: [
-            entryOf('peer1', 1, 1001, 10),
-            entryOf('peer1', 2, 1002, 10),
-          ],
-        );
+      final response = DeltaResponse(
+        sender: NodeId('peer1'),
+        channelId: channelId,
+        streamId: streamId,
+        entries: [entryOf('peer1', 1, 1001, 10), entryOf('peer1', 2, 1002, 10)],
+      );
 
-        await h.engine.handleDeltaResponse(response);
-        await h.engine.handleDeltaResponse(response);
+      await h.engine.handleDeltaResponse(response);
+      await h.engine.handleDeltaResponse(response);
 
-        expect(
-          h.mergedEntries.length,
-          equals(1),
-          reason: 'already-stored entries must not surface as merged again',
-        );
-      },
-    );
+      expect(
+        h.mergedEntries.length,
+        equals(1),
+        reason: 'already-stored entries must not surface as merged again',
+      );
+    });
 
     test(
       'a partially overlapping DeltaResponse surfaces only the new entries',

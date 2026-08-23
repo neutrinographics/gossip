@@ -29,32 +29,29 @@ void main() {
       );
     }
 
-    test(
-      'ChannelService errors surface on coordinator.errors '
-      '(membership op on a removed channel)',
-      () async {
-        final coordinator = await createCoordinator();
-        final channelId = ChannelId('channel1');
-        final channel = await coordinator.createChannel(channelId);
+    test('ChannelService errors surface on coordinator.errors '
+        '(membership op on a removed channel)', () async {
+      final coordinator = await createCoordinator();
+      final channelId = ChannelId('channel1');
+      final channel = await coordinator.createChannel(channelId);
 
-        final errors = <SyncError>[];
-        final sub = coordinator.errors.listen(errors.add);
+      final errors = <SyncError>[];
+      final sub = coordinator.errors.listen(errors.add);
 
-        // Remove the channel behind the held facade, then use the stale
-        // facade. The service emits a ChannelSyncError; before the fix it
-        // went to a null callback and vanished.
-        await coordinator.removeChannel(channelId);
-        await channel.addMember(NodeId('peer-1'));
+      // Remove the channel behind the held facade, then use the stale
+      // facade. The service emits a ChannelSyncError; before the fix it
+      // went to a null callback and vanished.
+      await coordinator.removeChannel(channelId);
+      await channel.addMember(NodeId('peer-1'));
 
-        // Let the broadcast stream deliver.
-        await Future<void>.delayed(Duration.zero);
+      // Let the broadcast stream deliver.
+      await Future<void>.delayed(Duration.zero);
 
-        expect(errors, isNotEmpty, reason: 'error should reach the app');
-        expect(errors.first, isA<ChannelSyncError>());
+      expect(errors, isNotEmpty, reason: 'error should reach the app');
+      expect(errors.first, isA<ChannelSyncError>());
 
-        await sub.cancel();
-        await coordinator.dispose();
-      },
-    );
+      await sub.cancel();
+      await coordinator.dispose();
+    });
   });
 }

@@ -52,10 +52,7 @@ void main() {
     test('with an onEvent sink, events forward immediately and do not '
         'buffer', () {
       final forwarded = <DomainEvent>[];
-      final sinked = PeerRegistry(
-        localNode: localNode,
-        onEvent: forwarded.add,
-      );
+      final sinked = PeerRegistry(localNode: localNode, onEvent: forwarded.add);
 
       sinked.addPeer(NodeId('peer1'), occurredAt: DateTime.now());
       sinked.updatePeerStatus(

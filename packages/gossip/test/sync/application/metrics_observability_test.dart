@@ -43,44 +43,46 @@ void main() {
   final codec = MembershipMessageCodec();
 
   group('M4: single metrics recording point', () {
-    test('an incoming message is counted once, not once per listener',
-        () async {
-      final localNode = NodeId('local');
-      final peerId = NodeId('peer1');
-      final bus = InMemoryMessageBus();
-      final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: InMemoryChannelRepository(),
-        peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
-        messagePort: InMemoryMessagePort(localNode, bus),
-        timerPort: InMemoryTimePort(),
-      );
-      await coordinator.addPeer(peerId);
-      await coordinator.start();
+    test(
+      'an incoming message is counted once, not once per listener',
+      () async {
+        final localNode = NodeId('local');
+        final peerId = NodeId('peer1');
+        final bus = InMemoryMessageBus();
+        final coordinator = await Coordinator.create(
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          channelRepository: InMemoryChannelRepository(),
+          peerRepository: InMemoryPeerRepository(),
+          entryRepository: InMemoryEntryRepository(),
+          messagePort: InMemoryMessagePort(localNode, bus),
+          timerPort: InMemoryTimePort(),
+        );
+        await coordinator.addPeer(peerId);
+        await coordinator.start();
 
-      // One SWIM ping from the peer. Both the gossip engine and the
-      // failure detector subscribe to the same incoming stream.
-      final peerPort = InMemoryMessagePort(peerId, bus);
-      await peerPort.send(
-        localNode,
-        codec.encode(Ping(sender: peerId, sequence: 1)),
-      );
-      await Future.delayed(Duration.zero);
-      await Future.delayed(Duration.zero);
+        // One SWIM ping from the peer. Both the gossip engine and the
+        // failure detector subscribe to the same incoming stream.
+        final peerPort = InMemoryMessagePort(peerId, bus);
+        await peerPort.send(
+          localNode,
+          codec.encode(Ping(sender: peerId, sequence: 1)),
+        );
+        await Future.delayed(Duration.zero);
+        await Future.delayed(Duration.zero);
 
-      final registry = coordinator.failureDetectorForTesting!.peerRegistry;
-      expect(
-        registry.getPeer(peerId)!.metrics.messagesReceived,
-        equals(1),
-        reason:
-            'both engines recording the same message doubles every rate '
-            'metric an application might throttle on',
-      );
+        final registry = coordinator.failureDetectorForTesting!.peerRegistry;
+        expect(
+          registry.getPeer(peerId)!.metrics.messagesReceived,
+          equals(1),
+          reason:
+              'both engines recording the same message doubles every rate '
+              'metric an application might throttle on',
+        );
 
-      await peerPort.close();
-      await coordinator.dispose();
-    });
+        await peerPort.close();
+        await coordinator.dispose();
+      },
+    );
   });
 
   group('L5: clock persistence failures surface', () {

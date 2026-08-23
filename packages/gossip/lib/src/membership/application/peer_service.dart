@@ -35,11 +35,7 @@ class PeerService {
   /// through this callback for observability.
   final ErrorCallback? onError;
 
-  PeerService({
-    required this.registry,
-    this.repository,
-    this.onError,
-  });
+  PeerService({required this.registry, this.repository, this.onError});
 
   /// Per-peer chain of pending persistence writes.
   ///

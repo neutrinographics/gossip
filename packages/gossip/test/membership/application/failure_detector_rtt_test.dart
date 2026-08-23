@@ -145,51 +145,54 @@ void main() {
       });
     });
 
-    test('rejects a direct-probe Ack from a peer other than the target', () async {
-      final hCustom = FailureDetectorTestHarness(
-        pingTimeout: const Duration(milliseconds: 500),
-      );
-      final peerA = hCustom.addPeer('peerA');
-      final peerB = hCustom.addPeer('peerB');
+    test(
+      'rejects a direct-probe Ack from a peer other than the target',
+      () async {
+        final hCustom = FailureDetectorTestHarness(
+          pingTimeout: const Duration(milliseconds: 500),
+        );
+        final peerA = hCustom.addPeer('peerA');
+        final peerB = hCustom.addPeer('peerB');
 
-      hCustom.startListening();
+        hCustom.startListening();
 
-      final pingFuture = hCustom.expectPing(peerA);
-      final probeFuture = hCustom.detector.probeNewPeer(peerA.id);
-      final ping = await pingFuture;
+        final pingFuture = hCustom.expectPing(peerA);
+        final probeFuture = hCustom.detector.probeNewPeer(peerA.id);
+        final ping = await pingFuture;
 
-      await hCustom.timePort.advance(const Duration(milliseconds: 100));
+        await hCustom.timePort.advance(const Duration(milliseconds: 100));
 
-      // Ack from the WRONG peer with a colliding sequence. Direct probes
-      // require sender == target (forwarded Acks are only legal in the
-      // indirect phase); accepting this would mark a possibly-dead peerA
-      // alive and pollute its RTT estimate with peerB's sample.
-      final ack = Ack(sender: peerB.id, sequence: ping.sequence);
-      final peerBPort = InMemoryMessagePort(peerB.id, hCustom.bus);
-      await peerBPort.send(hCustom.localNode, hCustom.codec.encode(ack));
-      await hCustom.flush();
+        // Ack from the WRONG peer with a colliding sequence. Direct probes
+        // require sender == target (forwarded Acks are only legal in the
+        // indirect phase); accepting this would mark a possibly-dead peerA
+        // alive and pollute its RTT estimate with peerB's sample.
+        final ack = Ack(sender: peerB.id, sequence: ping.sequence);
+        final peerBPort = InMemoryMessagePort(peerB.id, hCustom.bus);
+        await peerBPort.send(hCustom.localNode, hCustom.codec.encode(ack));
+        await hCustom.flush();
 
-      // The foreign Ack must not confirm the probe.
-      await hCustom.timePort.advance(const Duration(milliseconds: 401));
-      expect(await probeFuture, isFalse);
+        // The foreign Ack must not confirm the probe.
+        await hCustom.timePort.advance(const Duration(milliseconds: 401));
+        expect(await probeFuture, isFalse);
 
-      final peerAMetrics = hCustom.peerRegistry.getPeer(peerA.id)!.metrics;
-      expect(
-        peerAMetrics.rttEstimate,
-        isNull,
-        reason: 'a foreign Ack must not feed the target\'s RTT estimate',
-      );
+        final peerAMetrics = hCustom.peerRegistry.getPeer(peerA.id)!.metrics;
+        expect(
+          peerAMetrics.rttEstimate,
+          isNull,
+          reason: 'a foreign Ack must not feed the target\'s RTT estimate',
+        );
 
-      final peerBMetrics = hCustom.peerRegistry.getPeer(peerB.id)!.metrics;
-      expect(
-        peerBMetrics.rttEstimate,
-        isNull,
-        reason: 'an unmatched Ack sender gets contact credit, not RTT',
-      );
+        final peerBMetrics = hCustom.peerRegistry.getPeer(peerB.id)!.metrics;
+        expect(
+          peerBMetrics.rttEstimate,
+          isNull,
+          reason: 'an unmatched Ack sender gets contact credit, not RTT',
+        );
 
-      await peerBPort.close();
-      hCustom.stopListening();
-    });
+        await peerBPort.close();
+        hCustom.stopListening();
+      },
+    );
 
     test(
       'records RTT for late Ack that arrives during indirect phase',

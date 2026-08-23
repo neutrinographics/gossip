@@ -18,14 +18,18 @@ void main() {
     );
 
     group('retainsAll', () {
-      test('KeepAllRetention.retainsAll is true (auto-compaction skips it)',
-          () {
-        expect(const KeepAllRetention().retainsAll, isTrue);
-      });
+      test(
+        'KeepAllRetention.retainsAll is true (auto-compaction skips it)',
+        () {
+          expect(const KeepAllRetention().retainsAll, isTrue);
+        },
+      );
 
       test('pruning policies report retainsAll false', () {
-        expect(const TimeBasedRetention(Duration(seconds: 5)).retainsAll,
-            isFalse);
+        expect(
+          const TimeBasedRetention(Duration(seconds: 5)).retainsAll,
+          isFalse,
+        );
         expect(const CountBasedRetention(1).retainsAll, isFalse);
         expect(
           const CompositeRetention([CountBasedRetention(1)]).retainsAll,
@@ -33,8 +37,7 @@ void main() {
         );
       });
 
-      test('a composite containing a retain-all policy retains all (union)',
-          () {
+      test('a composite containing a retain-all policy retains all (union)', () {
         // Union semantics: if any sub-policy keeps everything, nothing prunes.
         expect(
           const CompositeRetention([

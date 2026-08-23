@@ -49,15 +49,10 @@ class PeerRegistry {
   final void Function(DomainEvent)? onEvent;
 
   /// Creates a [PeerRegistry] for the given local node.
-  PeerRegistry({
-    required this.localNode,
-    this.onEvent,
-  });
+  PeerRegistry({required this.localNode, this.onEvent});
 
   /// Private constructor for reconstitute — no events.
-  PeerRegistry._reconstitute({
-    required this.localNode,
-  }) : onEvent = null;
+  PeerRegistry._reconstitute({required this.localNode}) : onEvent = null;
 
   /// Restores a previously persisted peer registry.
   ///
@@ -336,7 +331,6 @@ class PeerRegistry {
     }
     _peers[id] = peer.copyWith(metrics: peer.metrics.recordRttSample(sample));
   }
-
 
   /// Increments the failed probe count for a peer.
   ///

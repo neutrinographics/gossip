@@ -148,9 +148,7 @@ void main() {
         // Let several intervals elapse; a single loop reschedules itself
         // exactly once per interval.
         for (var i = 0; i < 3; i++) {
-          // 130ms > the 100ms interval + its max +20% jitter, so the round
-        // always fires (but not far enough to fire the reschedule too).
-        await h.timePort.advance(const Duration(milliseconds: 130));
+          await h.timePort.advance(const Duration(milliseconds: 130));
           await h.flush(3);
           expect(
             h.timePort.pendingDelayCount,
@@ -163,45 +161,42 @@ void main() {
       },
     );
 
-    test(
-      'delay failure emits an error and stops the loop instead of dying '
-      'silently',
-      () async {
-        final timePort = FailingDelayTimePort();
-        final localNode = NodeId('local');
-        final errors = <SyncError>[];
-        final engine = GossipEngine(
-          codec: SyncMessageCodec(),
-          localNode: localNode,
-          peerDirectory: MembershipPeerDirectory(
-            PeerRegistry(localNode: localNode),
-          ),
-          entryRepository: InMemoryEntryRepository(),
-          timePort: timePort,
-          messagePort: InMemoryMessagePort(localNode, InMemoryMessageBus()),
-          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-          onError: errors.add,
-          gossipInterval: const Duration(milliseconds: 100),
-        );
+    test('delay failure emits an error and stops the loop instead of dying '
+        'silently', () async {
+      final timePort = FailingDelayTimePort();
+      final localNode = NodeId('local');
+      final errors = <SyncError>[];
+      final engine = GossipEngine(
+        codec: SyncMessageCodec(),
+        localNode: localNode,
+        peerDirectory: MembershipPeerDirectory(
+          PeerRegistry(localNode: localNode),
+        ),
+        entryRepository: InMemoryEntryRepository(),
+        timePort: timePort,
+        messagePort: InMemoryMessagePort(localNode, InMemoryMessageBus()),
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+        onError: errors.add,
+        gossipInterval: const Duration(milliseconds: 100),
+      );
 
-        timePort.failNextDelay = true;
-        engine.start();
+      timePort.failNextDelay = true;
+      engine.start();
 
-        // Let the failed delay future propagate.
-        await Future.delayed(Duration.zero);
-        await Future.delayed(Duration.zero);
+      // Let the failed delay future propagate.
+      await Future.delayed(Duration.zero);
+      await Future.delayed(Duration.zero);
 
-        expect(
-          errors,
-          isNotEmpty,
-          reason: 'a scheduling failure must surface via ErrorCallback',
-        );
-        expect(
-          engine.isRunning,
-          isFalse,
-          reason: 'a dead loop must not report itself as running',
-        );
-      },
-    );
+      expect(
+        errors,
+        isNotEmpty,
+        reason: 'a scheduling failure must surface via ErrorCallback',
+      );
+      expect(
+        engine.isRunning,
+        isFalse,
+        reason: 'a dead loop must not report itself as running',
+      );
+    });
   });
 }

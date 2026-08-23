@@ -343,9 +343,7 @@ class ChannelService {
     if (_disposed) {
       // Durable-but-orphaned otherwise: no engine to sync the entry, its
       // events dropped at the coordinator's closed controllers.
-      throw StateError(
-        'Cannot append: the coordinator has been disposed',
-      );
+      throw StateError('Cannot append: the coordinator has been disposed');
     }
     final limit = maxPayloadBytes;
     if (limit != null && payload.length > limit) {
@@ -654,16 +652,11 @@ class ChannelService {
     final now = await takeTimestamp();
     final survivors = retention.compact(entries, now);
     final survivorIds = survivors.map((e) => e.id).toSet();
-    final toPrune =
-        entries.where((e) => !survivorIds.contains(e.id)).toList();
+    final toPrune = entries.where((e) => !survivorIds.contains(e.id)).toList();
     if (toPrune.isEmpty) return null;
 
     final oldVersion = await getVersionVector(channelId, streamId);
-    await removeEntries(
-      channelId,
-      streamId,
-      toPrune.map((e) => e.id).toList(),
-    );
+    await removeEntries(channelId, streamId, toPrune.map((e) => e.id).toList());
     final newVersion = await getVersionVector(channelId, streamId);
 
     if (resetMaterializers) {

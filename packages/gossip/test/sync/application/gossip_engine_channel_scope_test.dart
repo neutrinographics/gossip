@@ -31,29 +31,31 @@ void main() {
   );
 
   group('ingestion scope', () {
-    test('a delta response for a channel we do not have is not stored',
-        () async {
-      final h = GossipEngineTestHarness();
-      final peer = h.addPeer('peer1');
-      h.createChannel('ours', streamIds: ['s1']);
+    test(
+      'a delta response for a channel we do not have is not stored',
+      () async {
+        final h = GossipEngineTestHarness();
+        final peer = h.addPeer('peer1');
+        h.createChannel('ours', streamIds: ['s1']);
 
-      await h.engine.handleDeltaResponse(
-        DeltaResponse(
-          sender: peer.id,
-          channelId: otherChannel,
-          streamId: streamId,
-          entries: [entryOf(1), entryOf(2)],
-        ),
-      );
+        await h.engine.handleDeltaResponse(
+          DeltaResponse(
+            sender: peer.id,
+            channelId: otherChannel,
+            streamId: streamId,
+            entries: [entryOf(1), entryOf(2)],
+          ),
+        );
 
-      expect(
-        await h.entryRepository.entryCount(otherChannel, streamId),
-        equals(0),
-        reason: 'a non-member must not accumulate phantom channel data',
-      );
-      expect(h.mergedEntries, isEmpty);
-      expect(h.errors, isEmpty, reason: 'routine under partial overlap');
-    });
+        expect(
+          await h.entryRepository.entryCount(otherChannel, streamId),
+          equals(0),
+          reason: 'a non-member must not accumulate phantom channel data',
+        );
+        expect(h.mergedEntries, isEmpty);
+        expect(h.errors, isEmpty, reason: 'routine under partial overlap');
+      },
+    );
 
     test(
       'a delta response for a stream we have not created is not stored',
@@ -84,8 +86,7 @@ void main() {
       },
     );
 
-    test('a delta response for our channel and stream still merges',
-        () async {
+    test('a delta response for our channel and stream still merges', () async {
       final h = GossipEngineTestHarness();
       final peer = h.addPeer('peer1');
       h.createChannel('ours', streamIds: ['s1']);

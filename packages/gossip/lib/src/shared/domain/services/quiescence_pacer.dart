@@ -30,8 +30,9 @@ class QuiescencePacer {
 
   /// The paced interval for the loop's current latency-derived [base].
   Duration apply(Duration base) {
-    final scaled =
-        Duration(microseconds: (base.inMicroseconds * _multiplier).round());
+    final scaled = Duration(
+      microseconds: (base.inMicroseconds * _multiplier).round(),
+    );
     return scaled > ceiling ? ceiling : scaled;
   }
 }

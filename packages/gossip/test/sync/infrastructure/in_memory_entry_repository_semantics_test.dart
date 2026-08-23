@@ -42,25 +42,27 @@ void main() {
       expect(await repo.entryCount(channel, stream), equals(1));
     });
 
-    test('appendAll is all-or-nothing when the batch contains a duplicate',
-        () async {
-      final repo = InMemoryEntryRepository();
-      await repo.append(channel, stream, entryOf('a', 1, 1000));
+    test(
+      'appendAll is all-or-nothing when the batch contains a duplicate',
+      () async {
+        final repo = InMemoryEntryRepository();
+        await repo.append(channel, stream, entryOf('a', 1, 1000));
 
-      await expectLater(
-        () => repo.appendAll(channel, stream, [
-          entryOf('a', 2, 2000),
-          entryOf('a', 1, 1000), // duplicate
-          entryOf('a', 3, 3000),
-        ]),
-        throwsA(isA<StateError>()),
-      );
-      expect(
-        await repo.entryCount(channel, stream),
-        equals(1),
-        reason: 'contract: if any entry fails validation, none are added',
-      );
-    });
+        await expectLater(
+          () => repo.appendAll(channel, stream, [
+            entryOf('a', 2, 2000),
+            entryOf('a', 1, 1000), // duplicate
+            entryOf('a', 3, 3000),
+          ]),
+          throwsA(isA<StateError>()),
+        );
+        expect(
+          await repo.entryCount(channel, stream),
+          equals(1),
+          reason: 'contract: if any entry fails validation, none are added',
+        );
+      },
+    );
   });
 
   group('InMemoryEntryRepository compaction semantics', () {
@@ -101,10 +103,7 @@ void main() {
       await repo.appendAll(channel, stream, entries);
 
       // Remove the NEWEST entries (seq 4, 5).
-      await repo.removeEntries(channel, stream, [
-        entries[3].id,
-        entries[4].id,
-      ]);
+      await repo.removeEntries(channel, stream, [entries[3].id, entries[4].id]);
 
       expect(
         await repo.latestSequence(channel, stream, NodeId('a')),
@@ -166,9 +165,10 @@ void main() {
           hasLength(1),
           reason: 'exactly one call must win',
         );
-        final stored = (await repo.getAll(channel, stream))
-            .map((e) => e.sequence)
-            .toList();
+        final stored = (await repo.getAll(
+          channel,
+          stream,
+        )).map((e) => e.sequence).toList();
         final winner = results[0] == null ? batch1 : batch2;
         expect(
           stored,
@@ -197,22 +197,24 @@ void main() {
       expect(floor.entries, isEmpty);
     });
 
-    test('removeEntries raises the floor to the highest removed sequence',
-        () async {
-      final repo = await repoWith('a', 5);
-      final all = await repo.getAll(channel, stream);
-      await repo.removeEntries(
-        channel,
-        stream,
-        all.take(3).map((e) => e.id).toList(), // seqs 1..3
-      );
+    test(
+      'removeEntries raises the floor to the highest removed sequence',
+      () async {
+        final repo = await repoWith('a', 5);
+        final all = await repo.getAll(channel, stream);
+        await repo.removeEntries(
+          channel,
+          stream,
+          all.take(3).map((e) => e.id).toList(), // seqs 1..3
+        );
 
-      final floor = await repo.getCompactionFloor(channel, stream);
-      expect(floor[NodeId('a')], equals(3));
-      // High-water mark unaffected (existing invariant).
-      final vv = await repo.getVersionVector(channel, stream);
-      expect(vv[NodeId('a')], equals(5));
-    });
+        final floor = await repo.getCompactionFloor(channel, stream);
+        expect(floor[NodeId('a')], equals(3));
+        // High-water mark unaffected (existing invariant).
+        final vv = await repo.getVersionVector(channel, stream);
+        expect(vv[NodeId('a')], equals(5));
+      },
+    );
 
     test('the floor is monotonic across removals', () async {
       final repo = await repoWith('a', 5);
@@ -253,20 +255,22 @@ void main() {
       );
     });
 
-    test('adoptVersionFloor is monotonic (adopting lower is a no-op)',
-        () async {
-      final repo = await repoWith('a', 5);
-      await repo.adoptVersionFloor(
-        channel,
-        stream,
-        VersionVector({NodeId('a'): 2}),
-      );
+    test(
+      'adoptVersionFloor is monotonic (adopting lower is a no-op)',
+      () async {
+        final repo = await repoWith('a', 5);
+        await repo.adoptVersionFloor(
+          channel,
+          stream,
+          VersionVector({NodeId('a'): 2}),
+        );
 
-      final vv = await repo.getVersionVector(channel, stream);
-      expect(vv[NodeId('a')], equals(5));
-      final floor = await repo.getCompactionFloor(channel, stream);
-      expect(floor.entries, isEmpty, reason: 'nothing was ever pruned');
-    });
+        final vv = await repo.getVersionVector(channel, stream);
+        expect(vv[NodeId('a')], equals(5));
+        final floor = await repo.getCompactionFloor(channel, stream);
+        expect(floor.entries, isEmpty, reason: 'nothing was ever pruned');
+      },
+    );
 
     test('clearStream resets the floor with the stream identity', () async {
       final repo = await repoWith('a', 3);

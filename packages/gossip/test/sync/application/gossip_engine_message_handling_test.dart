@@ -49,9 +49,7 @@ void main() {
     test('handleDigestRequest returns our digest for the channel', () async {
       final localNode = NodeId('local');
       final peerNode = NodeId('peer-1');
-      final registry = PeerRegistry(
-        localNode: localNode,
-      );
+      final registry = PeerRegistry(localNode: localNode);
       final entryRepo = InMemoryEntryRepository();
       final engine = createEngine(localNode, registry, entryRepo);
 
@@ -103,9 +101,7 @@ void main() {
       () async {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
         final engine = createEngine(localNode, registry, entryRepo);
 
@@ -144,7 +140,10 @@ void main() {
             ChannelDigest(
               channelId: channelId,
               streams: [
-                StreamDigest(streamId: StreamId('s1'), version: VersionVector.empty),
+                StreamDigest(
+                  streamId: StreamId('s1'),
+                  version: VersionVector.empty,
+                ),
               ],
             ),
           ],
@@ -166,9 +165,7 @@ void main() {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
         final streamId = StreamId('stream-1');
@@ -224,9 +221,7 @@ void main() {
       final localNode = NodeId('local');
       final peerNode = NodeId('peer-1');
       final author1 = NodeId('author-1');
-      final registry = PeerRegistry(
-        localNode: localNode,
-      );
+      final registry = PeerRegistry(localNode: localNode);
       final entryRepo = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
       final streamId = StreamId('stream-1');
@@ -273,9 +268,7 @@ void main() {
       final localNode = NodeId('local');
       final peerNode = NodeId('peer-1');
       final author1 = NodeId('author-1');
-      final registry = PeerRegistry(
-        localNode: localNode,
-      );
+      final registry = PeerRegistry(localNode: localNode);
       final entryRepo = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
       final streamId = StreamId('stream-1');
@@ -321,9 +314,7 @@ void main() {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
         final streamId = StreamId('stream-1');
@@ -377,9 +368,7 @@ void main() {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
         final streamId = StreamId('stream-1');
@@ -435,9 +424,7 @@ void main() {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
         final streamId1 = StreamId('stream-1');
@@ -517,9 +504,7 @@ void main() {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
         final streamId = StreamId('stream-1');
@@ -574,9 +559,7 @@ void main() {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
         final streamId = StreamId('stream-1');
@@ -661,9 +644,7 @@ void main() {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
         final streamId = StreamId('stream-1');
@@ -735,9 +716,7 @@ void main() {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
         final streamId = StreamId('stream-1');
@@ -825,9 +804,7 @@ void main() {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
         final channelId1 = ChannelId('channel-1');
         final channelId2 = ChannelId('channel-2');
@@ -913,9 +890,7 @@ void main() {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer-1');
         final author1 = NodeId('author-1');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
         final channelId = ChannelId('channel-1');
         final knownStream = StreamId('known-stream');

@@ -76,43 +76,45 @@ void main() {
       expect(h.engine.outstandingPullCount, equals(0));
     });
 
-    test('mergedBatchCount increments only when new entries are merged',
-        () async {
-      final h = GossipEngineTestHarness();
-      final peer = h.addPeer('peerA');
-      final author = NodeId('author-1');
-      h.createChannel('ch1', streamIds: ['s1']);
+    test(
+      'mergedBatchCount increments only when new entries are merged',
+      () async {
+        final h = GossipEngineTestHarness();
+        final peer = h.addPeer('peerA');
+        final author = NodeId('author-1');
+        h.createChannel('ch1', streamIds: ['s1']);
 
-      expect(h.engine.mergedBatchCount, equals(0));
+        expect(h.engine.mergedBatchCount, equals(0));
 
-      // An empty response merges nothing.
-      await h.engine.handleDeltaResponse(
-        DeltaResponse(
-          sender: peer.id,
-          channelId: channelId,
-          streamId: streamId,
-          entries: const [],
-        ),
-      );
-      expect(h.engine.mergedBatchCount, equals(0));
+        // An empty response merges nothing.
+        await h.engine.handleDeltaResponse(
+          DeltaResponse(
+            sender: peer.id,
+            channelId: channelId,
+            streamId: streamId,
+            entries: const [],
+          ),
+        );
+        expect(h.engine.mergedBatchCount, equals(0));
 
-      // A response with a fresh contiguous entry counts as one merged batch.
-      await h.engine.handleDeltaResponse(
-        DeltaResponse(
-          sender: peer.id,
-          channelId: channelId,
-          streamId: streamId,
-          entries: [
-            LogEntry(
-              author: author,
-              sequence: 1,
-              timestamp: Hlc(1000, 0),
-              payload: Uint8List.fromList([1]),
-            ),
-          ],
-        ),
-      );
-      expect(h.engine.mergedBatchCount, equals(1));
-    });
+        // A response with a fresh contiguous entry counts as one merged batch.
+        await h.engine.handleDeltaResponse(
+          DeltaResponse(
+            sender: peer.id,
+            channelId: channelId,
+            streamId: streamId,
+            entries: [
+              LogEntry(
+                author: author,
+                sequence: 1,
+                timestamp: Hlc(1000, 0),
+                payload: Uint8List.fromList([1]),
+              ),
+            ],
+          ),
+        );
+        expect(h.engine.mergedBatchCount, equals(1));
+      },
+    );
   });
 }

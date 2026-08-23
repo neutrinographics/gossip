@@ -60,9 +60,7 @@ void main() {
         // Let several intervals elapse; a single loop reschedules itself
         // exactly once per interval.
         for (var i = 0; i < 3; i++) {
-          // 130ms > the 100ms interval + its max +20% jitter, so the round
-        // always fires (but not far enough to fire the reschedule too).
-        await h.timePort.advance(const Duration(milliseconds: 130));
+          await h.timePort.advance(const Duration(milliseconds: 130));
           await flushMicrotasks();
           expect(
             h.timePort.pendingDelayCount,
@@ -75,45 +73,40 @@ void main() {
       },
     );
 
-    test(
-      'delay failure emits an error and stops the loop instead of dying '
-      'silently',
-      () async {
-        final timePort = FailingDelayTimePort();
-        final localNode = NodeId('local');
-        final errors = <SyncError>[];
-        final detector = FailureDetector(
-          codec: MembershipMessageCodec(),
-          localNode: localNode,
-          peerRegistry: PeerRegistry(
-            localNode: localNode,
-          ),
-          timePort: timePort,
-          messagePort: InMemoryMessagePort(localNode, InMemoryMessageBus()),
-          onError: errors.add,
-          probeInterval: const Duration(milliseconds: 100),
-          pingTimeout: const Duration(milliseconds: 50),
-        );
+    test('delay failure emits an error and stops the loop instead of dying '
+        'silently', () async {
+      final timePort = FailingDelayTimePort();
+      final localNode = NodeId('local');
+      final errors = <SyncError>[];
+      final detector = FailureDetector(
+        codec: MembershipMessageCodec(),
+        localNode: localNode,
+        peerRegistry: PeerRegistry(localNode: localNode),
+        timePort: timePort,
+        messagePort: InMemoryMessagePort(localNode, InMemoryMessageBus()),
+        onError: errors.add,
+        probeInterval: const Duration(milliseconds: 100),
+        pingTimeout: const Duration(milliseconds: 50),
+      );
 
-        timePort.failNextDelay = true;
-        detector.start();
+      timePort.failNextDelay = true;
+      detector.start();
 
-        // Let the failed delay future propagate.
-        await Future.delayed(Duration.zero);
-        await Future.delayed(Duration.zero);
+      // Let the failed delay future propagate.
+      await Future.delayed(Duration.zero);
+      await Future.delayed(Duration.zero);
 
-        expect(
-          errors,
-          isNotEmpty,
-          reason: 'a scheduling failure must surface via ErrorCallback',
-        );
-        expect(
-          detector.isRunning,
-          isFalse,
-          reason: 'a dead loop must not report itself as running',
-        );
-      },
-    );
+      expect(
+        errors,
+        isNotEmpty,
+        reason: 'a scheduling failure must surface via ErrorCallback',
+      );
+      expect(
+        detector.isRunning,
+        isFalse,
+        reason: 'a dead loop must not report itself as running',
+      );
+    });
   });
 }
 

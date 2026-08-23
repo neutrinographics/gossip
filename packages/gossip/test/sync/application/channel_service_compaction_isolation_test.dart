@@ -26,65 +26,62 @@ class _ThrowingRetention implements RetentionPolicy {
 }
 
 void main() {
-  test(
-    'compactAll isolates a throwing stream: later streams still compact '
-    'and the failure is reported (COR3-15)',
-    () async {
-      final localNode = NodeId('local');
-      final channelId = ChannelId('ch1');
-      final poison = StreamId('poison');
-      final healthy = StreamId('healthy');
-      final channelRepo = InMemoryChannelRepository();
-      final entryRepo = InMemoryEntryRepository();
-      final errors = <SyncError>[];
+  test('compactAll isolates a throwing stream: later streams still compact '
+      'and the failure is reported (COR3-15)', () async {
+    final localNode = NodeId('local');
+    final channelId = ChannelId('ch1');
+    final poison = StreamId('poison');
+    final healthy = StreamId('healthy');
+    final channelRepo = InMemoryChannelRepository();
+    final entryRepo = InMemoryEntryRepository();
+    final errors = <SyncError>[];
 
-      final service = ChannelService(
-        localNode: localNode,
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: channelRepo,
-        entryRepository: entryRepo,
-        onError: errors.add,
-      );
+    final service = ChannelService(
+      localNode: localNode,
+      localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+      channelRepository: channelRepo,
+      entryRepository: entryRepo,
+      onError: errors.add,
+    );
 
-      final channel = ChannelAggregate(id: channelId, localNode: localNode);
-      // The poison stream is created first so it compacts first.
-      channel.createStream(
-        poison,
-        _ThrowingRetention(),
-        occurredAt: DateTime.now(),
-      );
-      channel.createStream(
-        healthy,
-        const CountBasedRetention(1),
-        occurredAt: DateTime.now(),
-      );
-      await channelRepo.save(channel);
+    final channel = ChannelAggregate(id: channelId, localNode: localNode);
+    // The poison stream is created first so it compacts first.
+    channel.createStream(
+      poison,
+      _ThrowingRetention(),
+      occurredAt: DateTime.now(),
+    );
+    channel.createStream(
+      healthy,
+      const CountBasedRetention(1),
+      occurredAt: DateTime.now(),
+    );
+    await channelRepo.save(channel);
 
-      for (final streamId in [poison, healthy]) {
-        for (var seq = 1; seq <= 2; seq++) {
-          await entryRepo.append(
-            channelId,
-            streamId,
-            LogEntry(
-              author: localNode,
-              sequence: seq,
-              timestamp: Hlc(1000 + seq, 0),
-              payload: Uint8List.fromList([seq]),
-            ),
-          );
-        }
+    for (final streamId in [poison, healthy]) {
+      for (var seq = 1; seq <= 2; seq++) {
+        await entryRepo.append(
+          channelId,
+          streamId,
+          LogEntry(
+            author: localNode,
+            sequence: seq,
+            timestamp: Hlc(1000 + seq, 0),
+            payload: Uint8List.fromList([seq]),
+          ),
+        );
       }
+    }
 
-      // Without isolation the poison stream aborts the whole pass — every
-      // 5 minutes, forever — and streams after it are never compacted.
-      await service.compactAll();
+    // Without isolation the poison stream aborts the whole pass — every
+    // 5 minutes, forever — and streams after it are never compacted.
+    await service.compactAll();
 
-      expect(
-        await entryRepo.entryCount(channelId, healthy),
-        equals(1),
-        reason: 'the healthy stream must still be compacted',
-      );
-      expect(errors, isNotEmpty, reason: 'the failure must be reported');
-    },
-  );
+    expect(
+      await entryRepo.entryCount(channelId, healthy),
+      equals(1),
+      reason: 'the healthy stream must still be compacted',
+    );
+    expect(errors, isNotEmpty, reason: 'the failure must be reported');
+  });
 }

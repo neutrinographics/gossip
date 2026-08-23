@@ -32,22 +32,25 @@ void main() {
       );
     });
 
-    test('appendEntry rejects an oversized payload with ArgumentError', () async {
-      await expectLater(
-        () => service.appendEntry(
-          ChannelId('ch1'),
-          StreamId('s1'),
-          Uint8List(1025),
-        ),
-        throwsArgumentError,
-      );
+    test(
+      'appendEntry rejects an oversized payload with ArgumentError',
+      () async {
+        await expectLater(
+          () => service.appendEntry(
+            ChannelId('ch1'),
+            StreamId('s1'),
+            Uint8List(1025),
+          ),
+          throwsArgumentError,
+        );
 
-      expect(
-        await entryRepository.entryCount(ChannelId('ch1'), StreamId('s1')),
-        equals(0),
-        reason: 'a rejected payload must not be stored',
-      );
-    });
+        expect(
+          await entryRepository.entryCount(ChannelId('ch1'), StreamId('s1')),
+          equals(0),
+          reason: 'a rejected payload must not be stored',
+        );
+      },
+    );
 
     test('appendEntry accepts a payload at exactly the limit', () async {
       final channelRepo = InMemoryChannelRepository();

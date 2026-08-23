@@ -16,8 +16,11 @@ void main() {
       // stale's lastContactMs stays 0 (never heard from).
 
       for (var i = 0; i < 4; i++) {
-        expect(h.detector.selectRandomPeer()!.id, stale.id,
-            reason: 'only the stale peer needs a probe');
+        expect(
+          h.detector.selectRandomPeer()!.id,
+          stale.id,
+          reason: 'only the stale peer needs a probe',
+        );
       }
     });
 
@@ -32,8 +35,11 @@ void main() {
 
       final sentBefore = h.sentMessageCount;
       await h.detector.performProbeRound();
-      expect(h.sentMessageCount, sentBefore,
-          reason: 'an all-fresh round must be radio silence');
+      expect(
+        h.sentMessageCount,
+        sentBefore,
+        reason: 'an all-fresh round must be radio silence',
+      );
     });
 
     test('suppression does not mark fresh peers as failed', () async {
@@ -55,8 +61,7 @@ void main() {
     // NEVER probe that peer, so a genuine failure is never detected. The
     // fix bounds suppression: every peer must be actually probed at least
     // once per 2-minute cap window regardless of freshness.
-    test(
-        'a continuously fresh peer is still probed once the suppression '
+    test('a continuously fresh peer is still probed once the suppression '
         'cap elapses', () async {
       final h = FailureDetectorTestHarness();
       h.startListening(); // required for the detector to process Acks
@@ -91,7 +96,8 @@ void main() {
       expect(
         h.sentMessageCount,
         greaterThan(0),
-        reason: 'the cap must force an actual probe within 2 minutes '
+        reason:
+            'the cap must force an actual probe within 2 minutes '
             'despite continuous freshness, or one-way loss to this peer '
             'would never be detected',
       );

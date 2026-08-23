@@ -35,12 +35,14 @@ void main() {
         }
 
         for (final p in peers) {
-          final digestRequests =
-              caps[p.id]!.$1.whereType<DigestRequest>().length;
+          final digestRequests = caps[p.id]!.$1
+              .whereType<DigestRequest>()
+              .length;
           expect(
             digestRequests,
             equals(1),
-            reason: 'peer ${p.id.value} must be gossiped exactly once per cycle',
+            reason:
+                'peer ${p.id.value} must be gossiped exactly once per cycle',
           );
         }
 
@@ -50,24 +52,21 @@ void main() {
       },
     );
 
-    test(
-      'records the anti-entropy timestamp for the selected peer',
-      () async {
-        final h = GossipEngineTestHarness();
-        final a = h.addPeer('a');
-        h.createChannel('ch1', streamIds: ['s1']);
+    test('records the anti-entropy timestamp for the selected peer', () async {
+      final h = GossipEngineTestHarness();
+      final a = h.addPeer('a');
+      h.createChannel('ch1', streamIds: ['s1']);
 
-        expect(h.peerRegistry.getPeer(a.id)!.lastAntiEntropyMs, isNull);
+      expect(h.peerRegistry.getPeer(a.id)!.lastAntiEntropyMs, isNull);
 
-        await h.engine.performGossipRound();
-        await h.flush();
+      await h.engine.performGossipRound();
+      await h.flush();
 
-        expect(
-          h.peerRegistry.getPeer(a.id)!.lastAntiEntropyMs,
-          isNotNull,
-          reason: 'gossiping with a peer must mark it recently-synced',
-        );
-      },
-    );
+      expect(
+        h.peerRegistry.getPeer(a.id)!.lastAntiEntropyMs,
+        isNotNull,
+        reason: 'gossiping with a peer must mark it recently-synced',
+      );
+    });
   });
 }

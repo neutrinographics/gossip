@@ -109,7 +109,8 @@ void main() {
     /// 1..3 are pruned (floor 3, survivors 4..5). The stream's reported
     /// version stays {author: 5} regardless — the high-water mark, not the
     /// physical remainder.
-    Future<(GossipEngineTestHarness, ChannelAggregate)> compactedHarness() async {
+    Future<(GossipEngineTestHarness, ChannelAggregate)>
+    compactedHarness() async {
       final h = GossipEngineTestHarness();
       final channel = h.createChannel('ch', streamIds: ['s']);
       for (var i = 1; i <= 5; i++) {
@@ -135,56 +136,49 @@ void main() {
           ],
         );
 
-    test(
-      'a requester below the compaction floor is still advertised — the '
-      'dominance filter never hides a floored responder',
-      () async {
-        final (h, channel) = await compactedHarness();
-        h.addPeer('peer1');
+    test('a requester below the compaction floor is still advertised — the '
+        'dominance filter never hides a floored responder', () async {
+      final (h, channel) = await compactedHarness();
+      h.addPeer('peer1');
 
-        // Requester only knows about seq 1 — below the floor (3).
-        final request = requestFrom('peer1', VersionVector({author: 1}));
-        final response = await h.engine.handleDigestRequest(request, [
-          channel,
-        ]);
+      // Requester only knows about seq 1 — below the floor (3).
+      final request = requestFrom('peer1', VersionVector({author: 1}));
+      final response = await h.engine.handleDigestRequest(request, [channel]);
 
-        expect(
-          response.digests,
-          hasLength(1),
-          reason: 'a below-floor requester still needs the stream '
-              'advertised so it can pull and receive the floor + survivors '
-              '— hiding it here would strand it forever',
-        );
-        expect(
-          response.digests.single.streams.single.version[author],
-          equals(5),
-          reason: 'the advertised version is the high-water mark, not the '
-              'physical remainder',
-        );
-      },
-    );
+      expect(
+        response.digests,
+        hasLength(1),
+        reason:
+            'a below-floor requester still needs the stream '
+            'advertised so it can pull and receive the floor + survivors '
+            '— hiding it here would strand it forever',
+      );
+      expect(
+        response.digests.single.streams.single.version[author],
+        equals(5),
+        reason:
+            'the advertised version is the high-water mark, not the '
+            'physical remainder',
+      );
+    });
 
-    test(
-      'a requester exactly at the post-compaction high-water mark is '
-      'omitted — converged, nothing left to pull',
-      () async {
-        final (h, channel) = await compactedHarness();
-        h.addPeer('peer1');
+    test('a requester exactly at the post-compaction high-water mark is '
+        'omitted — converged, nothing left to pull', () async {
+      final (h, channel) = await compactedHarness();
+      h.addPeer('peer1');
 
-        // Requester already claims seq 5 — dominates our vector exactly.
-        final request = requestFrom('peer1', VersionVector({author: 5}));
-        final response = await h.engine.handleDigestRequest(request, [
-          channel,
-        ]);
+      // Requester already claims seq 5 — dominates our vector exactly.
+      final request = requestFrom('peer1', VersionVector({author: 5}));
+      final response = await h.engine.handleDigestRequest(request, [channel]);
 
-        expect(
-          response.digests,
-          isEmpty,
-          reason: 'the requester dominates us: echoing the vector back is '
-              'pure redundancy, regardless of the stream ever having been '
-              'compacted',
-        );
-      },
-    );
+      expect(
+        response.digests,
+        isEmpty,
+        reason:
+            'the requester dominates us: echoing the vector back is '
+            'pure redundancy, regardless of the stream ever having been '
+            'compacted',
+      );
+    });
   });
 }

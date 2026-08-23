@@ -155,33 +155,36 @@ void main() {
         await network.dispose();
       });
 
-      test('payload above the syncable maximum is rejected at append', () async {
-        final network = await TestNetwork.create(['node1', 'node2']);
-        await network.connect('node1', 'node2');
+      test(
+        'payload above the syncable maximum is rejected at append',
+        () async {
+          final network = await TestNetwork.create(['node1', 'node2']);
+          await network.connect('node1', 'node2');
 
-        final channelId = ChannelId('max-payload-channel');
-        final streamId = StreamId('data');
+          final channelId = ChannelId('max-payload-channel');
+          final streamId = StreamId('data');
 
-        await network.setupChannel(channelId, streamId);
+          await network.setupChannel(channelId, streamId);
 
-        // One byte past the largest payload that can ever fit a delta
-        // message: it could never sync, so append must fail loudly
-        // instead of storing an entry that livelocks the stream.
-        final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(
-          CoordinatorConfig.defaults.maxDeltaResponseBytes,
-        );
-        final oversized = List.generate(maxPayload + 1, (i) => i % 256);
+          // One byte past the largest payload that can ever fit a delta
+          // message: it could never sync, so append must fail loudly
+          // instead of storing an entry that livelocks the stream.
+          final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(
+            CoordinatorConfig.defaults.maxDeltaResponseBytes,
+          );
+          final oversized = List.generate(maxPayload + 1, (i) => i % 256);
 
-        await expectLater(
-          () => network['node1'].write(channelId, streamId, oversized),
-          throwsArgumentError,
-        );
+          await expectLater(
+            () => network['node1'].write(channelId, streamId, oversized),
+            throwsArgumentError,
+          );
 
-        final entries = await network['node1'].entries(channelId, streamId);
-        expect(entries, isEmpty, reason: 'rejected payloads are not stored');
+          final entries = await network['node1'].entries(channelId, streamId);
+          expect(entries, isEmpty, reason: 'rejected payloads are not stored');
 
-        await network.dispose();
-      });
+          await network.dispose();
+        },
+      );
 
       test('100 entries from single node sync correctly', () async {
         final network = await TestNetwork.create(['node1', 'node2']);

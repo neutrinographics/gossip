@@ -71,97 +71,90 @@ void main() {
     payload: Uint8List.fromList([seq]),
   );
 
-  test(
-    'one throwing materializer does not starve its siblings of the batch '
-    '(COR3-13)',
-    () async {
-      final repo = InMemoryEntryRepository();
-      final service = MaterializationService(entryRepository: repo);
-      // The thrower registers FIRST so it is folded first.
-      await service.register<int>(channelId, streamId, _ThrowingMaterializer());
-      await service.register<String>(
-        channelId,
-        streamId,
-        _CountingMaterializer(),
+  test('one throwing materializer does not starve its siblings of the batch '
+      '(COR3-13)', () async {
+    final repo = InMemoryEntryRepository();
+    final service = MaterializationService(entryRepository: repo);
+    // The thrower registers FIRST so it is folded first.
+    await service.register<int>(channelId, streamId, _ThrowingMaterializer());
+    await service.register<String>(
+      channelId,
+      streamId,
+      _CountingMaterializer(),
+    );
+    // Initialize both on the empty stream (no folds yet).
+    await service.getState<int>(channelId, streamId);
+    await service.getState<String>(channelId, streamId);
+
+    for (final seq in [1, 2]) {
+      final entry = entryOf(seq);
+      await repo.append(channelId, streamId, entry);
+      // The thrower's failure must surface, but must not prevent the
+      // sibling from receiving the batch — a starved sibling's cursor
+      // jumps over the batch on its next fold, silently and permanently.
+      await expectLater(
+        service.foldEntries(channelId, streamId, [entry]),
+        throwsStateError,
       );
-      // Initialize both on the empty stream (no folds yet).
-      await service.getState<int>(channelId, streamId);
-      await service.getState<String>(channelId, streamId);
+    }
 
-      for (final seq in [1, 2]) {
-        final entry = entryOf(seq);
-        await repo.append(channelId, streamId, entry);
-        // The thrower's failure must surface, but must not prevent the
-        // sibling from receiving the batch — a starved sibling's cursor
-        // jumps over the batch on its next fold, silently and permanently.
-        await expectLater(
-          service.foldEntries(channelId, streamId, [entry]),
-          throwsStateError,
-        );
-      }
+    expect(
+      await service.getState<String>(channelId, streamId),
+      equals('2'),
+      reason: 'the sibling must have folded every batch',
+    );
+  });
 
-      expect(
-        await service.getState<String>(channelId, streamId),
-        equals('2'),
-        reason: 'the sibling must have folded every batch',
-      );
-    },
-  );
+  test('an equal-timestamp entry landing after a restart is not skipped by '
+      'the persisted cursor (COR3-27)', () async {
+    final repo = InMemoryEntryRepository();
+    final authorB = NodeId('author-b');
 
-  test(
-    'an equal-timestamp entry landing after a restart is not skipped by '
-    'the persisted cursor (COR3-27)',
-    () async {
-      final repo = InMemoryEntryRepository();
-      final authorB = NodeId('author-b');
+    // Session 1: fold one entry, persist state + cursor.
+    final session1 = _PersistingCounter();
+    final service1 = MaterializationService(entryRepository: repo);
+    await service1.register<int>(channelId, streamId, session1);
+    final e1 = LogEntry(
+      author: author,
+      sequence: 1,
+      timestamp: Hlc(1000, 0),
+      payload: Uint8List.fromList([1]),
+    );
+    await repo.append(channelId, streamId, e1);
+    await service1.foldEntries(channelId, streamId, [e1]);
+    await service1.disposeAll();
 
-      // Session 1: fold one entry, persist state + cursor.
-      final session1 = _PersistingCounter();
-      final service1 = MaterializationService(entryRepository: repo);
-      await service1.register<int>(channelId, streamId, session1);
-      final e1 = LogEntry(
-        author: author,
+    // Between sessions an entry with the SAME timestamp but a later
+    // author arrives (HLC ties across authors are legal).
+    await repo.append(
+      channelId,
+      streamId,
+      LogEntry(
+        author: authorB,
         sequence: 1,
         timestamp: Hlc(1000, 0),
-        payload: Uint8List.fromList([1]),
-      );
-      await repo.append(channelId, streamId, e1);
-      await service1.foldEntries(channelId, streamId, [e1]);
-      await service1.disposeAll();
+        payload: Uint8List.fromList([2]),
+      ),
+    );
 
-      // Between sessions an entry with the SAME timestamp but a later
-      // author arrives (HLC ties across authors are legal).
-      await repo.append(
-        channelId,
-        streamId,
-        LogEntry(
-          author: authorB,
-          sequence: 1,
-          timestamp: Hlc(1000, 0),
-          payload: Uint8List.fromList([2]),
-        ),
-      );
+    // Session 2 restores from the persisted cursor: the tying entry
+    // sorts after the folded one, so it must be folded — a
+    // timestamp-only strictly-greater filter drops it forever.
+    final session2 = _PersistingCounter(
+      persistedState: session1.persistedState,
+      persistedCursor: session1.persistedCursor,
+    );
+    final service2 = MaterializationService(entryRepository: repo);
+    await service2.register<int>(channelId, streamId, session2);
 
-      // Session 2 restores from the persisted cursor: the tying entry
-      // sorts after the folded one, so it must be folded — a
-      // timestamp-only strictly-greater filter drops it forever.
-      final session2 = _PersistingCounter(
-        persistedState: session1.persistedState,
-        persistedCursor: session1.persistedCursor,
-      );
-      final service2 = MaterializationService(entryRepository: repo);
-      await service2.register<int>(channelId, streamId, session2);
+    expect(
+      await service2.getState<int>(channelId, streamId),
+      equals(2),
+      reason: 'both entries must be counted after the restart',
+    );
+  });
 
-      expect(
-        await service2.getState<int>(channelId, streamId),
-        equals(2),
-        reason: 'both entries must be counted after the restart',
-      );
-    },
-  );
-
-  test('disposeAll tolerates a register landing mid-dispose (MIN-1)',
-      () async {
+  test('disposeAll tolerates a register landing mid-dispose (MIN-1)', () async {
     final repo = InMemoryEntryRepository();
     final service = MaterializationService(entryRepository: repo);
     await service.register<int>(channelId, streamId, _ThrowingMaterializer());

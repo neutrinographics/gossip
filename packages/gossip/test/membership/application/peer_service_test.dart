@@ -46,13 +46,8 @@ void main() {
     test('addPeer adds peer to registry and persists it', () async {
       final localNode = NodeId('local');
       final repository = FakePeerRepository();
-      final registry = PeerRegistry(
-        localNode: localNode,
-      );
-      final service = PeerService(
-        registry: registry,
-        repository: repository,
-      );
+      final registry = PeerRegistry(localNode: localNode);
+      final service = PeerService(registry: registry, repository: repository);
       final peerId = NodeId('peer-1');
 
       await service.addPeer(peerId);
@@ -69,13 +64,8 @@ void main() {
       () async {
         final localNode = NodeId('local');
         final repository = FakePeerRepository();
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
-        final service = PeerService(
-          registry: registry,
-          repository: repository,
-        );
+        final registry = PeerRegistry(localNode: localNode);
+        final service = PeerService(registry: registry, repository: repository);
         final peerId = NodeId('peer-1');
 
         // Add peer first

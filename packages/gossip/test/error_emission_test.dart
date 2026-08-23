@@ -82,9 +82,7 @@ void main() {
     test('emits PeerSyncError when message send fails', () async {
       final localNode = NodeId('local');
       final remoteNode = NodeId('remote');
-      final peerRegistry = PeerRegistry(
-        localNode: localNode,
-      );
+      final peerRegistry = PeerRegistry(localNode: localNode);
       peerRegistry.addPeer(remoteNode, occurredAt: DateTime.now());
 
       final entryRepo = InMemoryEntryRepository();
@@ -116,9 +114,7 @@ void main() {
     test('emits PeerSyncError on malformed incoming message', () async {
       final localNode = NodeId('local');
       final remoteNode = NodeId('remote');
-      final peerRegistry = PeerRegistry(
-        localNode: localNode,
-      );
+      final peerRegistry = PeerRegistry(localNode: localNode);
 
       final entryRepo = InMemoryEntryRepository();
       final messagePort = ThrowingMessagePort(Exception('unused'));
@@ -163,9 +159,7 @@ void main() {
     test('emits PeerSyncError on malformed incoming message', () async {
       final localNode = NodeId('local');
       final remoteNode = NodeId('remote');
-      final peerRegistry = PeerRegistry(
-        localNode: localNode,
-      );
+      final peerRegistry = PeerRegistry(localNode: localNode);
 
       final messagePort = ThrowingMessagePort(Exception('unused'));
       final timerPort = NoOpTimePort();
@@ -284,9 +278,7 @@ void main() {
     test('emits StorageSyncError when repository is null', () async {
       final localNode = NodeId('local');
       final peerId = NodeId('peer');
-      final registry = PeerRegistry(
-        localNode: localNode,
-      );
+      final registry = PeerRegistry(localNode: localNode);
 
       final errors = <SyncError>[];
       final service = PeerService(
@@ -311,9 +303,7 @@ void main() {
     test('emits PeerOperationSkipped for unknown peer', () {
       final localNode = NodeId('local');
       final unknownPeer = NodeId('unknown');
-      final registry = PeerRegistry(
-        localNode: localNode,
-      );
+      final registry = PeerRegistry(localNode: localNode);
 
       registry.updatePeerStatus(
         unknownPeer,
@@ -329,44 +319,35 @@ void main() {
       expect(skippedEvent.operation, equals('updatePeerStatus'));
     });
 
-    test(
-      'updatePeerContact on unknown peer is a silent no-op (per-message '
-      'telemetry must not emit events)',
-      () {
-        final localNode = NodeId('local');
-        final unknownPeer = NodeId('unknown');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+    test('updatePeerContact on unknown peer is a silent no-op (per-message '
+        'telemetry must not emit events)', () {
+      final localNode = NodeId('local');
+      final unknownPeer = NodeId('unknown');
+      final registry = PeerRegistry(localNode: localNode);
 
-        registry.updatePeerContact(
-          unknownPeer,
-          DateTime.now().millisecondsSinceEpoch,
-        );
+      registry.updatePeerContact(
+        unknownPeer,
+        DateTime.now().millisecondsSinceEpoch,
+      );
 
-        expect(
-          registry.uncommittedEvents,
-          isEmpty,
-          reason: 'one event per message from a removed peer is an '
-              'unbounded leak',
-        );
-      },
-    );
+      expect(
+        registry.uncommittedEvents,
+        isEmpty,
+        reason:
+            'one event per message from a removed peer is an '
+            'unbounded leak',
+      );
+    });
 
-    test(
-      'incrementFailedProbeCount on unknown peer is a silent no-op '
-      '(per-probe telemetry must not emit events)',
-      () {
-        final localNode = NodeId('local');
-        final unknownPeer = NodeId('unknown');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+    test('incrementFailedProbeCount on unknown peer is a silent no-op '
+        '(per-probe telemetry must not emit events)', () {
+      final localNode = NodeId('local');
+      final unknownPeer = NodeId('unknown');
+      final registry = PeerRegistry(localNode: localNode);
 
-        registry.incrementFailedProbeCount(unknownPeer);
+      registry.incrementFailedProbeCount(unknownPeer);
 
-        expect(registry.uncommittedEvents, isEmpty);
-      },
-    );
+      expect(registry.uncommittedEvents, isEmpty);
+    });
   });
 }

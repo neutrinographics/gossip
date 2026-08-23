@@ -34,9 +34,7 @@ void main() {
     entries: entries,
   );
 
-  Future<GossipEngineTestHarness> harnessAt(
-    Map<NodeId, int> versions,
-  ) async {
+  Future<GossipEngineTestHarness> harnessAt(Map<NodeId, int> versions) async {
     final h = GossipEngineTestHarness();
     h.createChannel('ch1', streamIds: ['s1']);
     for (final MapEntry(key: author, value: maxSeq) in versions.entries) {
@@ -58,7 +56,9 @@ void main() {
         final h = await harnessAt({authorA: 5});
 
         // A push of seq 11 while 6-10 are missing.
-        await h.engine.handleDeltaResponse(deltaOf([entryOf(authorA, 11, 2011)]));
+        await h.engine.handleDeltaResponse(
+          deltaOf([entryOf(authorA, 11, 2011)]),
+        );
 
         final all = await h.entryRepository.getAll(channelId, streamId);
         expect(
@@ -68,7 +68,10 @@ void main() {
               'seq 11 must be dropped — merging it would advance the version '
               'vector to 11 and strand 6-10 forever',
         );
-        final vv = await h.entryRepository.getVersionVector(channelId, streamId);
+        final vv = await h.entryRepository.getVersionVector(
+          channelId,
+          streamId,
+        );
         expect(vv[authorA], equals(5));
       },
     );
@@ -82,69 +85,63 @@ void main() {
       expect(all.map((e) => e.sequence), equals([1, 2, 3, 4, 5, 6]));
     });
 
-    test(
-      'a gapped SOLICITED response emits a diagnosable error — once per '
-      'gap, not per round (COR3-1 stopgap)',
-      () async {
-        final h = await harnessAt({authorA: 5});
-        final peer = h.addPeer('peer1');
+    test('a gapped SOLICITED response emits a diagnosable error — once per '
+        'gap, not per round (COR3-1 stopgap)', () async {
+      final h = await harnessAt({authorA: 5});
+      final peer = h.addPeer('peer1');
 
-        // Arm a pending pull to peer1 (so the delta response is solicited).
-        Future<void> solicit() => h.engine.handleDigestResponse(
-          DigestResponse(
-            sender: peer.id,
-            digests: [
-              ChannelDigest(
-                channelId: channelId,
-                streams: [
-                  StreamDigest(
-                    streamId: streamId,
-                    version: VersionVector({authorA: 20}),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
+      // Arm a pending pull to peer1 (so the delta response is solicited).
+      Future<void> solicit() => h.engine.handleDigestResponse(
+        DigestResponse(
+          sender: peer.id,
+          digests: [
+            ChannelDigest(
+              channelId: channelId,
+              streams: [
+                StreamDigest(
+                  streamId: streamId,
+                  version: VersionVector({authorA: 20}),
+                ),
+              ],
+            ),
+          ],
+        ),
+      );
 
-        await solicit();
-        // The responder answers with a hole where we need data (it
-        // compacted 6-10): everything is dropped. Before the fix this was
-        // fully silent — the defining symptom of the COR3-1 lockout.
-        await h.engine.handleDeltaResponse(
-          deltaOf([entryOf(authorA, 11, 2011), entryOf(authorA, 12, 2012)]),
-        );
+      await solicit();
+      // The responder answers with a hole where we need data (it
+      // compacted 6-10): everything is dropped. Before the fix this was
+      // fully silent — the defining symptom of the COR3-1 lockout.
+      await h.engine.handleDeltaResponse(
+        deltaOf([entryOf(authorA, 11, 2011), entryOf(authorA, 12, 2012)]),
+      );
 
-        expect(h.mergedEntries, isEmpty);
-        expect(h.errors, hasLength(1), reason: 'the gap must be reported');
-        expect(h.errors.single.message, contains('6'));
-        expect(h.errors.single.message, contains('11'));
+      expect(h.mergedEntries, isEmpty);
+      expect(h.errors, hasLength(1), reason: 'the gap must be reported');
+      expect(h.errors.single.message, contains('6'));
+      expect(h.errors.single.message, contains('11'));
 
-        // The identical exchange repeats every round while the condition
-        // persists — the error must not repeat with it.
-        await solicit();
-        await h.engine.handleDeltaResponse(
-          deltaOf([entryOf(authorA, 11, 2011), entryOf(authorA, 12, 2012)]),
-        );
-        expect(h.errors, hasLength(1), reason: 'same gap reported once');
-      },
-    );
+      // The identical exchange repeats every round while the condition
+      // persists — the error must not repeat with it.
+      await solicit();
+      await h.engine.handleDeltaResponse(
+        deltaOf([entryOf(authorA, 11, 2011), entryOf(authorA, 12, 2012)]),
+      );
+      expect(h.errors, hasLength(1), reason: 'same gap reported once');
+    });
 
-    test(
-      'a gapped UNSOLICITED push is dropped without emitting an error — '
-      'lagging behind a reactive push is routine',
-      () async {
-        final h = await harnessAt({authorA: 5});
-        h.addPeer('peer1');
+    test('a gapped UNSOLICITED push is dropped without emitting an error — '
+        'lagging behind a reactive push is routine', () async {
+      final h = await harnessAt({authorA: 5});
+      h.addPeer('peer1');
 
-        // No pending pull: this is a reactive push of the writer's newest
-        // entry while we are still behind. Anti-entropy will catch us up.
-        await h.engine.handleDeltaResponse(deltaOf([entryOf(authorA, 11, 2011)]));
+      // No pending pull: this is a reactive push of the writer's newest
+      // entry while we are still behind. Anti-entropy will catch us up.
+      await h.engine.handleDeltaResponse(deltaOf([entryOf(authorA, 11, 2011)]));
 
-        expect(h.mergedEntries, isEmpty);
-        expect(h.errors, isEmpty);
-      },
-    );
+      expect(h.mergedEntries, isEmpty);
+      expect(h.errors, isEmpty);
+    });
 
     test(
       'overlapping delta responses for one stream merge cleanly — no '
@@ -174,7 +171,10 @@ void main() {
         expect(stored.map((e) => e.sequence), equals([1, 2, 3, 4]));
         // Every entry reported exactly once across the merge callbacks.
         final reported =
-            h.mergedEntries.expand((m) => m.entries).map((e) => e.sequence).toList()
+            h.mergedEntries
+                .expand((m) => m.entries)
+                .map((e) => e.sequence)
+                .toList()
               ..sort();
         expect(reported, equals([1, 2, 3, 4]));
       },
@@ -217,7 +217,9 @@ void main() {
         final before = h.hlcClock!.current;
 
         // Empty local VV, so seq 5 is non-contiguous → whole batch dropped.
-        await h.engine.handleDeltaResponse(deltaOf([entryOf(authorA, 5, 2000)]));
+        await h.engine.handleDeltaResponse(
+          deltaOf([entryOf(authorA, 5, 2000)]),
+        );
 
         expect(h.mergedEntries, isEmpty);
         expect(
@@ -228,35 +230,36 @@ void main() {
       },
     );
 
-    test('accepts the contiguous prefix and drops entries past a gap',
-        () async {
-      final h = await harnessAt({authorA: 5});
+    test(
+      'accepts the contiguous prefix and drops entries past a gap',
+      () async {
+        final h = await harnessAt({authorA: 5});
 
-      // 6,7 are contiguous; 9 sits past a gap at 8.
-      await h.engine.handleDeltaResponse(
-        deltaOf([
-          entryOf(authorA, 6, 2006),
-          entryOf(authorA, 7, 2007),
-          entryOf(authorA, 9, 2009),
-        ]),
-      );
+        // 6,7 are contiguous; 9 sits past a gap at 8.
+        await h.engine.handleDeltaResponse(
+          deltaOf([
+            entryOf(authorA, 6, 2006),
+            entryOf(authorA, 7, 2007),
+            entryOf(authorA, 9, 2009),
+          ]),
+        );
 
-      final all = await h.entryRepository.getAll(channelId, streamId);
-      expect(all.map((e) => e.sequence), equals([1, 2, 3, 4, 5, 6, 7]));
-      final vv = await h.entryRepository.getVersionVector(channelId, streamId);
-      expect(vv[authorA], equals(7));
-    });
+        final all = await h.entryRepository.getAll(channelId, streamId);
+        expect(all.map((e) => e.sequence), equals([1, 2, 3, 4, 5, 6, 7]));
+        final vv = await h.entryRepository.getVersionVector(
+          channelId,
+          streamId,
+        );
+        expect(vv[authorA], equals(7));
+      },
+    );
 
-    test('per-author contiguity is independent (multi-author delta)',
-        () async {
+    test('per-author contiguity is independent (multi-author delta)', () async {
       final h = await harnessAt({authorA: 5, authorB: 2});
 
       // A:6 is contiguous; B:5 sits past a gap (B is at 2, missing 3,4).
       await h.engine.handleDeltaResponse(
-        deltaOf([
-          entryOf(authorA, 6, 2006),
-          entryOf(authorB, 5, 2005),
-        ]),
+        deltaOf([entryOf(authorA, 6, 2006), entryOf(authorB, 5, 2005)]),
       );
 
       final vv = await h.entryRepository.getVersionVector(channelId, streamId);

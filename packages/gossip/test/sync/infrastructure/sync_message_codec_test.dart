@@ -157,23 +157,13 @@ void main() {
       expect(decoded.entries[0].author, equals(author));
       expect(decoded.entries[0].sequence, equals(1));
       expect(decoded.entries[0].timestamp, equals(Hlc(1000, 0)));
-      expect(
-        decoded.entries[0].payload,
-        equals(Uint8List.fromList([1, 2, 3])),
-      );
+      expect(decoded.entries[0].payload, equals(Uint8List.fromList([1, 2, 3])));
 
       expect(decoded.entries[1].author, equals(author));
       expect(decoded.entries[1].sequence, equals(2));
       expect(decoded.entries[1].timestamp, equals(Hlc(2000, 1)));
-      expect(
-        decoded.entries[1].payload,
-        equals(Uint8List.fromList([4, 5, 6])),
-      );
-      expect(
-        decoded.floor.entries,
-        isEmpty,
-        reason: 'no floor was set',
-      );
+      expect(decoded.entries[1].payload, equals(Uint8List.fromList([4, 5, 6])));
+      expect(decoded.floor.entries, isEmpty, reason: 'no floor was set');
     });
 
     test('DeltaResponse round-trips with no floor set (default)', () {
@@ -185,11 +175,7 @@ void main() {
       );
 
       final decoded = codec.decode(codec.encode(response)) as DeltaResponse;
-      expect(
-        decoded.floor.entries,
-        isEmpty,
-        reason: 'no floor was set',
-      );
+      expect(decoded.floor.entries, isEmpty, reason: 'no floor was set');
     });
 
     test('DeltaResponse without a floor field decodes to an empty floor '
@@ -386,31 +372,34 @@ void main() {
         expect(encoded.length, lessThanOrEqualTo(budget));
       });
 
-      test('rejects legacy payload bytes outside 0-255 instead of truncating', () {
-        final malformedJson = {
-          'sender': 'sender',
-          'channelId': 'ch1',
-          'streamId': 's1',
-          'entries': [
-            {
-              'author': 'a',
-              'sequence': 1,
-              'timestamp': {'physicalMs': 1000, 'logical': 0},
-              'payload': [300, -1],
-            },
-          ],
-        };
-        final bytes = Uint8List.fromList([
-          6,
-          ...utf8.encode(jsonEncode(malformedJson)),
-        ]);
+      test(
+        'rejects legacy payload bytes outside 0-255 instead of truncating',
+        () {
+          final malformedJson = {
+            'sender': 'sender',
+            'channelId': 'ch1',
+            'streamId': 's1',
+            'entries': [
+              {
+                'author': 'a',
+                'sequence': 1,
+                'timestamp': {'physicalMs': 1000, 'logical': 0},
+                'payload': [300, -1],
+              },
+            ],
+          };
+          final bytes = Uint8List.fromList([
+            6,
+            ...utf8.encode(jsonEncode(malformedJson)),
+          ]);
 
-        expect(
-          () => codec.decode(bytes),
-          throwsA(isA<Object>()),
-          reason: 'out-of-range bytes are corruption, not data to mod-256',
-        );
-      });
+          expect(
+            () => codec.decode(bytes),
+            throwsA(isA<Object>()),
+            reason: 'out-of-range bytes are corruption, not data to mod-256',
+          );
+        },
+      );
     });
 
     group('byte-budget helpers', () {
@@ -440,10 +429,7 @@ void main() {
           'size inside an encoded DigestResponse', () {
         final digest = StreamDigest(
           streamId: StreamId('stream-with-a-realistic-length-id'),
-          version: VersionVector({
-            NodeId('author1'): 42,
-            NodeId('author2'): 7,
-          }),
+          version: VersionVector({NodeId('author1'): 42, NodeId('author2'): 7}),
         );
         final response = DigestResponse(
           sender: NodeId('sender'),
@@ -453,15 +439,12 @@ void main() {
         );
         final encoded = codec.encode(response);
 
-        final channelJson = (jsonOf(encoded)['digests'] as List).single
-            as Map<String, dynamic>;
+        final channelJson =
+            (jsonOf(encoded)['digests'] as List).single as Map<String, dynamic>;
         final streamJson = (channelJson['streams'] as List).single;
         final actualDigestSize = utf8.encode(jsonEncode(streamJson)).length;
 
-        expect(
-          codec.encodedStreamDigestSize(digest),
-          equals(actualDigestSize),
-        );
+        expect(codec.encodedStreamDigestSize(digest), equals(actualDigestSize));
       });
     });
   });

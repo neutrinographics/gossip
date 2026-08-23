@@ -289,9 +289,7 @@ void main() {
     test('emits peerUnreachable error when transport send fails', () async {
       final localNode = NodeId('local');
       final peerNode = NodeId('peer1');
-      final peerRegistry = PeerRegistry(
-        localNode: localNode,
-      );
+      final peerRegistry = PeerRegistry(localNode: localNode);
       peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
 
       final timePort = InMemoryTimePort();
@@ -326,9 +324,7 @@ void main() {
     test('emits protocolError when probe round throws', () async {
       final localNode = NodeId('local');
       final peerNode = NodeId('peer1');
-      final peerRegistry = PeerRegistry(
-        localNode: localNode,
-      );
+      final peerRegistry = PeerRegistry(localNode: localNode);
       peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
 
       final timePort = InMemoryTimePort();
@@ -363,9 +359,7 @@ void main() {
     test('Ack response send failure emits error but does not crash', () async {
       final localNode = NodeId('local');
       final peerNode = NodeId('peer1');
-      final peerRegistry = PeerRegistry(
-        localNode: localNode,
-      );
+      final peerRegistry = PeerRegistry(localNode: localNode);
       peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
 
       final timePort = InMemoryTimePort();
@@ -486,28 +480,25 @@ void main() {
       peer = h.addPeer('peer1');
     });
 
-    test(
-      'does NOT record received message metrics (GossipEngine is the '
-      'single recording point)',
-      () async {
-        h.startListening();
+    test('does NOT record received message metrics (GossipEngine is the '
+        'single recording point)', () async {
+      h.startListening();
 
-        final ping = Ping(sender: peer.id, sequence: 1);
-        await peer.port.send(h.localNode, codec.encode(ping));
-        await h.flush();
+      final ping = Ping(sender: peer.id, sequence: 1);
+      await peer.port.send(h.localNode, codec.encode(ping));
+      await h.flush();
 
-        final after = h.peerRegistry.getPeer(peer.id)!.metrics;
-        expect(
-          after.messagesReceived,
-          equals(0),
-          reason:
-              'both engines subscribe to the same incoming stream; if '
-              'both recorded, every rate metric would be doubled',
-        );
+      final after = h.peerRegistry.getPeer(peer.id)!.metrics;
+      expect(
+        after.messagesReceived,
+        equals(0),
+        reason:
+            'both engines subscribe to the same incoming stream; if '
+            'both recorded, every rate metric would be doubled',
+      );
 
-        h.stopListening();
-      },
-    );
+      h.stopListening();
+    });
 
     test('records sent message metrics when sending Ping', () async {
       h.startListening();

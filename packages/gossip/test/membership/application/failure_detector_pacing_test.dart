@@ -99,7 +99,8 @@ void main() {
       expect(
         h.detector.effectiveProbeInterval,
         base,
-        reason: 'a restart is news — must not resume mid-backoff into a '
+        reason:
+            'a restart is news — must not resume mid-backoff into a '
             'stale world',
       );
 

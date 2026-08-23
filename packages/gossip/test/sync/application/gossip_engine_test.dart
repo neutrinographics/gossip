@@ -49,9 +49,7 @@ void main() {
   group('GossipEngine', () {
     test('creates gossip engine with local node', () {
       final localNode = NodeId('local');
-      final registry = PeerRegistry(
-        localNode: localNode,
-      );
+      final registry = PeerRegistry(localNode: localNode);
 
       final entryRepo = InMemoryEntryRepository();
       final engine = createEngine(localNode, registry, entryRepo);
@@ -61,9 +59,7 @@ void main() {
 
     test('selectRandomPeer returns null when no reachable peers', () {
       final localNode = NodeId('local');
-      final registry = PeerRegistry(
-        localNode: localNode,
-      );
+      final registry = PeerRegistry(localNode: localNode);
       final entryRepo = InMemoryEntryRepository();
       final engine = createEngine(localNode, registry, entryRepo);
 
@@ -74,9 +70,7 @@ void main() {
 
     test('selectRandomPeer returns a reachable peer', () {
       final localNode = NodeId('local');
-      final registry = PeerRegistry(
-        localNode: localNode,
-      );
+      final registry = PeerRegistry(localNode: localNode);
       final peerId = NodeId('peer-1');
       registry.addPeer(peerId, occurredAt: DateTime.now());
 
@@ -91,9 +85,7 @@ void main() {
 
     test('generateDigest creates digest for channel with no streams', () async {
       final localNode = NodeId('local');
-      final registry = PeerRegistry(
-        localNode: localNode,
-      );
+      final registry = PeerRegistry(localNode: localNode);
       final entryRepo = InMemoryEntryRepository();
       final engine = createEngine(localNode, registry, entryRepo);
       final channelId = ChannelId('channel-1');
@@ -107,9 +99,7 @@ void main() {
 
     test('generateDigest creates digest for channel with streams', () async {
       final localNode = NodeId('local');
-      final registry = PeerRegistry(
-        localNode: localNode,
-      );
+      final registry = PeerRegistry(localNode: localNode);
       final entryRepo = InMemoryEntryRepository();
       final engine = createEngine(localNode, registry, entryRepo);
       final channelId = ChannelId('channel-1');
@@ -132,9 +122,7 @@ void main() {
       final localNode = NodeId('local');
       final author1 = NodeId('author-1');
       final author2 = NodeId('author-2');
-      final registry = PeerRegistry(
-        localNode: localNode,
-      );
+      final registry = PeerRegistry(localNode: localNode);
       final entryRepo = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
       final streamId = StreamId('stream-1');
@@ -192,9 +180,7 @@ void main() {
       final localNode = NodeId('local');
       final author1 = NodeId('author-1');
       final author2 = NodeId('author-2');
-      final registry = PeerRegistry(
-        localNode: localNode,
-      );
+      final registry = PeerRegistry(localNode: localNode);
       final entryRepo = InMemoryEntryRepository();
       final channelId = ChannelId('channel-1');
       final streamId = StreamId('stream-1');
@@ -236,9 +222,7 @@ void main() {
     test('gossip round sends DigestRequest to random peer', () async {
       final localNode = NodeId('local');
       final peerNode = NodeId('peer1');
-      final registry = PeerRegistry(
-        localNode: localNode,
-      );
+      final registry = PeerRegistry(localNode: localNode);
 
       // Add a reachable peer
       registry.addPeer(peerNode, occurredAt: DateTime.now());
@@ -295,9 +279,7 @@ void main() {
       () async {
         final localNode = NodeId('local');
         final peerNode = NodeId('peer1');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
         final timer = InMemoryTimePort();
         final bus = InMemoryMessageBus();
@@ -362,9 +344,7 @@ void main() {
 
     test('handleDigestResponse emits error for unknown channel', () async {
       final localNode = NodeId('local');
-      final peerRegistry = PeerRegistry(
-        localNode: localNode,
-      );
+      final peerRegistry = PeerRegistry(localNode: localNode);
       final entryRepo = InMemoryEntryRepository();
       final port = InMemoryMessagePort(localNode, InMemoryMessageBus());
       final timerPort = InMemoryTimePort();
@@ -404,9 +384,7 @@ void main() {
     group('effectiveGossipInterval', () {
       test('uses static interval when explicitly provided', () {
         final localNode = NodeId('local');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
         final timerPort = InMemoryTimePort();
         final messagePort = InMemoryMessagePort(
@@ -436,9 +414,7 @@ void main() {
       test('uses RTT-derived interval when no static interval provided', () {
         final localNode = NodeId('local');
         final peer = NodeId('peer');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         registry.addPeer(peer, occurredAt: DateTime.now());
         final entryRepo = InMemoryEntryRepository();
         final timerPort = InMemoryTimePort();
@@ -476,9 +452,7 @@ void main() {
       test('clamps RTT-derived interval to minimum', () {
         final localNode = NodeId('local');
         final peer = NodeId('peer');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         registry.addPeer(peer, occurredAt: DateTime.now());
         final entryRepo = InMemoryEntryRepository();
         final timerPort = InMemoryTimePort();
@@ -512,9 +486,7 @@ void main() {
       test('clamps RTT-derived interval to maximum', () {
         final localNode = NodeId('local');
         final peer = NodeId('peer');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         registry.addPeer(peer, occurredAt: DateTime.now());
         final entryRepo = InMemoryEntryRepository();
         final timerPort = InMemoryTimePort();
@@ -544,9 +516,7 @@ void main() {
 
       test('uses default static interval when adaptive timing is disabled', () {
         final localNode = NodeId('local');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
         final timerPort = InMemoryTimePort();
         final messagePort = InMemoryMessagePort(
@@ -578,9 +548,7 @@ void main() {
           final localNode = NodeId('local');
           final fastPeer = NodeId('fast');
           final slowPeer = NodeId('slow');
-          final registry = PeerRegistry(
-            localNode: localNode,
-          );
+          final registry = PeerRegistry(localNode: localNode);
           registry.addPeer(fastPeer, occurredAt: DateTime.now());
           registry.addPeer(slowPeer, occurredAt: DateTime.now());
 
@@ -619,9 +587,7 @@ void main() {
         () {
           final localNode = NodeId('local');
           final peer = NodeId('peer');
-          final registry = PeerRegistry(
-            localNode: localNode,
-          );
+          final registry = PeerRegistry(localNode: localNode);
           registry.addPeer(peer, occurredAt: DateTime.now());
           // No RTT recorded for peer
 
@@ -656,9 +622,7 @@ void main() {
         final fastPeer1 = NodeId('fast1');
         final fastPeer2 = NodeId('fast2');
         final slowPeer = NodeId('slow');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         registry.addPeer(fastPeer1, occurredAt: DateTime.now());
         registry.addPeer(fastPeer2, occurredAt: DateTime.now());
         registry.addPeer(slowPeer, occurredAt: DateTime.now());
@@ -697,9 +661,7 @@ void main() {
       test('skips gossip round when transport is congested', () async {
         final localNode = NodeId('local');
         final peerId = NodeId('peer');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         registry.addPeer(peerId, occurredAt: DateTime.now());
 
         final entryRepo = InMemoryEntryRepository();
@@ -738,9 +700,7 @@ void main() {
       test('performs gossip round when transport is not congested', () async {
         final localNode = NodeId('local');
         final peerId = NodeId('peer');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         registry.addPeer(peerId, occurredAt: DateTime.now());
 
         final entryRepo = InMemoryEntryRepository();
@@ -783,9 +743,7 @@ void main() {
       test('resumes gossip when congestion clears', () async {
         final localNode = NodeId('local');
         final peerId = NodeId('peer');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         registry.addPeer(peerId, occurredAt: DateTime.now());
 
         final entryRepo = InMemoryEntryRepository();
@@ -837,9 +795,7 @@ void main() {
           final localNode = NodeId('local');
           final congestedPeerId = NodeId('congested-peer');
           final healthyPeerId = NodeId('healthy-peer');
-          final registry = PeerRegistry(
-            localNode: localNode,
-          );
+          final registry = PeerRegistry(localNode: localNode);
           registry.addPeer(congestedPeerId, occurredAt: DateTime.now());
           registry.addPeer(healthyPeerId, occurredAt: DateTime.now());
 
@@ -894,9 +850,7 @@ void main() {
         final localNode = NodeId('local');
         final peer1 = NodeId('peer1');
         final peer2 = NodeId('peer2');
-        final registry = PeerRegistry(
-          localNode: localNode,
-        );
+        final registry = PeerRegistry(localNode: localNode);
         registry.addPeer(peer1, occurredAt: DateTime.now());
         registry.addPeer(peer2, occurredAt: DateTime.now());
 

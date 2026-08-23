@@ -33,11 +33,7 @@ void main() {
         const CountBasedRetention(1),
       );
       for (var i = 0; i < 3; i++) {
-        await service.appendEntry(
-          channelId,
-          streamId,
-          Uint8List.fromList([i]),
-        );
+        await service.appendEntry(channelId, streamId, Uint8List.fromList([i]));
       }
 
       final stream = EventStream(

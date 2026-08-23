@@ -12,43 +12,50 @@ import 'package:test/test.dart';
 
 void main() {
   group('ChannelService concurrent appendEntry', () {
-    test('interleaved appends never lose entries to sequence collisions',
-        () async {
-      final localNode = NodeId('local');
-      final channelId = ChannelId('ch1');
-      final streamId = StreamId('s1');
-      final entryRepository = InMemoryEntryRepository();
-      final service = ChannelService(
-        localNode: localNode,
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: InMemoryChannelRepository(),
-        entryRepository: entryRepository,
-      );
-      await service.createChannel(channelId);
-      await service.createStream(channelId, streamId, const KeepAllRetention());
+    test(
+      'interleaved appends never lose entries to sequence collisions',
+      () async {
+        final localNode = NodeId('local');
+        final channelId = ChannelId('ch1');
+        final streamId = StreamId('s1');
+        final entryRepository = InMemoryEntryRepository();
+        final service = ChannelService(
+          localNode: localNode,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          channelRepository: InMemoryChannelRepository(),
+          entryRepository: entryRepository,
+        );
+        await service.createChannel(channelId);
+        await service.createStream(
+          channelId,
+          streamId,
+          const KeepAllRetention(),
+        );
 
-      // Fire several appends WITHOUT awaiting between them. Each has
-      // multiple awaits between reading latestSequence and appending, so
-      // unserialized appends all read the same sequence and the duplicate
-      // silently vanishes.
-      final futures = [
-        for (var i = 0; i < 5; i++)
-          service.appendEntry(channelId, streamId, Uint8List.fromList([i])),
-      ];
-      await Future.wait(futures);
+        // Fire several appends WITHOUT awaiting between them. Each has
+        // multiple awaits between reading latestSequence and appending, so
+        // unserialized appends all read the same sequence and the duplicate
+        // silently vanishes.
+        final futures = [
+          for (var i = 0; i < 5; i++)
+            service.appendEntry(channelId, streamId, Uint8List.fromList([i])),
+        ];
+        await Future.wait(futures);
 
-      final entries = await entryRepository.getAll(channelId, streamId);
-      expect(
-        entries.length,
-        equals(5),
-        reason: 'every appended payload must be stored — silent loss is the '
-            'worst possible failure for a sync library',
-      );
-      expect(
-        entries.map((e) => e.sequence).toSet(),
-        equals({1, 2, 3, 4, 5}),
-        reason: 'sequences must be allocated without collisions',
-      );
-    });
+        final entries = await entryRepository.getAll(channelId, streamId);
+        expect(
+          entries.length,
+          equals(5),
+          reason:
+              'every appended payload must be stored — silent loss is the '
+              'worst possible failure for a sync library',
+        );
+        expect(
+          entries.map((e) => e.sequence).toSet(),
+          equals({1, 2, 3, 4, 5}),
+          reason: 'sequences must be allocated without collisions',
+        );
+      },
+    );
   });
 }

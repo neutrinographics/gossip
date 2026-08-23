@@ -81,8 +81,7 @@ void main() {
       h.stopListening();
     });
 
-    test('a write while not running is not pushed (pause semantics)',
-        () async {
+    test('a write while not running is not pushed (pause semantics)', () async {
       final h = makeHarness();
       final peer = h.addPeer('peer1');
       h.createChannel('ch1', streamIds: ['s1']);

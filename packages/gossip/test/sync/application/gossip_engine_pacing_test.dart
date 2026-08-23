@@ -194,34 +194,28 @@ void main() {
       );
     });
 
-    test(
-      'a round skips a peer whose exchange is fresher than the '
-      'current interval',
-      () async {
-        final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
-        final peer = h.addPeer('peer1');
-        h.peerRegistry.recordPeerRtt(
-          peer.id,
-          const Duration(milliseconds: 500),
-        );
-        h.engine.start();
+    test('a round skips a peer whose exchange is fresher than the '
+        'current interval', () async {
+      final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
+      final peer = h.addPeer('peer1');
+      h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 500));
+      h.engine.start();
 
-        // Mark the peer as exchanged-with "now".
-        h.peerRegistry.updatePeerAntiEntropy(peer.id, h.timePort.nowMs);
-        final (messages, sub) = h.captureMessages(peer);
+      // Mark the peer as exchanged-with "now".
+      h.peerRegistry.updatePeerAntiEntropy(peer.id, h.timePort.nowMs);
+      final (messages, sub) = h.captureMessages(peer);
 
-        await h.engine.performGossipRound();
-        await h.flush(3);
+      await h.engine.performGossipRound();
+      await h.flush(3);
 
-        expect(
-          messages,
-          isEmpty,
-          reason: 'all candidates fresh: the round must send nothing',
-        );
-        await sub.cancel();
-        h.engine.stop();
-      },
-    );
+      expect(
+        messages,
+        isEmpty,
+        reason: 'all candidates fresh: the round must send nothing',
+      );
+      await sub.cancel();
+      h.engine.stop();
+    });
 
     test('a stale peer is still gossiped with', () async {
       final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);

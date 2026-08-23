@@ -35,9 +35,7 @@ void main() {
         equals(const Duration(hours: 1)),
       );
 
-      final config = CoordinatorConfig(
-        hlcMaxDrift: const Duration(minutes: 5),
-      );
+      final config = CoordinatorConfig(hlcMaxDrift: const Duration(minutes: 5));
       expect(config.hlcMaxDrift, equals(const Duration(minutes: 5)));
     });
   });

@@ -71,9 +71,7 @@ void main() {
       () async {
         final coord = await _createCoordinator(
           localNode: localNode,
-          config: const CoordinatorConfig(
-            pingTimeout: Duration(seconds: 2),
-          ),
+          config: const CoordinatorConfig(pingTimeout: Duration(seconds: 2)),
         );
 
         final status = coord.getAdaptiveTimingStatus();
@@ -103,28 +101,25 @@ void main() {
       await coord.dispose();
     });
 
-    test(
-      'adaptiveTimingEnabled: false propagates to GossipEngine',
-      () async {
-        // When adaptive timing is disabled and no static gossipInterval is
-        // provided, GossipEngine falls back to its 500ms internal default.
-        // This is distinct from both the adaptive fallback (1000ms) and
-        // the explicit value used by the static-passthrough test (250ms).
-        final coord = await _createCoordinator(
-          localNode: localNode,
-          config: const CoordinatorConfig(adaptiveTimingEnabled: false),
-        );
+    test('adaptiveTimingEnabled: false propagates to GossipEngine', () async {
+      // When adaptive timing is disabled and no static gossipInterval is
+      // provided, GossipEngine falls back to its 500ms internal default.
+      // This is distinct from both the adaptive fallback (1000ms) and
+      // the explicit value used by the static-passthrough test (250ms).
+      final coord = await _createCoordinator(
+        localNode: localNode,
+        config: const CoordinatorConfig(adaptiveTimingEnabled: false),
+      );
 
-        final status = coord.getAdaptiveTimingStatus();
-        expect(status, isNotNull);
-        expect(
-          status!.effectiveGossipInterval,
-          equals(const Duration(milliseconds: 500)),
-        );
+      final status = coord.getAdaptiveTimingStatus();
+      expect(status, isNotNull);
+      expect(
+        status!.effectiveGossipInterval,
+        equals(const Duration(milliseconds: 500)),
+      );
 
-        await coord.dispose();
-      },
-    );
+      await coord.dispose();
+    });
   });
 }
 

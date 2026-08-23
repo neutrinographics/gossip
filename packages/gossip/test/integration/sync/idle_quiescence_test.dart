@@ -43,8 +43,11 @@ void main() {
     await network.runRounds(30); // late idle window, same width as early
     final lateCount = counter[0];
 
-    expect(lateCount, lessThan(earlyCount),
-        reason: 'quiescence pacing must reduce idle traffic over time');
+    expect(
+      lateCount,
+      lessThan(earlyCount),
+      reason: 'quiescence pacing must reduce idle traffic over time',
+    );
     await network.dispose();
   });
 
@@ -60,14 +63,17 @@ void main() {
     await network['a'].write(channelId, streamId, [2]);
     await network.runRounds(5);
 
-    expect(await network.hasConverged(channelId, streamId), isTrue,
-        reason: 'a write from deep idle must converge promptly via the '
-            'reactive push, even before the periodic loop wakes back up');
+    expect(
+      await network.hasConverged(channelId, streamId),
+      isTrue,
+      reason:
+          'a write from deep idle must converge promptly via the '
+          'reactive push, even before the periodic loop wakes back up',
+    );
     await network.dispose();
   });
 
-  test(
-      'deep idle stretches the gossip interval toward the ceiling and a '
+  test('deep idle stretches the gossip interval toward the ceiling and a '
       'write snaps it back', () async {
     final network = await TestNetwork.create(['a', 'b']);
     await network.connectAll();
@@ -79,18 +85,26 @@ void main() {
 
     final idleInterval = network['a'].effectiveGossipInterval;
     expect(idleInterval, isNotNull);
-    expect(idleInterval!.inSeconds, greaterThan(10),
-        reason: 'quiescence pacer must stretch the idle interval near the '
-            '30s ceiling');
+    expect(
+      idleInterval!.inSeconds,
+      greaterThan(10),
+      reason:
+          'quiescence pacer must stretch the idle interval near the '
+          '30s ceiling',
+    );
 
     await network['a'].write(channelId, streamId, [2]);
 
     final resetInterval = network['a'].effectiveGossipInterval;
     expect(resetInterval, isNotNull);
-    expect(resetInterval!.inSeconds, lessThanOrEqualTo(5),
-        reason: 'news must snap the pacer back to the active adaptive '
-            'band (<=5s clamp), directly verifying the cadence reset '
-            'rather than only inferring it from convergence');
+    expect(
+      resetInterval!.inSeconds,
+      lessThanOrEqualTo(5),
+      reason:
+          'news must snap the pacer back to the active adaptive '
+          'band (<=5s clamp), directly verifying the cadence reset '
+          'rather than only inferring it from convergence',
+    );
     await network.dispose();
   });
 
@@ -113,19 +127,27 @@ void main() {
     // to fire too. If this converges anyway, the push wasn't actually the
     // thing that got dropped, and the assertion below would pass vacuously.
     await network.runRounds(1, advanceMs: 200);
-    expect(await network.hasConverged(channelId, streamId), isFalse,
-        reason: 'the reactive push must actually have been lost here — '
-            'otherwise the repair below is not exercising the lost-push '
-            'path at all');
+    expect(
+      await network.hasConverged(channelId, streamId),
+      isFalse,
+      reason:
+          'the reactive push must actually have been lost here — '
+          'otherwise the repair below is not exercising the lost-push '
+          'path at all',
+    );
 
     // Within the ceiling, anti-entropy repairs it. Theoretical worst case:
     // 30s ceiling x 1.2 (the +/-20% scheduling jitter, see applyJitter) +
     // 150ms debounce (the flush that consumed the drop above) ~= 36.2s.
     // 35 simulated seconds sat inside that worst case; 40 gives real margin.
     await network.runRounds(40);
-    expect(await network.hasConverged(channelId, streamId), isTrue,
-        reason: 'the safety net must repair a lost push within 30s + '
-            'scheduling jitter (+/-20%)');
+    expect(
+      await network.hasConverged(channelId, streamId),
+      isTrue,
+      reason:
+          'the safety net must repair a lost push within 30s + '
+          'scheduling jitter (+/-20%)',
+    );
     await network.dispose();
   });
 

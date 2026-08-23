@@ -11,123 +11,116 @@ void main() {
   final codec = MembershipMessageCodec();
 
   group('Suspected peer recovery via indirect probes (SWIM)', () {
-    test(
-      'a suspected peer reachable only through an intermediary recovers '
-      'to reachable',
-      () async {
-        final h = FailureDetectorTestHarness(
-          pingTimeout: const Duration(milliseconds: 500),
-        );
-        final target = h.addPeer('target');
-        final intermediary = h.addPeer('intermediary');
+    test('a suspected peer reachable only through an intermediary recovers '
+        'to reachable', () async {
+      final h = FailureDetectorTestHarness(
+        pingTimeout: const Duration(milliseconds: 500),
+      );
+      final target = h.addPeer('target');
+      final intermediary = h.addPeer('intermediary');
 
-        h.startListening();
+      h.startListening();
 
-        // The intermediary is fully functional: it acks direct pings and
-        // services PingReqs (simulating a successful relay to the target).
-        final sub = intermediary.port.incoming.listen((msg) {
-          final decoded = codec.decode(msg.bytes);
-          if (decoded is Ping) {
-            intermediary.port.send(
-              h.localNode,
-              codec.encode(
-                Ack(sender: intermediary.id, sequence: decoded.sequence),
-              ),
-            );
-          } else if (decoded is PingReq) {
-            intermediary.port.send(
-              h.localNode,
-              codec.encode(
-                Ack(sender: intermediary.id, sequence: decoded.sequence),
-              ),
-            );
-          }
-        });
-        // The target never answers direct pings: it drifted out of direct
-        // radio range but remains reachable via the intermediary.
-
-        // Drive the target into suspected state.
-        h.peerRegistry.updatePeerStatus(
-          target.id,
-          PeerStatus.suspected,
-          occurredAt: DateTime.now(),
-        );
-
-        // Run probe rounds until the target recovers (or give up).
-        for (
-          var i = 0;
-          i < 12 &&
-              h.peerRegistry.getPeer(target.id)!.status !=
-                  PeerStatus.reachable;
-          i++
-        ) {
-          final round = h.detector.performProbeRound();
-          await h.flush(3);
-          // Direct phase times out (if the target was probed).
-          await h.timePort.advance(const Duration(milliseconds: 501));
-          await h.flush(3);
-          // Indirect phase: PingReq relayed, forwarded Ack arrives.
-          await h.timePort.advance(const Duration(milliseconds: 501));
-          await h.flush(3);
-          await round;
+      // The intermediary is fully functional: it acks direct pings and
+      // services PingReqs (simulating a successful relay to the target).
+      final sub = intermediary.port.incoming.listen((msg) {
+        final decoded = codec.decode(msg.bytes);
+        if (decoded is Ping) {
+          intermediary.port.send(
+            h.localNode,
+            codec.encode(
+              Ack(sender: intermediary.id, sequence: decoded.sequence),
+            ),
+          );
+        } else if (decoded is PingReq) {
+          intermediary.port.send(
+            h.localNode,
+            codec.encode(
+              Ack(sender: intermediary.id, sequence: decoded.sequence),
+            ),
+          );
         }
+      });
+      // The target never answers direct pings: it drifted out of direct
+      // radio range but remains reachable via the intermediary.
 
-        final probed = h.peerRegistry.getPeer(target.id)!;
-        expect(
-          probed.status,
-          equals(PeerStatus.reachable),
-          reason:
-              'a peer that answers every indirect probe must not stay '
-              'suspected forever',
-        );
-        expect(
-          probed.metrics.rttEstimate,
-          isNull,
-          reason:
-              'a forwarded Ack measures a 2-hop path and must not be '
-              'attributed to the target as a direct RTT sample',
-        );
+      // Drive the target into suspected state.
+      h.peerRegistry.updatePeerStatus(
+        target.id,
+        PeerStatus.suspected,
+        occurredAt: DateTime.now(),
+      );
 
-        await sub.cancel();
-        h.stopListening();
-      },
-    );
+      // Run probe rounds until the target recovers (or give up).
+      for (
+        var i = 0;
+        i < 12 &&
+            h.peerRegistry.getPeer(target.id)!.status != PeerStatus.reachable;
+        i++
+      ) {
+        final round = h.detector.performProbeRound();
+        await h.flush(3);
+        // Direct phase times out (if the target was probed).
+        await h.timePort.advance(const Duration(milliseconds: 501));
+        await h.flush(3);
+        // Indirect phase: PingReq relayed, forwarded Ack arrives.
+        await h.timePort.advance(const Duration(milliseconds: 501));
+        await h.flush(3);
+        await round;
+      }
+
+      final probed = h.peerRegistry.getPeer(target.id)!;
+      expect(
+        probed.status,
+        equals(PeerStatus.reachable),
+        reason:
+            'a peer that answers every indirect probe must not stay '
+            'suspected forever',
+      );
+      expect(
+        probed.metrics.rttEstimate,
+        isNull,
+        reason:
+            'a forwarded Ack measures a 2-hop path and must not be '
+            'attributed to the target as a direct RTT sample',
+      );
+
+      await sub.cancel();
+      h.stopListening();
+    });
   });
 
   group('Ack sender validation', () {
-    test(
-      'an Ack from a different peer with a colliding sequence does not '
-      'confirm a direct probe',
-      () async {
-        final h = FailureDetectorTestHarness(
-          pingTimeout: const Duration(milliseconds: 500),
-        );
-        final target = h.addPeer('target');
-        final other = h.addPeer('other');
+    test('an Ack from a different peer with a colliding sequence does not '
+        'confirm a direct probe', () async {
+      final h = FailureDetectorTestHarness(
+        pingTimeout: const Duration(milliseconds: 500),
+      );
+      final target = h.addPeer('target');
+      final other = h.addPeer('other');
 
-        final probe = h.detector.probeNewPeer(target.id);
-        await h.flush();
+      final probe = h.detector.probeNewPeer(target.id);
+      await h.flush();
 
-        // Stale/foreign Ack matching the pending sequence (1) but from
-        // the wrong peer.
-        h.detector.handleAck(
-          Ack(sender: other.id, sequence: 1),
-          timestampMs: h.timePort.nowMs,
-        );
+      // Stale/foreign Ack matching the pending sequence (1) but from
+      // the wrong peer.
+      h.detector.handleAck(
+        Ack(sender: other.id, sequence: 1),
+        timestampMs: h.timePort.nowMs,
+      );
 
-        await h.timePort.advance(const Duration(milliseconds: 501));
-        expect(
-          await probe,
-          isFalse,
-          reason: 'an Ack from a different peer must not confirm the target',
-        );
-        expect(
-          h.peerRegistry.getPeer(target.id)!.metrics.rttEstimate,
-          isNull,
-          reason: 'the foreign Ack must not pollute the target\'s RTT',
-        );
-      },
-    );
+      await h.timePort.advance(const Duration(milliseconds: 501));
+      expect(
+        await probe,
+        isFalse,
+        reason: 'an Ack from a different peer must not confirm the target',
+      );
+      expect(
+        h.peerRegistry.getPeer(target.id)!.metrics.rttEstimate,
+        isNull,
+        reason: 'the foreign Ack must not pollute the target\'s RTT',
+      );
+    });
   });
 
   group('Listening lifecycle', () {

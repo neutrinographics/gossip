@@ -1153,47 +1153,42 @@ void main() {
       });
 
       group('round-trip persistence', () {
-        test(
-          'clock survives across coordinator creates',
-          () async {
-            final bus = InMemoryMessageBus();
-            final channelRepo = InMemoryChannelRepository();
-            final entryRepo = InMemoryEntryRepository();
-            final localNodeRepo = InMemoryLocalNodeRepository(
-              nodeId: localNode,
-            );
-            final timePort = InMemoryTimePort();
-            timePort.advance(Duration(milliseconds: 1000));
+        test('clock survives across coordinator creates', () async {
+          final bus = InMemoryMessageBus();
+          final channelRepo = InMemoryChannelRepository();
+          final entryRepo = InMemoryEntryRepository();
+          final localNodeRepo = InMemoryLocalNodeRepository(nodeId: localNode);
+          final timePort = InMemoryTimePort();
+          timePort.advance(Duration(milliseconds: 1000));
 
-            // First session: write entries
-            final coord1 = await Coordinator.create(
-              channelRepository: channelRepo,
-              peerRepository: InMemoryPeerRepository(),
-              entryRepository: entryRepo,
-              localNodeRepository: localNodeRepo,
-              messagePort: InMemoryMessagePort(localNode, bus),
-              timerPort: timePort,
-            );
+          // First session: write entries
+          final coord1 = await Coordinator.create(
+            channelRepository: channelRepo,
+            peerRepository: InMemoryPeerRepository(),
+            entryRepository: entryRepo,
+            localNodeRepository: localNodeRepo,
+            messagePort: InMemoryMessagePort(localNode, bus),
+            timerPort: timePort,
+          );
 
-            final channel = await coord1.createChannel(ChannelId('ch'));
-            final stream = await channel.getOrCreateStream(StreamId('s'));
-            await stream.append(Uint8List.fromList([1, 2, 3]));
+          final channel = await coord1.createChannel(ChannelId('ch'));
+          final stream = await channel.getOrCreateStream(StreamId('s'));
+          await stream.append(Uint8List.fromList([1, 2, 3]));
 
-            final savedClock = coord1.currentClockState;
+          final savedClock = coord1.currentClockState;
 
-            // Second session: restore from same repositories
-            final coord2 = await Coordinator.create(
-              channelRepository: channelRepo,
-              peerRepository: InMemoryPeerRepository(),
-              entryRepository: entryRepo,
-              localNodeRepository: localNodeRepo,
-              messagePort: InMemoryMessagePort(localNode, bus),
-              timerPort: InMemoryTimePort(),
-            );
+          // Second session: restore from same repositories
+          final coord2 = await Coordinator.create(
+            channelRepository: channelRepo,
+            peerRepository: InMemoryPeerRepository(),
+            entryRepository: entryRepo,
+            localNodeRepository: localNodeRepo,
+            messagePort: InMemoryMessagePort(localNode, bus),
+            timerPort: InMemoryTimePort(),
+          );
 
-            expect(coord2.currentClockState, equals(savedClock));
-          },
-        );
+          expect(coord2.currentClockState, equals(savedClock));
+        });
       });
     });
   });

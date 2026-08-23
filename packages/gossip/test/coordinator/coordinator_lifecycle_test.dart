@@ -53,54 +53,60 @@ void main() {
   }
 
   group('Coordinator start/stop interleaving', () {
-    test('stop() during an in-flight start() wins — engines never run',
-        () async {
-      final coordinator = await createCoordinator();
+    test(
+      'stop() during an in-flight start() wins — engines never run',
+      () async {
+        final coordinator = await createCoordinator();
 
-      // start() suspends internally (channel loading) before starting the
-      // engines. A stop() issued during that window is the LAST call and
-      // must win: the coordinator must not end up with live engines.
-      final startFuture = coordinator.start();
-      await coordinator.stop();
-      await startFuture;
+        // start() suspends internally (channel loading) before starting the
+        // engines. A stop() issued during that window is the LAST call and
+        // must win: the coordinator must not end up with live engines.
+        final startFuture = coordinator.start();
+        await coordinator.stop();
+        await startFuture;
 
-      expect(coordinator.state, equals(SyncState.stopped));
-      expect(
-        coordinator.gossipEngineForTesting!.isRunning,
-        isFalse,
-        reason: 'a stopped coordinator must not gossip in the background',
-      );
-      expect(
-        coordinator.failureDetectorForTesting!.isRunning,
-        isFalse,
-        reason: 'a stopped coordinator must not probe in the background',
-      );
+        expect(coordinator.state, equals(SyncState.stopped));
+        expect(
+          coordinator.gossipEngineForTesting!.isRunning,
+          isFalse,
+          reason: 'a stopped coordinator must not gossip in the background',
+        );
+        expect(
+          coordinator.failureDetectorForTesting!.isRunning,
+          isFalse,
+          reason: 'a stopped coordinator must not probe in the background',
+        );
 
-      await coordinator.dispose();
-    });
+        await coordinator.dispose();
+      },
+    );
 
-    test('state always matches engine liveness after start/stop churn',
-        () async {
-      final coordinator = await createCoordinator();
+    test(
+      'state always matches engine liveness after start/stop churn',
+      () async {
+        final coordinator = await createCoordinator();
 
-      final futures = <Future<void>>[
-        coordinator.start(),
-        coordinator.stop(),
-        coordinator.start(),
-      ];
-      await Future.wait(futures);
+        final futures = <Future<void>>[
+          coordinator.start(),
+          coordinator.stop(),
+          coordinator.start(),
+        ];
+        await Future.wait(futures);
 
-      final running = coordinator.state == SyncState.running;
-      expect(coordinator.gossipEngineForTesting!.isRunning, equals(running));
-      expect(coordinator.failureDetectorForTesting!.isRunning, equals(running));
+        final running = coordinator.state == SyncState.running;
+        expect(coordinator.gossipEngineForTesting!.isRunning, equals(running));
+        expect(
+          coordinator.failureDetectorForTesting!.isRunning,
+          equals(running),
+        );
 
-      await coordinator.dispose();
-    });
+        await coordinator.dispose();
+      },
+    );
   });
 
   group('Coordinator pause/resume channel visibility', () {
-    test('a channel created while paused is gossiped after resume()',
-        () async {
+    test('a channel created while paused is gossiped after resume()', () async {
       final bus = InMemoryMessageBus();
       final timePort = InMemoryTimePort();
       final coordinator = await createCoordinator(bus: bus, timePort: timePort);
@@ -193,8 +199,7 @@ void main() {
   });
 
   group('Coordinator monitoring under concurrent mutation', () {
-    test('getResourceUsage tolerates channels created mid-iteration',
-        () async {
+    test('getResourceUsage tolerates channels created mid-iteration', () async {
       final coordinator = await createCoordinator();
       final channel = await coordinator.createChannel(ChannelId('ch1'));
       await channel.getOrCreateStream(StreamId('s1'));
@@ -208,15 +213,15 @@ void main() {
       await expectLater(
         usageFuture,
         completes,
-        reason: 'iterating live map keys across awaits throws '
+        reason:
+            'iterating live map keys across awaits throws '
             'ConcurrentModificationError',
       );
 
       await coordinator.dispose();
     });
 
-    test('channelsForPeer tolerates channels created mid-iteration',
-        () async {
+    test('channelsForPeer tolerates channels created mid-iteration', () async {
       final coordinator = await createCoordinator();
       await coordinator.createChannel(ChannelId('ch1'));
       await coordinator.createChannel(ChannelId('ch2'));
@@ -231,8 +236,7 @@ void main() {
   });
 
   group('Engine message subscriptions survive stream errors', () {
-    test('a transport stream error is emitted, not silently fatal',
-        () async {
+    test('a transport stream error is emitted, not silently fatal', () async {
       final controller = StreamController<IncomingMessage>.broadcast();
       final port = _ErroringMessagePort(controller);
       final errors = <Object>[];
@@ -255,7 +259,8 @@ void main() {
       expect(
         errors,
         isNotEmpty,
-        reason: 'a transport error must surface via the errors stream, not '
+        reason:
+            'a transport error must surface via the errors stream, not '
             'kill SWIM/gossip listening as an unhandled zone error',
       );
 
@@ -273,8 +278,11 @@ class _ErroringMessagePort extends MessagePort {
   Stream<IncomingMessage> get incoming => controller.stream;
 
   @override
-  Future<void> send(NodeId destination, Uint8List bytes,
-      {MessagePriority priority = MessagePriority.normal}) async {}
+  Future<void> send(
+    NodeId destination,
+    Uint8List bytes, {
+    MessagePriority priority = MessagePriority.normal,
+  }) async {}
 
   @override
   Future<void> close() async {}

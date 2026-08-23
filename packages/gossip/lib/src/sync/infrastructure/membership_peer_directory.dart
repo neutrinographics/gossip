@@ -38,12 +38,7 @@ class MembershipPeerDirectory implements PeerDirectory {
   }
 
   @override
-  void recordMessageReceived(
-    NodeId peer,
-    int bytes,
-    int nowMs,
-    int windowMs,
-  ) {
+  void recordMessageReceived(NodeId peer, int bytes, int nowMs, int windowMs) {
     _registry.recordMessageReceived(peer, bytes, nowMs, windowMs);
   }
 

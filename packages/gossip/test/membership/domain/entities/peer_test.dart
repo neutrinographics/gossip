@@ -33,9 +33,7 @@ void main() {
         lastContactMs: 1000,
       );
 
-      final updated = peer.copyWith(
-        status: PeerStatus.suspected,
-      );
+      final updated = peer.copyWith(status: PeerStatus.suspected);
 
       expect(updated.id, equals(nodeId));
       expect(updated.status, equals(PeerStatus.suspected));
