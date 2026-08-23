@@ -22,8 +22,8 @@ class MaterializerState<T> {
 
   Stream<T> get stateStream => _stateController.stream;
 
+  /// Notifies listeners; state mutation is `_commit`'s job.
   void emit(T state) {
-    cachedState = state;
     if (!_stateController.isClosed) {
       _stateController.add(state);
     }

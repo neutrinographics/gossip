@@ -188,14 +188,8 @@ class MaterializationService {
     if (containsOutOfOrderEntries) {
       await _fullRebuild<T>(matState, channelId, streamId);
     } else {
-      _incrementalFold<T>(matState, newEntries);
-      if (matState.cursor != null) {
-        await matState.materializer.save(
-          matState.cachedState as T,
-          matState.cursor!.toString(),
-        );
-      }
-      matState.emit(matState.cachedState as T);
+      final (state, cursor) = _computeIncrementalFold<T>(matState, newEntries);
+      await _commit<T>(matState, state, cursor);
     }
   }
 
@@ -240,16 +234,7 @@ class MaterializationService {
         ? FoldCursor.fromEntry(allEntries.last)
         : cursor;
 
-    if (newCursor != null) {
-      await matState.materializer.save(currentState, newCursor.toString());
-    }
-
-    // Publish only after the save so a failed save leaves the state
-    // unpublished (the next operation retries initialization).
-    matState.cursor = newCursor;
-    matState.cachedState = currentState;
-    matState.isInitialized = true;
-    matState.emit(currentState);
+    await _commit<T>(matState, currentState, newCursor);
   }
 
   /// Full rebuild: calls `initial(isReset: true)` and re-folds all entries.
@@ -266,21 +251,16 @@ class MaterializationService {
       state = matState.materializer.fold(state, entry);
     }
 
-    matState.cursor = allEntries.isNotEmpty
+    final cursor = allEntries.isNotEmpty
         ? FoldCursor.fromEntry(allEntries.last)
         : null;
-    matState.cachedState = state;
-    matState.isInitialized = true;
 
-    if (matState.cursor != null) {
-      await matState.materializer.save(state, matState.cursor!.toString());
-    }
-
-    matState.emit(state);
+    await _commit<T>(matState, state, cursor);
   }
 
-  /// Incremental fold: applies only new entries to cached state.
-  void _incrementalFold<T>(
+  /// Computes the incremental fold result without mutating [matState] —
+  /// mutation and publication are `_commit`'s job.
+  (T, FoldCursor?) _computeIncrementalFold<T>(
     MaterializerState<T> matState,
     List<LogEntry> newEntries,
   ) {
@@ -288,9 +268,33 @@ class MaterializationService {
     for (final entry in newEntries) {
       state = matState.materializer.fold(state, entry);
     }
-    if (newEntries.isNotEmpty) {
-      matState.cursor = FoldCursor.fromEntry(newEntries.last);
+    final cursor = newEntries.isNotEmpty
+        ? FoldCursor.fromEntry(newEntries.last)
+        : matState.cursor;
+    return (state, cursor);
+  }
+
+  /// Publishes a fold result: save, then mutate in-memory state, then
+  /// emit. The single publish contract for every fold path (initialize,
+  /// incremental fold, full rebuild).
+  ///
+  /// Save must happen first: mutating before a save that then fails would
+  /// publish a state the persistence layer never durably recorded, so a
+  /// restart (or any other reader of the persisted cursor) would diverge
+  /// from what's in memory. Saving first means a failed save simply
+  /// leaves [matState] at its previous state and cursor — unpublished,
+  /// and transparently retried the next time this materializer is folded.
+  Future<void> _commit<T>(
+    MaterializerState<T> matState,
+    T state,
+    FoldCursor? cursor,
+  ) async {
+    if (cursor != null) {
+      await matState.materializer.save(state, cursor.toString());
     }
+    matState.cursor = cursor;
     matState.cachedState = state;
+    matState.isInitialized = true;
+    matState.emit(state);
   }
 }
