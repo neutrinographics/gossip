@@ -5,8 +5,9 @@ import 'package:gossip/src/sync/domain/interfaces/entry_repository.dart';
 /// Repository for persisting ChannelAggregate state.
 ///
 /// [ChannelRepository] stores only channel metadata (membership, stream IDs,
-/// version vectors). Log entries are stored separately via [EntryRepository] to
-/// prevent memory exhaustion.
+/// retention policies). Log entries — and the version vectors derived from
+/// them — are stored separately via [EntryRepository] to prevent memory
+/// exhaustion.
 ///
 /// ## Persistence Scope
 /// Each [ChannelAggregate] aggregate includes: Channel ID · Member node IDs
