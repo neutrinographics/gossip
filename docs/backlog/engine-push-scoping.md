@@ -27,13 +27,14 @@ serving is cheap for the requester's progress); keep a per-peer cache of
 shared channels that also trims digest construction.
 
 While reworking the push path, also make its timing semantics deliberate:
-the debounced push buffers entries at append time but evaluates recipients,
-reachability, and repository state at flush time, so an unflushed batch can
-outlive a compaction or predate a newly connected peer within the debounce
-window. Benign today (entries are immutable, and a mismatched delivery is
-either useful or dropped and repaired by anti-entropy) — surfaced by the
-2026-08 compaction test hardening; decide and document buffer-time vs
-flush-time on purpose.
+the debounced push freezes the entries at append time but picks its
+recipients (who is reachable) at flush time — and never re-consults the
+repository in between, so an unflushed batch can outlive a compaction or
+be handed to a peer that connected inside the debounce window, carrying
+entries the sender no longer durably holds. Benign today (entries are
+immutable, and a mismatched delivery is either useful or dropped and
+repaired by anti-entropy) — surfaced by the 2026-08 compaction test
+hardening; decide and document buffer-time vs flush-time on purpose.
 
 ## Related
 
