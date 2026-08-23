@@ -4,8 +4,10 @@ import 'package:gossip/src/sync/sync.dart';
 /// Configuration options for the Coordinator.
 ///
 /// The library automatically adapts timing based on observed network latency,
-/// making it self-tuning for any transport (WiFi, BLE, etc.). Only policy
-/// parameters like [suspicionThreshold] remain configurable.
+/// making it self-tuning for any transport (WiFi, BLE, etc.) — most callers
+/// only need the policy knobs below, like [suspicionThreshold].
+/// [gossipInterval], [probeInterval], and [pingTimeout] are escape hatches:
+/// setting any of them bypasses adaptive timing for that value entirely.
 ///
 /// ## Adaptive Timing (ADR-013)
 ///
@@ -87,8 +89,9 @@ class CoordinatorConfig {
   /// probes one unreachable peer (round-robin) to detect transport recovery
   /// without requiring an explicit reconnection event.
   ///
-  /// **Default: 5** (probes unreachable peers approximately every 7.5 seconds
-  /// at default timing)
+  /// **Default: 5.** The resulting real-time cadence tracks the failure
+  /// detector's adaptive probe interval, not a fixed duration — see
+  /// [FailureDetector.effectiveProbeInterval].
   ///
   /// Lower values detect recovery faster but add more traffic for peers that
   /// are likely still down. Set to 0 to disable unreachable probing.

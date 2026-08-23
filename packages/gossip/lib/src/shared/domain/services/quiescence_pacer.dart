@@ -9,7 +9,8 @@ import 'dart:math' as math;
 class QuiescencePacer {
   QuiescencePacer({required this.ceiling, this.growth = 1.5});
 
-  /// The slowest the paced interval may get (spec: 30 s, not configurable).
+  /// The slowest the paced interval may get: callers pass their scheduling
+  /// ceiling; the library pins 30 s and exposes no knob.
   final Duration ceiling;
 
   /// Multiplicative growth per quiet round (Trickle-style doubling core).

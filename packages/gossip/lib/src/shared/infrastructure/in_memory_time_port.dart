@@ -40,9 +40,6 @@ class _PendingDelay {
 /// // Advance time by 1 second, triggering any scheduled callbacks
 /// // and completing any delays that have elapsed
 /// await timerPort.advance(Duration(seconds: 1));
-///
-/// // Legacy: tick() still works for just triggering periodic callbacks
-/// timerPort.tick();
 /// ```
 ///
 /// ## Time Simulation
@@ -104,7 +101,8 @@ class InMemoryTimePort implements TimePort {
     }
     _pendingDelays.removeWhere((p) => completed.contains(p));
 
-    // Trigger periodic callbacks
+    // Trigger periodic callbacks.
+    // ignore: deprecated_member_use_from_same_package -- advance() reuses tick()'s own firing logic internally.
     tick();
 
     // Allow microtasks to run (important for async code to proceed)
@@ -119,6 +117,9 @@ class InMemoryTimePort implements TimePort {
   /// For most tests, prefer [advance] which also handles timeouts.
   /// Use [tick] only when you need to trigger callbacks without
   /// affecting simulated time.
+  @Deprecated(
+    'Use advance(); tick() only fires periodic callbacks without advancing time',
+  )
   void tick() {
     // Copy to avoid concurrent modification if callbacks schedule/cancel
     final callbacks = List<void Function()>.from(_callbacks.values);

@@ -48,8 +48,8 @@ class RttTracker {
 
   /// Creates an [RttTracker] with the given initial estimate.
   ///
-  /// If no initial estimate is provided, uses conservative defaults
-  /// (1 second RTT, 500ms variance).
+  /// If no initial estimate is provided, see [RttEstimate.initial] for the
+  /// cold-start defaults.
   RttTracker({RttEstimate? initialEstimate})
     : _initialEstimate = initialEstimate ?? RttEstimate.initial(),
       _estimate = initialEstimate ?? RttEstimate.initial();

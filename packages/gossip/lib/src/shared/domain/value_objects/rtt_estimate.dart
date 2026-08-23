@@ -133,7 +133,7 @@ class RttEstimate {
   /// Formula: `timeout = smoothedRtt + 4 * rttVariance`
   ///
   /// The result is clamped between [minTimeout] and [maxTimeout].
-  /// Defaults: min=200ms, max=10s.
+  /// Defaults: [_defaultMinTimeout] (500 ms) / [_defaultMaxTimeout] (10 s).
   Duration suggestedTimeout({
     Duration minTimeout = _defaultMinTimeout,
     Duration maxTimeout = _defaultMaxTimeout,

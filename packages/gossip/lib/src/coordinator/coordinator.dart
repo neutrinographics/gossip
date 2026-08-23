@@ -206,6 +206,11 @@ class Coordinator {
   ///
   /// [config] allows tuning of gossip and failure detection parameters.
   /// If null, default values are used.
+  ///
+  /// [random] lets callers inject a seeded Random for deterministic tests.
+  ///
+  /// [onLog] receives diagnostic logs; also the fallback error sink after
+  /// dispose.
   static Future<Coordinator> create({
     required LocalNodeRepository localNodeRepository,
     required ChannelRepository channelRepository,
@@ -892,10 +897,8 @@ class Coordinator {
 
   /// Stream of domain events emitted by the system.
   ///
-  /// Events include:
-  /// - MemberAdded, MemberRemoved
-  /// - StreamCreated
-  /// - PeerStatusChanged
+  /// Carries every [SyncEvent] and [MembershipEvent]; see those sealed
+  /// families for the full set.
   ///
   /// Applications can observe this stream for logging, metrics, or event sourcing.
   Stream<DomainEvent> get events => _eventsController.stream;
@@ -914,8 +917,8 @@ class Coordinator {
   ///
   /// Transitions from [SyncState.stopped] or [SyncState.paused] to [SyncState.running].
   /// When running, the coordinator will:
-  /// - Start gossip protocol (once integrated)
-  /// - Start failure detection (once integrated)
+  /// - Start gossip protocol
+  /// - Start failure detection
   /// - Begin processing events
   ///
   /// Returns immediately if already running (idempotent).

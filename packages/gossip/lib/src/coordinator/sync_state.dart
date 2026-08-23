@@ -1,6 +1,6 @@
 /// Represents the current state of the sync coordinator.
 enum SyncState {
-  /// Initial state before start() is called.
+  /// Not running: the initial state, and the state after stop().
   stopped,
 
   /// Coordinator is running and actively syncing.

@@ -67,16 +67,10 @@ class LogEntry implements Comparable<LogEntry> {
   /// identifies this entry across all peers and time.
   LogEntryId get id => LogEntryId(author, sequence);
 
-  /// Estimated size in bytes for quota management and wire protocol sizing.
+  /// Storage-quota heuristic (52-byte fixed overhead + payload length).
   ///
-  /// This is an approximation based on the wire encoding format:
-  /// - author: 36 bytes (UUID string as UTF-8)
-  /// - sequence: 4 bytes (int32)
-  /// - timestamp: 8 bytes (int64 combining physicalMs and logical)
-  /// - payload: variable length
-  /// - framing overhead: ~4 bytes (length prefixes)
-  ///
-  /// Total: 52 + payload.length bytes
+  /// NOT the wire size — the codec computes exact encoded sizes; see
+  /// SyncMessageCodec.encodedEntrySize.
   int get sizeBytes => 52 + payload.length;
 
   /// Compares entries for deterministic ordering.

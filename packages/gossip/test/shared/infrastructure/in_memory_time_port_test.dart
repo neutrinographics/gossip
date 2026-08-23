@@ -1,3 +1,4 @@
+// ignore_for_file: deprecated_member_use_from_same_package -- this file exercises tick()'s own contract, which advance() doesn't cover.
 import 'package:test/test.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 

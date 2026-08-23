@@ -2,10 +2,8 @@ import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 
 /// Abstraction for current time to enable deterministic testing.
 ///
-/// [TimeSource] decouples the domain from system time, allowing tests to
-/// control time progression. It acts as an anti-corruption layer that
-/// delegates to [TimePort], ensuring domain code doesn't depend directly
-/// on infrastructure.
+/// A read-only clock view over [TimePort] for consumers that must not
+/// schedule.
 ///
 /// Use cases:
 /// - `HlcClock` uses this to generate hybrid logical clock timestamps
