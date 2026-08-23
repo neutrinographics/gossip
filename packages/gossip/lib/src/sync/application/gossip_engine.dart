@@ -4,6 +4,7 @@ import 'package:gossip/src/shared/domain/value_objects/log_level.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/interfaces/local_node_repository.dart';
 import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
+import 'package:gossip/src/shared/domain/services/generation_scheduler.dart';
 import 'package:gossip/src/shared/domain/services/jitter.dart';
 import 'package:gossip/src/shared/domain/services/quiescence_pacer.dart';
 import 'package:gossip/src/shared/domain/services/rtt_tracker.dart';
@@ -171,16 +172,32 @@ class GossipEngine {
   /// Injectable for deterministic testing with seeded Random.
   final Random _random;
 
-  /// Whether gossip rounds are currently running.
-  bool _isRunning = false;
+  /// Drives the periodic gossip round loop: computes each tick's delay
+  /// (jittered [effectiveGossipInterval]), runs [performGossipRound], and
+  /// reports tick vs. scheduling failures separately (see
+  /// [GenerationScheduler]'s class doc for the failure policy and the
+  /// forking hazard it forecloses). Built in the constructor body — its
+  /// `nextDelay`/`tick` callbacks close over instance members that must
+  /// already be initialized.
+  late final GenerationScheduler _scheduler;
 
-  /// Generation token for the gossip round loop.
+  /// Generation token for the reactive-push debounce timer only
+  /// ([notifyLocalWrite]/[_flushPendingPushes]).
   ///
-  /// Incremented on every [start] and [stop] so that delay callbacks
-  /// scheduled by a previous run become stale and cannot fork a second
-  /// concurrent round loop when the engine is restarted within one
-  /// interval (e.g. Coordinator pause()/resume()).
-  int _generation = 0;
+  /// Before this class adopted [GenerationScheduler] for the round loop, a
+  /// single `_generation` counter guarded both the round loop's delay
+  /// callback AND this debounce's delay callback — [start] and [stop]
+  /// bumped it once and both mechanisms checked it. The round loop's half
+  /// of that is now [_scheduler]'s own internal concern, which this class
+  /// cannot observe or reuse (by design — see [GenerationScheduler]'s doc:
+  /// it does not expose its generation). This field keeps the debounce's
+  /// half working exactly as before: bumped everywhere the old shared
+  /// counter was bumped relative to it — [start], [stop], and the round
+  /// loop's scheduling-failure path (mirrored here so a scheduling failure
+  /// still invalidates an in-flight debounce, as it did when the counter
+  /// was shared) — so a callback from a debounce scheduled before any of
+  /// those events recognizes itself as stale and does nothing.
+  int _pushGeneration = 0;
 
   /// Subscription to incoming messages (for cleanup on stop).
   StreamSubscription<IncomingMessage>? _messageSubscription;
@@ -334,7 +351,41 @@ class GossipEngine {
        _staticGossipInterval =
            gossipInterval ?? const Duration(milliseconds: 500),
        _adaptiveTimingEnabled = adaptiveTimingEnabled,
-       _staticIntervalProvided = gossipInterval != null;
+       _staticIntervalProvided = gossipInterval != null {
+    _scheduler = GenerationScheduler(
+      timePort: timePort,
+      // ±20% jitter decorrelates gossip loops across nodes so they don't
+      // phase-lock into correlated request/response bursts; recomputed
+      // fresh every cycle so the pacer's growth/reset each round is
+      // reflected in the next tick's delay.
+      nextDelay: () => applyJitter(effectiveGossipInterval, _random),
+      tick: performGossipRound,
+      onTickError: (error, stackTrace) => _emitError(
+        PeerSyncError(
+          localNode,
+          SyncErrorType.protocolError,
+          'Gossip round failed: $error',
+          occurredAt: DateTime.now(),
+          cause: error,
+        ),
+      ),
+      onSchedulingError: (error, stackTrace) {
+        // A dead round loop invalidates any reactive-push debounce still
+        // in flight too — see [_pushGeneration]'s doc for why this bump
+        // belongs here.
+        _pushGeneration++;
+        _emitError(
+          PeerSyncError(
+            localNode,
+            SyncErrorType.protocolError,
+            'Gossip round scheduling failed: $error',
+            occurredAt: DateTime.now(),
+            cause: error,
+          ),
+        );
+      },
+    );
+  }
 
   /// Emits an error through the callback if one is registered.
   void _emitError(SyncError error) {
@@ -352,7 +403,7 @@ class GossipEngine {
   }
 
   /// Whether gossip rounds are currently active.
-  bool get isRunning => _isRunning;
+  bool get isRunning => _scheduler.isRunning;
 
   /// Default conservative gossip interval when no per-peer RTT data exists.
   static const Duration _defaultConservativeInterval = Duration(
@@ -457,52 +508,12 @@ class GossipEngine {
   /// Note: This does NOT start message listening. Call [startListening]
   /// separately to handle incoming gossip messages.
   void start() {
-    if (_isRunning) return;
-    _isRunning = true;
+    if (_scheduler.isRunning) return;
     // A restart is news — never resume mid-backoff into a stale world.
     _newsSinceLastRound = true;
     _pacer.news();
-    _generation++;
-    _scheduleNextGossipRound(_generation);
-  }
-
-  /// Schedules the next gossip round using the current effective interval.
-  ///
-  /// Uses [TimePort.delay] instead of periodic timer to allow the interval to adapt
-  /// based on RTT measurements collected during operation.
-  ///
-  /// [generation] identifies the run that scheduled this callback; if it
-  /// no longer matches [_generation] when the delay fires, the engine was
-  /// stopped (and possibly restarted) in the meantime and this stale
-  /// callback must not run a round or reschedule itself.
-  void _scheduleNextGossipRound(int generation) {
-    if (!_isRunning || generation != _generation) return;
-    // ±20% jitter decorrelates gossip loops across nodes so they don't
-    // phase-lock into correlated request/response bursts.
-    timePort
-        .delay(applyJitter(effectiveGossipInterval, _random))
-        .then((_) {
-          if (_isRunning && generation == _generation) {
-            _gossipRound(generation);
-          }
-        })
-        .catchError((Object error, StackTrace stackTrace) {
-          // A broken timer must not kill the loop silently: surface the error
-          // and stop so isRunning reflects reality.
-          if (generation == _generation) {
-            _isRunning = false;
-            _generation++;
-          }
-          _emitError(
-            PeerSyncError(
-              localNode,
-              SyncErrorType.protocolError,
-              'Gossip round scheduling failed: $error',
-              occurredAt: DateTime.now(),
-              cause: error,
-            ),
-          );
-        });
+    _pushGeneration++;
+    _scheduler.start();
   }
 
   /// Stops periodic gossip rounds.
@@ -510,9 +521,9 @@ class GossipEngine {
   /// Cancels the timer but does NOT stop message listening. Call
   /// [stopListening] separately if needed.
   void stop() {
-    if (!_isRunning) return;
-    _isRunning = false;
-    _generation++;
+    if (!_scheduler.isRunning) return;
+    _pushGeneration++;
+    _scheduler.stop();
     // Drop any buffered reactive push — the periodic anti-entropy loop is
     // also stopping, and a stale delay callback checks the generation.
     _pendingPush.clear();
@@ -542,21 +553,21 @@ class GossipEngine {
     StreamId streamId,
     LogEntry entry,
   ) {
-    if (!_isRunning) return;
+    if (!_scheduler.isRunning) return;
     _recordNews();
     _pendingPush.putIfAbsent((channelId, streamId), () => []).add(entry);
     if (_pushFlushScheduled) return;
     _pushFlushScheduled = true;
-    final generation = _generation;
+    final generation = _pushGeneration;
     timePort
         .delay(_pushDebounce)
         .then((_) {
-          if (generation != _generation) return; // stale run — do nothing
+          if (generation != _pushGeneration) return; // stale run — do nothing
           _pushFlushScheduled = false;
-          if (_isRunning) unawaited(_flushPendingPushes());
+          if (_scheduler.isRunning) unawaited(_flushPendingPushes());
         })
         .catchError((Object error, StackTrace stackTrace) {
-          if (generation != _generation) return;
+          if (generation != _pushGeneration) return;
           _pushFlushScheduled = false;
           _pendingPush.clear();
           _emitError(
@@ -850,7 +861,7 @@ class GossipEngine {
   /// partition reconciles right away. With push-pull reciprocation (M1) the
   /// single exchange syncs both directions. No-op when not running.
   Future<void> syncWithPeer(NodeId peerId) async {
-    if (!_isRunning) return;
+    if (!_scheduler.isRunning) return;
     _recordNews();
     try {
       await _sendMessage(peerId, await _buildDigestRequest());
@@ -921,7 +932,7 @@ class GossipEngine {
         // only toward the initiator. Reciprocation is *active* sync, so
         // gate it on running: a paused/listen-only engine still answers
         // digests (serves data) but must not initiate new pulls.
-        if (_isRunning) {
+        if (_scheduler.isRunning) {
           // A DigestRequest by design carries ALL the sender's channels, so
           // ones we don't share are routine under partial channel overlap —
           // filter them out here rather than letting _computeDeltaRequests
@@ -954,7 +965,7 @@ class GossipEngine {
         // Pulling is active sync — a paused/listen-only engine serves but
         // does not pull. (A DigestResponse is only ever a reply to our own
         // request, which we make only while running.)
-        if (_isRunning) {
+        if (_scheduler.isRunning) {
           await _sendDeltaRequests(
             message.sender,
             await handleDigestResponse(protocolMessage),
@@ -986,7 +997,7 @@ class GossipEngine {
         // Ingesting new data is active sync — a paused/listen-only engine
         // drops incoming deltas (including unsolicited reactive pushes) and
         // relies on anti-entropy to re-fetch them after resume.
-        if (_isRunning) {
+        if (_scheduler.isRunning) {
           final continuation = await handleDeltaResponse(protocolMessage);
           if (continuation != null) {
             // Drain the rest of a truncated backlog immediately.
@@ -1088,26 +1099,6 @@ class GossipEngine {
         .toList();
 
     return handleDigestRequest(request, requestedChannels);
-  }
-
-  void _gossipRound(int generation) {
-    performGossipRound()
-        .catchError((error, stackTrace) {
-          _emitError(
-            PeerSyncError(
-              localNode,
-              SyncErrorType.protocolError,
-              'Gossip round failed: $error',
-              occurredAt: DateTime.now(),
-              cause: error,
-            ),
-          );
-        })
-        .whenComplete(() {
-          // Schedule next gossip round with adaptive interval
-          // (interval may have changed based on new RTT samples)
-          _scheduleNextGossipRound(generation);
-        });
   }
 
   /// Selects a random reachable peer for gossip.
