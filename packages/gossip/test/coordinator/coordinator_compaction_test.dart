@@ -1,6 +1,7 @@
 import 'dart:typed_data';
 
 import 'package:gossip/src/sync/domain/interfaces/retention_policy.dart';
+import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
@@ -13,6 +14,8 @@ import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository
 import 'package:gossip/src/membership/infrastructure/in_memory_peer_repository.dart';
 import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:test/test.dart';
+
+import '../support/failing_delay_time_port.dart';
 
 void main() {
   final localNode = NodeId('local');
@@ -112,5 +115,73 @@ void main() {
         await coordinator.dispose();
       },
     );
+  });
+
+  group('Coordinator auto-compaction scheduling failure (BD2)', () {
+    test('a delay failure emits exactly one scheduling error and the loop '
+        'stays dead until the next stop/start cycle', () async {
+      final timePort = FailingDelayTimePort();
+      final errors = <SyncError>[];
+      // Timer port only, no message port: isolates the compaction
+      // scheduler's delay() calls from the gossip/failure-detector loops,
+      // which would otherwise race it for the first (failing) delay.
+      final coordinator = await Coordinator.create(
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+        channelRepository: InMemoryChannelRepository(),
+        peerRepository: InMemoryPeerRepository(),
+        entryRepository: InMemoryEntryRepository(),
+        timerPort: timePort,
+        config: const CoordinatorConfig(
+          compactionInterval: Duration(milliseconds: 50),
+        ),
+      );
+      coordinator.errors.listen(errors.add);
+
+      timePort.failNextDelay = true;
+      await coordinator.start();
+
+      // Let the failed delay future propagate.
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(errors, hasLength(1));
+      expect(
+        errors.single,
+        isA<StorageSyncError>().having(
+          (e) => e.message,
+          'message',
+          contains('Auto-compaction scheduling failed'),
+        ),
+        reason: 'BD2: a scheduling failure must surface via ErrorCallback',
+      );
+
+      // Advancing time well past several intervals ticks nothing further —
+      // the scheduler stopped itself rather than silently dying.
+      await timePort.inner.advance(const Duration(seconds: 1));
+      for (var i = 0; i < 5; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(
+        errors,
+        hasLength(1),
+        reason: 'no further compaction ticks until a stop/start cycle',
+      );
+
+      // A fresh stop/start cycle resumes the loop cleanly (no leftover
+      // failure — failNextDelay only fired once).
+      await coordinator.stop();
+      await coordinator.start();
+      await timePort.inner.advance(const Duration(seconds: 1));
+      for (var i = 0; i < 5; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(
+        errors,
+        hasLength(1),
+        reason: 'resumed loop ticks cleanly with no channels to compact',
+      );
+
+      await coordinator.dispose();
+    });
   });
 }

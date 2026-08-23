@@ -123,10 +123,10 @@ class Coordinator {
   /// local-only mode (no auto-compaction).
   final TimePort? _timerPort;
 
-  /// Generation token for the auto-compaction loop, bumped on every
-  /// stop/pause/dispose so a scheduled tick from a previous run becomes
-  /// stale (same pattern as the engine schedulers).
-  int _compactionGeneration = 0;
+  /// Drives the periodic auto-compaction loop. Null until [_startCompaction]
+  /// constructs it on the first `start`/`resume`; every stop/pause/dispose
+  /// path calls [GenerationScheduler.stop] on it (see [_stopCompaction]).
+  GenerationScheduler? _compactionScheduler;
 
   /// Gossip engine for anti-entropy synchronization.
   GossipEngine? _gossipEngine;
@@ -402,60 +402,45 @@ class Coordinator {
   /// Starts the periodic auto-compaction loop (applies each stream's
   /// retention policy). No-op without a timer port or when the interval is
   /// disabled (null / non-positive).
+  ///
+  /// Constructs [_compactionScheduler] on first use — it needs the resolved
+  /// [_timerPort] and [CoordinatorConfig.compactionInterval], neither of
+  /// which are available at construction time in local-only mode — then
+  /// reuses it across subsequent stop/start or pause/resume cycles.
   void _startCompaction() {
     final timerPort = _timerPort;
     final interval = _config.compactionInterval;
     if (timerPort == null || interval == null || interval <= Duration.zero) {
       return;
     }
-    _compactionGeneration++;
-    _scheduleNextCompaction(_compactionGeneration, timerPort, interval);
+    _compactionScheduler ??= GenerationScheduler(
+      timePort: timerPort,
+      nextDelay: () => interval,
+      tick: _channelService.compactAll,
+      onTickError: (error, stackTrace) => _handleError(
+        StorageSyncError(
+          SyncErrorType.storageFailure,
+          'Auto-compaction failed: $error',
+          occurredAt: DateTime.now(),
+          cause: error,
+        ),
+      ),
+      onSchedulingError: (error, stackTrace) => _handleError(
+        StorageSyncError(
+          SyncErrorType.storageFailure,
+          'Auto-compaction scheduling failed: $error',
+          occurredAt: DateTime.now(),
+          cause: error,
+        ),
+      ),
+    );
+    _compactionScheduler!.start();
   }
 
-  /// Invalidates any scheduled compaction tick (stop/pause/dispose).
+  /// Stops the compaction loop (stop/pause/dispose). A no-op if the
+  /// scheduler was never constructed (never started, or local-only mode).
   void _stopCompaction() {
-    _compactionGeneration++;
-  }
-
-  void _scheduleNextCompaction(
-    int generation,
-    TimePort timerPort,
-    Duration interval,
-  ) {
-    if (_state != SyncState.running || generation != _compactionGeneration) {
-      return;
-    }
-    timerPort
-        .delay(interval)
-        .then((_) async {
-          if (_state != SyncState.running ||
-              generation != _compactionGeneration) {
-            return;
-          }
-          try {
-            await _channelService.compactAll();
-          } catch (error) {
-            _handleError(
-              StorageSyncError(
-                SyncErrorType.storageFailure,
-                'Auto-compaction failed: $error',
-                occurredAt: DateTime.now(),
-                cause: error,
-              ),
-            );
-          }
-          _scheduleNextCompaction(generation, timerPort, interval);
-        })
-        .catchError((Object error, StackTrace stackTrace) {
-          _handleError(
-            StorageSyncError(
-              SyncErrorType.storageFailure,
-              'Auto-compaction scheduling failed: $error',
-              occurredAt: DateTime.now(),
-              cause: error,
-            ),
-          );
-        });
+    _compactionScheduler?.stop();
   }
 
   /// Handles entries merged from peers and emits EntriesMerged events.
