@@ -7,6 +7,7 @@ import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
 import 'package:gossip/src/shared/domain/services/jitter.dart';
 import 'package:gossip/src/shared/domain/services/quiescence_pacer.dart';
 import 'package:gossip/src/shared/domain/services/rtt_tracker.dart';
+import 'package:gossip/src/shared/domain/services/keyed_task_chain.dart';
 
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
@@ -1605,26 +1606,15 @@ class GossipEngine {
     // filter against the same stale vector — the second append then
     // rejects the whole batch and its genuinely-new entries are delayed
     // to a later round, with a spurious error blaming the peer (COR3-9).
+    // Failure isolation between chained merges is [KeyedTaskChain]'s
+    // contract, not reimplemented here.
     final chainKey = (response.channelId, response.streamId);
-    final previous = _mergeQueue[chainKey] ?? Future<void>.value();
-    // A failed predecessor doesn't block the chain; its error surfaces to
-    // its own awaiter.
-    final task = previous
-        .catchError((_) {})
-        .then((_) => _mergeDeltaResponse(response));
-    final chainEntry = task.then<void>((_) {}, onError: (_) {});
-    _mergeQueue[chainKey] = chainEntry;
-    chainEntry.whenComplete(() {
-      if (identical(_mergeQueue[chainKey], chainEntry)) {
-        _mergeQueue.remove(chainKey);
-      }
-    });
-    return task;
+    return _mergeChain.enqueue(chainKey, () => _mergeDeltaResponse(response));
   }
 
   /// Per-(channel, stream) chain of in-flight merges — see
   /// [handleDeltaResponse].
-  final Map<(ChannelId, StreamId), Future<void>> _mergeQueue = {};
+  final KeyedTaskChain<(ChannelId, StreamId)> _mergeChain = KeyedTaskChain();
 
   Future<DeltaRequest?> _mergeDeltaResponse(DeltaResponse response) async {
     final key = (response.sender, response.channelId, response.streamId);
