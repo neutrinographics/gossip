@@ -34,7 +34,7 @@
 /// estimate = estimate.update(Duration(milliseconds: 160));
 ///
 /// // Get adaptive timeout
-/// final timeout = estimate.suggestedTimeout(); // ~200-300ms depending on variance
+/// final timeout = estimate.suggestedTimeout(); // 500 ms here — the default minimum timeout floor dominates these fast samples
 /// ```
 ///
 /// Value objects are immutable and compared by value equality.

@@ -46,7 +46,7 @@ class _PendingDelay {
 /// - [nowMs] returns the current simulated time
 /// - [delay] creates a future that completes when simulated time advances
 /// - [advance] moves time forward and resolves pending delays
-/// - [tick] triggers periodic callbacks without advancing time (legacy)
+/// - [tick] deprecated; fires periodic callbacks only, without advancing time
 class InMemoryTimePort implements TimePort {
   int _nextId = 0;
   int _nowMs = 0;

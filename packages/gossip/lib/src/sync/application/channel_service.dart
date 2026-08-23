@@ -208,7 +208,8 @@ class ChannelService {
   /// Records the member in local channel metadata (see ADR-007 — no
   /// protocol gating) and emits [MemberAdded].
   ///
-  /// Used when: Peer joins channel via gossip or explicit invitation.
+  /// Used when: The local app decides to record a peer as a member —
+  /// membership metadata is local and never crosses the wire.
   ///
   /// Throws [Exception] if channel doesn't exist in repository.
   ///
@@ -313,9 +314,8 @@ class ChannelService {
   /// Generates the next sequence number for the local node's author chain,
   /// creates a [LogEntry] with current timestamp, and appends to [EntryRepository].
   ///
-  /// Note: This does NOT update [ChannelAggregate]'s version vector. That
-  /// happens separately during sync protocol when entries are confirmed
-  /// by remote peers.
+  /// The stream's version vector lives in EntryRepository and advances as
+  /// part of this append — there is no separate confirmation step.
   ///
   /// Used when: Application writes new data to a stream.
   ///

@@ -6,7 +6,8 @@ import 'package:gossip/src/coordinator/event_stream.dart';
 ///
 /// A [Channel] is a logical grouping of event streams that can be shared
 /// between peers. Channels provide:
-/// - **Membership management**: Control which peers participate
+/// - **Membership metadata**: record which peers the app considers members
+///   (local metadata — not enforced by the protocol, see ADR-007)
 /// - **Stream access**: Create and access event streams within the channel
 ///
 /// ## Creating and Accessing Channels
@@ -140,12 +141,15 @@ class Channel {
 
   /// Returns the facade for a stream.
   ///
-  /// Always returns a facade even if the stream doesn't exist yet.
-  /// Operations on the facade will fail if the stream doesn't exist.
+  /// Always returns a facade even if the stream doesn't exist yet, since
+  /// reads on a missing stream are harmless — they return empty results.
+  /// Only append throws (a [StateError]), because silently dropping a
+  /// write would be invisible data loss.
   /// Use [getOrCreateStream] if you want to create the stream automatically.
   EventStream getStream(StreamId streamId) {
-    // We always return a facade. Operations will fail if stream doesn't exist.
-    // For a sync check, use getStreamIds() first.
+    // We always return a facade: reads on a missing stream are harmless
+    // (empty results); only append throws. For a sync check, use
+    // getStreamIds() first.
     return EventStream(
       id: streamId,
       channelId: id,

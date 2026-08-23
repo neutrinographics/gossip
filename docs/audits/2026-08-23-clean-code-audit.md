@@ -239,11 +239,11 @@ Orchestrator ran the gates (`dart test`: 1033/1033 green; `dart analyze`: clean)
 
 Commits `11b2558..5e5cc15` on branch `cc5-batch-a`. Ten tasks (A1–A10), each independently reviewed against this report; two fix rounds total across the batch (A4: one finding — a missed VV-mis-homing site in `channel_repository.dart`'s intro; A6: four items — see correction below).
 
-**Closed in full:** CC5-4 (with correction — see below), CC5-15, CC5-16, CC5-17, CC5-36, CC5-37, CC5-38, CC5-39, CC5-40, CC5-42, CC5-44, CC5-54, and baseline MIN-22's coordinator/kernel doc items.
+**Closed in full:** CC5-4 (with correction — see below), CC5-15, CC5-16, CC5-17, CC5-36, CC5-37, CC5-38, CC5-39, CC5-40, CC5-44, CC5-54, and baseline MIN-22's coordinator/kernel doc items.
 
 **Closed as a docs-only slice** (API surface unchanged; removal decisions deferred to Batch H): CC5-18.
 
-**Closed as a Batch-A slice** (remainder owned by Batch D): CC5-34 (`TestNetwork` non-creating reads — done), CC5-35 (`gossip_experiment_test.dart` deleted; scenario consolidation across the remaining owning files remains), CC5-53 (`TestNetwork`'s `_originalPorts`/seeding items — done; other test-hygiene smalls in the finding remain).
+**Closed as a Batch-A slice** (remainder owned by Batch D): CC5-34 (`TestNetwork` non-creating reads — done), CC5-35 (`gossip_experiment_test.dart` deleted; scenario consolidation across the remaining owning files remains), CC5-53 (`TestNetwork`'s `_originalPorts`/seeding items — done; other test-hygiene smalls in the finding remain), CC5-42 (closed except the clamping-style unification clause — three clamp styles — which travels with CC5-43 to Batch E).
 
 **Correction to this report's own text**, discovered during remediation (Task A6): CC5-4's fix direction, as written above, says the reworded docs should read "edits replicated local metadata" — that phrasing is itself wrong. Channel membership metadata is **local** and never crosses the wire (ADR-007; no member data appears in any codec). The shipped docs instead say "local channel metadata." Treat the fix-direction wording above as superseded by this correction, not as what was implemented.
 

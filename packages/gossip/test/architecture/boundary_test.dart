@@ -1,7 +1,7 @@
 import 'dart:io';
 import 'package:test/test.dart';
 
-/// Part 2 spec: the machine-checked edge table.
+/// The machine-checked edge table.
 /// The table IS the architecture; adding an edge means editing this test
 /// in a reviewed diff.
 const Map<String, Set<String>> edges = {
