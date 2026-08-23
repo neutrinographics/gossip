@@ -271,6 +271,89 @@ void main() {
     });
   });
 
+  group('DigestResponse rotation (OBS-3)', () {
+    test(
+      'successive over-budget responses rotate the fitted window instead of '
+      'truncating the same tail every exchange',
+      () async {
+        final h = GossipEngineTestHarness(
+          maxDeltaResponseBytes: 300,
+          gossipInterval: const Duration(seconds: 100),
+        );
+        final peer = h.addPeer('peer1');
+        final streams = [for (var i = 0; i < 10; i++) 's$i'];
+        h.createChannel('ch1', streamIds: streams);
+        for (final s in streams) {
+          await seed(h, s, 3);
+        }
+        h.startListening();
+        h.engine.start();
+
+        final fullRequest = DigestRequest(
+          sender: peer.id,
+          digests: [
+            ChannelDigest(
+              channelId: channelId,
+              streams: [
+                for (final s in streams)
+                  StreamDigest(
+                    streamId: StreamId(s),
+                    version: VersionVector.empty,
+                  ),
+              ],
+            ),
+          ],
+        );
+
+        Future<DigestResponse> requestAll() async {
+          final responses = <DigestResponse>[];
+          final sub = peer.port.incoming.listen((msg) {
+            final decoded = h.codec.decode(msg.bytes);
+            if (decoded is DigestResponse) responses.add(decoded);
+          });
+          await peer.port.send(h.localNode, h.codec.encode(fullRequest));
+          await h.flush(3);
+          await sub.cancel();
+          return responses.single;
+        }
+
+        Set<String> streamsOf(DigestResponse r) => {
+          for (final cd in r.digests)
+            for (final sd in cd.streams) sd.streamId.value,
+        };
+
+        // Two successive exchanges asking about the SAME full stream set —
+        // the responder's fitted reply is over budget both times (10 streams
+        // don't fit in 300 bytes), so this pins that the second exchange
+        // advertises different (rotated) streams than the first, not the
+        // identical truncated prefix.
+        final first = await requestAll();
+        final second = await requestAll();
+
+        final firstStreams = streamsOf(first);
+        final secondStreams = streamsOf(second);
+
+        expect(firstStreams, isNotEmpty);
+        expect(firstStreams.length, lessThan(streams.length),
+            reason: 'the reply must be over budget for this pin to mean '
+                'anything — otherwise both exchanges trivially advertise '
+                'everything');
+        expect(secondStreams, isNotEmpty);
+        expect(
+          secondStreams,
+          isNot(equals(firstStreams)),
+          reason: 'the responder must rotate its fitted window across '
+              'successive exchanges — a fixed start offset truncates the '
+              'same tail every time, so those streams are never advertised '
+              '(OBS-3)',
+        );
+
+        h.engine.stop();
+        h.stopListening();
+      },
+    );
+  });
+
   group('Oversized-digest convergence end-to-end (H4)', () {
     test(
       'two nodes converge across every stream over rounds despite a digest '

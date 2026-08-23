@@ -285,6 +285,16 @@ class GossipEngine {
   /// the truncation point would never sync).
   int _digestRotation = 0;
 
+  /// Round-robin cursor for [handleDigestRequest]'s fitted response,
+  /// independent of [_digestRotation] (the requester-side cursor).
+  ///
+  /// Without its own cursor, an over-budget response always fits starting
+  /// at the same index, so it truncates the same tail every exchange — some
+  /// streams are never advertised by this node as a responder, no matter how
+  /// many times a peer asks (OBS-3). Advanced by [_fitDigests]'s
+  /// items-consumed return, same as the requester side.
+  int _responseDigestCursor = 0;
+
   /// Per-peer congestion threshold for backpressure.
   ///
   /// Peers with more than this many pending messages are excluded from
@@ -1166,7 +1176,10 @@ class GossipEngine {
     // and that we also have, budgeted to the transport limit. Scoping the
     // response to the request keeps it bounded — the initiator already
     // budgeted/rotated the request, and our own version vectors may be
-    // larger, so the response is fitted independently.
+    // larger, so the response is fitted independently — with its own
+    // rotation cursor ([_responseDigestCursor]) so an over-budget response
+    // covers every stream across successive exchanges too, instead of
+    // truncating the same tail every time (OBS-3).
     final byId = {for (final channel in channels) channel.id: channel};
 
     final flat = <({ChannelId channel, StreamDigest digest})>[];
@@ -1194,7 +1207,10 @@ class GossipEngine {
       }
     }
 
-    final (digests, _) = _fitDigests(flat, 0);
+    final (digests, consumed) = _fitDigests(flat, _responseDigestCursor);
+    if (flat.isNotEmpty) {
+      _responseDigestCursor = (_responseDigestCursor + consumed) % flat.length;
+    }
     return DigestResponse(sender: localNode, digests: digests);
   }
 
