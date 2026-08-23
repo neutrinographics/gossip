@@ -47,9 +47,17 @@ core domain — channels, streams, digests, deltas) and **failure detection /
 membership** (peers, probes, liveness), plus a small **shared kernel**
 (identities, clocks, version vectors). Reorganize to concept-first packaging
 so those bounded contexts are visible in the tree. The project's Kotlin port
-already proved this exact layout — sync / detection / a true-leaf shared
-kernel, with the one cross-cutting codec compromise explicitly documented —
-so this is porting a working structure back, not inventing one.
+was the obvious starting point to check — it already splits sync/
+detection/shared — but checking it against this codebase's own Dart import
+graph, rather than assuming it transfers verbatim, turned up four places
+where it doesn't: one **sync** context here, not two (its channels/entries
+split is straddled by a single service); one **membership** context, not
+two (its peers/detection split is one process wearing two folder names);
+the RTT tracker in the **shared kernel**, not inside detection, since both
+engines consume it; and its one cross-cutting codec compromise dissolving
+outright here — each context owns its own wire codec, with no shared
+crossing module at all. So this checks the Kotlin port's layout against
+the evidence rather than porting its file tree unread.
 
 Two seams become explicit that today are invisible:
 
@@ -80,9 +88,11 @@ review can see and judge.
 Part 1 first (interface moves, deletions, doc fixes). Part 2 is a mechanical
 move under a green test gate, best done **after** the wire-scheduling
 pacing redesign lands, so its new concepts move once into their final homes
-rather than being reorganized mid-change. Mirror the Kotlin port's layout
-decisions — including its documented codec compromise — unless a
-Dart-specific reason argues otherwise.
+rather than being reorganized mid-change. Check the Kotlin port's layout
+decisions — including its documented codec compromise — against this
+codebase's own import graph rather than assuming they transfer; where they
+don't hold, diverge and write down why, the way ADR-010 now does for the
+four places they didn't.
 
 ## Related
 
