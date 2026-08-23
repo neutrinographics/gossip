@@ -32,6 +32,7 @@ export 'domain/interfaces/protocol_message.dart';
 export 'domain/interfaces/time_port.dart';
 
 // Services
+export 'domain/services/generation_scheduler.dart';
 export 'domain/services/jitter.dart';
 export 'domain/services/keyed_task_chain.dart';
 export 'domain/services/quiescence_pacer.dart';
