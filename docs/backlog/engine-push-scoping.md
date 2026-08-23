@@ -1,0 +1,33 @@
+# Send reactive pushes only to peers that share the data
+
+**Track:** Sync engine   **Depends on:** nothing
+
+## What this is
+
+When a device writes a new entry, it immediately pushes that entry to its
+peers (the "reactive push"). Today that push goes to every reachable peer
+and ignores the congestion gate, even though some peers may not be members
+of the channel the entry belongs to, and a congested link gains nothing
+from more traffic. This item scopes the push to peers that actually share
+the channel, applies the same per-peer congestion gate the periodic loop
+already uses to pushes and request bursts, and caches the per-peer channel
+membership so digests can shrink too.
+
+## Why it matters
+
+Every needless push is a radio wakeup and airtime on a Bluetooth link that
+may already be struggling. On small meshes the waste is modest; as channel
+membership diverges from mesh membership it grows linearly.
+
+## Rough approach
+
+Scope push fan-out by channel membership; consult the per-peer pending-send
+gate on the push and delta-request paths (responses may stay exempt —
+serving is cheap for the requester's progress); keep a per-peer cache of
+shared channels that also trims digest construction.
+
+## Related
+
+- Findings WIRE4-6, WIRE4-11, WIRE4-20 (recommendation R6) in
+  [audits/2026-08-20-wire-scheduling-audit.md](../audits/2026-08-20-wire-scheduling-audit.md).
+- Sibling: [Coalesce wire traffic into fewer radio wakeups](engine-message-coalescing.md).

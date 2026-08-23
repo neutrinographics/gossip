@@ -47,6 +47,17 @@ documentation drift, unused dependencies, persistence-call multiplicity
 for pluggable stores (MIN-10/OBS-6), and naming normalization across the
 transports (OBS-7).
 
+**Wire-scheduling audit minors (the 2026-08 audit's R9 tail):** the
+remaining small findings WIRE4-16, -17, -18, -21, -22, -24, -26, -28,
+and -30 through -36 — each graded small in that audit's recommendations
+table; sweep them the same way (the doc-drift half of -34 was already
+fixed with the pacing work; -19 piggybacking grew into
+[its own item](engine-digest-on-probe-piggyback.md)).
+
+**Docs links pass:** rename the bounded-context ADR file
+(`010-ddd-layered-architecture.md`) to match its rewritten title and
+update every inbound link (GLOSSARY, backlog files, specs) in one sweep.
+
 ## Why it matters
 
 Individually small; collectively they are the gap between "audited" and

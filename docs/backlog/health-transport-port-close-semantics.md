@@ -38,8 +38,16 @@ consumer that models its close() on whichever transport it reads first
 will either leak a connection layer that never tears down, or tear down
 more than a port's contract implies it owns.
 
+## Also in scope
+
+While converging close semantics, make the nearby port's forwarding
+subscription pass stream errors through to `incoming` listeners (today it
+forwards data only; the dispatcher stream is data-only by design, so this
+is latent — but a future dispatcher that emits errors would bypass port
+listeners silently).
+
 ## Related
 
-- The `MessagePort` contract: `packages/gossip/lib/src/infrastructure/ports/message_port.dart`.
+- The `MessagePort` contract: `packages/gossip/lib/src/shared/domain/interfaces/message_port.dart`.
 - `NearbyMessagePort`: `packages/gossip_nearby/lib/src/infrastructure/ports/nearby_message_port.dart`.
 - `BlueyMessagePort`: `packages/gossip_bluey/lib/src/infrastructure/ports/bluey_message_port.dart`.
