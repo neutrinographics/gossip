@@ -84,16 +84,16 @@
 /// The library uses no locks - accessing from multiple isolates causes corruption.
 library;
 
-// Facade layer (main public API)
-export 'package:gossip/src/facade/adaptive_timing_status.dart';
-export 'package:gossip/src/facade/coordinator.dart';
-export 'package:gossip/src/facade/coordinator_config.dart';
-export 'package:gossip/src/facade/channel.dart';
-export 'package:gossip/src/facade/event_stream.dart';
-export 'package:gossip/src/facade/gossip_sync_activity.dart';
-export 'package:gossip/src/facade/health_status.dart';
-export 'package:gossip/src/facade/resource_usage.dart';
-export 'package:gossip/src/facade/sync_state.dart';
+// Coordinator layer (main public API; composition root)
+export 'package:gossip/src/coordinator/adaptive_timing_status.dart';
+export 'package:gossip/src/coordinator/coordinator.dart';
+export 'package:gossip/src/coordinator/coordinator_config.dart';
+export 'package:gossip/src/coordinator/channel.dart';
+export 'package:gossip/src/coordinator/event_stream.dart';
+export 'package:gossip/src/coordinator/gossip_sync_activity.dart';
+export 'package:gossip/src/coordinator/health_status.dart';
+export 'package:gossip/src/coordinator/resource_usage.dart';
+export 'package:gossip/src/coordinator/sync_state.dart';
 
 // Domain value objects
 export 'package:gossip/src/shared/domain/value_objects/node_id.dart';

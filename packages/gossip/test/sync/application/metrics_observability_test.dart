@@ -12,7 +12,7 @@ import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
-import 'package:gossip/src/facade/coordinator.dart';
+import 'package:gossip/src/coordinator/coordinator.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 import 'package:gossip/src/sync/infrastructure/in_memory_channel_repository.dart';

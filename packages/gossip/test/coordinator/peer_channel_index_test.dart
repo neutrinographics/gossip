@@ -1,6 +1,6 @@
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
-import 'package:gossip/src/facade/coordinator.dart';
+import 'package:gossip/src/coordinator/coordinator.dart';
 import 'package:gossip/src/sync/infrastructure/in_memory_channel_repository.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
 import 'package:gossip/src/membership/infrastructure/in_memory_peer_repository.dart';

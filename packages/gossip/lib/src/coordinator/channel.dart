@@ -1,9 +1,6 @@
-import 'package:gossip/src/sync/application/channel_service.dart';
-import 'package:gossip/src/sync/domain/interfaces/retention_policy.dart';
-import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
-import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
-import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
-import 'package:gossip/src/facade/event_stream.dart';
+import 'package:gossip/src/shared/shared.dart';
+import 'package:gossip/src/sync/sync.dart';
+import 'package:gossip/src/coordinator/event_stream.dart';
 
 /// Public API for channel-level operations.
 ///

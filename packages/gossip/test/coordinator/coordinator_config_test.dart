@@ -1,4 +1,4 @@
-import 'package:gossip/src/facade/coordinator_config.dart';
+import 'package:gossip/src/coordinator/coordinator_config.dart';
 import 'package:test/test.dart';
 
 void main() {
