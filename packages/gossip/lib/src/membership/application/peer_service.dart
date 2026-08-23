@@ -1,4 +1,5 @@
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
+import 'package:gossip/src/shared/domain/services/keyed_task_chain.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/membership/domain/interfaces/peer_repository.dart';
@@ -40,14 +41,14 @@ class PeerService {
 
   PeerService({required this.registry, this.repository, this.onError});
 
-  /// Per-peer chain of pending persistence writes.
+  /// Per-peer chain of pending persistence writes (saves and deletes).
   ///
   /// Saves for the same peer are serialized, and each save snapshots the
   /// registry state at WRITE time (inside the chain). Without this, two
   /// overlapping mutations each snapshot at call time and race their I/O
   /// — a slow older save landing after a fast newer one persists a stale
   /// snapshot that surfaces on restart.
-  final Map<NodeId, Future<void>> _saveQueue = {};
+  final KeyedTaskChain<NodeId> _peerOps = KeyedTaskChain();
 
   /// Emits an error through the callback if one is registered.
   void _emitError(SyncError error) {
@@ -66,7 +67,7 @@ class PeerService {
   /// or gossip membership updates.
   ///
   /// Registry is the source of truth; persistence is best-effort and
-  /// serialized per peer (see [_saveQueue]).
+  /// serialized per peer (see [_peerOps]).
   Future<void> addPeer(NodeId peerId, {String? displayName}) async {
     registry.addPeer(
       peerId,
@@ -84,7 +85,7 @@ class PeerService {
   /// Used when: Peer explicitly leaves or is administratively removed.
   ///
   /// Registry is the source of truth; persistence is best-effort and
-  /// serialized per peer (see [_saveQueue]).
+  /// serialized per peer (see [_peerOps]).
   Future<void> removePeer(NodeId peerId) async {
     registry.removePeer(peerId, occurredAt: DateTime.now());
     await _deletePeer(peerId);
@@ -106,19 +107,12 @@ class PeerService {
       return Future.value();
     }
 
-    final previous = _saveQueue[peerId] ?? Future<void>.value();
-    final task = previous.catchError((_) {}).then((_) async {
+    return _peerOps.enqueue(peerId, () async {
       // Snapshot inside the chain: by the time this runs, the registry
       // holds the newest state, so the last write always wins.
       final peer = registry.getPeer(peerId);
       if (peer != null) {
         await repository!.save(peer);
-      }
-    });
-    _saveQueue[peerId] = task;
-    return task.whenComplete(() {
-      if (identical(_saveQueue[peerId], task)) {
-        _saveQueue.remove(peerId);
       }
     });
   }
@@ -141,15 +135,6 @@ class PeerService {
       return Future.value();
     }
 
-    final previous = _saveQueue[peerId] ?? Future<void>.value();
-    final task = previous.catchError((_) {}).then((_) {
-      return repository!.delete(peerId);
-    });
-    _saveQueue[peerId] = task;
-    return task.whenComplete(() {
-      if (identical(_saveQueue[peerId], task)) {
-        _saveQueue.remove(peerId);
-      }
-    });
+    return _peerOps.enqueue(peerId, () => repository!.delete(peerId));
   }
 }
