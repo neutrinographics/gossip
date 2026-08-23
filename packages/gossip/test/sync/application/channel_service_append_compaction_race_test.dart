@@ -16,7 +16,7 @@ import 'package:test/test.dart';
 /// compaction across DIFFERENT streams (isolating a throwing retention
 /// policy) — neither exercises an append racing an in-flight compaction on
 /// the SAME stream. `ChannelService.appendEntry` serializes appends to a
-/// stream against each other via `_appendQueue`, but `compactStream` is NOT
+/// stream against each other via `_appendChain`, but `compactStream` is NOT
 /// part of that queue, so this is the one interleaving window the append
 /// race test doesn't cover.
 void main() {

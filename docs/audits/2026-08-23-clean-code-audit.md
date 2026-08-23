@@ -253,3 +253,19 @@ Commits `11b2558..5e5cc15` on branch `cc5-batch-a`. Ten tasks (A1–A10), each i
 - Suite count changed 1033 → 1031: `gossip_experiment_test.dart` (CC5-35) deleted as a strict subset of `coordinator_test.dart`, dropping its two duplicate test cases.
 
 Gates: `melos run test` (gossip 1031, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages) both pass as of `5e5cc15`; `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
+
+---
+
+## Remediation — Batch B (2026-08-23)
+
+Commits `65ed649..2480b2f` on branch `cc5-batch-b`. Eleven tasks (B3–B5 batched), two fix rounds (B8: vacuous pin de-vacuized with red-against-mutant evidence; B10: staleness-gated push-epoch bump restoring pre-refactor semantics).
+
+**CC5-6 closed:** five hand-rolled keyed-chain sites → one `KeyedTaskChain` (`shared/domain/services`), 8 unit tests incl. a self-deadlock regression pin.
+
+**CC5-7 closed:** three generation-token loops → one `GenerationScheduler` (7 unit tests); BD2 failure policy unified (tick errors continue, scheduling errors stop the loop); the compaction loop's stopped state is now queryable and pinned; BD3 (whether compaction should retry after a scheduling failure) routed to Batch C. Note: `GossipEngine` retains a small `_pushGeneration` epoch for the reactive-push debounce guard (non-loop use), staleness-gated to match pre-refactor semantics; the stale-late-scheduling-failure interleaving remains without direct test coverage (needs a late-failure time-port double — candidate for Batch D).
+
+**CC5-8 closed:** one `_commit` (save → mutate → emit) across all three fold paths; `MaterializerState.emit` notify-only; 3 new failure-path tests deliver the previously documented-but-unhonored guarantee (behavior change: a failed save now leaves state unpublished and retried).
+
+**Suite count:** 1031 → 1050 (+8 chain, +7 scheduler, +3 commit-protocol, +1 BD2 pin).
+
+Gates: `melos run test` (gossip 1050, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages); `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
