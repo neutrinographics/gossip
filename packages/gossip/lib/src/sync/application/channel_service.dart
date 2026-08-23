@@ -16,6 +16,7 @@ import 'package:gossip/src/sync/domain/interfaces/entry_repository.dart';
 import 'package:gossip/src/shared/domain/interfaces/local_node_repository.dart';
 import 'package:gossip/src/sync/domain/interfaces/state_materializer.dart';
 import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
+import 'package:gossip/src/shared/domain/services/keyed_task_chain.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/sync/application/materialization/materialization_service.dart';
 
@@ -351,20 +352,19 @@ class ChannelService {
     }
 
     final key = (channelId, streamId);
-    final previous = _appendQueue[key] ?? Future<void>.value();
-    final task = previous
-        .catchError((_) {})
-        .then((_) => _appendEntryNow(channelId, streamId, payload));
-    _appendQueue[key] = task;
-    return task.whenComplete(() {
-      if (identical(_appendQueue[key], task)) {
-        _appendQueue.remove(key);
-      }
-    });
+    return _appendChain.enqueue(
+      key,
+      () => _appendEntryNow(channelId, streamId, payload),
+    );
   }
 
   /// Per-stream chain of pending appends (see [appendEntry]).
-  final Map<(ChannelId, StreamId), Future<void>> _appendQueue = {};
+  ///
+  /// Appends to the same stream share awaits between reading the latest
+  /// sequence and storing the entry, so unserialized concurrent appends
+  /// would allocate colliding sequence numbers — this chain is what
+  /// guarantees the serialization [appendEntry] promises.
+  final KeyedTaskChain<(ChannelId, StreamId)> _appendChain = KeyedTaskChain();
 
   Future<void> _appendEntryNow(
     ChannelId channelId,
