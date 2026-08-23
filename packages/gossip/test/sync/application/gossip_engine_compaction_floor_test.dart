@@ -266,6 +266,253 @@ void main() {
     );
   });
 
+  group('multi-author vector floors', () {
+    final authorB = NodeId('author-b');
+
+    test(
+      'two authors pruned to different depths: a from-zero requester '
+      'adopts BOTH per-author floors and accepts each author\'s survivors',
+      () async {
+        final h = GossipEngineTestHarness();
+        h.createChannel('ch1', streamIds: ['s1']);
+
+        // authorA: seq 1..5, pruned 1..3 (floor 3, survivors 4..5).
+        for (var i = 1; i <= 5; i++) {
+          await h.entryRepository.append(
+            channelId,
+            streamId,
+            entryOf(authorA, i, 1000 + i),
+          );
+        }
+        final aEntries = (await h.entryRepository.getAll(
+          channelId,
+          streamId,
+        )).where((e) => e.author == authorA).toList();
+        await h.entryRepository.removeEntries(
+          channelId,
+          streamId,
+          aEntries.take(3).map((e) => e.id).toList(),
+        );
+
+        // authorB: seq 1..8, pruned 1..6 (floor 6, survivors 7..8) — a
+        // DIFFERENT depth, so a single scalar floor could never represent
+        // both authors correctly.
+        for (var i = 1; i <= 8; i++) {
+          await h.entryRepository.append(
+            channelId,
+            streamId,
+            entryOf(authorB, i, 2000 + i),
+          );
+        }
+        final bEntries = (await h.entryRepository.getAll(
+          channelId,
+          streamId,
+        )).where((e) => e.author == authorB).toList();
+        await h.entryRepository.removeEntries(
+          channelId,
+          streamId,
+          bEntries.take(6).map((e) => e.id).toList(),
+        );
+
+        final requester = h.addPeer('joiner');
+        final response = await h.engine.handleDeltaRequest(
+          DeltaRequest(
+            sender: requester.id,
+            channelId: channelId,
+            streamId: streamId,
+            since: VersionVector.empty,
+          ),
+        );
+
+        expect(
+          response.entries
+              .map((e) => '${e.author.value}#${e.sequence}')
+              .toSet(),
+          equals({
+            'author-a#4',
+            'author-a#5',
+            'author-b#7',
+            'author-b#8',
+          }),
+          reason: 'each author\'s survivors must be served independently '
+              'of the other author\'s prune depth',
+        );
+        expect(
+          response.floor[authorA],
+          equals(3),
+          reason: 'authorA\'s floor must reflect ITS OWN prune depth',
+        );
+        expect(
+          response.floor[authorB],
+          equals(6),
+          reason: 'authorB\'s floor must reflect ITS OWN, DIFFERENT prune '
+              'depth — a single shared floor would be wrong for one of '
+              'the two authors',
+        );
+
+        // The requester adopts both per-author floors from a single
+        // response and accepts both authors' survivors contiguously.
+        final peer = h.addPeer('responder');
+        await h.engine.handleDigestResponse(
+          DigestResponse(
+            sender: peer.id,
+            digests: [
+              ChannelDigest(
+                channelId: channelId,
+                streams: [
+                  StreamDigest(
+                    streamId: streamId,
+                    version: VersionVector({authorA: 5, authorB: 8}),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+        await h.engine.handleDeltaResponse(
+          DeltaResponse(
+            sender: peer.id,
+            channelId: response.channelId,
+            streamId: response.streamId,
+            entries: response.entries,
+            hasMore: response.hasMore,
+            floor: response.floor,
+          ),
+        );
+
+        expect(h.errors, isEmpty);
+        final vv = await h.entryRepository.getVersionVector(
+          channelId,
+          streamId,
+        );
+        expect(vv[authorA], equals(5));
+        expect(vv[authorB], equals(8));
+        final adopted = await h.entryRepository.getCompactionFloor(
+          channelId,
+          streamId,
+        );
+        expect(adopted[authorA], equals(3));
+        expect(adopted[authorB], equals(6));
+      },
+    );
+  });
+
+  group('compaction mid-sync race', () {
+    test(
+      'the responder compacts AFTER the requester sends its DeltaRequest '
+      'but BEFORE the responder handles it: the response still carries the '
+      'floor, the requester converges, and no pending-request wedge is left',
+      () async {
+        // Responder: holds 1..5, NOT yet compacted at request-send time.
+        final responder = GossipEngineTestHarness(localName: 'responder');
+        responder.createChannel('ch1', streamIds: ['s1']);
+        for (var i = 1; i <= 5; i++) {
+          await responder.entryRepository.append(
+            channelId,
+            streamId,
+            entryOf(authorA, i, 1000 + i),
+          );
+        }
+        responder.addPeer('joiner');
+
+        final joinerH = GossipEngineTestHarness(localName: 'joiner');
+        final resp = joinerH.addPeer('responder');
+        joinerH.createChannel('ch1', streamIds: ['s1']);
+
+        DigestResponse digestFrom(NodeId peerId, VersionVector version) =>
+            DigestResponse(
+              sender: peerId,
+              digests: [
+                ChannelDigest(
+                  channelId: channelId,
+                  streams: [
+                    StreamDigest(streamId: streamId, version: version),
+                  ],
+                ),
+              ],
+            );
+
+        // Requester learns the (pre-compaction) responder state and issues
+        // a DeltaRequest since {} — this is the "stage digest exchange"
+        // step; handleDigestResponse both arms the pending pull AND
+        // returns the DeltaRequest we'd send.
+        final deltaRequests = await joinerH.engine.handleDigestResponse(
+          digestFrom(resp.id, VersionVector({authorA: 5})),
+        );
+        expect(deltaRequests, hasLength(1));
+        final inFlightRequest = deltaRequests.single;
+
+        // BEFORE the responder handles that request, compact its stream:
+        // keep only 4..5 (prune 1..3, floor {authorA: 3}) — racing the
+        // in-flight request against a compaction that lands first.
+        final all = await responder.entryRepository.getAll(
+          channelId,
+          streamId,
+        );
+        await responder.entryRepository.removeEntries(
+          channelId,
+          streamId,
+          all.take(3).map((e) => e.id).toList(),
+        );
+
+        final response = await responder.engine.handleDeltaRequest(
+          inFlightRequest,
+        );
+
+        expect(
+          response.floor[authorA],
+          equals(3),
+          reason: 'the response must carry the floor computed at HANDLE '
+              'time, even though the request was already in flight when '
+              'the compaction ran',
+        );
+        expect(response.entries.map((e) => e.sequence), equals([4, 5]));
+
+        // Deliver the (rewritten-sender) response to the requester.
+        await joinerH.engine.handleDeltaResponse(
+          DeltaResponse(
+            sender: resp.id,
+            channelId: response.channelId,
+            streamId: response.streamId,
+            entries: response.entries,
+            hasMore: response.hasMore,
+            floor: response.floor,
+          ),
+        );
+
+        expect(joinerH.errors, isEmpty);
+        final vv = await joinerH.entryRepository.getVersionVector(
+          channelId,
+          streamId,
+        );
+        expect(
+          vv[authorA],
+          equals(5),
+          reason: 'the requester must converge despite the race',
+        );
+
+        // No pending-request wedge: a follow-up round (a fresh digest
+        // advertising new responder history) must be able to issue a NEW
+        // DeltaRequest immediately, not be silently swallowed by a stale
+        // dedup flag left over from the raced exchange.
+        await responder.entryRepository.append(
+          channelId,
+          streamId,
+          entryOf(authorA, 6, 1006),
+        );
+        final followUp = await joinerH.engine.handleDigestResponse(
+          digestFrom(resp.id, VersionVector({authorA: 6})),
+        );
+        expect(
+          followUp,
+          isNotEmpty,
+          reason: 'a follow-up round must make progress — no wedge left '
+              'over from the raced exchange',
+        );
+      },
+    );
+  });
+
   group('end to end', () {
     test(
       'late joiner converges with a compacted responder (the COR3-1 '

@@ -9,6 +9,8 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
+import 'package:gossip/src/sync/domain/interfaces/retention_policy.dart';
+import 'package:gossip/src/sync/domain/value_objects/compaction_result.dart';
 import 'package:gossip/src/sync/infrastructure/in_memory_channel_repository.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
 import 'package:gossip/src/membership/infrastructure/in_memory_peer_repository.dart';
@@ -431,6 +433,11 @@ class TestNetwork {
   /// [channelId] - The channel to create.
   /// [streamId] - The stream to create within the channel.
   /// [members] - Node names to include (defaults to all nodes).
+  /// [retention] - Retention policy applied to the stream on every listed
+  ///   member (defaults to [KeepAllRetention] via [Channel.getOrCreateStream]
+  ///   when omitted). Test-support only: lets compaction-scenario tests seed
+  ///   a stream with a real policy instead of one node getting it and the
+  ///   rest silently defaulting.
   ///
   /// ## Example
   /// ```dart
@@ -444,6 +451,7 @@ class TestNetwork {
     ChannelId channelId,
     StreamId streamId, {
     List<String>? members,
+    RetentionPolicy? retention,
   }) async {
     final memberNames = members ?? nodeNames;
     final memberIds = memberNames.map((n) => this[n].id).toList();
@@ -451,7 +459,7 @@ class TestNetwork {
     for (final name in memberNames) {
       final node = this[name];
       await node.createChannel(channelId);
-      await node.createStream(channelId, streamId);
+      await node.createStream(channelId, streamId, retention: retention);
 
       // Add all other members
       for (final memberId in memberIds) {
@@ -595,12 +603,36 @@ extension TestNodeOperations on TestNode {
   }
 
   /// Gets or creates a stream on a channel.
-  Future<void> createStream(ChannelId channelId, StreamId streamId) async {
+  ///
+  /// [retention] defaults to [KeepAllRetention] (via
+  /// [Channel.getOrCreateStream]) when omitted, and only takes effect the
+  /// first time the stream is created — same rule as the facade method it
+  /// wraps.
+  Future<void> createStream(
+    ChannelId channelId,
+    StreamId streamId, {
+    RetentionPolicy? retention,
+  }) async {
     final channel = coordinator.getChannel(channelId);
     if (channel == null) {
       throw StateError('Channel $channelId not found on node $id');
     }
-    await channel.getOrCreateStream(streamId);
+    await channel.getOrCreateStream(streamId, retention: retention);
+  }
+
+  /// Compacts a stream by applying its retention policy — reaches the
+  /// facade's `EventStream.compact` via this node's coordinator, mirroring
+  /// the DSL's other thin per-node accessors (`write`, `entries`, ...).
+  Future<CompactionResult?> compact(
+    ChannelId channelId,
+    StreamId streamId, {
+    bool resetState = true,
+  }) async {
+    final channel = coordinator.getChannel(channelId);
+    if (channel == null) {
+      throw StateError('Channel $channelId not found on node $id');
+    }
+    return channel.getStream(streamId).compact(resetState: resetState);
   }
 
   /// Adds a member to a channel on this node.
