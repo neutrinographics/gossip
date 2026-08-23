@@ -211,3 +211,15 @@ All behavior-preserving; existing tests are the safety net (timestamp path: `tes
 - Spec coverage: Batch A closes CC5-4, 15, 16, 17, 18(docs), 36, 37, 38, 39, 40, 42, 44, 54, MIN-22, plus the TestNetwork/experiment slices of 34/35/53. Every remaining finding is mapped to a batch in the table above; none is unowned.
 - CC5-41/43/45/46/47/48/49/50/51 are deliberately **not** in Batch A: they are rename/API/behavior changes that belong with their subsystem batches (E for detector naming/annotations, F for engine naming, C for jitter validation + error paths, D for test-side items, H for surface removal) — putting them here would make the "safe docs+hygiene" branch carry behavior risk.
 - Type consistency: names introduced here (`_channelEnvelopeOverheadBytes`, `_metricsWindow`, `_indirectProbeFanout`, `_maxLogicalCounter`) are private and referenced only within their own tasks.
+
+---
+
+## Batch A — outcome record (2026-08-23) and inputs for Batches B–H
+
+Batch A is complete on `cc5-batch-a` (11b2558..0694d72, final whole-branch review clean; details in the audit's Batch A addendum). Corrections to THIS plan discovered during execution, binding on later batch plans:
+
+- The batch-map row for A listed "CC5-36–45" and "48–51(docs)": both cells were wrong. CC5-41/43/45/48/49/50/51 were NOT done in Batch A and remain fully open for their subsystem batches (E/F/C/H per the self-review note, which is authoritative).
+- Batch C must ADD the `onLog`-as-post-dispose-error-sink behavior (CC5-52) and only then restore the doc clause describing it (removed in A5 follow-up: docs must not describe future behavior).
+- Batch E additionally owns: the mis-attached doc block on `_minRttSample`/`_recordRtt` in failure_detector.dart (found in A3), and the clamping-style unification clause of CC5-42 (travels with CC5-43).
+- Corrected fact for all future doc work: channel membership metadata is LOCAL and never crosses the wire (ADR-007) — the audit's original CC5-4 fix direction said "replicated local metadata", which was itself wrong.
+- Brief-premise correction: `Channel.getStream` never returns null (always returns a facade); non-creating reads go through `getStream(...).getAll()`.
