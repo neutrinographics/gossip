@@ -187,16 +187,18 @@ class GossipEngine {
   /// Before this class adopted [GenerationScheduler] for the round loop, a
   /// single `_generation` counter guarded both the round loop's delay
   /// callback AND this debounce's delay callback — [start] and [stop]
-  /// bumped it once and both mechanisms checked it. The round loop's half
-  /// of that is now [_scheduler]'s own internal concern, which this class
-  /// cannot observe or reuse (by design — see [GenerationScheduler]'s doc:
-  /// it does not expose its generation). This field keeps the debounce's
-  /// half working exactly as before: bumped everywhere the old shared
-  /// counter was bumped relative to it — [start], [stop], and the round
-  /// loop's scheduling-failure path (mirrored here so a scheduling failure
-  /// still invalidates an in-flight debounce, as it did when the counter
-  /// was shared) — so a callback from a debounce scheduled before any of
-  /// those events recognizes itself as stale and does nothing.
+  /// bumped it once and both mechanisms checked it; a *live* (non-stale)
+  /// round-loop scheduling failure bumped it too, staleness-gated the same
+  /// way. The round loop's half of that is now [_scheduler]'s own internal
+  /// concern, which this class cannot observe or reuse (by design — see
+  /// [GenerationScheduler]'s doc: it does not expose its generation). This
+  /// field keeps the debounce's half working exactly as before: bumped
+  /// everywhere the old shared counter was bumped relative to it —
+  /// [start], [stop], and (staleness-gated via `_scheduler.isRunning`, in
+  /// the `onSchedulingError` callback wired in the constructor) a live
+  /// round-loop scheduling failure — so a callback from a debounce
+  /// scheduled before any of those events recognizes itself as stale and
+  /// does nothing.
   int _pushGeneration = 0;
 
   /// Subscription to incoming messages (for cleanup on stop).
@@ -372,8 +374,20 @@ class GossipEngine {
       onSchedulingError: (error, stackTrace) {
         // A dead round loop invalidates any reactive-push debounce still
         // in flight too — see [_pushGeneration]'s doc for why this bump
-        // belongs here.
-        _pushGeneration++;
+        // belongs here. But GenerationScheduler calls this callback for a
+        // STALE failure too (a delay from an old, already-superseded run
+        // erroring out late) — its own internal stop is staleness-gated,
+        // this callback is not. Gating the bump on isRunning tells the two
+        // apart: by the time this callback runs, isRunning reads false
+        // exactly when the failure was live (the scheduler's conditional
+        // stop runs synchronously first) — a stale failure alongside a
+        // currently-live loop leaves isRunning true, so we must NOT bump,
+        // or we'd invalidate the live loop's own in-flight debounce and
+        // wedge reactive push permanently (only stop() resets the flag).
+        // A stale failure while already stopped still bumps here, which is
+        // harmless: the flag is already false and any captured generation
+        // is already stale regardless.
+        if (!_scheduler.isRunning) _pushGeneration++;
         _emitError(
           PeerSyncError(
             localNode,
