@@ -258,7 +258,7 @@ Gates: `melos run test` (gossip 1031, gossip_nearby 189, gossip_bluey 228 — al
 
 ## Remediation — Batch B (2026-08-23)
 
-Commits `65ed649..2480b2f` on branch `cc5-batch-b`. Eleven tasks (B3–B5 batched), two fix rounds (B8: vacuous pin de-vacuized with red-against-mutant evidence; B10: staleness-gated push-epoch bump restoring pre-refactor semantics).
+Commits `65ed649..5cc249b` on branch `cc5-batch-b`. Eleven tasks (B3–B5 batched), two fix rounds (B8: vacuous pin de-vacuized with red-against-mutant evidence; B10: staleness-gated push-epoch bump restoring pre-refactor semantics).
 
 **CC5-6 closed:** five hand-rolled keyed-chain sites → one `KeyedTaskChain` (`shared/domain/services`), 8 unit tests incl. a self-deadlock regression pin.
 
@@ -266,6 +266,6 @@ Commits `65ed649..2480b2f` on branch `cc5-batch-b`. Eleven tasks (B3–B5 batche
 
 **CC5-8 closed:** one `_commit` (save → mutate → emit) across all three fold paths; `MaterializerState.emit` notify-only; 3 new failure-path tests deliver the previously documented-but-unhonored guarantee (behavior change: a failed save now leaves state unpublished; a failed save marks the materializer for re-initialization from the last committed snapshot (fixed at final review after the initial retry premise proved false for the incremental/rebuild paths — a fourth failure-path test pins new-batch recovery)).
 
-**Suite count:** 1031 → 1050 (+8 chain, +7 scheduler, +3 commit-protocol, +1 BD2 pin).
+**Suite count:** 1031 → 1051 (+8 chain, +7 scheduler, +4 commit-protocol incl. the final-review new-batch recovery pin, +1 BD2 pin).
 
 Gates: `melos run test` (gossip 1050, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages); `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
