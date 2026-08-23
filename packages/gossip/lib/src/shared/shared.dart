@@ -33,6 +33,7 @@ export 'domain/interfaces/time_port.dart';
 
 // Services
 export 'domain/services/jitter.dart';
+export 'domain/services/keyed_task_chain.dart';
 export 'domain/services/quiescence_pacer.dart';
 export 'domain/services/rtt_tracker.dart';
 export 'domain/services/time_source.dart';
