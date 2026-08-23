@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:gossip/src/sync/application/materialization/fold_cursor.dart';
 import 'package:gossip/src/sync/application/materialization/materialization_service.dart';
 import 'package:gossip/src/sync/domain/interfaces/state_materializer.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
@@ -81,10 +82,17 @@ void main() {
       );
 
       // Assert: the failed save must not have mutated or published state.
-      expect(
-        await service.getState<int>(channelId, streamId),
-        equals(1),
-        reason: 'a failed save must leave cached state at S0, unmutated',
+      // A failed save also marks the materializer uninitialized (CC5-8
+      // final-review fix), so — while the save is still broken — a
+      // getState call re-attempts initialization and surfaces that same
+      // brokenness rather than silently returning a stale cached value.
+      await expectLater(
+        service.getState<int>(channelId, streamId),
+        throwsStateError,
+        reason:
+            'getState re-initializes when uninitialized; with the save '
+            'still broken, re-initialization fails too — no stale read '
+            'is silently returned',
       );
       expect(
         emissions,
@@ -115,6 +123,70 @@ void main() {
       await sub.cancel();
     },
   );
+
+  test('incremental fold: recovery after a failed save must not permanently '
+      'skip the failed batch — re-initialization refolds it from the '
+      'repository', () async {
+    // Regression pin: the old recovery premise assumed the NEXT fold
+    // call would retry the SAME batch. Production callers instead fold
+    // whatever is new — the failed batch (e2) is never re-submitted, so
+    // a recovery that just resumes from the pre-failure cursor silently
+    // skips it forever.
+
+    // Arrange: e1 committed, then break save.
+    final repo = InMemoryEntryRepository();
+    final service = MaterializationService(entryRepository: repo);
+    final mat = _SaveFailingMaterializer();
+    await service.register<int>(channelId, streamId, mat);
+
+    final e1 = entryOf(1);
+    await repo.append(channelId, streamId, e1);
+    await service.foldEntries(channelId, streamId, [e1]);
+    expect(
+      await service.getState<int>(channelId, streamId),
+      equals(1),
+      reason: 'precondition: e1 committed',
+    );
+
+    mat.shouldThrowOnSave = true;
+    final e2 = entryOf(2);
+    await repo.append(channelId, streamId, e2);
+    await expectLater(
+      service.foldEntries(channelId, streamId, [e2]),
+      throwsStateError,
+      reason: "the save failure must surface to the fold's awaiter",
+    );
+
+    // Heal, then fold a NEW batch (e3) — as production callers do, not a
+    // manual retry of e2.
+    mat.shouldThrowOnSave = false;
+    final e3 = entryOf(3);
+    await repo.append(channelId, streamId, e3);
+    await service.foldEntries(channelId, streamId, [e3]);
+
+    expect(
+      await service.getState<int>(channelId, streamId),
+      equals(3),
+      reason:
+          'a failed save must not durably lose its batch: state must '
+          'reflect e1+e2+e3, not just e1+e3 — the durable-loss '
+          'regression this test pins',
+    );
+    expect(
+      mat.persistedState,
+      equals(3),
+      reason:
+          'the persisted snapshot recorded by save() must reflect the '
+          'full sequence, not skip the failed batch',
+    );
+    expect(
+      mat.persistedCursor,
+      equals(FoldCursor.fromEntry(e3).toString()),
+      reason:
+          'the persisted cursor must only advance past e3 once the '
+          'full sequence has actually been folded and saved',
+    );
+  });
 
   test('full rebuild: a failed save leaves prior state visible', () async {
     // Arrange: an initialized materializer at state S0 (one entry folded),
@@ -149,12 +221,17 @@ void main() {
     );
 
     // Assert: the failed save must not have published the rebuilt state.
-    expect(
-      await service.getState<int>(channelId, streamId),
-      equals(1),
+    // A failed save also marks the materializer uninitialized (CC5-8
+    // final-review fix), so — while the save is still broken — a
+    // getState call re-attempts initialization and surfaces that same
+    // brokenness rather than silently returning a stale cached value.
+    await expectLater(
+      service.getState<int>(channelId, streamId),
+      throwsStateError,
       reason:
-          'a failed save must leave prior state S0 visible, not the '
-          'rebuilt state',
+          'getState re-initializes when uninitialized; with the save '
+          'still broken, re-initialization fails too — no stale read '
+          'is silently returned',
     );
     expect(
       emissions,

@@ -281,16 +281,33 @@ class MaterializationService {
   /// Save must happen first: mutating before a save that then fails would
   /// publish a state the persistence layer never durably recorded, so a
   /// restart (or any other reader of the persisted cursor) would diverge
-  /// from what's in memory. Saving first means a failed save simply
-  /// leaves [matState] at its previous state and cursor — unpublished,
-  /// and transparently retried the next time this materializer is folded.
+  /// from what's in memory. Saving first means a failed save simply leaves
+  /// [matState] at its previous state and cursor — unpublished, nothing
+  /// mutated, nothing emitted.
+  ///
+  /// A failed save marks the materializer uninitialized rather than
+  /// leaving it as-is: the caller that hits the failure typically folds
+  /// only the batch that just failed, not the ones before it, so a later
+  /// retry of "the next fold" would fold only NEW entries and silently
+  /// skip the failed batch forever — durably losing it once that later
+  /// fold's save succeeds and advances the cursor past it. Marking
+  /// uninitialized routes the next operation through [_initialize], which
+  /// re-reads the last committed snapshot and refolds every repository
+  /// entry past the cursor — sound because the entry repository still
+  /// holds the failed batch's entries, and save-first ordering guarantees
+  /// persistence only ever holds committed snapshots to resume from.
   Future<void> _commit<T>(
     MaterializerState<T> matState,
     T state,
     FoldCursor? cursor,
   ) async {
     if (cursor != null) {
-      await matState.materializer.save(state, cursor.toString());
+      try {
+        await matState.materializer.save(state, cursor.toString());
+      } catch (_) {
+        matState.isInitialized = false;
+        rethrow;
+      }
     }
     matState.cursor = cursor;
     matState.cachedState = state;

@@ -57,8 +57,12 @@ class GenerationScheduler {
   /// the failure policy.
   final void Function(Object error, StackTrace stackTrace) onTickError;
 
-  /// Reports a scheduling failure. The loop has already stopped itself by
-  /// the time this is called; see the class doc for the failure policy.
+  /// Reports a scheduling failure. Called for both a live and a stale
+  /// delay failure: on a live failure the loop has already stopped itself
+  /// ([isRunning] is false); a stale failure — from a generation that
+  /// [stop] or a fresh [start] has since superseded — leaves a live loop
+  /// running. Consumers that need to distinguish the two should read
+  /// [isRunning]; see the class doc for the failure policy.
   final void Function(Object error, StackTrace stackTrace) onSchedulingError;
 
   /// Identifies the current run. Bumped by every [start] and [stop] so a

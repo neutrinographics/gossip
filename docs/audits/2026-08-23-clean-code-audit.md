@@ -264,7 +264,7 @@ Commits `65ed649..2480b2f` on branch `cc5-batch-b`. Eleven tasks (B3–B5 batche
 
 **CC5-7 closed:** three generation-token loops → one `GenerationScheduler` (7 unit tests); BD2 failure policy unified (tick errors continue, scheduling errors stop the loop); the compaction loop's stopped state is now queryable and pinned; BD3 (whether compaction should retry after a scheduling failure) routed to Batch C. Note: `GossipEngine` retains a small `_pushGeneration` epoch for the reactive-push debounce guard (non-loop use), staleness-gated to match pre-refactor semantics; the stale-late-scheduling-failure interleaving remains without direct test coverage (needs a late-failure time-port double — candidate for Batch D).
 
-**CC5-8 closed:** one `_commit` (save → mutate → emit) across all three fold paths; `MaterializerState.emit` notify-only; 3 new failure-path tests deliver the previously documented-but-unhonored guarantee (behavior change: a failed save now leaves state unpublished and retried).
+**CC5-8 closed:** one `_commit` (save → mutate → emit) across all three fold paths; `MaterializerState.emit` notify-only; 3 new failure-path tests deliver the previously documented-but-unhonored guarantee (behavior change: a failed save now leaves state unpublished; a failed save marks the materializer for re-initialization from the last committed snapshot (fixed at final review after the initial retry premise proved false for the incremental/rebuild paths — a fourth failure-path test pins new-batch recovery)).
 
 **Suite count:** 1031 → 1050 (+8 chain, +7 scheduler, +3 commit-protocol, +1 BD2 pin).
 
