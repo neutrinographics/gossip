@@ -30,7 +30,7 @@
 /// ## Usage
 ///
 /// HLCs are typically managed by the library internally. Applications
-/// interact with them through [LogEntry.timestamp]:
+/// interact with them through `LogEntry.timestamp`:
 ///
 /// ```dart
 /// final entries = await stream.getAll();
@@ -50,7 +50,7 @@
 /// Value objects are immutable and compared by value equality.
 ///
 /// See also:
-/// - [LogEntry] which contains HLC timestamps
+/// - `LogEntry` which contains HLC timestamps
 /// - ADR-005 for the design rationale
 class Hlc implements Comparable<Hlc> {
   /// Physical wall-clock time in milliseconds since epoch (48-bit).

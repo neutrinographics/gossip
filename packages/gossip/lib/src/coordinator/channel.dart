@@ -11,13 +11,13 @@ import 'package:gossip/src/coordinator/event_stream.dart';
 ///
 /// ## Creating and Accessing Channels
 ///
-/// Channels are created via [Coordinator.createChannel]:
+/// Channels are created via Coordinator.createChannel:
 ///
 /// ```dart
 /// final channel = await coordinator.createChannel(ChannelId('my-channel'));
 /// ```
 ///
-/// Access existing channels with [Coordinator.getChannel]:
+/// Access existing channels with Coordinator.getChannel:
 ///
 /// ```dart
 /// final channel = coordinator.getChannel(ChannelId('my-channel'));
@@ -70,7 +70,7 @@ import 'package:gossip/src/coordinator/event_stream.dart';
 ///
 /// See also:
 /// - [EventStream] for entry operations
-/// - [Coordinator] for channel lifecycle management
+/// - Coordinator for channel lifecycle management
 /// - [RetentionPolicy] for available policies
 class Channel {
   /// The channel identifier.

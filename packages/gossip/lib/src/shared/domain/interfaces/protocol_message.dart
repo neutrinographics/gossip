@@ -10,7 +10,7 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 /// Every message includes the sender's [NodeId] for peer identification and
 /// routing responses.
 ///
-/// Messages are serialized to bytes by each context's [MessageCodec] (e.g.
+/// Messages are serialized to bytes by each context's `MessageCodec` (e.g.
 /// `SyncMessageCodec`, `MembershipMessageCodec`) using a compact format:
 /// - Byte 0: Message type identifier
 /// - Remaining bytes: JSON-encoded message fields

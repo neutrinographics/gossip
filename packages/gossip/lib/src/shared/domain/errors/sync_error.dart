@@ -1,3 +1,4 @@
+import 'package:gossip/src/shared/domain/errors/domain_exception.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
@@ -13,7 +14,7 @@ import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 /// - Buffer overflows (rate limiting, out-of-order entries)
 ///
 /// Unlike [DomainException], these errors are expected and recoverable.
-/// Applications should observe [SyncErrorOccurred] events to log errors,
+/// Applications should observe SyncErrorOccurred events to log errors,
 /// implement retry policies, or alert operators.
 sealed class SyncError {
   /// Human-readable description of the error.
@@ -113,7 +114,7 @@ final class TransformSyncError extends SyncError {
 /// Error when out-of-order buffer capacity is exceeded.
 ///
 /// Represents buffer overflow when receiving out-of-order entries.
-/// Triggers when [StreamConfig] limits are exceeded to prevent memory
+/// Triggers when `StreamConfig` limits are exceeded to prevent memory
 /// exhaustion from malicious or buggy peers.
 final class BufferOverflowError extends SyncError {
   /// The channel containing the overflowing stream.
@@ -180,15 +181,15 @@ enum SyncErrorType {
 /// Callback type for receiving synchronization errors.
 ///
 /// Used by protocol and service classes to report errors to observers.
-/// Applications typically wire this up to emit [SyncErrorOccurred] events
+/// Applications typically wire this up to emit SyncErrorOccurred events
 /// or log errors for observability.
 typedef ErrorCallback = void Function(SyncError error);
 
 /// Callback signature for when entries are merged from a peer.
 ///
-/// Used by [GossipEngine] to notify when entries are received and stored
+/// Used by `GossipEngine` to notify when entries are received and stored
 /// during anti-entropy synchronization. Applications wire this up to emit
-/// [EntriesMerged] events for UI updates.
+/// `EntriesMerged` events for UI updates.
 ///
 /// [containsOutOfOrderEntries] is true if any entry in the batch was inserted
 /// before the stream's previous tail (by HLC order), indicating materializers

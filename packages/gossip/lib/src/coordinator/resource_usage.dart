@@ -19,11 +19,11 @@
 ///
 /// Computing resource usage iterates through all channels and streams.
 /// For large deployments, consider caching or sampling rather than
-/// calling [Coordinator.getResourceUsage] frequently.
+/// calling Coordinator.getResourceUsage frequently.
 ///
 /// See also:
-/// - [HealthStatus] for overall health including resource usage
-/// - [Coordinator.getResourceUsage] to obtain statistics
+/// - HealthStatus for overall health including resource usage
+/// - Coordinator.getResourceUsage to obtain statistics
 class ResourceUsage {
   /// Number of registered peers.
   final int peerCount;

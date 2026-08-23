@@ -31,7 +31,7 @@ import 'package:gossip/src/coordinator/sync_state.dart';
 ///
 /// See also:
 /// - [ResourceUsage] for detailed resource statistics
-/// - [Coordinator.getHealth] to obtain health status
+/// - Coordinator.getHealth to obtain health status
 class HealthStatus {
   /// Current sync state.
   final SyncState state;

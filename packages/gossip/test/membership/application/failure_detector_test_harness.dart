@@ -321,8 +321,9 @@ class FailureDetectorTestHarness {
   /// Runs a probe round and sends an Ack back, returning the [Ping].
   ///
   /// If [afterDelay] is provided, advances time by that duration before
-  /// sending the Ack (simulating RTT). Uses [performProbeRound] by default;
-  /// pass [useProbeNewPeer] to use [probeNewPeer] instead.
+  /// sending the Ack (simulating RTT). Uses [FailureDetector.performProbeRound]
+  /// by default; pass [useProbeNewPeer] to use [FailureDetector.probeNewPeer]
+  /// instead.
   Future<Ping> probeWithAck(
     TestPeer peer, {
     Duration? afterDelay,

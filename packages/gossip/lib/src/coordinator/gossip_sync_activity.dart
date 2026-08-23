@@ -2,7 +2,7 @@
 ///
 /// Lets an application show a "syncing…" vs "up to date" indicator without
 /// the library retaining full per-peer digest state. Obtain it via
-/// [Coordinator.gossipSyncActivity].
+/// Coordinator.gossipSyncActivity.
 ///
 /// ## Interpreting the signal
 ///

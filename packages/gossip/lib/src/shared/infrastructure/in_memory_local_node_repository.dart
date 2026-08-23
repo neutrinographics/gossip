@@ -9,7 +9,7 @@ import 'package:gossip/src/shared/domain/interfaces/local_node_repository.dart';
 /// This implementation stores local node state in simple fields with no
 /// persistence. All data is lost when the application terminates.
 ///
-/// An optional [nodeId] can be provided to the constructor for tests that
+/// An optional `nodeId` can be provided to the constructor for tests that
 /// need a known, deterministic node ID. If not provided, [generateNodeId]
 /// creates a random UUID.
 ///

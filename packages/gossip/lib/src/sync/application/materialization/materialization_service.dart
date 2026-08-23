@@ -9,7 +9,7 @@ import 'package:gossip/src/sync/application/materialization/materializer_state.d
 /// Application service managing materialized state for event streams.
 ///
 /// Owns the fold engine: registration, initialization, incremental folding,
-/// out-of-order rebuild, and state streaming. Only accessed by [ChannelService].
+/// out-of-order rebuild, and state streaming. Only accessed by `ChannelService`.
 ///
 /// Materializer state is held in-memory and is NOT persisted. Applications
 /// must re-register materializers after restart. Cached state and cursors

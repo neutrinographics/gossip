@@ -4,11 +4,11 @@ import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
 /// SWIM direct probe message for failure detection.
 ///
 /// [Ping] is sent periodically to a randomly selected peer to check if it's
-/// still reachable. The target should respond with an [Ack] message containing
+/// still reachable. The target should respond with an Ack message containing
 /// the same sequence number.
 ///
-/// If no [Ack] is received within the timeout period, the failure detector
-/// initiates an indirect probe via [PingReq] to distinguish between target
+/// If no Ack is received within the timeout period, the failure detector
+/// initiates an indirect probe via PingReq to distinguish between target
 /// failure and network partition.
 ///
 /// Message flow:

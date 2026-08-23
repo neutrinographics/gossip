@@ -30,7 +30,7 @@ enum LogLevel {
 
 /// Callback for receiving log messages.
 ///
-/// Used by [Coordinator] and transport implementations to provide
+/// Used by `Coordinator` and transport implementations to provide
 /// observability into protocol behavior.
 ///
 /// Example:

@@ -19,7 +19,7 @@ sealed class MembershipEvent extends DomainEvent {
 
 /// Emitted when a new peer is added to the peer registry.
 ///
-/// Fired when: [PeerRegistry.addPeer] successfully adds a new peer.
+/// Fired when: PeerRegistry.addPeer successfully adds a new peer.
 final class PeerAdded extends MembershipEvent {
   final NodeId peerId;
 
@@ -28,7 +28,7 @@ final class PeerAdded extends MembershipEvent {
 
 /// Emitted when a peer is removed from the peer registry.
 ///
-/// Fired when: [PeerRegistry.removePeer] removes an existing peer.
+/// Fired when: PeerRegistry.removePeer removes an existing peer.
 final class PeerRemoved extends MembershipEvent {
   final NodeId peerId;
 
@@ -37,7 +37,7 @@ final class PeerRemoved extends MembershipEvent {
 
 /// Emitted when a peer's reachability status changes.
 ///
-/// Fired when: [PeerRegistry.updatePeerStatus] changes a peer's status.
+/// Fired when: PeerRegistry.updatePeerStatus changes a peer's status.
 /// Common transitions:
 /// - reachable → suspected (probe failure)
 /// - suspected → unreachable (indirect probe also failed)
@@ -57,7 +57,8 @@ final class PeerStatusChanged extends MembershipEvent {
 
 /// Emitted when an operation on a peer is skipped because the peer is not found.
 ///
-/// Fired when: Operations like [updatePeerStatus], [updatePeerContact], etc.
+/// Fired when: Operations like PeerRegistry.updatePeerStatus,
+/// PeerRegistry.updatePeerContact, etc.
 /// are called for a peer that doesn't exist in the registry. This is for
 /// observability only - not an error, just a trace event.
 final class PeerOperationSkipped extends MembershipEvent {

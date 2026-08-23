@@ -1,4 +1,6 @@
 import 'package:gossip/src/shared/shared.dart';
+import 'package:gossip/src/coordinator/health_status.dart';
+import 'package:gossip/src/coordinator/resource_usage.dart';
 
 /// Observability snapshot of adaptive timing state (ADR-013).
 ///
@@ -17,7 +19,7 @@ import 'package:gossip/src/shared/shared.dart';
 /// }
 /// ```
 ///
-/// Returns `null` from [Coordinator.getAdaptiveTimingStatus] when
+/// Returns `null` from Coordinator.getAdaptiveTimingStatus when
 /// running in local-only mode (no transport configured).
 ///
 /// See also:

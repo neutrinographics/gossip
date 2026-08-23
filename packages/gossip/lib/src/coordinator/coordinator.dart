@@ -7,6 +7,7 @@ import 'package:gossip/src/membership/membership.dart';
 import 'package:gossip/src/coordinator/adaptive_timing_status.dart';
 import 'package:gossip/src/coordinator/channel.dart';
 import 'package:gossip/src/coordinator/coordinator_config.dart';
+import 'package:gossip/src/coordinator/event_stream.dart';
 import 'package:gossip/src/coordinator/gossip_sync_activity.dart';
 import 'package:gossip/src/coordinator/health_status.dart';
 import 'package:gossip/src/coordinator/resource_usage.dart';
@@ -626,7 +627,8 @@ class Coordinator {
   ///
   /// A startup grace period prevents false positive failure detections while
   /// the transport layer is still establishing bidirectional connectivity.
-  /// The grace period is cleared early if [probeNewPeer] succeeds.
+  /// The grace period is cleared early if [FailureDetector.probeNewPeer]
+  /// succeeds.
   ///
   /// Throws [Exception] if attempting to add the local node as a peer.
   Future<void> addPeer(NodeId id, {String? displayName}) async {

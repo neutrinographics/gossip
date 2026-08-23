@@ -76,7 +76,7 @@ import 'package:gossip/src/sync/sync.dart';
 /// be chunked at the application level.
 ///
 /// See also:
-/// - [Channel] for stream creation
+/// - Channel for stream creation
 /// - [StateMaterializer] for state computation
 /// - [LogEntry] for entry structure
 class EventStream {

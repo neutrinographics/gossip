@@ -4,6 +4,7 @@ import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/sync/domain/interfaces/retention_policy.dart';
 import 'package:gossip/src/shared/domain/events/domain_event.dart';
 import 'package:gossip/src/sync/domain/events/sync_events.dart';
+import 'package:gossip/src/sync/domain/interfaces/entry_repository.dart';
 
 /// Aggregate root managing channel membership and stream metadata.
 ///

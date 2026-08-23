@@ -1,6 +1,7 @@
 import 'package:gossip/src/sync/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/sync/domain/interfaces/channel_repository.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/sync/application/channel_service.dart';
 
 /// A [ChannelRepository] decorator that maintains an in-memory identity map
 /// over a persistent backing repository.
@@ -16,7 +17,7 @@ import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 /// - [save] updates the cache and writes through to the inner repository.
 /// - [delete] removes from both cache and inner repository.
 ///
-/// This is wired up automatically by [Coordinator.create], so consuming
+/// This is wired up automatically by `Coordinator.create`, so consuming
 /// applications don't need to use this class directly.
 class CachingChannelRepository implements ChannelRepository {
   final ChannelRepository _inner;

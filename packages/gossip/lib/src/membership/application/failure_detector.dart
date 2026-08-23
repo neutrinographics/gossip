@@ -120,7 +120,8 @@ class FailureDetector {
   /// [MembershipMessageCodec]; test harnesses do the same) rather than
   /// constructed inline, so the detector depends only on the shared
   /// [MessageCodec] seam, not a concrete codec class.
-  /// [decode] answers null for a frame outside this codec's family (e.g. a
+  /// [MessageCodec.decode] answers null for a frame outside this codec's
+  /// family (e.g. a
   /// sync DigestRequest/Response or DeltaRequest/Response sharing the same
   /// transport) — see the null-check in [_handleIncomingMessage].
   final MessageCodec _codec;
@@ -490,7 +491,7 @@ class FailureDetector {
   /// where a third peer can relay the probe.
   ///
   /// Recovery happens via the existing path: if the peer responds with an
-  /// Ack, [handleAck] → [_recordPeerContact] → [updatePeerContact]
+  /// Ack, [handleAck] → [_recordPeerContact] → [PeerRegistry.updatePeerContact]
   /// transitions it back to reachable.
   Future<void> _probeUnreachablePeer() async {
     final unreachable = peerRegistry.unreachablePeers;
@@ -911,8 +912,8 @@ class FailureDetector {
 
   /// Records an RTT sample from a matched Ack.
   ///
-  /// RTT is attributed to [pending.target] (the peer being probed), not
-  /// [ackSender] — forwarded indirect Acks have the intermediary as sender.
+  /// RTT is attributed to pending.target (the peer being probed), not
+  /// ackSender — forwarded indirect Acks have the intermediary as sender.
   ///
   /// All valid RTT samples are recorded regardless of whether they exceeded
   /// the timeout. Unlike TCP (where Karn's algorithm avoids ambiguity between

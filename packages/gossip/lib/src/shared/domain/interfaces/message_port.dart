@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
 
 /// Priority level for outgoing messages.
 ///
@@ -77,7 +78,11 @@ class IncomingMessage {
 ///   }
 ///
 ///   @override
-///   Future<void> send(NodeId destination, Uint8List bytes) async {
+///   Future<void> send(
+///     NodeId destination,
+///     Uint8List bytes, {
+///     MessagePriority priority = MessagePriority.normal,
+///   }) async {
 ///     await _adapter.sendToDevice(destination.value, bytes);
 ///   }
 ///
@@ -106,7 +111,7 @@ class IncomingMessage {
 /// - **Message size**: Support at least 32KB payloads (Android Nearby limit)
 ///
 /// ## Testing
-/// Use [InMemoryMessagePort] with [InMemoryMessageBus] to test multi-node
+/// Use `InMemoryMessagePort` with `InMemoryMessageBus` to test multi-node
 /// scenarios without real network communication.
 ///
 /// ## Threading
@@ -114,7 +119,7 @@ class IncomingMessage {
 /// should ensure thread safety if accessed from multiple contexts.
 ///
 /// See also:
-/// - [InMemoryMessagePort] for the reference implementation
+/// - `InMemoryMessagePort` for the reference implementation
 /// - ADR-006 for the design rationale
 abstract class MessagePort {
   /// Sends bytes to a destination peer.

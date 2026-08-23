@@ -15,7 +15,7 @@ import 'package:gossip/src/membership/domain/entities/peer.dart';
 /// - The failure detector would immediately begin suspecting stale peers
 /// - Peers must be re-added when they reconnect anyway
 ///
-/// [Coordinator.create] defaults to [InMemoryPeerRepository] when no
+/// `Coordinator.create` defaults to `InMemoryPeerRepository` when no
 /// repository is provided, which is the recommended choice for most apps.
 ///
 /// A persistent implementation is only useful if your application needs

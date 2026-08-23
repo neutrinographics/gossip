@@ -1,6 +1,7 @@
 import 'package:meta/meta.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
+import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 
 /// Compact summary of a single stream's synchronization state.
 ///
@@ -10,7 +11,7 @@ import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 /// author). This allows efficient comparison to identify missing entries.
 ///
 /// Digests are exchanged during anti-entropy:
-/// 1. Peers send digests in [DigestRequest] and [DigestResponse]
+/// 1. Peers send digests in `DigestRequest` and `DigestResponse`
 /// 2. Receivers compare digests to their own state
 /// 3. Receivers send [DeltaRequest] for streams where they're behind
 ///

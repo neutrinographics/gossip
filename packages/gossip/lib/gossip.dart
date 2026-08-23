@@ -7,6 +7,9 @@
 /// ## Quick Start
 ///
 /// ```dart
+/// import 'dart:convert';
+/// import 'dart:typed_data';
+///
 /// import 'package:gossip/gossip.dart';
 ///
 /// void main() async {
@@ -83,6 +86,11 @@
 /// **Important**: All [Coordinator] operations must run in the same Dart isolate.
 /// The library uses no locks - accessing from multiple isolates causes corruption.
 library;
+
+import 'package:gossip/src/coordinator/coordinator.dart';
+import 'package:gossip/src/coordinator/channel.dart';
+import 'package:gossip/src/coordinator/event_stream.dart';
+import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 
 // Coordinator layer (main public API; composition root)
 export 'package:gossip/src/coordinator/adaptive_timing_status.dart';

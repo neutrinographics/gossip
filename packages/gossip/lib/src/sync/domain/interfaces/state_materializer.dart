@@ -21,8 +21,14 @@ import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 /// entries after the cursor are folded on startup.
 ///
 /// ## Example: Counter
+///
+/// Extend (rather than implement) [StateMaterializer]: `save`'s no-op
+/// default is a concrete method body, which Dart only inherits through
+/// `extends` — `implements` would force overriding it even when the
+/// materializer has nothing to persist.
+///
 /// ```dart
-/// class CounterMaterializer implements StateMaterializer<int> {
+/// class CounterMaterializer extends StateMaterializer<int> {
 ///   @override
 ///   (int, String?) initial({required bool isReset}) => (0, null);
 ///

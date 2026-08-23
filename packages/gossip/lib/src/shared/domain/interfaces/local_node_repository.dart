@@ -27,17 +27,17 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 ///   performance considerations needed
 ///
 /// See also:
-/// - [InMemoryLocalNodeRepository] for the reference implementation
-/// - [ChannelRepository] for channel metadata storage
-/// - [EntryRepository] for log entry storage
-/// - [PeerRepository] for peer state storage
+/// - `InMemoryLocalNodeRepository` for the reference implementation
+/// - `ChannelRepository` for channel metadata storage
+/// - `EntryRepository` for log entry storage
+/// - `PeerRepository` for peer state storage
 abstract interface class LocalNodeRepository {
   /// Returns the persisted node ID, or `null` if this is the first run.
   Future<NodeId?> getNodeId();
 
   /// Persists the local node ID.
   ///
-  /// Called by [Coordinator.create] after [generateNodeId] on first run.
+  /// Called by `Coordinator.create` after [generateNodeId] on first run.
   /// Should not be called directly by consumers.
   Future<void> saveNodeId(NodeId nodeId);
 

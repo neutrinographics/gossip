@@ -8,7 +8,7 @@ import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 /// on infrastructure.
 ///
 /// Use cases:
-/// - [HlcClock] uses this to generate hybrid logical clock timestamps
+/// - `HlcClock` uses this to generate hybrid logical clock timestamps
 /// - Retention policies use this to calculate entry ages
 ///
 /// ## Usage

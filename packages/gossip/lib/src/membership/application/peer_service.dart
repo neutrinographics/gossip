@@ -2,6 +2,9 @@ import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/membership/domain/interfaces/peer_repository.dart';
+import 'package:gossip/src/membership/domain/entities/peer.dart';
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
+import 'package:gossip/src/membership/domain/events/membership_events.dart';
 
 /// Application service for peer membership: add, remove, query.
 ///
@@ -53,8 +56,8 @@ class PeerService {
 
   /// Adds a new peer to the registry.
   ///
-  /// Creates a new [Peer] entity in [reachable] status and persists it.
-  /// Fires [PeerAdded] domain event.
+  /// Creates a new [Peer] entity in [PeerStatus.reachable] status and
+  /// persists it. Fires [PeerAdded] domain event.
   ///
   /// If [displayName] is not provided, defaults to a truncated form of the
   /// node ID.
@@ -74,8 +77,8 @@ class PeerService {
 
   /// Removes a peer from the registry.
   ///
-  /// Deletes the [Peer] entity from registry and repository. Fires [PeerRemoved]
-  /// domain event.
+  /// Deletes the [Peer] entity from registry and repository. Fires
+  /// [PeerRemoved] domain event.
   ///
   /// Used when: Peer explicitly leaves or is administratively removed.
   ///

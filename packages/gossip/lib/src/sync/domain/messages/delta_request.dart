@@ -30,7 +30,7 @@ class DeltaRequest extends ProtocolMessage {
 
   /// Version vector indicating what the sender already has.
   ///
-  /// The recipient responds with entries where sequence > since[author]
+  /// The recipient responds with entries where `sequence > since[author]`
   /// for each author. This efficiently identifies only the missing entries.
   final VersionVector since;
 

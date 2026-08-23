@@ -7,6 +7,8 @@
 /// this context sees peers only through `PeerDirectory`/`SyncPartner`.
 library;
 
+import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
+
 // Aggregates
 export 'domain/aggregates/channel_aggregate.dart';
 

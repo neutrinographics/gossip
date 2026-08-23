@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:gossip/src/coordinator/coordinator.dart';
 import 'package:gossip/src/coordinator/coordinator_config.dart';
+import 'package:gossip/src/coordinator/channel.dart';
 import 'package:gossip/src/membership/domain/entities/peer.dart';
 import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';

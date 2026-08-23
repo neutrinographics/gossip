@@ -1,10 +1,11 @@
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
+import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 
 /// Anti-entropy response containing recipient's sync state digests.
 ///
-/// [DigestResponse] is sent in reply to a [DigestRequest]. The recipient
+/// [DigestResponse] is sent in reply to a `DigestRequest`. The recipient
 /// includes its own sync state digests, allowing the original requester to:
 /// 1. Compare digests to identify which entries it's missing
 /// 2. Send [DeltaRequest] messages for missing data

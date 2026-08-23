@@ -5,7 +5,7 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 /// identity to address, an RTT sample for adaptive-interval pacing, and a
 /// recency timestamp for gossip-round suppression.
 ///
-/// Produced by [PeerDirectory] (see `../interfaces/peer_directory.dart`),
+/// Produced by `PeerDirectory` (see `../interfaces/peer_directory.dart`),
 /// sync's port onto membership's peer state.
 class SyncPartner {
   const SyncPartner({
@@ -18,7 +18,7 @@ class SyncPartner {
   final NodeId nodeId;
 
   /// Smoothed round-trip-time estimate, or null if none has been observed
-  /// yet. Feeds [GossipEngine]'s median-SRTT adaptive base interval (see
+  /// yet. Feeds `GossipEngine`'s median-SRTT adaptive base interval (see
   /// `_adaptiveBaseInterval` in `../../application/gossip_engine.dart`).
   final Duration? smoothedRtt;
 

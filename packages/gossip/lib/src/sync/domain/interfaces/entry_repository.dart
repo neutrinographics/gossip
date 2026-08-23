@@ -10,7 +10,7 @@ import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 ///
 /// [EntryRepository] manages the persistent storage of log entries outside of
 /// domain aggregates. This separation prevents memory exhaustion when streams
-/// contain many entries. The [ChannelAggregate] maintains only metadata
+/// contain many entries. The `ChannelAggregate` maintains only metadata
 /// (version vectors, stream IDs), while actual entries live in the repository.
 ///
 /// ## Why Separate Entry Storage?
@@ -64,7 +64,7 @@ import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 ///
 /// ## Implementation Guidance
 ///
-/// **Testing:** Use [InMemoryEntryRepository] for unit and integration tests:
+/// **Testing:** Use `InMemoryEntryRepository` for unit and integration tests:
 ///
 /// ```dart
 /// final entryRepo = InMemoryEntryRepository();
@@ -87,8 +87,8 @@ import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 /// handle synchronization to prevent race conditions.
 ///
 /// See also:
-/// - [InMemoryEntryRepository] for the reference implementation
-/// - [ChannelRepository] for channel metadata storage
+/// - `InMemoryEntryRepository` for the reference implementation
+/// - `ChannelRepository` for channel metadata storage
 abstract interface class EntryRepository {
   /// Appends a locally-authored entry to a stream.
   ///
@@ -124,7 +124,7 @@ abstract interface class EntryRepository {
 
   /// Returns entries missing from the given version vector.
   ///
-  /// For each author, returns entries where sequence > since[author].
+  /// For each author, returns entries where `sequence > since[author]`.
   /// This efficiently identifies which entries to send during anti-entropy
   /// without transmitting the entire log.
   ///

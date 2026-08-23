@@ -28,6 +28,7 @@ import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
+import 'package:gossip/src/sync/domain/events/sync_events.dart';
 
 /// Protocol service implementing gossip-based anti-entropy synchronization.
 ///
@@ -110,7 +111,7 @@ class GossipEngine {
   /// Optional callback for when entries are merged from a peer.
   ///
   /// Called after entries are successfully stored in the [EntryRepository].
-  /// Used by Coordinator to emit [EntriesMerged] events for UI updates.
+  /// Used by `Coordinator` to emit [EntriesMerged] events for UI updates.
   final EntriesMergedCallback? onEntriesMerged;
 
   /// Hybrid logical clock for updating local time on receive.
@@ -147,8 +148,8 @@ class GossipEngine {
   /// [SyncMessageCodec]; test harnesses do the same) rather than
   /// constructed inline, so the engine depends only on the shared
   /// [MessageCodec] seam, not a concrete codec class.
-  /// [decode] answers null for a frame outside this codec's family (e.g. a
-  /// membership Ping/Ack/PingReq sharing the same transport) — see the
+  /// [MessageCodec.decode] answers null for a frame outside this codec's
+  /// family (e.g. a membership Ping/Ack/PingReq sharing the same transport) — see the
   /// null-check in [_handleIncomingMessage].
   final MessageCodec _codec;
 
@@ -352,7 +353,7 @@ class GossipEngine {
 
   /// Returns the effective gossip interval based on per-peer RTT measurements.
   ///
-  /// If a static [gossipInterval] was provided at construction, uses that value.
+  /// If a static `gossipInterval` was provided at construction, uses that value.
   /// Otherwise computes from the *median* per-peer smoothed RTT across all
   /// reachable peers, multiplied by [_gossipIntervalMultiplier] (2x).
   ///
@@ -463,7 +464,7 @@ class GossipEngine {
 
   /// Schedules the next gossip round using the current effective interval.
   ///
-  /// Uses [delay] instead of periodic timer to allow the interval to adapt
+  /// Uses [TimePort.delay] instead of periodic timer to allow the interval to adapt
   /// based on RTT measurements collected during operation.
   ///
   /// [generation] identifies the run that scheduled this callback; if it
@@ -594,7 +595,7 @@ class GossipEngine {
 
   /// Starts listening to incoming gossip protocol messages.
   ///
-  /// Subscribes to [messagePort.incoming] and processes all anti-entropy
+  /// Subscribes to [MessagePort.incoming] and processes all anti-entropy
   /// messages (DigestRequest/Response, DeltaRequest/Response).
   ///
   /// The [channels] map is stored and used for digest generation and
@@ -1144,7 +1145,7 @@ class GossipEngine {
   ///
   /// Queries [EntryRepository] for entries where:
   /// - entry.author not in peerVersion, OR
-  /// - entry.sequence > peerVersion[entry.author]
+  /// - `entry.sequence > peerVersion[entry.author]`
   ///
   /// This identifies entries the peer is missing relative to our state.
   ///
@@ -1578,7 +1579,7 @@ class GossipEngine {
   /// Merges a [DeltaResponse] into the entry store.
   ///
   /// Returns a continuation [DeltaRequest] (for the dispatcher to send) when
-  /// the sender truncated the response to the size budget ([hasMore]) AND we
+  /// the sender truncated the response to the size budget ([DeltaResponse.hasMore]) AND we
   /// applied new entries — draining a backlog at link speed instead of one
   /// page per periodic round. Returns null otherwise (no more, or no
   /// progress — the latter guards against an infinite continuation loop).

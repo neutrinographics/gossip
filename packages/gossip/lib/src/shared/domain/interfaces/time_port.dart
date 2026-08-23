@@ -14,8 +14,8 @@ abstract class TimerHandle {
 ///
 /// [TimePort] decouples the gossip library from platform-specific time
 /// implementations, enabling:
-/// - **Production**: Use real timers and wall-clock time ([RealTimePort])
-/// - **Testing**: Use fake time ([InMemoryTimePort]) for deterministic tests
+/// - **Production**: Use real timers and wall-clock time (`RealTimePort`)
+/// - **Testing**: Use fake time (`InMemoryTimePort`) for deterministic tests
 ///
 /// The library uses this port for:
 /// - Scheduling periodic gossip rounds (adaptive: 2× median RTT, clamped 100 ms–5 s active, backed off to 30 s when idle)
@@ -66,13 +66,13 @@ abstract class TimerHandle {
 /// ```
 ///
 /// See also:
-/// - [RealTimePort] for production use
-/// - [InMemoryTimePort] for testing
+/// - `RealTimePort` for production use
+/// - `InMemoryTimePort` for testing
 abstract class TimePort {
   /// Current time in milliseconds since epoch.
   ///
   /// In production, returns actual wall-clock time.
-  /// In tests, returns simulated time controlled via [InMemoryTimePort.advance].
+  /// In tests, returns simulated time controlled via `InMemoryTimePort.advance`.
   int get nowMs;
 
   /// Schedules a callback to run periodically.

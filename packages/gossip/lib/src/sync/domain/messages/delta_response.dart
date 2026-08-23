@@ -4,13 +4,14 @@ import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
+import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 
 /// Response containing the requested missing entries.
 ///
 /// [DeltaResponse] is sent in reply to a [DeltaRequest] and contains the
 /// actual log entries that the requester is missing. The recipient computed
-/// the delta by comparing the request's [since] version vector with its own
-/// state and sends only entries the requester doesn't have.
+/// the delta by comparing the request's [DeltaRequest.since] version vector
+/// with its own state and sends only entries the requester doesn't have.
 ///
 /// This is step 4 (final step) of the anti-entropy protocol. Once received,
 /// the requester merges these entries into its local store, completing the

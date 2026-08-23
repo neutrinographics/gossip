@@ -5,6 +5,8 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/sync/domain/value_objects/compaction_result.dart';
+import 'package:gossip/src/sync/domain/interfaces/entry_repository.dart';
+import 'package:gossip/src/sync/domain/entities/stream_config.dart';
 
 /// Sealed family root for domain events emitted by the sync context
 /// (channels, streams, and entry synchronization).
@@ -23,7 +25,7 @@ sealed class SyncEvent extends DomainEvent {
 
 /// Emitted when a new channel is created.
 ///
-/// Fired when: [Channel] aggregate is instantiated and persisted.
+/// Fired when: `Channel` aggregate is instantiated and persisted.
 final class ChannelCreated extends SyncEvent {
   final ChannelId channelId;
 
@@ -32,7 +34,7 @@ final class ChannelCreated extends SyncEvent {
 
 /// Emitted when a channel is removed.
 ///
-/// Fired when: [Channel] aggregate is deleted from persistence.
+/// Fired when: `Channel` aggregate is deleted from persistence.
 final class ChannelRemoved extends SyncEvent {
   final ChannelId channelId;
 
@@ -41,7 +43,7 @@ final class ChannelRemoved extends SyncEvent {
 
 /// Emitted when a peer is added as a member of a channel.
 ///
-/// Fired when: [Channel.addMember] successfully adds a new member.
+/// Fired when: `Channel.addMember` successfully adds a new member.
 /// Note: Membership is local metadata and is NOT enforced by the gossip
 /// protocol. Applications can use membership for UI or application-level
 /// access control.
@@ -54,7 +56,7 @@ final class MemberAdded extends SyncEvent {
 
 /// Emitted when a member is removed from a channel.
 ///
-/// Fired when: [Channel.removeMember] removes an existing member.
+/// Fired when: `Channel.removeMember` removes an existing member.
 /// This is a LOCAL operation only - the peer can still sync entries if they
 /// have the channel locally. Membership is not enforced by the gossip protocol.
 final class MemberRemoved extends SyncEvent {
@@ -70,7 +72,7 @@ final class MemberRemoved extends SyncEvent {
 
 /// Emitted when a new stream is created within a channel.
 ///
-/// Fired when: [Channel.addStream] successfully adds a new stream.
+/// Fired when: `Channel.addStream` successfully adds a new stream.
 final class StreamCreated extends SyncEvent {
   final ChannelId channelId;
   final StreamId streamId;
@@ -127,7 +129,7 @@ final class EntriesMerged extends SyncEvent {
 
 /// Emitted when a stream is compacted to free storage space.
 ///
-/// Fired when: [EntryRepository.compact] applies retention policies and removes
+/// Fired when: `EntryRepository.compact` applies retention policies and removes
 /// old entries. The [result] contains statistics about what was removed.
 final class StreamCompacted extends SyncEvent {
   final ChannelId channelId;

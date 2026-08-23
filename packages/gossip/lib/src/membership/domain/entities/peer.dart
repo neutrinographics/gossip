@@ -14,7 +14,7 @@ import 'package:gossip/src/membership/domain/entities/peer_metrics.dart';
 /// - **Failure detection**: Consecutive probe failure count
 /// - **Metrics**: Communication statistics for rate limiting
 ///
-/// Peers are managed by the [PeerRegistry] aggregate, which enforces
+/// Peers are managed by the PeerRegistry aggregate, which enforces
 /// invariants and emits domain events for state changes.
 ///
 /// Entities are compared by identity (NodeId) and state equality.

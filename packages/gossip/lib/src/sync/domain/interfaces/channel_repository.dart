@@ -1,5 +1,6 @@
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/sync/domain/aggregates/channel_aggregate.dart';
+import 'package:gossip/src/sync/domain/interfaces/entry_repository.dart';
 
 /// Repository for persisting ChannelAggregate state.
 ///
@@ -36,7 +37,7 @@ import 'package:gossip/src/sync/domain/aggregates/channel_aggregate.dart';
 /// - Consider caching frequently accessed channels in memory
 ///
 /// See also:
-/// - [InMemoryChannelRepository] for the reference implementation
+/// - `InMemoryChannelRepository` for the reference implementation
 /// - [EntryRepository] for log entry storage
 abstract interface class ChannelRepository {
   /// Retrieves a channel by ID, or null if not found.

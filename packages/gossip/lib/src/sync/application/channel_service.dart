@@ -324,7 +324,7 @@ class ChannelService {
   /// Generates the next sequence number for the local node's author chain,
   /// creates a [LogEntry] with current timestamp, and appends to [EntryRepository].
   ///
-  /// Note: This does NOT update the [Channel] aggregate's version vector.
+  /// Note: This does NOT update the `Channel` aggregate's version vector.
   /// That happens separately during sync protocol when entries are confirmed
   /// by remote peers.
   ///

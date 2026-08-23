@@ -21,7 +21,7 @@
 ///
 /// Node IDs should be:
 /// - **Globally unique**: UUIDs work well
-/// - **Persisted**: The [LocalNodeRepository] handles persistence; generate
+/// - **Persisted**: The `LocalNodeRepository` handles persistence; generate
 ///   once and reuse across restarts
 /// - **Meaningful**: Optional - can include device name for debugging
 ///

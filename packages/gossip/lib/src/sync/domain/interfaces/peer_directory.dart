@@ -5,7 +5,7 @@ import 'package:gossip/src/sync/domain/value_objects/sync_partner.dart';
 
 /// Sync's port onto peer state: THE sync↔membership contract.
 ///
-/// [GossipEngine] (the sync context's protocol service) depends on this
+/// `GossipEngine` (the sync context's protocol service) depends on this
 /// interface rather than membership's `PeerRegistry`/`Peer` types directly —
 /// the one boundary-rule concession that keeps the sync context from naming
 /// any membership type. Implemented by `MembershipPeerDirectory`, an ACL in

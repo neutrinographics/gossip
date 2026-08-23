@@ -8,7 +8,7 @@ import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
 /// includes digests (compact summaries) of its current sync state for each
 /// channel and stream. The recipient uses these digests to:
 /// 1. Identify which entries the sender is missing
-/// 2. Respond with its own digests via [DigestResponse]
+/// 2. Respond with its own digests via `DigestResponse`
 ///
 /// Digests contain version vectors summarizing the highest sequence number
 /// seen per author, enabling efficient delta computation without transmitting

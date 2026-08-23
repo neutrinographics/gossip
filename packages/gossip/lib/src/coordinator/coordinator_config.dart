@@ -1,4 +1,7 @@
-/// Configuration options for the [Coordinator].
+import 'package:gossip/src/membership/membership.dart';
+import 'package:gossip/src/sync/sync.dart';
+
+/// Configuration options for the Coordinator.
 ///
 /// The library automatically adapts timing based on observed network latency,
 /// making it self-tuning for any transport (WiFi, BLE, etc.). Only policy
@@ -63,13 +66,14 @@ class CoordinatorConfig {
   /// Grace period for newly added peers before they become eligible for
   /// failure detection probing.
   ///
-  /// When a peer is added via [Coordinator.addPeer], there may be a delay
+  /// When a peer is added via Coordinator.addPeer, there may be a delay
   /// before the transport layer is fully bidirectional (the remote peer's
   /// receive path may still be initializing). This grace period prevents
   /// false positive failure detections during startup.
   ///
-  /// The grace period is automatically cleared early if [probeNewPeer]
-  /// succeeds, confirming the peer is actually reachable.
+  /// The grace period is automatically cleared early if
+  /// [FailureDetector.probeNewPeer] succeeds, confirming the peer is
+  /// actually reachable.
   ///
   /// **Default: 10 seconds**
   ///

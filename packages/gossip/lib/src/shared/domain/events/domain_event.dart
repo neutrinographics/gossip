@@ -13,8 +13,8 @@ import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 /// happened in domain time.
 ///
 /// This base is intentionally NOT sealed: each bounded context defines its
-/// own sealed event family that extends it (see [SyncEvent], containing
-/// channel/stream/entry events, and [MembershipEvent], containing peer
+/// own sealed event family that extends it (see `SyncEvent`, containing
+/// channel/stream/entry events, and `MembershipEvent`, containing peer
 /// registry events). Applications observing the shared `Stream<DomainEvent>`
 /// are unaffected — every context-specific event still `is a` [DomainEvent].
 abstract class DomainEvent {
