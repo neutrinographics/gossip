@@ -16,6 +16,7 @@ import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_port.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
+import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping_req.dart';
@@ -804,23 +805,10 @@ class FailureDetector {
     // subscribes to the same incoming stream and is the single
     // designated recording point — both engines recording would double
     // every rate/byte metric applications throttle on.
+    final ProtocolMessage? protocolMessage;
     try {
-      final protocolMessage = _codec.decode(message.bytes);
-      // Foreign-family frame (e.g. a sync DigestRequest/DigestResponse or
-      // DeltaRequest/DeltaResponse sharing the same transport) — not ours
-      // to handle. Routine traffic, not an error: mirrors the
-      // pre-injection behavior where the type-dispatch below simply had no
-      // matching branch for it.
-      if (protocolMessage == null) return;
-
-      if (protocolMessage is Ping) {
-        await _handleIncomingPing(protocolMessage, message.sender);
-      } else if (protocolMessage is Ack) {
-        _handleIncomingAck(protocolMessage);
-      } else if (protocolMessage is PingReq) {
-        await _handlePingReq(protocolMessage, message.sender);
-      }
-    } catch (e) {
+      protocolMessage = _codec.decode(message.bytes);
+    } catch (e, st) {
       _emitError(
         PeerSyncError(
           message.sender,
@@ -829,6 +817,48 @@ class FailureDetector {
           occurredAt: DateTime.now(),
           cause: e,
         ),
+      );
+      _log(
+        'Malformed SWIM message from ${message.sender}: $e',
+        error: e,
+        stackTrace: st,
+      );
+      return;
+    }
+    // Foreign-family frame (e.g. a sync DigestRequest/DigestResponse or
+    // DeltaRequest/DeltaResponse sharing the same transport) — not ours
+    // to handle. Routine traffic, not an error: mirrors the
+    // pre-injection behavior where the type-dispatch below simply had no
+    // matching branch for it.
+    if (protocolMessage == null) return;
+
+    try {
+      if (protocolMessage is Ping) {
+        await _handleIncomingPing(protocolMessage, message.sender);
+      } else if (protocolMessage is Ack) {
+        _handleIncomingAck(protocolMessage);
+      } else if (protocolMessage is PingReq) {
+        await _handlePingReq(protocolMessage, message.sender);
+      }
+    } catch (e, st) {
+      // A handler failure is distinct from a decode failure: the message
+      // was well-formed, so this is a protocol/application-level fault
+      // (e.g. a downstream callback throwing) rather than corrupted bytes.
+      _emitError(
+        PeerSyncError(
+          message.sender,
+          SyncErrorType.protocolError,
+          'Failed handling ${protocolMessage.runtimeType} from '
+          '${message.sender}: $e',
+          occurredAt: DateTime.now(),
+          cause: e,
+        ),
+      );
+      _log(
+        'Failed handling ${protocolMessage.runtimeType} from '
+        '${message.sender}: $e',
+        error: e,
+        stackTrace: st,
       );
     }
   }
@@ -1062,7 +1092,7 @@ class FailureDetector {
     onError?.call(error);
   }
 
-  void _log(String message) {
-    onLog?.call(LogLevel.debug, '[SWIM] $message');
+  void _log(String message, {Object? error, StackTrace? stackTrace}) {
+    onLog?.call(LogLevel.debug, '[SWIM] $message', error, stackTrace);
   }
 }

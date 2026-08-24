@@ -1,6 +1,8 @@
 import 'dart:typed_data';
 
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
+import 'package:gossip/src/membership/domain/events/membership_events.dart';
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
@@ -285,6 +287,85 @@ void main() {
 
       h.stopListening();
     });
+
+    test('a decode failure is reported as messageCorrupted', () async {
+      h.startListening();
+
+      final garbageBytes = Uint8List.fromList([255, 0, 1, 2, 3]);
+      await peer.port.send(h.localNode, garbageBytes);
+      await h.flush();
+
+      expect(h.errors, hasLength(1));
+      final error = h.errors.first as PeerSyncError;
+      expect(error.type, equals(SyncErrorType.messageCorrupted));
+      expect(error.peer, equals(peer.id));
+      expect(error.message, contains('Malformed'));
+
+      h.stopListening();
+    });
+
+    test(
+      'a handler failure is reported as protocolError, not messageCorrupted',
+      () async {
+        // Cheapest real downstream throw: PeerRegistry.onEvent is a real
+        // constructor-provided sink (an application-supplied collaborator,
+        // same as onError/onLog) that _recordPeerContact's status-recovery
+        // path fires through real domain code — not a mock of the
+        // detector's own internals. It's armed to throw only on a
+        // recovery-to-reachable transition so arranging the pre-suspected
+        // peer (itself a PeerAdded + a suspecting PeerStatusChanged)
+        // doesn't trip it before the message under test arrives.
+        final localNode = NodeId('local');
+        final peerNode = NodeId('peer1');
+        final peerRegistry = PeerRegistry(
+          localNode: localNode,
+          onEvent: (event) {
+            if (event is PeerStatusChanged &&
+                event.newStatus == PeerStatus.reachable) {
+              throw StateError('boom: peer registry event sink failure');
+            }
+          },
+        );
+        peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
+        peerRegistry.updatePeerStatus(
+          peerNode,
+          PeerStatus.suspected,
+          occurredAt: DateTime.now(),
+        );
+
+        final timePort = InMemoryTimePort();
+        final bus = InMemoryMessageBus();
+        final localPort = InMemoryMessagePort(localNode, bus);
+        final peerPort = InMemoryMessagePort(peerNode, bus);
+        final errors = <SyncError>[];
+
+        final detector = FailureDetector(
+          codec: MembershipMessageCodec(),
+          localNode: localNode,
+          peerRegistry: peerRegistry,
+          timePort: timePort,
+          messagePort: localPort,
+          onError: errors.add,
+        );
+        detector.startListening();
+
+        // An Ack from the (now suspected) peer recovers it to reachable —
+        // handleAck → _recordPeerContact → updatePeerContact →
+        // updatePeerStatus → onEvent, which throws.
+        final ack = Ack(sender: peerNode, sequence: 1);
+        await peerPort.send(localNode, codec.encode(ack));
+        await Future.delayed(Duration.zero);
+
+        expect(errors, hasLength(1));
+        final error = errors.first as PeerSyncError;
+        expect(error.type, equals(SyncErrorType.protocolError));
+        expect(error.message, contains('Ack'));
+        expect(error.message, contains(peerNode.value));
+        expect(error.message, isNot(contains('Malformed')));
+
+        detector.stopListening();
+      },
+    );
 
     test('emits peerUnreachable error when transport send fails', () async {
       final localNode = NodeId('local');
