@@ -275,7 +275,8 @@ void main() {
   });
 
   group('PeerService error emission', () {
-    test('emits StorageSyncError when repository is null', () async {
+    test('no repository is a supported mode: addPeer persists to registry '
+        'without emitting an error (D1)', () async {
       final localNode = NodeId('local');
       final peerId = NodeId('peer');
       final registry = PeerRegistry(localNode: localNode);
@@ -289,13 +290,10 @@ void main() {
 
       await service.addPeer(peerId);
 
-      // Peer is added to registry, but persistence emits error
+      // Peer is added to registry; in-memory-only is documented, not an
+      // error, so persistence is silently skipped.
       expect(registry.getPeer(peerId), isNotNull);
-      expect(errors, hasLength(1));
-      expect(errors.first, isA<StorageSyncError>());
-      final storageError = errors.first as StorageSyncError;
-      expect(storageError.type, equals(SyncErrorType.storageFailure));
-      expect(storageError.message, contains('no repository configured'));
+      expect(errors, isEmpty);
     });
   });
 

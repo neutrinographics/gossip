@@ -30,7 +30,9 @@ class PeerService {
 
   /// Optional persistence layer for [Peer] entities.
   ///
-  /// When null, peers are not persisted (in-memory only).
+  /// When null, peers are not persisted (in-memory only). This is a
+  /// supported mode, not a failure: add/remove operations silently skip
+  /// persistence by design (D1) rather than reporting an error per call.
   final PeerRepository? repository;
 
   /// Optional callback for reporting synchronization errors.
@@ -49,11 +51,6 @@ class PeerService {
   /// — a slow older save landing after a fast newer one persists a stale
   /// snapshot that surfaces on restart.
   final KeyedTaskChain<NodeId> _peerOps = KeyedTaskChain();
-
-  /// Emits an error through the callback if one is registered.
-  void _emitError(SyncError error) {
-    onError?.call(error);
-  }
 
   /// Adds a new peer to the registry.
   ///
@@ -97,13 +94,6 @@ class PeerService {
   /// each persisting the freshest registry snapshot at write time.
   Future<void> _persistPeer(NodeId peerId) {
     if (repository == null) {
-      _emitError(
-        StorageSyncError(
-          SyncErrorType.storageFailure,
-          'Peer persistence skipped: no repository configured for peer $peerId',
-          occurredAt: DateTime.now(),
-        ),
-      );
       return Future.value();
     }
 
@@ -125,13 +115,6 @@ class PeerService {
   /// resurrect the peer in persistent storage.
   Future<void> _deletePeer(NodeId peerId) {
     if (repository == null) {
-      _emitError(
-        StorageSyncError(
-          SyncErrorType.storageFailure,
-          'Peer deletion skipped: no repository configured for peer $peerId',
-          occurredAt: DateTime.now(),
-        ),
-      );
       return Future.value();
     }
 

@@ -1,4 +1,5 @@
 import 'package:test/test.dart';
+import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/membership/domain/interfaces/peer_repository.dart';
@@ -80,5 +81,29 @@ void main() {
         expect(await repository.exists(peerId), isFalse);
       },
     );
+
+    test('a service with no repository adds and removes peers without '
+        'emitting errors', () async {
+      final localNode = NodeId('local');
+      final registry = PeerRegistry(localNode: localNode);
+      final errors = <SyncError>[];
+      final service = PeerService(
+        registry: registry,
+        repository: null,
+        onError: (e) => errors.add(e),
+      );
+      final peerId = NodeId('peer-1');
+
+      await service.addPeer(peerId);
+      await service.removePeer(peerId);
+
+      expect(
+        errors,
+        isEmpty,
+        reason:
+            'in-memory-only is a documented mode (D1), not a failure — '
+            'a null repository must not emit per-op errors',
+      );
+    });
   });
 }
