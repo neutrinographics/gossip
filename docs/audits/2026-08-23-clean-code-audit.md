@@ -269,3 +269,25 @@ Commits `65ed649..5cc249b` on branch `cc5-batch-b`. Eleven tasks (B3–B5 batche
 **Suite count:** 1031 → 1051 (+8 chain, +7 scheduler, +4 commit-protocol incl. the final-review new-batch recovery pin, +1 BD2 pin).
 
 Gates: `melos run test` (gossip 1050, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages); `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
+
+---
+
+## Remediation — Batch C (2026-08-24)
+
+Commits `6c412f3..dd16e29` on branch `cc5-batch-c`. Eight tasks (C1–C8; C1+C2, C3+C4, C6+C7 batched for review), zero fix rounds (two watchdog stalls resumed mid-task; no review finding entered a fix-round loop).
+
+**CC5-9 closed:** both message loops (`GossipEngine`, `FailureDetector`) split decode failures (`messageCorrupted`, `'Malformed…'`) from handling failures (`protocolError`, naming the message type and sender); both catches now thread stack traces. Red tests exercised real downstream seams — a throwing `onEntriesMerged` callback and a throwing `PeerRegistry.onEvent` sink — not mocks of engine/detector internals.
+
+**CC5-19 closed per D1:** a null peer repository is now a documented supported mode (in-memory-only); the per-operation `StorageSyncError` spam on add/remove is deleted. One existing pin was converted to a silence pin (old/new assertions listed in the task report).
+
+**CC5-23 closed per D2:** both local-node guards (`ChannelAggregate.removeMember`, `PeerRegistry.addPeer`) now throw `DomainException` with unchanged messages; `DomainException`'s stale scenario list trimmed to the two it actually throws; the two matchers that only asserted `isA<Exception>()` were strengthened with `.having` refinements.
+
+**CC5-52 closed per CD2:** the remaining dropped-stack-trace sites (inventoried in the task report) now thread traces into their log calls; `Coordinator` stores `onLog` and routes post-dispose errors to it at `LogLevel.error` instead of dropping them; the `onLog` doc clause Batch A trimmed pending this fix is restored, now true.
+
+**BD3 closed as CD1:** compaction scheduling failures stop the loop deliberately rather than retrying — documented on `CoordinatorConfig.compactionInterval`; behavior already pinned by the Batch B test.
+
+**Also landed:** the reactive-push wedge (a live scheduling failure permanently blocking `notifyLocalWrite`'s debounce) fixed and pinned, with `ScriptedDelayTimePort` added to `test/support` as a down payment on Batch D's late-failure double; the OOO-on-uninitialized-materializer residual fixed and pinned — now routes to a full rebuild.
+
+**Suite count:** 1051 → 1059 (+4 catch-split, +1 null-repo silence, +1 onLog fallback, +1 wedge pin, +1 OOO pin).
+
+Gates: `melos run test` (gossip 1059, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages); `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
