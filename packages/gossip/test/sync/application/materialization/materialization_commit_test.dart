@@ -314,4 +314,80 @@ void main() {
       await sub.cancel();
     },
   );
+
+  test('out-of-order entries below the committed cursor survive a '
+      'failed-save re-initialization', () async {
+    // Arrange: e1, e2 fold and commit together (the materializer's very
+    // first fold — the "no separate fold needed" comment on
+    // _foldForState's uninitialized branch), landing the persisted
+    // cursor on e2.
+    final repo = InMemoryEntryRepository();
+    final service = MaterializationService(entryRepository: repo);
+    final mat = _SaveFailingMaterializer();
+    await service.register<int>(channelId, streamId, mat);
+
+    final e1 = entryOf(1);
+    final e2 = entryOf(2);
+    await repo.append(channelId, streamId, e1);
+    await repo.append(channelId, streamId, e2);
+    await service.foldEntries(channelId, streamId, [e1, e2]);
+    expect(
+      await service.getState<int>(channelId, streamId),
+      equals(2),
+      reason: 'precondition: e1+e2 committed, cursor at e2',
+    );
+
+    // Break save, fold e3 — the save throws, and per _commit's why-doc
+    // marks the materializer uninitialized rather than leaving it as-is
+    // (so a later fold of only NEW entries can't silently skip e3
+    // forever). The persisted snapshot/cursor stay at e1+e2.
+    mat.shouldThrowOnSave = true;
+    final e3 = entryOf(3);
+    await repo.append(channelId, streamId, e3);
+    await expectLater(
+      service.foldEntries(channelId, streamId, [e3]),
+      throwsStateError,
+      reason: "the save failure must surface to the fold's awaiter",
+    );
+
+    // Heal, then arrange an entry that sorts BELOW the committed cursor
+    // (e2's position) via a direct repository append — bypassing
+    // foldEntries entirely, the way a peer's out-of-order delta lands:
+    // this node never folded it, but its HLC is older than anything
+    // already folded.
+    mat.shouldThrowOnSave = false;
+    final belowCursorAuthor = NodeId('author-b');
+    final eBelow = LogEntry(
+      author: belowCursorAuthor,
+      sequence: 1,
+      timestamp: Hlc(500, 0), // older than e2's Hlc(1002, 0) cursor
+      payload: Uint8List.fromList([0]),
+    );
+    await repo.append(channelId, streamId, eBelow);
+
+    // Act: fold the below-cursor entry as an out-of-order batch, while
+    // the materializer is still uninitialized from the failed e3 save
+    // above.
+    await service.foldEntries(channelId, streamId, [
+      eBelow,
+    ], containsOutOfOrderEntries: true);
+
+    // Assert: state reflects ALL FOUR entries. The skip hazard this
+    // pins: _foldForState's uninitialized branch resumes from the
+    // persisted cursor via _initialize regardless of
+    // containsOutOfOrderEntries — FoldCursor.isBefore's getAll()-minus-
+    // already-folded reasoning only holds for entries the cursor
+    // actually advanced past. eBelow never was folded, but its older
+    // HLC sorts it below the cursor, so _initialize's cursor filter
+    // would silently and permanently drop it instead of folding it.
+    expect(
+      await service.getState<int>(channelId, streamId),
+      equals(4),
+      reason:
+          "the skip hazard: a below-cursor entry that was never folded "
+          "must not be dropped by re-initialization after a failed "
+          "save — containsOutOfOrderEntries:true must force a full "
+          "rebuild instead of a cursor-resuming _initialize",
+    );
+  });
 }

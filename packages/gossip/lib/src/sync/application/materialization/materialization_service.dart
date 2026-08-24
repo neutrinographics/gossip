@@ -181,7 +181,21 @@ class MaterializationService {
       // Operations are serialized per materializer and entries are stored
       // before foldEntries is called, so initialization's getAll() is
       // guaranteed to include [newEntries] — no separate fold needed.
-      await _initialize<T>(matState, channelId, streamId);
+      // BUT that guarantee only covers in-order batches: [_initialize]
+      // resumes from the persisted cursor, folding only entries
+      // [FoldCursor.isBefore] reports as strictly after it. An
+      // out-of-order entry can carry an HLC that sorts BELOW the cursor
+      // despite never having been folded (e.g. this materializer's last
+      // successful save committed a later entry, then a failed save left
+      // it uninitialized, and the entry now being folded is older still)
+      // — the cursor filter would silently and permanently drop it. A
+      // full rebuild re-folds every repository entry regardless of
+      // position, so it can't have this hazard.
+      if (containsOutOfOrderEntries) {
+        await _fullRebuild<T>(matState, channelId, streamId);
+      } else {
+        await _initialize<T>(matState, channelId, streamId);
+      }
       return;
     }
 
