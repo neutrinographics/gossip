@@ -114,6 +114,12 @@ class GossipEngineTestHarness {
   });
 
   /// Creates a harness with the given configuration.
+  ///
+  /// [onEntriesMerged] overrides the default callback (which just records
+  /// into [mergedEntries]) — tests that need a handler-side failure inject
+  /// a throwing callback here, since it's a real constructor-provided
+  /// collaborator reached through the actual incoming-message dispatch,
+  /// not a mock of any engine internal.
   factory GossipEngineTestHarness({
     String localName = 'local',
     Duration? gossipInterval,
@@ -122,6 +128,7 @@ class GossipEngineTestHarness {
     MessagePort? messagePort,
     int? maxDeltaResponseBytes,
     Random? random,
+    EntriesMergedCallback? onEntriesMerged,
   }) {
     final localNode = NodeId(localName);
     final peerRegistry = PeerRegistry(localNode: localNode);
@@ -147,6 +154,7 @@ class GossipEngineTestHarness {
       localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
       onError: errors.add,
       onEntriesMerged:
+          onEntriesMerged ??
           (channelId, streamId, entries, containsOutOfOrderEntries) async {
             mergedEntries.add(
               MergedEntriesRecord(

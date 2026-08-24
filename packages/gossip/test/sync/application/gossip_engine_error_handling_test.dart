@@ -44,6 +44,75 @@ void main() {
       h.stopListening();
     });
 
+    test('a decode failure is reported as messageCorrupted', () async {
+      final h = GossipEngineTestHarness();
+      final peer = h.addPeer('peer1');
+      h.createChannel('ch1', streamIds: ['s1']);
+
+      h.startListening();
+
+      final garbageBytes = Uint8List.fromList([255, 0, 1, 2, 3]);
+      await peer.port.send(h.localNode, garbageBytes);
+      await h.flush();
+
+      expect(h.errors, hasLength(1));
+      final error = h.errors.first as PeerSyncError;
+      expect(error.type, equals(SyncErrorType.messageCorrupted));
+      expect(error.peer, equals(peer.id));
+      expect(error.message, contains('Malformed'));
+
+      h.stopListening();
+    });
+
+    test(
+      'a handler failure is reported as protocolError, not messageCorrupted',
+      () async {
+        // Cheapest real downstream throw: onEntriesMerged is a real
+        // constructor-provided callback (an application-supplied
+        // collaborator, same as onError/onLog), invoked from
+        // _mergeDeltaResponse only after a genuinely valid DeltaResponse
+        // has decoded, been routed, and merged — so making it throw
+        // exercises the actual handler-failure path through
+        // _handleIncomingMessage rather than mocking any engine internal.
+        final h = GossipEngineTestHarness(
+          onEntriesMerged: (_, _, _, _) async {
+            throw StateError('boom: onEntriesMerged failure');
+          },
+        );
+        final peer = h.addPeer('peer1');
+        h.createChannel('ch1', streamIds: ['s1']);
+
+        h.engine.start();
+        h.startListening();
+
+        final response = DeltaResponse(
+          sender: peer.id,
+          channelId: ChannelId('ch1'),
+          streamId: StreamId('s1'),
+          entries: [
+            LogEntry(
+              author: peer.id,
+              sequence: 1,
+              timestamp: Hlc(1000, 0),
+              payload: Uint8List.fromList([1]),
+            ),
+          ],
+        );
+        await peer.port.send(h.localNode, h.codec.encode(response));
+        await h.flush(3);
+
+        expect(h.errors, hasLength(1));
+        final error = h.errors.first as PeerSyncError;
+        expect(error.type, equals(SyncErrorType.protocolError));
+        expect(error.message, contains('DeltaResponse'));
+        expect(error.message, contains(peer.id.value));
+        expect(error.message, isNot(contains('Malformed')));
+
+        h.engine.stop();
+        h.stopListening();
+      },
+    );
+
     test('emits peerUnreachable error when transport send fails', () async {
       final bus = InMemoryMessageBus();
       final localPort = InMemoryMessagePort(NodeId('local'), bus);

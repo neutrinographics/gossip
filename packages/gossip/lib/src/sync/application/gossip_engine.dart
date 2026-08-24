@@ -920,14 +920,37 @@ class GossipEngine {
     // unknown/removed peers.
     peerDirectory.recordContact(message.sender, nowMs);
 
+    final ProtocolMessage? protocolMessage;
     try {
-      final protocolMessage = _codec.decode(message.bytes);
-      // Foreign-family frame (e.g. a membership Ping/Ack/PingReq sharing
-      // the same transport) — not ours to handle. Routine traffic, not an
-      // error: mirrors the pre-injection behavior where the type-dispatch
-      // below simply had no matching branch for it.
-      if (protocolMessage == null) return;
+      protocolMessage = _codec.decode(message.bytes);
+    } catch (e, st) {
+      // Emit error for observability (intentionally non-fatal for DoS
+      // prevention): a malformed frame is dropped, not allowed to crash
+      // the message-handling loop.
+      _emitError(
+        PeerSyncError(
+          message.sender,
+          SyncErrorType.messageCorrupted,
+          'Malformed gossip message from ${message.sender}: $e',
+          occurredAt: DateTime.now(),
+          cause: e,
+        ),
+      );
+      _log(
+        LogLevel.error,
+        'Malformed gossip message from ${message.sender}: $e',
+        e,
+        st,
+      );
+      return;
+    }
+    // Foreign-family frame (e.g. a membership Ping/Ack/PingReq sharing
+    // the same transport) — not ours to handle. Routine traffic, not an
+    // error: mirrors the pre-injection behavior where the type-dispatch
+    // below simply had no matching branch for it.
+    if (protocolMessage == null) return;
 
+    try {
       if (protocolMessage is DigestRequest) {
         _log(
           LogLevel.trace,
@@ -1019,16 +1042,26 @@ class GossipEngine {
           }
         }
       }
-    } catch (e) {
-      // Emit error for observability (intentionally non-fatal for DoS prevention)
+    } catch (e, st) {
+      // A handler failure is distinct from a decode failure: the message
+      // was well-formed, so this is a protocol/application-level fault
+      // (e.g. a downstream callback throwing) rather than corrupted bytes.
       _emitError(
         PeerSyncError(
           message.sender,
-          SyncErrorType.messageCorrupted,
-          'Malformed gossip message from ${message.sender}: $e',
+          SyncErrorType.protocolError,
+          'Failed handling ${protocolMessage.runtimeType} from '
+          '${message.sender}: $e',
           occurredAt: DateTime.now(),
           cause: e,
         ),
+      );
+      _log(
+        LogLevel.error,
+        'Failed handling ${protocolMessage.runtimeType} from '
+        '${message.sender}: $e',
+        e,
+        st,
       );
     }
   }
