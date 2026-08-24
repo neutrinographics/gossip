@@ -1,5 +1,6 @@
 import 'package:test/test.dart';
 import 'package:gossip/src/sync/domain/aggregates/channel_aggregate.dart';
+import 'package:gossip/src/shared/domain/errors/domain_exception.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
@@ -81,7 +82,13 @@ void main() {
 
       expect(
         () => channel.removeMember(localNode, occurredAt: DateTime(2024, 1, 1)),
-        throwsA(isA<Exception>()),
+        throwsA(
+          isA<DomainException>().having(
+            (e) => e.message,
+            'message',
+            contains('local node'),
+          ),
+        ),
       );
     });
 

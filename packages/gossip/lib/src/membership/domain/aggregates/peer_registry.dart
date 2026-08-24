@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:gossip/src/shared/domain/errors/domain_exception.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/entities/peer.dart';
 import 'package:gossip/src/membership/domain/entities/peer_metrics.dart';
@@ -174,7 +175,7 @@ class PeerRegistry {
   /// Emits: [PeerAdded] for new peers, [PeerStatusChanged] for recovered peers.
   void addPeer(NodeId id, {String? displayName, required DateTime occurredAt}) {
     if (id == localNode) {
-      throw Exception('Cannot add local node as peer');
+      throw DomainException('Cannot add local node as peer');
     }
     final existing = _peers[id];
     if (existing != null) {

@@ -619,7 +619,7 @@ class Coordinator {
   /// The grace period is cleared early if [FailureDetector.probeNewPeer]
   /// succeeds.
   ///
-  /// Throws [Exception] if attempting to add the local node as a peer.
+  /// Throws [DomainException] if attempting to add the local node as a peer.
   Future<void> addPeer(NodeId id, {String? displayName}) async {
     await _peerService.addPeer(id, displayName: displayName);
 

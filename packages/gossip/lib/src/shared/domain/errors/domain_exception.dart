@@ -6,9 +6,7 @@
 ///
 /// Common scenarios:
 /// - Adding the local node as a peer (invalid operation)
-/// - Removing a non-existent peer
-/// - Adding duplicate members to a channel
-/// - Attempting operations on non-existent aggregates
+/// - Removing the local node from a channel (invalid operation)
 ///
 /// These exceptions should not be caught and handled during normal operation.
 /// They indicate that the caller has violated preconditions or invariants.

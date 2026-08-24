@@ -1,3 +1,4 @@
+import 'package:gossip/src/shared/domain/errors/domain_exception.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
@@ -163,7 +164,7 @@ class ChannelAggregate {
   /// Emits: [MemberRemoved] event if member was present.
   void removeMember(NodeId peerId, {required DateTime occurredAt}) {
     if (peerId == localNode) {
-      throw Exception('Cannot remove local node from channel');
+      throw DomainException('Cannot remove local node from channel');
     }
     if (_memberIds.remove(peerId)) {
       _addEvent(MemberRemoved(id, peerId, occurredAt: occurredAt));

@@ -1,6 +1,7 @@
 import 'package:test/test.dart';
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/membership/domain/entities/peer.dart';
+import 'package:gossip/src/shared/domain/errors/domain_exception.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/events/membership_events.dart';
 import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
@@ -30,7 +31,13 @@ void main() {
 
       expect(
         () => registry.addPeer(localNode, occurredAt: DateTime(2024, 1, 1)),
-        throwsA(isA<Exception>()),
+        throwsA(
+          isA<DomainException>().having(
+            (e) => e.message,
+            'message',
+            contains('local node'),
+          ),
+        ),
       );
     });
 
