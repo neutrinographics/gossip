@@ -1058,7 +1058,7 @@ class FailureDetector {
     try {
       await messagePort.send(recipient, bytes, priority: MessagePriority.high);
       peerRegistry.recordMessageSent(recipient, bytes.length);
-    } catch (e) {
+    } catch (e, st) {
       _emitError(
         PeerSyncError(
           recipient,
@@ -1067,6 +1067,11 @@ class FailureDetector {
           occurredAt: DateTime.now(),
           cause: e,
         ),
+      );
+      _log(
+        'Failed to send $context to $recipient: $e',
+        error: e,
+        stackTrace: st,
       );
     }
   }

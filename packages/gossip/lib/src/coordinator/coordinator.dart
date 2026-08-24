@@ -116,6 +116,10 @@ class Coordinator {
   /// Configuration for the coordinator.
   final CoordinatorConfig _config;
 
+  /// Diagnostic log sink. Also the fallback error sink after dispose — see
+  /// [_handleError].
+  final LogCallback? _onLog;
+
   /// HLC clock for reading current clock state. Null in local-only mode.
   final HlcClock? _hlcClock;
 
@@ -175,6 +179,7 @@ class Coordinator {
     required GossipEngine? gossipEngine,
     required FailureDetector? failureDetector,
     required StreamController<DomainEvent> eventsController,
+    required LogCallback? onLog,
   }) : _peerRegistry = peerRegistry,
        _channelService = channelService,
        _peerService = peerService,
@@ -187,7 +192,8 @@ class Coordinator {
        _timerPort = timerPort,
        _gossipEngine = gossipEngine,
        _failureDetector = failureDetector,
-       _eventsController = eventsController;
+       _eventsController = eventsController,
+       _onLog = onLog;
 
   /// Creates a new coordinator instance.
   ///
@@ -209,7 +215,8 @@ class Coordinator {
   ///
   /// [random] lets callers inject a seeded Random for deterministic tests.
   ///
-  /// [onLog] receives diagnostic logs.
+  /// [onLog] receives diagnostic logs; also the fallback error sink after
+  /// dispose.
   static Future<Coordinator> create({
     required LocalNodeRepository localNodeRepository,
     required ChannelRepository channelRepository,
@@ -306,6 +313,7 @@ class Coordinator {
       gossipEngine: null, // Set below after coordinator is created
       failureDetector: null, // Set below after coordinator is created
       eventsController: eventsController,
+      onLog: onLog,
     );
 
     // Create GossipEngine and FailureDetector if ports are provided, wiring error callbacks
@@ -375,11 +383,17 @@ class Coordinator {
     }
   }
 
-  /// Handles errors from protocol services and emits them on the error stream.
+  /// Handles errors from protocol services and emits them on the error
+  /// stream. Once disposed, [_errorsController] is closed and has no
+  /// listeners left to reach — an error surfacing after that point (e.g.
+  /// a pending async callback started before dispose) falls back to
+  /// [_onLog] instead of vanishing silently (no-silent-errors rule).
   void _handleError(SyncError error) {
     if (!_errorsController.isClosed) {
       _errorsController.add(error);
+      return;
     }
+    _onLog?.call(LogLevel.error, 'error after dispose: $error', error);
   }
 
   /// Fans a domain event from [ChannelService] out to the app's event stream

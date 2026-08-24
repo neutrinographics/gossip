@@ -593,6 +593,12 @@ class GossipEngine {
               cause: error,
             ),
           );
+          _log(
+            LogLevel.error,
+            'Reactive push scheduling failed: $error',
+            error,
+            stackTrace,
+          );
         });
   }
 
@@ -879,7 +885,7 @@ class GossipEngine {
     _recordNews();
     try {
       await _sendMessage(peerId, await _buildDigestRequest());
-    } catch (e) {
+    } catch (e, st) {
       _emitError(
         PeerSyncError(
           peerId,
@@ -889,6 +895,7 @@ class GossipEngine {
           cause: e,
         ),
       );
+      _log(LogLevel.error, 'Initial sync with $peerId failed: $e', e, st);
     }
   }
 
@@ -1078,7 +1085,7 @@ class GossipEngine {
       await messagePort.send(recipient, bytes);
       peerDirectory.recordMessageSent(recipient, bytes.length);
       return true;
-    } catch (e) {
+    } catch (e, st) {
       _emitError(
         PeerSyncError(
           recipient,
@@ -1087,6 +1094,12 @@ class GossipEngine {
           occurredAt: DateTime.now(),
           cause: e,
         ),
+      );
+      _log(
+        LogLevel.error,
+        'Failed to send ${message.runtimeType} to $recipient: $e',
+        e,
+        st,
       );
       return false;
     }
@@ -1882,6 +1895,12 @@ class GossipEngine {
             occurredAt: DateTime.now(),
             cause: error,
           ),
+        );
+        _log(
+          LogLevel.error,
+          'Failed to persist HLC clock state: $error',
+          error,
+          stackTrace,
         );
       }),
     );
