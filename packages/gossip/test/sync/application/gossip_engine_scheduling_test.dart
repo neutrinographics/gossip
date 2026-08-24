@@ -293,9 +293,11 @@ void main() {
         // early return without resetting `_pushFlushScheduled`.
         await timePort.advance(const Duration(milliseconds: 200));
 
-        // Heal and restart — exactly what CD1 instructs an app to do after
-        // observing the StorageSyncError: stop() is a no-op here (the
-        // scheduler already stopped itself), start() issues call #3.
+        // Heal and restart: after observing the scheduling error (a
+        // PeerSyncError, protocolError, 'Gossip round scheduling failed'),
+        // the app calls stop() then start() to bring the round loop back
+        // up. stop() is a no-op here (the scheduler already stopped
+        // itself), start() issues call #3.
         engine.stop();
         engine.start();
 
