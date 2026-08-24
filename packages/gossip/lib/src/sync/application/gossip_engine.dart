@@ -386,8 +386,18 @@ class GossipEngine {
         // wedge reactive push permanently (only stop() resets the flag).
         // A stale failure while already stopped still bumps here, which is
         // harmless: the flag is already false and any captured generation
-        // is already stale regardless.
-        if (!_scheduler.isRunning) _pushGeneration++;
+        // is already stale regardless. A genuinely live failure must clear
+        // `_pushFlushScheduled` itself, not just bump the generation: the
+        // bump alone only makes an in-flight debounce recognize itself as
+        // stale when it fires — its "stale run — do nothing" early return
+        // does not reset the flag — and nothing else ever would, since the
+        // scheduler already stopped itself before this callback runs, so a
+        // caller's own [stop] (whose reset this flag would otherwise rely
+        // on) sees `isRunning` already false and short-circuits as a no-op.
+        if (!_scheduler.isRunning) {
+          _pushGeneration++;
+          _pushFlushScheduled = false;
+        }
         _emitError(
           PeerSyncError(
             localNode,

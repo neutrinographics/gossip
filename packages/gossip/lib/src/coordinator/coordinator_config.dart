@@ -141,6 +141,12 @@ class CoordinatorConfig {
   /// auto-compaction, in which case the application must call
   /// `EventStream.compact()` itself. Requires a `timerPort` (auto-compaction
   /// is inactive in local-only mode).
+  ///
+  /// A scheduling failure (the underlying timer itself breaking, not a
+  /// single compaction run failing) stops the compaction loop deliberately
+  /// rather than retrying — a broken timer doesn't heal by retrying it — so
+  /// the application should observe the resulting `StorageSyncError` and
+  /// stop/start the coordinator to restart the loop.
   final Duration? compactionInterval;
 
   /// Maximum amount a remote peer's timestamp may drag the local HLC ahead

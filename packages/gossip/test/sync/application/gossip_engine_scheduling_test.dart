@@ -1,19 +1,26 @@
+import 'dart:typed_data';
+
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
+import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
 import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:gossip/src/sync/application/gossip_engine.dart';
 import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:test/test.dart';
 
 import '../../support/failing_delay_time_port.dart';
+import '../../support/scripted_delay_time_port.dart';
 import 'gossip_engine_test_harness.dart';
 
 void main() {
@@ -198,5 +205,137 @@ void main() {
         reason: 'a dead loop must not report itself as running',
       );
     });
+
+    test(
+      'a live scheduling failure does not permanently wedge reactive push',
+      () async {
+        // Delay-call ordering on the shared `timePort` (see
+        // ScriptedDelayTimePort's doc — it addresses calls by position
+        // because this scenario needs an EARLIER call, the debounce, to
+        // still be in flight when a LATER call, the round loop's, fails):
+        //   call #1 — the round loop's delay, scheduled synchronously by
+        //             engine.start(). Scripted to fail.
+        //   call #2 — notifyLocalWrite's debounce delay for the first
+        //             write. Real (delegates to `inner`), so it stays
+        //             genuinely pending while call #1's failure resolves.
+        //   call #3 — the round loop's delay from the post-heal restart's
+        //             engine.start(). Real; never asserted on directly.
+        //   call #4 — would be notifyLocalWrite's debounce for the second
+        //             write, IF the flag it's gated on got reset by the
+        //             live failure. The fix under test is what makes this
+        //             call happen at all.
+        final timePort = ScriptedDelayTimePort(failDelayCalls: {1});
+        final localNode = NodeId('local');
+        final peerId = NodeId('peer');
+        final peerRegistry = PeerRegistry(localNode: localNode)
+          ..addPeer(peerId, occurredAt: DateTime.now());
+        final bus = InMemoryMessageBus();
+        final peerPort = InMemoryMessagePort(peerId, bus);
+        final codec = SyncMessageCodec();
+        final errors = <SyncError>[];
+        final channelId = ChannelId('ch1');
+        final streamId = StreamId('s1');
+
+        final engine = GossipEngine(
+          codec: codec,
+          localNode: localNode,
+          peerDirectory: MembershipPeerDirectory(peerRegistry),
+          entryRepository: InMemoryEntryRepository(),
+          timePort: timePort,
+          messagePort: InMemoryMessagePort(localNode, bus),
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          onError: errors.add,
+          gossipInterval: const Duration(milliseconds: 100),
+        );
+
+        final received = <dynamic>[];
+        final sub = peerPort.incoming.listen(
+          (msg) => received.add(codec.decode(msg.bytes)),
+        );
+
+        // call #1 (scripted to fail).
+        engine.start();
+        // call #2 (real debounce) — captures the pre-failure generation.
+        engine.notifyLocalWrite(
+          channelId,
+          streamId,
+          LogEntry(
+            author: localNode,
+            sequence: 1,
+            timestamp: Hlc(1000, 0),
+            payload: Uint8List.fromList([0x01]),
+          ),
+        );
+
+        // Let call #1's scripted failure propagate through
+        // GenerationScheduler's catchError into onSchedulingError's live
+        // branch (isRunning reads false by the time that callback runs).
+        await Future.delayed(Duration.zero);
+        await Future.delayed(Duration.zero);
+        await Future.delayed(Duration.zero);
+
+        expect(
+          errors,
+          isNotEmpty,
+          reason:
+              'the scripted scheduling failure must surface via '
+              'ErrorCallback',
+        );
+        expect(
+          engine.isRunning,
+          isFalse,
+          reason: 'a live scheduling failure stops the loop',
+        );
+
+        // Let call #2 reach its 150ms debounce deadline. With the wedge,
+        // its captured generation is now stale (bumped by
+        // onSchedulingError), so it takes the "stale run — do nothing"
+        // early return without resetting `_pushFlushScheduled`.
+        await timePort.advance(const Duration(milliseconds: 200));
+
+        // Heal and restart — exactly what CD1 instructs an app to do after
+        // observing the StorageSyncError: stop() is a no-op here (the
+        // scheduler already stopped itself), start() issues call #3.
+        engine.stop();
+        engine.start();
+
+        // A fresh local write after the restart. If `_pushFlushScheduled`
+        // is still (wrongly) true, the `if (_pushFlushScheduled) return;`
+        // guard bails before scheduling call #4, and this entry never
+        // reaches the peer via reactive push.
+        engine.notifyLocalWrite(
+          channelId,
+          streamId,
+          LogEntry(
+            author: localNode,
+            sequence: 2,
+            timestamp: Hlc(1001, 0),
+            payload: Uint8List.fromList([0x02]),
+          ),
+        );
+
+        // Past the 150ms debounce window (generous enough to also cover
+        // the restarted round loop's own jittered delay — harmless here,
+        // since the round's own gossip has no reachable-peer digest state
+        // to disturb this assertion).
+        await timePort.advance(const Duration(milliseconds: 250));
+        await Future.delayed(Duration.zero);
+        await Future.delayed(Duration.zero);
+
+        expect(
+          received.whereType<DeltaResponse>().any(
+            (r) => r.entries.any((e) => e.sequence == 2),
+          ),
+          isTrue,
+          reason:
+              'a local write after a healed restart must still reach peers '
+              'via reactive push — a live scheduling failure must not '
+              'permanently wedge notifyLocalWrite',
+        );
+
+        await sub.cancel();
+        engine.stop();
+      },
+    );
   });
 }
