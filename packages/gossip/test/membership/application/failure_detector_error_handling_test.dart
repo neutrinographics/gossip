@@ -372,113 +372,66 @@ void main() {
     );
 
     test('emits peerUnreachable error when transport send fails', () async {
-      final localNode = NodeId('local');
-      final peerNode = NodeId('peer1');
-      final peerRegistry = PeerRegistry(localNode: localNode);
-      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
-
-      final timePort = InMemoryTimePort();
-      final bus = InMemoryMessageBus();
-      final localPort = InMemoryMessagePort(localNode, bus);
-      final failingPort = FailingSendMessagePort(localPort);
-      final errors = <SyncError>[];
-
-      final detector = FailureDetector(
-        codec: MembershipMessageCodec(),
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: failingPort,
-        onError: errors.add,
+      final h = FailureDetectorTestHarness(
         pingTimeout: const Duration(milliseconds: 500),
+        wrapLocalPort: (inner) => FailingSendMessagePort(inner),
       );
+      final peer = h.addPeer('peer1');
 
-      final probeFuture = detector.probeNewPeer(peerNode);
+      final probeFuture = h.detector.probeNewPeer(peer.id);
       await pumpUntil(
-        () => errors.isNotEmpty,
+        () => h.errors.isNotEmpty,
         describe: 'the transport send failure emitting peerUnreachable',
       );
 
-      expect(errors, hasLength(1));
-      final error = errors.first as PeerSyncError;
+      expect(h.errors, hasLength(1));
+      final error = h.errors.first as PeerSyncError;
       expect(error.type, equals(SyncErrorType.peerUnreachable));
-      expect(error.peer, equals(peerNode));
+      expect(error.peer, equals(peer.id));
 
-      await timePort.advance(const Duration(milliseconds: 501));
+      await h.timePort.advance(const Duration(milliseconds: 501));
       final result = await probeFuture;
       expect(result, isFalse);
     });
 
     test('emits protocolError when probe round throws', () async {
-      final localNode = NodeId('local');
-      final peerNode = NodeId('peer1');
-      final peerRegistry = PeerRegistry(localNode: localNode);
-      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
-
-      final timePort = InMemoryTimePort();
-      final bus = InMemoryMessageBus();
-      final localPort = InMemoryMessagePort(localNode, bus);
-      final failingPort = FailingSendMessagePort(localPort);
-      final errors = <SyncError>[];
-
-      final detector = FailureDetector(
-        codec: MembershipMessageCodec(),
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: failingPort,
-        onError: errors.add,
+      final h = FailureDetectorTestHarness(
         pingTimeout: const Duration(milliseconds: 100),
         probeInterval: const Duration(milliseconds: 200),
+        wrapLocalPort: (inner) => FailingSendMessagePort(inner),
       );
+      h.addPeer('peer1');
 
-      detector.start();
+      h.detector.start();
 
-      await timePort.advance(const Duration(milliseconds: 201));
-      await timePort.advance(const Duration(milliseconds: 101));
-      await timePort.advance(const Duration(milliseconds: 101));
+      await h.timePort.advance(const Duration(milliseconds: 201));
+      await h.timePort.advance(const Duration(milliseconds: 101));
+      await h.timePort.advance(const Duration(milliseconds: 101));
 
-      expect(errors, isNotEmpty);
-      expect(errors.first, isA<PeerSyncError>());
+      expect(h.errors, isNotEmpty);
+      expect(h.errors.first, isA<PeerSyncError>());
 
-      detector.stop();
+      h.detector.stop();
     });
 
     test('Ack response send failure emits error but does not crash', () async {
-      final localNode = NodeId('local');
-      final peerNode = NodeId('peer1');
-      final peerRegistry = PeerRegistry(localNode: localNode);
-      peerRegistry.addPeer(peerNode, occurredAt: DateTime.now());
-
-      final timePort = InMemoryTimePort();
-      final bus = InMemoryMessageBus();
-      final localPort = InMemoryMessagePort(localNode, bus);
-      final peerPort = InMemoryMessagePort(peerNode, bus);
-      final failingPort = FailingSendMessagePort(localPort);
-      final errors = <SyncError>[];
-
-      final detector = FailureDetector(
-        codec: MembershipMessageCodec(),
-        localNode: localNode,
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        messagePort: failingPort,
-        onError: errors.add,
+      final h = FailureDetectorTestHarness(
+        wrapLocalPort: (inner) => FailingSendMessagePort(inner),
       );
-      detector.startListening();
+      final peer = h.addPeer('peer1');
+      h.startListening();
 
-      final ping = Ping(sender: peerNode, sequence: 10);
-      await peerPort.send(localNode, codec.encode(ping));
+      await h.sendPing(peer, sequence: 10);
       await pumpUntil(
-        () => errors.isNotEmpty,
+        () => h.errors.isNotEmpty,
         describe: 'the Ack response send failure emitting peerUnreachable',
       );
 
-      expect(errors, hasLength(1));
-      final error = errors.first as PeerSyncError;
+      expect(h.errors, hasLength(1));
+      final error = h.errors.first as PeerSyncError;
       expect(error.type, equals(SyncErrorType.peerUnreachable));
 
-      detector.stopListening();
+      h.stopListening();
     });
   });
 

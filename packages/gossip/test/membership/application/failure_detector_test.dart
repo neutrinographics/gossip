@@ -4,7 +4,6 @@ import 'package:gossip/src/membership/domain/events/membership_events.dart'
     show PeerStatusChanged;
 import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
-import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_port.dart';
 import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
@@ -183,16 +182,12 @@ void main() {
     });
 
     test('sends SWIM messages with high priority', () async {
-      final bus = InMemoryMessageBus();
-      final localPort = InMemoryMessagePort(NodeId('local'), bus);
-      final capPort = PriorityCapturingMessagePort(localPort);
-      final peerPort = InMemoryMessagePort(NodeId('peer1'), bus);
-
+      late PriorityCapturingMessagePort capPort;
       final hCap = FailureDetectorTestHarness(
         pingTimeout: const Duration(milliseconds: 500),
-        messagePort: capPort,
+        wrapLocalPort: (inner) => capPort = PriorityCapturingMessagePort(inner),
       );
-      hCap.addPeer('peer1');
+      final peer = hCap.addPeer('peer1');
       hCap.startListening();
 
       final probeRoundFuture = hCap.detector.performProbeRound();
@@ -206,10 +201,7 @@ void main() {
       );
 
       // Send a Ping to detector so it responds with Ack
-      final codec = MembershipMessageCodec();
-      final pingMsg = Ping(sender: NodeId('peer1'), sequence: 99);
-      await peerPort.send(NodeId('local'), codec.encode(pingMsg));
-      await hCap.flush();
+      await hCap.sendPing(peer, sequence: 99);
 
       expect(capPort.capturedPriorities.length, greaterThanOrEqualTo(2));
       expect(
@@ -362,15 +354,21 @@ void main() {
     );
 
     test('indirect ping success prevents probe failure', () async {
+      // Seeded so the round-robin shuffle (over [target, intermediary],
+      // added in that order) deterministically puts target first in the
+      // probe order — pinning which peer plays the direct-probe role so a
+      // regression here reproduces on every run instead of depending on
+      // which peer random selection happened to pick.
       final h = FailureDetectorTestHarness(
         pingTimeout: const Duration(milliseconds: 500),
+        random: Random(2),
       );
       final target = h.addPeer('target');
       final intermediary = h.addPeer('intermediary');
 
       h.startListening();
 
-      // Listen on both peers to detect which gets the direct Ping
+      // Listen on both peers to confirm target gets the direct Ping
       Ping? targetPing;
       final targetSub = target.port.incoming.listen((msg) {
         final decoded = h.codec.decode(msg.bytes);
@@ -389,22 +387,13 @@ void main() {
       final probeRoundFuture = h.detector.performProbeRound();
       await h.flush();
 
-      // Determine which peer was the probe target
-      final TestPeer probeTarget;
-      if (targetPing != null) {
-        probeTarget = target;
-      } else {
-        probeTarget = intermediary;
-        // Wire up target (acting as intermediary) to respond to PingReqs
-        await targetSub.cancel();
-        target.port.incoming.listen((msg) {
-          final decoded = h.codec.decode(msg.bytes);
-          if (decoded is PingReq) {
-            final ack = Ack(sender: target.id, sequence: decoded.sequence);
-            target.port.send(h.localNode, h.codec.encode(ack));
-          }
-        });
-      }
+      expect(
+        targetPing,
+        isNotNull,
+        reason:
+            'seed 2 deterministically selects target for the direct '
+            'probe, with intermediary answering the indirect PingReq',
+      );
 
       // Let direct ping timeout expire → triggers indirect ping phase
       await h.timePort.advance(const Duration(milliseconds: 501));
@@ -414,7 +403,7 @@ void main() {
       await h.timePort.advance(const Duration(milliseconds: 501));
       await probeRoundFuture;
 
-      final probed = h.peerRegistry.getPeer(probeTarget.id)!;
+      final probed = h.peerRegistry.getPeer(target.id)!;
       expect(
         probed.failedProbeCount,
         equals(0),

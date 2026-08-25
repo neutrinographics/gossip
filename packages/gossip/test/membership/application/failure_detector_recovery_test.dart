@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
@@ -13,8 +15,14 @@ void main() {
   group('Suspected peer recovery via indirect probes (SWIM)', () {
     test('a suspected peer reachable only through an intermediary recovers '
         'to reachable', () async {
+      // Seeded so the round-robin shuffle (over [target, intermediary],
+      // added in that order) puts target first in the probe order — the
+      // recovery then completes deterministically on the very first probe
+      // round, instead of an unseeded run needing anywhere from 1 to n
+      // rounds before target's turn comes up in the rotation.
       final h = FailureDetectorTestHarness(
         pingTimeout: const Duration(milliseconds: 500),
+        random: Random(2),
       );
       final target = h.addPeer('target');
       final intermediary = h.addPeer('intermediary');
@@ -51,23 +59,18 @@ void main() {
         occurredAt: DateTime.now(),
       );
 
-      // Run probe rounds until the target recovers (or give up).
-      for (
-        var i = 0;
-        i < 12 &&
-            h.peerRegistry.getPeer(target.id)!.status != PeerStatus.reachable;
-        i++
-      ) {
-        final round = h.detector.performProbeRound();
-        await h.flush(3);
-        // Direct phase times out (if the target was probed).
-        await h.timePort.advance(const Duration(milliseconds: 501));
-        await h.flush(3);
-        // Indirect phase: PingReq relayed, forwarded Ack arrives.
-        await h.timePort.advance(const Duration(milliseconds: 501));
-        await h.flush(3);
-        await round;
-      }
+      // Seed 2 selects target for this single probe round: the direct
+      // ping times out, the indirect PingReq relay through intermediary
+      // succeeds, and target recovers to reachable within this one round.
+      final round = h.detector.performProbeRound();
+      await h.flush(3);
+      // Direct phase times out.
+      await h.timePort.advance(const Duration(milliseconds: 501));
+      await h.flush(3);
+      // Indirect phase: PingReq relayed, forwarded Ack arrives.
+      await h.timePort.advance(const Duration(milliseconds: 501));
+      await h.flush(3);
+      await round;
 
       final probed = h.peerRegistry.getPeer(target.id)!;
       expect(

@@ -23,7 +23,7 @@ import '../../support/pump.dart';
 
 /// A MessagePort that throws on send, simulating transport failure.
 class FailingSendMessagePort implements MessagePort {
-  final InMemoryMessagePort _delegate;
+  final MessagePort _delegate;
   bool shouldFail = true;
 
   FailingSendMessagePort(this._delegate);
@@ -89,7 +89,7 @@ class _CountingMessagePort implements MessagePort {
 
 /// A MessagePort that captures the priority of each sent message.
 class PriorityCapturingMessagePort implements MessagePort {
-  final InMemoryMessagePort _delegate;
+  final MessagePort _delegate;
   final List<MessagePriority> capturedPriorities = [];
 
   PriorityCapturingMessagePort(this._delegate);
@@ -131,6 +131,13 @@ class TestPeer {
   /// Captures the next [Ping] arriving at this peer.
   ///
   /// Sets up a subscription eagerly, so call this **before** the Ping is sent.
+  ///
+  /// Races against a real-time timeout: with no timeout, a probe that a
+  /// regression silently suppresses never arrives, and the wait hangs
+  /// until the whole test file is killed by the suite's own timeout —
+  /// which reports a generic "test timed out" with no clue which peer
+  /// went unprobed. Failing fast here, by name, turns that into an
+  /// immediate, diagnosable failure.
   Future<Ping> capturePing(MembershipMessageCodec codec) {
     final completer = Completer<Ping>();
     late StreamSubscription<IncomingMessage> sub;
@@ -141,7 +148,16 @@ class TestPeer {
         sub.cancel();
       }
     });
-    return completer.future;
+    return completer.future.timeout(
+      const Duration(seconds: 5),
+      onTimeout: () {
+        sub.cancel();
+        throw StateError(
+          'no Ping arrived at ${id.value} — was the probe '
+          'suppressed?',
+        );
+      },
+    );
   }
 }
 
@@ -208,8 +224,14 @@ class FailureDetectorTestHarness {
 
   /// Creates a harness with the given configuration.
   ///
-  /// All parameters are optional. Pass [messagePort] to use a custom
-  /// MessagePort implementation (e.g. FailingSendMessagePort).
+  /// All parameters are optional. Pass [wrapLocalPort] to interpose a
+  /// double (e.g. [FailingSendMessagePort]) between the detector and the
+  /// harness's own port. It must decorate the harness's port — rather
+  /// than accept a caller-supplied replacement port outright — because
+  /// [addPeer] wires every [TestPeer] onto the harness's own
+  /// [InMemoryMessageBus]; a replacement port built on a different bus
+  /// would leave the harness's send/expect helpers talking to peers the
+  /// double can never see traffic from or to.
   factory FailureDetectorTestHarness({
     String localName = 'local',
     Duration? pingTimeout,
@@ -219,7 +241,7 @@ class FailureDetectorTestHarness {
     int unreachableProbeInterval = 3,
     RttTracker? rttTracker,
     Random? random,
-    MessagePort? messagePort,
+    MessagePort Function(MessagePort inner)? wrapLocalPort,
   }) {
     final localNode = NodeId(localName);
     final peerRegistry = PeerRegistry(localNode: localNode);
@@ -239,7 +261,10 @@ class FailureDetectorTestHarness {
     final localPort = InMemoryMessagePort(localNode, bus);
     final tracker = rttTracker ?? RttTracker();
     final errors = <SyncError>[];
-    final sendCounter = _CountingMessagePort(messagePort ?? localPort);
+    final effectiveLocalPort = wrapLocalPort != null
+        ? wrapLocalPort(localPort)
+        : localPort;
+    final sendCounter = _CountingMessagePort(effectiveLocalPort);
 
     final detector = FailureDetector(
       codec: MembershipMessageCodec(),
