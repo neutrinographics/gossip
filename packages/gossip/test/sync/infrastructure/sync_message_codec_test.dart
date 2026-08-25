@@ -402,6 +402,68 @@ void main() {
       );
     });
 
+    group('encode-side wire pinning (CC5-30)', () {
+      // Every literal type byte and key set below is copied by hand from
+      // the codec, not read from WireTypes or the codec's own encoder. A
+      // round-trip test (decode(encode(x))) stays green even if the
+      // encoder and decoder drift together — e.g. both sides rename a
+      // JSON key, or both sides get the same (wrong) type-byte edit. An
+      // independently-sourced literal is the only thing that can catch
+      // that: it fails when THIS codec's output differs from what a
+      // previously-deployed peer's codec would still expect.
+      test('DigestRequest encodes with wire type byte 3 and the '
+          'sender/digests key set', () {
+        final request = DigestRequest(
+          sender: NodeId('peer1'),
+          digests: const [],
+        );
+        final encoded = codec.encode(request);
+
+        expect(encoded[0], equals(3));
+        expect(jsonOf(encoded).keys.toSet(), equals({'sender', 'digests'}));
+      });
+
+      test('DigestResponse encodes with wire type byte 4 and the '
+          'sender/digests key set', () {
+        final response = DigestResponse(
+          sender: NodeId('peer1'),
+          digests: const [],
+        );
+        final encoded = codec.encode(response);
+
+        expect(encoded[0], equals(4));
+        expect(jsonOf(encoded).keys.toSet(), equals({'sender', 'digests'}));
+      });
+
+      test('DeltaRequest encodes with wire type byte 5 and the '
+          'sender/channelId/streamId/since key set', () {
+        final request = DeltaRequest(
+          sender: NodeId('peer1'),
+          channelId: ChannelId('channel1'),
+          streamId: StreamId('stream1'),
+          since: VersionVector.empty,
+        );
+        final encoded = codec.encode(request);
+
+        expect(encoded[0], equals(5));
+        expect(
+          jsonOf(encoded).keys.toSet(),
+          equals({'sender', 'channelId', 'streamId', 'since'}),
+        );
+      });
+
+      test('DeltaResponse encodes with wire type byte 6 and the '
+          'sender/channelId/streamId/entries/hasMore key set (no floor)', () {
+        final encoded = codec.encode(responseWith(const []));
+
+        expect(encoded[0], equals(6));
+        expect(
+          jsonOf(encoded).keys.toSet(),
+          equals({'sender', 'channelId', 'streamId', 'entries', 'hasMore'}),
+        );
+      });
+    });
+
     group('byte-budget helpers', () {
       // gossip_engine.dart uses these to budget DeltaResponse/DigestRequest
       // messages against the 32KB transport limit without repeatedly

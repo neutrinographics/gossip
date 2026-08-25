@@ -13,6 +13,9 @@ void main() {
   group('MembershipMessageCodec', () {
     final codec = MembershipMessageCodec();
 
+    Map<String, dynamic> jsonOf(Uint8List encoded) =>
+        jsonDecode(utf8.decode(encoded.sublist(1))) as Map<String, dynamic>;
+
     test('round-trips Ping', () {
       final ping = Ping(sender: NodeId('peer1'), sequence: 42);
 
@@ -40,6 +43,50 @@ void main() {
       expect(decoded.sender, equals(pingReq.sender));
       expect(decoded.sequence, equals(pingReq.sequence));
       expect(decoded.target, equals(pingReq.target));
+    });
+
+    group('encode-side wire pinning (CC5-30)', () {
+      // Every literal type byte and key set below is copied by hand from
+      // the codec, not read from WireTypes or the codec's own encoder. A
+      // round-trip test (decode(encode(x))) stays green even if the
+      // encoder and decoder drift together — e.g. both sides rename a
+      // JSON key, or both sides get the same (wrong) type-byte edit. An
+      // independently-sourced literal is the only thing that can catch
+      // that: it fails when THIS codec's output differs from what a
+      // previously-deployed peer's codec would still expect.
+      test('Ping encodes with wire type byte 0 and the sender/sequence '
+          'key set', () {
+        final ping = Ping(sender: NodeId('peer1'), sequence: 42);
+        final encoded = codec.encode(ping);
+
+        expect(encoded[0], equals(0));
+        expect(jsonOf(encoded).keys.toSet(), equals({'sender', 'sequence'}));
+      });
+
+      test('Ack encodes with wire type byte 1 and the sender/sequence '
+          'key set', () {
+        final ack = Ack(sender: NodeId('peer2'), sequence: 123);
+        final encoded = codec.encode(ack);
+
+        expect(encoded[0], equals(1));
+        expect(jsonOf(encoded).keys.toSet(), equals({'sender', 'sequence'}));
+      });
+
+      test('PingReq encodes with wire type byte 2 and the '
+          'sender/sequence/target key set', () {
+        final pingReq = PingReq(
+          sender: NodeId('peer1'),
+          sequence: 456,
+          target: NodeId('peer3'),
+        );
+        final encoded = codec.encode(pingReq);
+
+        expect(encoded[0], equals(2));
+        expect(
+          jsonOf(encoded).keys.toSet(),
+          equals({'sender', 'sequence', 'target'}),
+        );
+      });
     });
 
     test('decode returns null for a frame from the sync family', () {
