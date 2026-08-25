@@ -291,3 +291,33 @@ Commits `6c412f3..dd16e29` on branch `cc5-batch-c`. Eight tasks (C1–C8; C1+C2,
 **Suite count:** 1051 → 1059 (+4 catch-split, +1 null-repo silence, +1 onLog fallback, +1 wedge pin, +1 OOO pin).
 
 Gates: `melos run test` (gossip 1059, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages); `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
+
+---
+
+## Remediation — Batch D (2026-08-24)
+
+Commits `10db7b5..d9d0c7e` on branch `cc5-batch-d`. Ten tasks (D2 split into a/b, D3 into a/b, D4 into a/b; D1 needed a mid-batch amendment). One fix round (D4b). Three watchdog stalls resumed with no lost work.
+
+**CC5-5 closed:** one `createTestCoordinator` builder in `test/support` replaces 116 of 120 hand-rolled setups; four sites stay direct, each commented with what it proves that the builder cannot (two null-repository validation tests, one omitted-default test, one `MessagePort` that must emit stream errors). The builder needed a mid-batch amendment — an escape hatch fired when 17 sites turned out to need repository references the original signature could not express.
+
+**CC5-25 closed:** counted `Future.delayed(Duration.zero)` loops replaced by `pumpEventQueue()` (drain) or a new bounded `pumpUntil` (wait). Both harnesses' `flush([count])` helpers deliberately left as fixed counts — they back dozens of call sites each awaiting a different downstream effect, so no single predicate fits; documented at each.
+
+**CC5-26 closed:** integration cleanup registered at network creation (78 sites) so it survives a thrown assertion; five files plus three groups correctly left on their existing setUp/tearDown convention.
+
+**CC5-27 closed:** five over-promising test names either strengthened or renamed. One needed a fix round — a config-passthrough test seeded the same value as the consumer's own default, so it stayed green when the wiring was deleted.
+
+**CC5-28 closed:** three `expect(true, isTrue)` tautologies made real or deleted; the enum checklist became one exact-set assertion; two constructor-echo clones deleted (codec round-trips assert a strict superset).
+
+**CC5-29 closed:** the composite-retention fixture gained an entry retained by exactly one sub-policy, so union and intersection now give different answers.
+
+**CC5-30 closed:** encode-side type bytes and exact JSON key sets pinned for all four sync and three membership message types, using integer literals deliberately (a constant reference would drift with the change it must catch).
+
+**CC5-31/32/33 closed:** the dead harness injection parameter replaced by a decorator seam on the harness's own port; ping waits now fail fast with a diagnostic instead of hanging; two unseeded branching tests seeded and their dead branches removed; two degenerate fakes replaced by the real in-memory repositories.
+
+**Routed items closed:** `PeerService`'s dead `onError` removed (three other classes' `onError` untouched); the detector's two failure sites promoted from debug to error to match the engine; three false "Throws [Exception]" doc claims corrected; the compaction post-restart pin now asserts the loop is live; and the stale-generation late-scheduling-failure interleaving Batch B could not net is now pinned, using the `ScriptedDelayTimePort` added in Batch C.
+
+**Method note:** every deletion carried a vacuity proof and every strengthened assertion a mutation proof; reviews reproduced those proofs independently rather than accepting them.
+
+**Suite count:** 1059 → 1076.
+
+Gates: `melos run test` (gossip 1076, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages) both pass as of `d9d0c7e`; `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
