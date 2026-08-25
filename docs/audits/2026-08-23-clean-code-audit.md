@@ -296,7 +296,7 @@ Gates: `melos run test` (gossip 1059, gossip_nearby 189, gossip_bluey 228 — al
 
 ## Remediation — Batch D (2026-08-24)
 
-Commits `10db7b5..d9d0c7e` on branch `cc5-batch-d`. Ten tasks (D2 split into a/b, D3 into a/b, D4 into a/b; D1 needed a mid-batch amendment). One fix round (D4b). Three watchdog stalls resumed with no lost work.
+Commits `10db7b5..d9d0c7e` on branch `cc5-batch-d`. Ten tasks (D2 split into a/b, D3 into a/b, D4 into a/b; D1 needed a mid-batch amendment). One fix round (D4b). Three watchdog stalls resumed with no lost work: D7, and — earlier in the campaign — Batch C's C3 and C5; all three resumed from staged/working-tree state with no commits lost.
 
 **CC5-5 closed:** one `createTestCoordinator` builder in `test/support` replaces 116 of 120 hand-rolled setups; four sites stay direct, each commented with what it proves that the builder cannot (two null-repository validation tests, one omitted-default test, one `MessagePort` that must emit stream errors). The builder needed a mid-batch amendment — an escape hatch fired when 17 sites turned out to need repository references the original signature could not express.
 
@@ -310,7 +310,7 @@ Commits `10db7b5..d9d0c7e` on branch `cc5-batch-d`. Ten tasks (D2 split into a/b
 
 **CC5-29 closed:** the composite-retention fixture gained an entry retained by exactly one sub-policy, so union and intersection now give different answers.
 
-**CC5-30 closed:** encode-side type bytes and exact JSON key sets pinned for all four sync and three membership message types, using integer literals deliberately (a constant reference would drift with the change it must catch).
+**CC5-30 closed for the envelope, not the nested payload:** encode-side type bytes and exact JSON key sets pinned for all four sync and three membership message types, using integer literals deliberately (a constant reference would drift with the change it must catch). All seven golden pins construct their messages with empty `digests`/`entries` collections, so only the envelope keys are pinned — the nested payload keys (`LogEntry`'s fields, `ChannelDigest`'s/`StreamDigest`'s fields) remain co-drift-blind; closing that gap is a named follow-up.
 
 **CC5-31/32/33 closed:** the dead harness injection parameter replaced by a decorator seam on the harness's own port; ping waits now fail fast with a diagnostic instead of hanging; two unseeded branching tests seeded and their dead branches removed; two degenerate fakes replaced by the real in-memory repositories.
 
