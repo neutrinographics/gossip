@@ -3,22 +3,16 @@ import 'dart:typed_data';
 import 'package:gossip/src/sync/domain/interfaces/retention_policy.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
-import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
-import 'package:gossip/src/coordinator/coordinator.dart';
 import 'package:gossip/src/coordinator/coordinator_config.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
-import 'package:gossip/src/sync/infrastructure/in_memory_channel_repository.dart';
-import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
-import 'package:gossip/src/membership/infrastructure/in_memory_peer_repository.dart';
-import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:test/test.dart';
 
+import '../support/coordinator_builder.dart';
 import '../support/failing_delay_time_port.dart';
 
 void main() {
-  final localNode = NodeId('local');
   final channelId = ChannelId('ch1');
   final streamId = StreamId('s1');
 
@@ -27,13 +21,9 @@ void main() {
       'streams are compacted per their retention policy on the interval',
       () async {
         final timePort = InMemoryTimePort();
-        final coordinator = await Coordinator.create(
-          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-          channelRepository: InMemoryChannelRepository(),
-          peerRepository: InMemoryPeerRepository(),
-          entryRepository: InMemoryEntryRepository(),
-          messagePort: InMemoryMessagePort(localNode, InMemoryMessageBus()),
-          timerPort: timePort,
+        final coordinator = await createTestCoordinator(
+          bus: InMemoryMessageBus(),
+          timePort: timePort,
           config: const CoordinatorConfig(
             gossipInterval: Duration(seconds: 100),
             probeInterval: Duration(seconds: 100),
@@ -67,8 +57,6 @@ void main() {
               'CountBasedRetention(1) keeps only the latest — the library '
               'must enforce it, not just declare it',
         );
-
-        await coordinator.dispose();
       },
     );
 
@@ -76,13 +64,9 @@ void main() {
       'auto-compaction is disabled when compactionInterval is null',
       () async {
         final timePort = InMemoryTimePort();
-        final coordinator = await Coordinator.create(
-          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-          channelRepository: InMemoryChannelRepository(),
-          peerRepository: InMemoryPeerRepository(),
-          entryRepository: InMemoryEntryRepository(),
-          messagePort: InMemoryMessagePort(localNode, InMemoryMessageBus()),
-          timerPort: timePort,
+        final coordinator = await createTestCoordinator(
+          bus: InMemoryMessageBus(),
+          timePort: timePort,
           config: const CoordinatorConfig(
             gossipInterval: Duration(seconds: 100),
             probeInterval: Duration(seconds: 100),
@@ -111,8 +95,6 @@ void main() {
           equals(5),
           reason: 'null interval opts out of auto-compaction',
         );
-
-        await coordinator.dispose();
       },
     );
   });
@@ -125,17 +107,13 @@ void main() {
       // Timer port only, no message port: isolates the compaction
       // scheduler's delay() calls from the gossip/failure-detector loops,
       // which would otherwise race it for the first (failing) delay.
-      final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: InMemoryChannelRepository(),
-        peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
-        timerPort: timePort,
+      final coordinator = await createTestCoordinator(
+        timePort: timePort,
         config: const CoordinatorConfig(
           compactionInterval: Duration(milliseconds: 50),
         ),
+        onError: errors.add,
       );
-      coordinator.errors.listen(errors.add);
 
       timePort.failNextDelay = true;
       await coordinator.start();
@@ -194,8 +172,6 @@ void main() {
         hasLength(1),
         reason: 'resumed loop ticks cleanly with no channels to compact',
       );
-
-      await coordinator.dispose();
     });
   });
 }

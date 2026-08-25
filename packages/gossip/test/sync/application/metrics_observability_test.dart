@@ -12,13 +12,9 @@ import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
-import 'package:gossip/src/coordinator/coordinator.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
-import 'package:gossip/src/sync/infrastructure/in_memory_channel_repository.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
-import 'package:gossip/src/membership/infrastructure/in_memory_peer_repository.dart';
-import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
@@ -27,6 +23,7 @@ import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:test/test.dart';
 
+import '../../support/coordinator_builder.dart';
 import 'gossip_engine_test_harness.dart';
 
 /// LocalNodeRepository whose clock-state persistence fails.
@@ -49,13 +46,9 @@ void main() {
         final localNode = NodeId('local');
         final peerId = NodeId('peer1');
         final bus = InMemoryMessageBus();
-        final coordinator = await Coordinator.create(
-          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-          channelRepository: InMemoryChannelRepository(),
-          peerRepository: InMemoryPeerRepository(),
-          entryRepository: InMemoryEntryRepository(),
-          messagePort: InMemoryMessagePort(localNode, bus),
-          timerPort: InMemoryTimePort(),
+        final coordinator = await createTestCoordinator(
+          bus: bus,
+          timePort: InMemoryTimePort(),
         );
         await coordinator.addPeer(peerId);
         await coordinator.start();
@@ -80,7 +73,6 @@ void main() {
         );
 
         await peerPort.close();
-        await coordinator.dispose();
       },
     );
   });

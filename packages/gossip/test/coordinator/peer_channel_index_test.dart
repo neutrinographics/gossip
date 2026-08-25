@@ -1,27 +1,13 @@
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
-import 'package:gossip/src/coordinator/coordinator.dart';
-import 'package:gossip/src/sync/infrastructure/in_memory_channel_repository.dart';
-import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
-import 'package:gossip/src/membership/infrastructure/in_memory_peer_repository.dart';
-import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:test/test.dart';
+
+import '../support/coordinator_builder.dart';
 
 void main() {
   group('Peer-to-Channel Index', () {
-    late NodeId localNode;
-
-    setUp(() {
-      localNode = NodeId('local');
-    });
-
     test('channelsForPeer returns empty list for unknown peer', () async {
-      final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: InMemoryChannelRepository(),
-        peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
-      );
+      final coordinator = await createTestCoordinator();
 
       final channels = await coordinator.channelsForPeer(NodeId('unknown'));
 
@@ -31,12 +17,7 @@ void main() {
     test(
       'channelsForPeer returns empty list for peer with no channel memberships',
       () async {
-        final coordinator = await Coordinator.create(
-          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-          channelRepository: InMemoryChannelRepository(),
-          peerRepository: InMemoryPeerRepository(),
-          entryRepository: InMemoryEntryRepository(),
-        );
+        final coordinator = await createTestCoordinator();
 
         await coordinator.addPeer(NodeId('peer1'));
 
@@ -47,12 +28,7 @@ void main() {
     );
 
     test('channelsForPeer returns channels where peer is a member', () async {
-      final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: InMemoryChannelRepository(),
-        peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
-      );
+      final coordinator = await createTestCoordinator();
 
       final peerId = NodeId('peer1');
       final channelId = ChannelId('channel1');
@@ -68,12 +44,7 @@ void main() {
     });
 
     test('channelsForPeer returns multiple channels for peer', () async {
-      final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: InMemoryChannelRepository(),
-        peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
-      );
+      final coordinator = await createTestCoordinator();
 
       final peerId = NodeId('peer1');
       final channel1Id = ChannelId('channel1');
@@ -97,12 +68,7 @@ void main() {
     });
 
     test('channelsForPeer excludes channels after peer is removed', () async {
-      final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: InMemoryChannelRepository(),
-        peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
-      );
+      final coordinator = await createTestCoordinator();
 
       final peerId = NodeId('peer1');
       final channelId = ChannelId('channel1');
@@ -119,18 +85,13 @@ void main() {
     });
 
     test('channelsForPeer works for local node', () async {
-      final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: InMemoryChannelRepository(),
-        peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
-      );
+      final coordinator = await createTestCoordinator();
 
       final channelId = ChannelId('channel1');
       await coordinator.createChannel(channelId);
 
       // Local node is automatically a member of channels it creates
-      final channels = await coordinator.channelsForPeer(localNode);
+      final channels = await coordinator.channelsForPeer(NodeId('local'));
 
       expect(channels, contains(channelId));
     });

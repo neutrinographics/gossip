@@ -2,12 +2,9 @@ import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_level.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
-import 'package:gossip/src/coordinator/coordinator.dart';
-import 'package:gossip/src/sync/infrastructure/in_memory_channel_repository.dart';
-import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
-import 'package:gossip/src/membership/infrastructure/in_memory_peer_repository.dart';
-import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:test/test.dart';
+
+import '../support/coordinator_builder.dart';
 
 /// Regression tests for audit COR3-3: the Coordinator must wire `onError`
 /// into the application services it constructs, so errors they emit reach
@@ -15,24 +12,9 @@ import 'package:test/test.dart';
 /// rule).
 void main() {
   group('Coordinator error wiring', () {
-    late NodeId localNode;
-
-    setUp(() {
-      localNode = NodeId('local');
-    });
-
-    Future<Coordinator> createCoordinator() {
-      return Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: InMemoryChannelRepository(),
-        peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
-      );
-    }
-
     test('ChannelService errors surface on coordinator.errors '
         '(membership op on a removed channel)', () async {
-      final coordinator = await createCoordinator();
+      final coordinator = await createTestCoordinator();
       final channelId = ChannelId('channel1');
       final channel = await coordinator.createChannel(channelId);
 
@@ -52,18 +34,13 @@ void main() {
       expect(errors.first, isA<ChannelSyncError>());
 
       await sub.cancel();
-      await coordinator.dispose();
     });
 
     test(
       'an error surfacing after dispose reaches onLog instead of vanishing',
       () async {
         final logs = <List<Object?>>[];
-        final coordinator = await Coordinator.create(
-          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-          channelRepository: InMemoryChannelRepository(),
-          peerRepository: InMemoryPeerRepository(),
-          entryRepository: InMemoryEntryRepository(),
+        final coordinator = await createTestCoordinator(
           onLog: (level, message, [error, stackTrace]) =>
               logs.add([level, message, error, stackTrace]),
         );
@@ -77,6 +54,7 @@ void main() {
         // (which has no disposed guard of its own) calls back into
         // Coordinator._handleError.
         await coordinator.removeChannel(channelId);
+        // Dispose is the act under test — not builder-teardown cleanup.
         await coordinator.dispose();
 
         await channel.addMember(NodeId('peer-1'));

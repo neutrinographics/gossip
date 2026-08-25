@@ -5,6 +5,8 @@ import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:test/test.dart';
 
+import '../support/coordinator_builder.dart';
+
 /// A buggy app materializer: folding always throws.
 class _ThrowingMaterializer extends StateMaterializer<int> {
   @override
@@ -26,16 +28,11 @@ void main() {
     final channelId = ChannelId('ch1');
     final streamId = StreamId('s1');
     final bus = InMemoryMessageBus();
-    final localPort = InMemoryMessagePort(localNode, bus);
     final peerPort = InMemoryMessagePort(peerId, bus);
 
-    final coordinator = await Coordinator.create(
-      localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-      channelRepository: InMemoryChannelRepository(),
-      peerRepository: InMemoryPeerRepository(),
-      entryRepository: InMemoryEntryRepository(),
-      messagePort: localPort,
-      timerPort: InMemoryTimePort(),
+    final coordinator = await createTestCoordinator(
+      bus: bus,
+      timePort: InMemoryTimePort(),
     );
     final channel = await coordinator.createChannel(channelId);
     final stream = await channel.getOrCreateStream(streamId);
@@ -95,7 +92,6 @@ void main() {
 
     await errorSub.cancel();
     await eventSub.cancel();
-    await coordinator.dispose();
     await peerPort.close();
   });
 }

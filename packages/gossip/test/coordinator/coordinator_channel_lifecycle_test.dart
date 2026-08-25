@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:gossip/gossip.dart';
 import 'package:test/test.dart';
 
+import '../support/coordinator_builder.dart';
+
 /// COR3-16: createChannel on an existing ID must be get-or-create — the
 /// old behavior silently replaced the aggregate, wiping membership and
 /// stream registrations (and the shipped example uses createChannel as
@@ -11,13 +13,7 @@ void main() {
   test(
     'createChannel on an existing ID preserves the existing channel',
     () async {
-      final localNode = NodeId('local');
-      final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: InMemoryChannelRepository(),
-        peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
-      );
+      final coordinator = await createTestCoordinator();
       final channelId = ChannelId('ch1');
       final streamId = StreamId('s1');
       final member = NodeId('peer-1');
@@ -52,21 +48,15 @@ void main() {
       );
 
       await sub.cancel();
-      await coordinator.dispose();
     },
   );
 
   test('a disposed coordinator rejects appends (COR3-18)', () async {
-    final localNode = NodeId('local');
-    final coordinator = await Coordinator.create(
-      localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-      channelRepository: InMemoryChannelRepository(),
-      peerRepository: InMemoryPeerRepository(),
-      entryRepository: InMemoryEntryRepository(),
-    );
+    final coordinator = await createTestCoordinator();
     final channel = await coordinator.createChannel(ChannelId('ch1'));
     final stream = await channel.getOrCreateStream(StreamId('s1'));
 
+    // Dispose is the act under test — not builder-teardown cleanup.
     await coordinator.dispose();
 
     // A write accepted after dispose would be durable-but-orphaned: no

@@ -21,6 +21,8 @@ import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:test/test.dart';
 
+import '../support/coordinator_builder.dart';
+
 class _CountMaterializer extends StateMaterializer<int> {
   @override
   (int, String?) initial({required bool isReset}) => (0, null);
@@ -29,34 +31,29 @@ class _CountMaterializer extends StateMaterializer<int> {
   int fold(int state, LogEntry entry) => state + 1;
 }
 
+// Every test in this file wants network sync active on a fast, fixed
+// clock — the default local-only builder config would leave the gossip
+// engine and failure detector absent, and the adaptive-timing defaults
+// would make the interleaving/timing assertions below flaky.
+const _fastNetworkConfig = CoordinatorConfig(
+  gossipInterval: Duration(milliseconds: 100),
+  probeInterval: Duration(milliseconds: 100),
+  pingTimeout: Duration(milliseconds: 50),
+  startupGracePeriod: Duration.zero,
+);
+
 void main() {
   final localNode = NodeId('local');
-
-  Future<Coordinator> createCoordinator({
-    InMemoryMessageBus? bus,
-    InMemoryTimePort? timePort,
-  }) {
-    return Coordinator.create(
-      localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-      channelRepository: InMemoryChannelRepository(),
-      peerRepository: InMemoryPeerRepository(),
-      entryRepository: InMemoryEntryRepository(),
-      messagePort: InMemoryMessagePort(localNode, bus ?? InMemoryMessageBus()),
-      timerPort: timePort ?? InMemoryTimePort(),
-      config: const CoordinatorConfig(
-        gossipInterval: Duration(milliseconds: 100),
-        probeInterval: Duration(milliseconds: 100),
-        pingTimeout: Duration(milliseconds: 50),
-        startupGracePeriod: Duration.zero,
-      ),
-    );
-  }
 
   group('Coordinator start/stop interleaving', () {
     test(
       'stop() during an in-flight start() wins — engines never run',
       () async {
-        final coordinator = await createCoordinator();
+        final coordinator = await createTestCoordinator(
+          bus: InMemoryMessageBus(),
+          timePort: InMemoryTimePort(),
+          config: _fastNetworkConfig,
+        );
 
         // start() suspends internally (channel loading) before starting the
         // engines. A stop() issued during that window is the LAST call and
@@ -76,15 +73,17 @@ void main() {
           isFalse,
           reason: 'a stopped coordinator must not probe in the background',
         );
-
-        await coordinator.dispose();
       },
     );
 
     test(
       'state always matches engine liveness after start/stop churn',
       () async {
-        final coordinator = await createCoordinator();
+        final coordinator = await createTestCoordinator(
+          bus: InMemoryMessageBus(),
+          timePort: InMemoryTimePort(),
+          config: _fastNetworkConfig,
+        );
 
         final futures = <Future<void>>[
           coordinator.start(),
@@ -99,8 +98,6 @@ void main() {
           coordinator.failureDetectorForTesting!.isRunning,
           equals(running),
         );
-
-        await coordinator.dispose();
       },
     );
   });
@@ -109,7 +106,11 @@ void main() {
     test('a channel created while paused is gossiped after resume()', () async {
       final bus = InMemoryMessageBus();
       final timePort = InMemoryTimePort();
-      final coordinator = await createCoordinator(bus: bus, timePort: timePort);
+      final coordinator = await createTestCoordinator(
+        bus: bus,
+        timePort: timePort,
+        config: _fastNetworkConfig,
+      );
 
       final peerId = NodeId('peer1');
       final peerPort = InMemoryMessagePort(peerId, bus);
@@ -146,13 +147,16 @@ void main() {
 
       await sub.cancel();
       await peerPort.close();
-      await coordinator.dispose();
     });
   });
 
   group('Coordinator dispose robustness', () {
     test('dispose() during an in-flight merge does not throw', () async {
-      final coordinator = await createCoordinator();
+      final coordinator = await createTestCoordinator(
+        bus: InMemoryMessageBus(),
+        timePort: InMemoryTimePort(),
+        config: _fastNetworkConfig,
+      );
       final channelId = ChannelId('ch1');
       final streamId = StreamId('s1');
       final channel = await coordinator.createChannel(channelId);
@@ -169,13 +173,18 @@ void main() {
           payload: Uint8List.fromList([1]),
         ),
       ], false);
+      // Dispose is the act under test — not builder-teardown cleanup.
       await coordinator.dispose();
 
       await expectLater(merge, completes);
     });
 
     test('dispose() closes materializer state streams', () async {
-      final coordinator = await createCoordinator();
+      final coordinator = await createTestCoordinator(
+        bus: InMemoryMessageBus(),
+        timePort: InMemoryTimePort(),
+        config: _fastNetworkConfig,
+      );
       final channel = await coordinator.createChannel(ChannelId('ch1'));
       final stream = await channel.getOrCreateStream(StreamId('s1'));
       await stream.registerMaterializer(_CountMaterializer());
@@ -186,6 +195,7 @@ void main() {
         onDone: () => done = true,
       );
 
+      // Dispose is the act under test — not builder-teardown cleanup.
       await coordinator.dispose();
       await Future.delayed(Duration.zero);
 
@@ -200,7 +210,11 @@ void main() {
 
   group('Coordinator monitoring under concurrent mutation', () {
     test('getResourceUsage tolerates channels created mid-iteration', () async {
-      final coordinator = await createCoordinator();
+      final coordinator = await createTestCoordinator(
+        bus: InMemoryMessageBus(),
+        timePort: InMemoryTimePort(),
+        config: _fastNetworkConfig,
+      );
       final channel = await coordinator.createChannel(ChannelId('ch1'));
       await channel.getOrCreateStream(StreamId('s1'));
       final channel2 = await coordinator.createChannel(ChannelId('ch2'));
@@ -217,12 +231,14 @@ void main() {
             'iterating live map keys across awaits throws '
             'ConcurrentModificationError',
       );
-
-      await coordinator.dispose();
     });
 
     test('channelsForPeer tolerates channels created mid-iteration', () async {
-      final coordinator = await createCoordinator();
+      final coordinator = await createTestCoordinator(
+        bus: InMemoryMessageBus(),
+        timePort: InMemoryTimePort(),
+        config: _fastNetworkConfig,
+      );
       await coordinator.createChannel(ChannelId('ch1'));
       await coordinator.createChannel(ChannelId('ch2'));
 
@@ -230,8 +246,6 @@ void main() {
       await coordinator.createChannel(ChannelId('ch3'));
 
       await expectLater(future, completes);
-
-      await coordinator.dispose();
     });
   });
 
@@ -241,6 +255,9 @@ void main() {
       final port = _ErroringMessagePort(controller);
       final errors = <Object>[];
 
+      // Kept hand-rolled: needs a MessagePort whose incoming stream can be
+      // made to emit an error on demand, which the builder's `bus`
+      // parameter (backed by InMemoryMessageBus) cannot express.
       final coordinator = await Coordinator.create(
         localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         channelRepository: InMemoryChannelRepository(),

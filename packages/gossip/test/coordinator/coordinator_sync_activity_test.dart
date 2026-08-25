@@ -5,6 +5,8 @@ import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:test/test.dart';
 
+import '../support/coordinator_builder.dart';
+
 void main() {
   final localNode = NodeId('local');
 
@@ -12,12 +14,8 @@ void main() {
     test(
       'reports quiescent with zero activity for a fresh coordinator',
       () async {
-        final coordinator = await Coordinator.create(
-          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-          channelRepository: InMemoryChannelRepository(),
-          peerRepository: InMemoryPeerRepository(),
-          entryRepository: InMemoryEntryRepository(),
-          messagePort: InMemoryMessagePort(localNode, InMemoryMessageBus()),
+        final coordinator = await createTestCoordinator(
+          bus: InMemoryMessageBus(),
         );
         await coordinator.start();
 
@@ -25,24 +23,17 @@ void main() {
         expect(activity.outstandingPulls, equals(0));
         expect(activity.mergedBatches, equals(0));
         expect(activity.isQuiescent, isTrue);
-
-        await coordinator.dispose();
       },
     );
 
     test('removePeer clears its outstanding pulls so isQuiescent recovers '
         '(COR3-12)', () async {
       final bus = InMemoryMessageBus();
-      final localPort = InMemoryMessagePort(localNode, bus);
       final peerId = NodeId('peer-1');
       final peerPort = InMemoryMessagePort(peerId, bus);
-      final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: InMemoryChannelRepository(),
-        peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
-        messagePort: localPort,
-        timerPort: InMemoryTimePort(),
+      final coordinator = await createTestCoordinator(
+        bus: bus,
+        timePort: InMemoryTimePort(),
       );
       final channel = await coordinator.createChannel(ChannelId('ch1'));
       await channel.getOrCreateStream(StreamId('s1'));
@@ -81,23 +72,15 @@ void main() {
       expect(coordinator.gossipSyncActivity.outstandingPulls, equals(0));
       expect(coordinator.gossipSyncActivity.isQuiescent, isTrue);
 
-      await coordinator.dispose();
       await peerPort.close();
     });
 
     test('reports quiescent in local-only mode (no gossip engine)', () async {
-      final coordinator = await Coordinator.create(
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        channelRepository: InMemoryChannelRepository(),
-        peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
-      );
+      final coordinator = await createTestCoordinator();
 
       final activity = coordinator.gossipSyncActivity;
       expect(activity.isQuiescent, isTrue);
       expect(activity.outstandingPulls, equals(0));
-
-      await coordinator.dispose();
     });
   });
 }
