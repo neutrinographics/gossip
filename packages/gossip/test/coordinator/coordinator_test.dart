@@ -15,6 +15,7 @@ import 'package:gossip/src/membership/infrastructure/in_memory_peer_repository.d
 import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
+import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:test/test.dart';
 
 import '../support/coordinator_builder.dart';
@@ -579,10 +580,22 @@ void main() {
     });
 
     test('reachablePeers returns only reachable peers', () async {
-      final coordinator = await createTestCoordinator();
+      // bus + timePort wire up a FailureDetector so peerRegistry (and its
+      // status transitions) is reachable via failureDetectorForTesting.
+      final coordinator = await createTestCoordinator(
+        bus: InMemoryMessageBus(),
+        timePort: InMemoryTimePort(),
+      );
 
       final peer1 = NodeId('peer1');
+      final peer2 = NodeId('peer2');
       await coordinator.addPeer(peer1);
+      await coordinator.addPeer(peer2);
+      coordinator.failureDetectorForTesting!.peerRegistry.updatePeerStatus(
+        peer2,
+        PeerStatus.unreachable,
+        occurredAt: DateTime.now(),
+      );
 
       expect(coordinator.reachablePeers.length, equals(1));
       expect(coordinator.reachablePeers.first.id, equals(peer1));
@@ -716,9 +729,14 @@ void main() {
         config: config,
       );
 
-      // Coordinator should be created successfully with custom config
       expect(coordinator.localNode, equals(localNode));
       expect(coordinator.state, equals(SyncState.stopped));
+      // The config must actually reach the component that consumes it,
+      // not just get accepted and ignored.
+      expect(
+        coordinator.failureDetectorForTesting!.failureThreshold,
+        equals(3),
+      );
     });
 
     test('create uses default config when not specified', () async {

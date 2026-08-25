@@ -56,7 +56,7 @@ void main() {
     });
 
     test('default status is reachable', () {
-      final peer = Peer(id: nodeId, status: PeerStatus.reachable);
+      final peer = Peer(id: nodeId);
 
       expect(peer.status, equals(PeerStatus.reachable));
     });

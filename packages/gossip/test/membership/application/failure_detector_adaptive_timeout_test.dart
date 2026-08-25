@@ -169,15 +169,41 @@ void main() {
       final h = FailureDetectorTestHarness();
       final peer = h.addPeer('peer1');
 
-      // Seed per-peer RTT: 100ms → timeout ~300ms (clamped to min 500ms)
+      // Seed a fast per-peer RTT: 100ms SRTT -> per-peer timeout = 100 +
+      // 4*50 = 300ms, clamped to the 500ms floor. With no global samples,
+      // the global fallback is ~1500ms (500 + 4*250) -- five times longer.
+      // `failedProbeCount == 0` alone (the previous assertion) passes
+      // under either timeout, since a 50ms-delayed Ack beats both; it
+      // can't tell the per-peer value from the global one.
       h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 100));
 
       h.startListening();
 
-      await h.probeWithAck(peer, afterDelay: const Duration(milliseconds: 50));
+      final pingFuture = h.expectPing(peer);
+      final probeFuture = h.detector.performProbeRound();
+      await pingFuture;
 
-      expect(h.peerRegistry.getPeer(peer.id)!.failedProbeCount, equals(0));
+      // Nobody ever sends an Ack. Advance past the per-peer timeout floor
+      // (500ms) for the direct wait, then past the same floor again for
+      // the no-intermediary indirect fallback (single-peer registry, so
+      // there's nothing to relay through) -- ~1000ms total. If the round
+      // were still gated on the ~1500ms global timeout instead, it would
+      // still be waiting after this, and the assertion below would go
+      // red rather than merely stay green by coincidence.
+      await h.timePort.advance(const Duration(milliseconds: 501));
+      await h.timePort.advance(const Duration(milliseconds: 501));
 
+      expect(
+        h.peerRegistry.getPeer(peer.id)!.failedProbeCount,
+        equals(1),
+        reason:
+            'a probe with no reply must time out on the ~500ms per-peer '
+            'estimate, not silently keep waiting on the ~1500ms global '
+            'default -- this is what proves the per-peer value actually '
+            'gates the round rather than merely being computed and ignored',
+      );
+
+      await probeFuture;
       h.stopListening();
     });
 

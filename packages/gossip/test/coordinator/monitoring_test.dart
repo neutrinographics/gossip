@@ -72,16 +72,30 @@ void main() {
         entryRepository: entryRepo,
       );
 
-      final channel = await coordinator.createChannel(ChannelId('channel1'));
-      final stream = await channel.getOrCreateStream(StreamId('stream1'));
-      await stream.append(Uint8List.fromList([1, 2, 3])); // 3 bytes payload
-      await stream.append(
+      final channel1Id = ChannelId('channel1');
+      final stream1Id = StreamId('stream1');
+      final channel1 = await coordinator.createChannel(channel1Id);
+      final stream1 = await channel1.getOrCreateStream(stream1Id);
+      await stream1.append(Uint8List.fromList([1, 2, 3])); // 3 bytes payload
+
+      final channel2Id = ChannelId('channel2');
+      final stream2Id = StreamId('stream2');
+      final channel2 = await coordinator.createChannel(channel2Id);
+      final stream2 = await channel2.getOrCreateStream(stream2Id);
+      await stream2.append(
         Uint8List.fromList([4, 5, 6, 7, 8]),
       ); // 5 bytes payload
 
       final usage = await coordinator.getResourceUsage();
 
-      // Storage bytes should be greater than 0 (includes entry overhead)
+      // Independently sum each stream's bytes from the repository so this
+      // pins the actual total, not just "some positive number" — it would
+      // fail if the coordinator only summed one channel's streams.
+      final expectedBytes =
+          await entryRepo.sizeBytes(channel1Id, stream1Id) +
+          await entryRepo.sizeBytes(channel2Id, stream2Id);
+
+      expect(usage.totalStorageBytes, equals(expectedBytes));
       expect(usage.totalStorageBytes, greaterThan(0));
     });
   });

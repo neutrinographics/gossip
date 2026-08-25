@@ -234,8 +234,16 @@ void main() {
         );
         expect(
           errors,
-          isNotEmpty,
-          reason: 'an un-sendable stream digest must surface a distinct error',
+          anyElement(
+            isA<ChannelSyncError>().having(
+              (e) => e.message,
+              'message',
+              contains('big'),
+            ),
+          ),
+          reason:
+              'an un-sendable stream digest must surface an error that '
+              'identifies the oversized stream ("big"), not just any error',
         );
         expect(sizes, everyElement(lessThanOrEqualTo(250)));
 
