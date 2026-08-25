@@ -26,6 +26,7 @@ void main() {
 
   test('idle traffic decays after convergence and stays low', () async {
     final network = await TestNetwork.create(['a', 'b']);
+    addTearDown(network.dispose);
     await network.connectAll();
     await network.setupChannel(channelId, streamId);
     await network.startAll();
@@ -48,11 +49,11 @@ void main() {
       lessThan(earlyCount),
       reason: 'quiescence pacing must reduce idle traffic over time',
     );
-    await network.dispose();
   });
 
   test('a write snaps the network back and converges promptly', () async {
     final network = await TestNetwork.create(['a', 'b']);
+    addTearDown(network.dispose);
     await network.connectAll();
     await network.setupChannel(channelId, streamId);
     await network.startAll();
@@ -70,12 +71,12 @@ void main() {
           'a write from deep idle must converge promptly via the '
           'reactive push, even before the periodic loop wakes back up',
     );
-    await network.dispose();
   });
 
   test('deep idle stretches the gossip interval toward the ceiling and a '
       'write snaps it back', () async {
     final network = await TestNetwork.create(['a', 'b']);
+    addTearDown(network.dispose);
     await network.connectAll();
     await network.setupChannel(channelId, streamId);
     await network.startAll();
@@ -105,11 +106,11 @@ void main() {
           'band (<=5s clamp), directly verifying the cadence reset '
           'rather than only inferring it from convergence',
     );
-    await network.dispose();
   });
 
   test('a lost reactive push is repaired within the 30s ceiling', () async {
     final network = await TestNetwork.create(['a', 'b']);
+    addTearDown(network.dispose);
     await network.connectAll();
     await network.setupChannel(channelId, streamId);
     await network.startAll();
@@ -148,11 +149,11 @@ void main() {
           'the safety net must repair a lost push within 30s + '
           'scheduling jitter (+/-20%)',
     );
-    await network.dispose();
   });
 
   test('deep idleness never marks healthy peers unreachable', () async {
     final network = await TestNetwork.create(['a', 'b']);
+    addTearDown(network.dispose);
     await network.connectAll();
     await network.setupChannel(channelId, streamId);
     await network.startAll();
@@ -160,6 +161,5 @@ void main() {
 
     expect(network['a'].reachablePeers, hasLength(1));
     expect(network['b'].reachablePeers, hasLength(1));
-    await network.dispose();
   });
 }

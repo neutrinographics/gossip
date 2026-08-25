@@ -9,6 +9,7 @@ void main() {
     group('Churn and dynamic membership', () {
       test('node joins mid-sync and receives existing entries', () async {
         final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+        addTearDown(network.dispose);
         // Initially only node1 and node2 are connected
         await network.connect('node1', 'node2');
 
@@ -55,12 +56,11 @@ void main() {
           await network['node3'].entryCount(channelId, streamId),
           equals(2),
         );
-
-        await network.dispose();
       });
 
       test('node rejoins with stale data and syncs missing entries', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('rejoin-channel');
@@ -104,12 +104,11 @@ void main() {
           await network['node2'].entryCount(channelId, streamId),
           equals(3),
         );
-
-        await network.dispose();
       });
 
       test('node writes while offline, syncs after reconnect', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('offline-write-channel');
@@ -148,12 +147,11 @@ void main() {
           await network['node1'].entryCount(channelId, streamId),
           equals(2),
         );
-
-        await network.dispose();
       });
 
       test('sync after long offline period with many missed entries', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('long-offline-channel');
@@ -188,14 +186,13 @@ void main() {
           await network['node2'].entryCount(channelId, streamId),
           equals(30),
         );
-
-        await network.dispose();
       });
     });
 
     group('Node restart and recovery', () {
       test('node recovers after stop and restart', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('restart-channel');
@@ -231,12 +228,11 @@ void main() {
           await network['node2'].entryCount(channelId, streamId),
           equals(2),
         );
-
-        await network.dispose();
       });
 
       test('multiple nodes restart in sequence', () async {
         final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+        addTearDown(network.dispose);
         await network.connectAll();
 
         final channelId = ChannelId('multi-restart-channel');
@@ -276,12 +272,11 @@ void main() {
           await network['node3'].entryCount(channelId, streamId),
           equals(3),
         );
-
-        await network.dispose();
       });
 
       test('all nodes restart and recover', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('full-restart-channel');
@@ -314,12 +309,11 @@ void main() {
           await network['node1'].entryCount(channelId, streamId),
           equals(3),
         );
-
-        await network.dispose();
       });
 
       test('node with stale clock recovers HLC state', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('hlc-recovery-channel');
@@ -356,8 +350,6 @@ void main() {
           entries[1].timestamp.compareTo(entries[0].timestamp),
           greaterThan(0),
         );
-
-        await network.dispose();
       });
     });
   });

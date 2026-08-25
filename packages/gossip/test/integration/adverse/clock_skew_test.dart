@@ -49,6 +49,7 @@ void main() {
 
       test('concurrent writes converge despite a 30-minute offset', () async {
         final network = await TestNetwork.create(['ahead', 'behind']);
+        addTearDown(network.dispose);
         await network.connect('ahead', 'behind');
 
         final channelId = ChannelId('offset-converge-channel');
@@ -86,14 +87,13 @@ void main() {
           greaterThanOrEqualTo(offset.inMilliseconds),
           reason: 'synced entries carry their original skewed timestamps',
         );
-
-        await network.dispose();
       });
 
       test(
         'write-after-receive on the behind node stays causally ordered',
         () async {
           final network = await TestNetwork.create(['ahead', 'behind']);
+          addTearDown(network.dispose);
           await network.connect('ahead', 'behind');
 
           final channelId = ChannelId('offset-causal-channel');
@@ -142,8 +142,6 @@ void main() {
                 'behind\'s HLC must have adopted the ahead physical time '
                 '(skew is within hlcMaxDrift), not used its own wall clock',
           );
-
-          await network.dispose();
         },
       );
     });
@@ -161,6 +159,7 @@ void main() {
       test('nodes ticking at different rates converge and agree on '
           'HLC order', () async {
         final network = await TestNetwork.create(['fast', 'slow']);
+        addTearDown(network.dispose);
         await network.connect('fast', 'slow');
 
         final channelId = ChannelId('rate-skew-channel');
@@ -201,12 +200,11 @@ void main() {
           equals(slowEntries.map((e) => e.id).toList()),
           reason: 'all nodes must agree on the HLC sort order',
         );
-
-        await network.dispose();
       });
 
       test('causal chain across skewed rates preserves HLC order', () async {
         final network = await TestNetwork.create(['fast', 'slow']);
+        addTearDown(network.dispose);
         await network.connect('fast', 'slow');
 
         final channelId = ChannelId('rate-causal-channel');
@@ -247,8 +245,6 @@ void main() {
                 'despite the 4x clock-rate skew',
           );
         }
-
-        await network.dispose();
       });
     });
 
@@ -260,6 +256,7 @@ void main() {
           'sane',
           'insane',
         ], config: const CoordinatorConfig(hlcMaxDrift: Duration(seconds: 5)));
+        addTearDown(network.dispose);
         await network.connect('sane', 'insane');
 
         final channelId = ChannelId('drift-sync-channel');
@@ -286,8 +283,6 @@ void main() {
           greaterThanOrEqualTo(const Duration(hours: 1).inMilliseconds),
           reason: 'the entry keeps its author-generated future timestamp',
         );
-
-        await network.dispose();
       });
 
       test('out-of-bound remote clock is clamped, not adopted', () async {
@@ -296,6 +291,7 @@ void main() {
           'sane',
           'insane',
         ], config: const CoordinatorConfig(hlcMaxDrift: maxDrift));
+        addTearDown(network.dispose);
         await network.connect('sane', 'insane');
 
         final channelId = ChannelId('drift-clamp-channel');
@@ -344,8 +340,6 @@ void main() {
               'beyond the bound the insane timestamp is clamped rather than '
               'adopted, so causal ordering across it is intentionally lost',
         );
-
-        await network.dispose();
       });
 
       test('skew within the drift bound keeps causal adoption', () async {
@@ -356,6 +350,7 @@ void main() {
           'sane',
           'skewed',
         ], config: const CoordinatorConfig(hlcMaxDrift: Duration(seconds: 30)));
+        addTearDown(network.dispose);
         await network.connect('sane', 'skewed');
 
         final channelId = ChannelId('drift-within-channel');
@@ -399,8 +394,6 @@ void main() {
           greaterThanOrEqualTo(skew.inMilliseconds),
           reason: 'the adopted physical time, not the wall clock, was used',
         );
-
-        await network.dispose();
       });
     });
   });

@@ -13,6 +13,7 @@ void main() {
     group('Edge cases', () {
       test('empty channel syncs without error', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('empty-channel');
@@ -34,12 +35,11 @@ void main() {
           await network['node2'].entryCount(channelId, streamId),
           equals(0),
         );
-
-        await network.dispose();
       });
 
       test('single node network operations work', () async {
         final network = await TestNetwork.create(['solo']);
+        addTearDown(network.dispose);
 
         final channelId = ChannelId('solo-channel');
         final streamId = StreamId('solo-stream');
@@ -57,12 +57,11 @@ void main() {
           equals(1),
         );
         expect(network['solo'].peers, isEmpty);
-
-        await network.dispose();
       });
 
       test('large payload syncs correctly', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('large-payload-channel');
@@ -92,12 +91,11 @@ void main() {
         final entries = await network['node2'].entries(channelId, streamId);
         expect(entries.length, equals(1));
         expect(entries[0].payload.length, equals(maxPayload));
-
-        await network.dispose();
       });
 
       test('many entries sync (stress test)', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('stress-channel');
@@ -118,8 +116,6 @@ void main() {
           await network['node2'].entryCount(channelId, streamId),
           equals(50),
         );
-
-        await network.dispose();
       });
     });
 
@@ -127,6 +123,7 @@ void main() {
       test('maximum nodes (8) all sync correctly', () async {
         final nodeNames = List.generate(8, (i) => 'node$i');
         final network = await TestNetwork.create(nodeNames);
+        addTearDown(network.dispose);
         await network.connectAll();
 
         final channelId = ChannelId('max-nodes-channel');
@@ -151,14 +148,13 @@ void main() {
             equals(8),
           );
         }
-
-        await network.dispose();
       });
 
       test(
         'payload above the syncable maximum is rejected at append',
         () async {
           final network = await TestNetwork.create(['node1', 'node2']);
+          addTearDown(network.dispose);
           await network.connect('node1', 'node2');
 
           final channelId = ChannelId('max-payload-channel');
@@ -181,13 +177,12 @@ void main() {
 
           final entries = await network['node1'].entries(channelId, streamId);
           expect(entries, isEmpty, reason: 'rejected payloads are not stored');
-
-          await network.dispose();
         },
       );
 
       test('100 entries from single node sync correctly', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('hundred-entries-channel');
@@ -207,13 +202,12 @@ void main() {
           await network['node2'].entryCount(channelId, streamId),
           equals(100),
         );
-
-        await network.dispose();
       });
 
       test('entries from all 8 nodes with concurrent writes', () async {
         final nodeNames = List.generate(8, (i) => 'node$i');
         final network = await TestNetwork.create(nodeNames);
+        addTearDown(network.dispose);
         await network.connectAll();
 
         final channelId = ChannelId('concurrent-8-channel');
@@ -239,8 +233,6 @@ void main() {
             equals(40),
           );
         }
-
-        await network.dispose();
       });
     });
   });

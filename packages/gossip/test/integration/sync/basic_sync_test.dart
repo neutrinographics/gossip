@@ -146,6 +146,7 @@ void main() {
           'node3',
           'node4',
         ]);
+        addTearDown(network.dispose);
         await network.connectAll();
 
         final channelId = ChannelId('concurrent-channel');
@@ -168,12 +169,11 @@ void main() {
           await network['node1'].entryCount(channelId, streamId),
           equals(4),
         );
-
-        await network.dispose();
       });
 
       test('rapid sequential writes all sync', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('rapid-channel');
@@ -194,12 +194,11 @@ void main() {
           await network['node2'].entryCount(channelId, streamId),
           equals(20),
         );
-
-        await network.dispose();
       });
 
       test('rapid alternating writes from multiple nodes converge', () async {
         final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+        addTearDown(network.dispose);
         await network.connectAll();
 
         final channelId = ChannelId('alternating-channel');
@@ -241,8 +240,6 @@ void main() {
         expect(node1Entries.length, equals(10));
         expect(node2Entries.length, equals(10));
         expect(node3Entries.length, equals(10));
-
-        await network.dispose();
       });
     });
 
@@ -322,6 +319,7 @@ void main() {
     group('Multi-channel sync', () {
       test('multiple channels sync simultaneously', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channel1 = ChannelId('channel-1');
@@ -367,12 +365,11 @@ void main() {
           await network['node1'].entryCount(channel3, streamId),
           equals(2),
         );
-
-        await network.dispose();
       });
 
       test('different membership per channel syncs correctly', () async {
         final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+        addTearDown(network.dispose);
         await network.connectAll();
 
         final channelAB = ChannelId('channel-ab'); // node1 and node2 only
@@ -437,12 +434,11 @@ void main() {
           await network['node1'].entryCount(channelAll, streamId),
           equals(3),
         );
-
-        await network.dispose();
       });
 
       test('high channel count syncs correctly', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final streamId = StreamId('data');
@@ -475,8 +471,6 @@ void main() {
             reason: 'Channel $i should have synced',
           );
         }
-
-        await network.dispose();
       });
     });
   });

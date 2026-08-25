@@ -10,6 +10,7 @@ void main() {
     group('Idempotency and ordering', () {
       test('duplicate entries are handled idempotently', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('idempotent-channel');
@@ -35,14 +36,13 @@ void main() {
         expect(entries1.length, equals(1));
         expect(entries2.length, equals(1));
         expect(entries1[0].id, equals(entries2[0].id));
-
-        await network.dispose();
       });
 
       test('out-of-order entry reception still converges', () async {
         // This tests that version vectors handle entries arriving
         // in different orders on different nodes
         final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+        addTearDown(network.dispose);
         await network.connectAll();
 
         final channelId = ChannelId('order-channel');
@@ -66,14 +66,13 @@ void main() {
           await network['node1'].entryCount(channelId, streamId),
           equals(5),
         );
-
-        await network.dispose();
       });
     });
 
     group('Message loss and recovery', () {
       test('intermittent partition recovers without data loss', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('intermittent-channel');
@@ -113,12 +112,11 @@ void main() {
           await network['node2'].entryCount(channelId, streamId),
           equals(3),
         );
-
-        await network.dispose();
       });
 
       test('sync resumes correctly after long message gap', () async {
         final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+        addTearDown(network.dispose);
         await network.connectAll();
 
         final channelId = ChannelId('gap-channel');
@@ -168,8 +166,6 @@ void main() {
           await network['node3'].entryCount(channelId, streamId),
           equals(20),
         );
-
-        await network.dispose();
       });
 
       test('asymmetric partition still allows eventual consistency', () async {
@@ -177,6 +173,7 @@ void main() {
         // (simulated by partitioning in one direction - not directly possible
         //  with current TestNetwork, but we can test similar scenarios)
         final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+        addTearDown(network.dispose);
         await network.connectAll();
 
         final channelId = ChannelId('asymmetric-channel');
@@ -209,14 +206,13 @@ void main() {
         // Eventually all converge through node3 as relay
         await network.runRounds(10);
         expect(await network.hasConverged(channelId, streamId), isTrue);
-
-        await network.dispose();
       });
     });
 
     group('Entry integrity', () {
       test('entries maintain integrity across sync', () async {
         final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+        addTearDown(network.dispose);
         await network.connectAll();
 
         final channelId = ChannelId('integrity-channel');
@@ -264,12 +260,11 @@ void main() {
           expect(e1.sequence, equals(e2.sequence));
           expect(e2.sequence, equals(e3.sequence));
         }
-
-        await network.dispose();
       });
 
       test('large payloads sync correctly', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('large-payload-channel');
@@ -287,12 +282,11 @@ void main() {
         final entries = await network['node2'].entries(channelId, streamId);
         expect(entries.length, equals(1));
         expect(entries[0].payload.toList(), equals(largePayload));
-
-        await network.dispose();
       });
 
       test('empty payload syncs correctly', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('empty-payload-channel');
@@ -309,8 +303,6 @@ void main() {
         final entries = await network['node2'].entries(channelId, streamId);
         expect(entries.length, equals(1));
         expect(entries[0].payload.toList(), isEmpty);
-
-        await network.dispose();
       });
     });
   });

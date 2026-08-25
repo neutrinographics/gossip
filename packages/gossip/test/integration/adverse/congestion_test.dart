@@ -179,50 +179,45 @@ void main() {
         'node2',
         'node3',
       ], config: config);
+      addTearDown(network.dispose);
       await network.connectAll();
       await network.setupChannel(channelId, streamId);
       await network.startAll();
-      try {
-        // Only the node1 ↔ node2 link is slow.
-        network.delayLink('node1', 'node2');
-        network.delayLink('node2', 'node1');
 
-        await network['node1'].write(channelId, streamId, [7]);
-        await network.runRounds(12);
+      // Only the node1 ↔ node2 link is slow.
+      network.delayLink('node1', 'node2');
+      network.delayLink('node2', 'node1');
 
-        // node1's queue toward node2 is bounded: one ungated reactive push
-        // plus gated digests until the emergent count crosses the threshold.
-        final held = network.inFlightCount('node1', 'node2');
-        expect(
-          held,
-          equals(congestionThreshold + 1),
-          reason:
-              'push + digests queue until pending exceeds '
-              '$congestionThreshold, then node2 is excluded from selection',
-        );
+      await network['node1'].write(channelId, streamId, [7]);
+      await network.runRounds(12);
 
-        // The gate is per-peer, not global: rounds keep gossiping with node3,
-        // so the entry reaches node3 directly and node2 via node3 — the mesh
-        // converges even though the congested link never delivered anything.
-        expect(await network.hasConverged(channelId, streamId), isTrue);
-        expect(
-          await network['node2'].entryCount(channelId, streamId),
-          equals(1),
-        );
+      // node1's queue toward node2 is bounded: one ungated reactive push
+      // plus gated digests until the emergent count crosses the threshold.
+      final held = network.inFlightCount('node1', 'node2');
+      expect(
+        held,
+        equals(congestionThreshold + 1),
+        reason:
+            'push + digests queue until pending exceeds '
+            '$congestionThreshold, then node2 is excluded from selection',
+      );
 
-        // The congested link's queue stays flat while healthy gossip runs.
-        await network.runRounds(8);
-        expect(network.inFlightCount('node1', 'node2'), equals(held));
+      // The gate is per-peer, not global: rounds keep gossiping with node3,
+      // so the entry reaches node3 directly and node2 via node3 — the mesh
+      // converges even though the congested link never delivered anything.
+      expect(await network.hasConverged(channelId, streamId), isTrue);
+      expect(await network['node2'].entryCount(channelId, streamId), equals(1));
 
-        // Releasing the slow link drains it without disturbing convergence.
-        network.undelayLink('node1', 'node2');
-        network.undelayLink('node2', 'node1');
-        await network.runRounds(10);
-        expect(network.inFlightCount('node1', 'node2'), equals(0));
-        expect(await network.hasConverged(channelId, streamId), isTrue);
-      } finally {
-        await network.dispose();
-      }
+      // The congested link's queue stays flat while healthy gossip runs.
+      await network.runRounds(8);
+      expect(network.inFlightCount('node1', 'node2'), equals(held));
+
+      // Releasing the slow link drains it without disturbing convergence.
+      network.undelayLink('node1', 'node2');
+      network.undelayLink('node2', 'node1');
+      await network.runRounds(10);
+      expect(network.inFlightCount('node1', 'node2'), equals(0));
+      expect(await network.hasConverged(channelId, streamId), isTrue);
     });
   });
 }

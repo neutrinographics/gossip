@@ -9,6 +9,7 @@ void main() {
     group('Peer management', () {
       test('peers can be added and queried', () async {
         final network = await TestNetwork.create(['local', 'peer1', 'peer2']);
+        addTearDown(network.dispose);
 
         expect(network['local'].peers, isEmpty);
 
@@ -20,14 +21,13 @@ void main() {
 
         await network['local'].coordinator.removePeer(network['peer1'].id);
         expect(network['local'].peers.length, equals(1));
-
-        await network.dispose();
       });
     });
 
     group('Lifecycle state transitions', () {
       test('coordinator transitions through states correctly', () async {
         final network = await TestNetwork.create(['local']);
+        addTearDown(network.dispose);
         final coord = network['local'].coordinator;
 
         expect(coord.state.name, equals('stopped'));
@@ -44,6 +44,7 @@ void main() {
 
       test('disposed coordinator cannot be restarted', () async {
         final network = await TestNetwork.create(['local']);
+        addTearDown(network.dispose);
         await network['local'].coordinator.dispose();
 
         expect(
@@ -56,6 +57,7 @@ void main() {
     group('Pause and resume', () {
       test('pause stops sync, resume continues', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('pause-channel');
@@ -99,12 +101,11 @@ void main() {
           await network['node2'].entryCount(channelId, streamId),
           equals(3),
         );
-
-        await network.dispose();
       });
 
       test('multiple start/stop cycles preserve data', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('cycle-channel');
@@ -147,12 +148,11 @@ void main() {
           await network['node1'].entryCount(channelId, streamId),
           equals(3),
         );
-
-        await network.dispose();
       });
 
       test('writes during stopped state are synced after restart', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('stopped-write-channel');
@@ -192,8 +192,6 @@ void main() {
           await network['node1'].entryCount(channelId, streamId),
           equals(3),
         );
-
-        await network.dispose();
       });
     });
   });

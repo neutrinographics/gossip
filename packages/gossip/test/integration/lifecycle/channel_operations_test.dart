@@ -9,6 +9,7 @@ void main() {
     group('Basic channel and stream operations', () {
       test('can create channel, add stream, and append entries', () async {
         final network = await TestNetwork.create(['local']);
+        addTearDown(network.dispose);
         final channelId = ChannelId('my-channel');
         final streamId = StreamId('my-stream');
 
@@ -21,12 +22,11 @@ void main() {
           await network['local'].entryCount(channelId, streamId),
           equals(2),
         );
-
-        await network.dispose();
       });
 
       test('channel membership can be modified', () async {
         final network = await TestNetwork.create(['local', 'remote']);
+        addTearDown(network.dispose);
         final channelId = ChannelId('membership-channel');
 
         await network['local'].createChannel(channelId);
@@ -47,14 +47,13 @@ void main() {
         members = await channel.members;
         expect(members.length, equals(1));
         expect(members.contains(network['remote'].id), isFalse);
-
-        await network.dispose();
       });
     });
 
     group('Channel membership and sync', () {
       test('entries only sync to channel members', () async {
         final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+        addTearDown(network.dispose);
         await network.connectAll();
 
         final channelId = ChannelId('members-only-channel');
@@ -85,12 +84,11 @@ void main() {
 
         // node3 doesn't have the channel at all
         expect(network['node3'].coordinator.getChannel(channelId), isNull);
-
-        await network.dispose();
       });
 
       test('adding member allows sync of existing entries', () async {
         final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+        addTearDown(network.dispose);
         await network.connectAll();
 
         final channelId = ChannelId('late-member-channel');
@@ -141,14 +139,13 @@ void main() {
           await network['node3'].entryCount(channelId, streamId),
           equals(2),
         );
-
-        await network.dispose();
       });
 
       test(
         'concurrent channel creation on multiple nodes syncs correctly',
         () async {
           final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+          addTearDown(network.dispose);
           await network.connectAll();
 
           final channelId = ChannelId('concurrent-creation-channel');
@@ -186,8 +183,6 @@ void main() {
             await network['node1'].entryCount(channelId, streamId),
             equals(3),
           );
-
-          await network.dispose();
         },
       );
 
@@ -199,6 +194,7 @@ void main() {
           // This test verifies that removing a member from one node's view
           // doesn't prevent sync if the removed node still has the channel.
           final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+          addTearDown(network.dispose);
           await network.connectAll();
 
           final channelId = ChannelId('remove-member-channel');
@@ -232,8 +228,6 @@ void main() {
             await network['node3'].entryCount(channelId, streamId),
             equals(3),
           );
-
-          await network.dispose();
         },
       );
     });

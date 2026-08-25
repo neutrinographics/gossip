@@ -9,6 +9,7 @@ void main() {
     group('HLC timestamp ordering', () {
       test('HLC timestamps preserve causal ordering across sync', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('causality-channel');
@@ -50,12 +51,11 @@ void main() {
           entries[2].timestamp.compareTo(entries[1].timestamp),
           greaterThan(0),
         );
-
-        await network.dispose();
       });
 
       test('concurrent writes at different times have distinct HLCs', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('concurrent-hlc-channel');
@@ -96,12 +96,11 @@ void main() {
           entry1.timestamp.physicalMs,
           greaterThan(entry2.timestamp.physicalMs),
         );
-
-        await network.dispose();
       });
 
       test('later writes have higher HLC due to time advancement', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('hlc-update-channel');
@@ -133,12 +132,11 @@ void main() {
         // node2's entry should have higher HLC because it was written later
         // (after runRounds advanced node2's clock)
         expect(entry2.timestamp.compareTo(entry1.timestamp), greaterThan(0));
-
-        await network.dispose();
       });
 
       test('HLC updates on receive ensures causal ordering', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('hlc-receive-channel');
@@ -185,14 +183,13 @@ void main() {
               'Entry written after receiving should have higher HLC. '
               'entry1: ${entry1.timestamp}, entry2: ${entry2.timestamp}',
         );
-
-        await network.dispose();
       });
 
       test(
         'entries sorted by HLC are globally consistent across nodes',
         () async {
           final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+          addTearDown(network.dispose);
           await network.connectAll();
 
           final channelId = ChannelId('global-sort-channel');
@@ -237,13 +234,12 @@ void main() {
           expect(order1, equals([1, 2, 3, 4]));
           expect(order2, equals([1, 2, 3, 4]));
           expect(order3, equals([1, 2, 3, 4]));
-
-          await network.dispose();
         },
       );
 
       test('HLC physical time advances with simulated time', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('time-advance-channel');
@@ -276,12 +272,11 @@ void main() {
         final timeDiff =
             entries[1].timestamp.physicalMs - entries[0].timestamp.physicalMs;
         expect(timeDiff, greaterThanOrEqualTo(5000));
-
-        await network.dispose();
       });
 
       test('clock skew is reflected in HLC physical timestamps', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('clock-skew-channel');
@@ -317,8 +312,6 @@ void main() {
         final skew =
             entryFrom2.timestamp.physicalMs - entryFrom1.timestamp.physicalMs;
         expect(skew, greaterThanOrEqualTo(10000));
-
-        await network.dispose();
       });
 
       test(
@@ -327,6 +320,7 @@ void main() {
           // This tests the tiebreaker behavior when two entries have the exact
           // same HLC timestamp (can happen with concurrent writes at same time)
           final network = await TestNetwork.create(['alice', 'bob', 'charlie']);
+          addTearDown(network.dispose);
           await network.connectAll();
 
           final channelId = ChannelId('identical-hlc-channel');
@@ -370,8 +364,6 @@ void main() {
 
           // The order should be alphabetical by author (alice < bob < charlie)
           expect(order1, equals(['alice', 'bob', 'charlie']));
-
-          await network.dispose();
         },
       );
     });
@@ -379,6 +371,7 @@ void main() {
     group('HLC overflow handling', () {
       test('rapid writes increment logical counter without overflow', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('rapid-write-channel');
@@ -416,8 +409,6 @@ void main() {
         for (var i = 0; i < entries.length; i++) {
           expect(entries[i].timestamp.logical, equals(firstLogical + i));
         }
-
-        await network.dispose();
       });
     });
 
@@ -426,6 +417,7 @@ void main() {
         'sequential writes from same node have increasing sequence numbers',
         () async {
           final network = await TestNetwork.create(['node1', 'node2']);
+          addTearDown(network.dispose);
           await network.connect('node1', 'node2');
 
           final channelId = ChannelId('sequence-channel');
@@ -458,8 +450,6 @@ void main() {
           expect(node1Entries[0].payload[0], equals(1));
           expect(node1Entries[1].payload[0], equals(2));
           expect(node1Entries[2].payload[0], equals(3));
-
-          await network.dispose();
         },
       );
 
@@ -467,6 +457,7 @@ void main() {
         'concurrent writes have independent sequence numbers per author',
         () async {
           final network = await TestNetwork.create(['node1', 'node2']);
+          addTearDown(network.dispose);
           await network.connect('node1', 'node2');
 
           final channelId = ChannelId('concurrent-seq-channel');
@@ -498,13 +489,12 @@ void main() {
               .where((e) => e.author == network['node2'].id)
               .toList();
           expect(node2Entries.map((e) => e.sequence).toSet(), equals({1, 2}));
-
-          await network.dispose();
         },
       );
 
       test('sequence numbers are contiguous with no gaps', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('no-gaps-channel');
@@ -530,14 +520,13 @@ void main() {
         for (var i = 0; i < 20; i++) {
           expect(sequences[i], equals(i + 1));
         }
-
-        await network.dispose();
       });
 
       test(
         'multiple streams have independent sequence counters per stream',
         () async {
           final network = await TestNetwork.create(['node1', 'node2']);
+          addTearDown(network.dispose);
           await network.connect('node1', 'node2');
 
           final channelId = ChannelId('multi-stream-seq-channel');
@@ -571,13 +560,12 @@ void main() {
           final entries2 = await network['node2'].entries(channelId, stream2);
           final sequences2 = entries2.map((e) => e.sequence).toList()..sort();
           expect(sequences2, equals([1, 2]));
-
-          await network.dispose();
         },
       );
 
       test('sequence numbers persist correctly across sync', () async {
         final network = await TestNetwork.create(['node1', 'node2']);
+        addTearDown(network.dispose);
         await network.connect('node1', 'node2');
 
         final channelId = ChannelId('persist-seq-channel');
@@ -611,8 +599,6 @@ void main() {
           );
           expect(matching.payload, equals(e1.payload));
         }
-
-        await network.dispose();
       });
     });
   });

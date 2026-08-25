@@ -12,6 +12,7 @@ void main() {
         () async {
           // A -- B -- C (no direct A-C link)
           final network = await TestNetwork.create(['nodeA', 'nodeB', 'nodeC']);
+          addTearDown(network.dispose);
           await network.connectChain(['nodeA', 'nodeB', 'nodeC']);
 
           final channelId = ChannelId('chain-channel');
@@ -39,8 +40,6 @@ void main() {
             await network['nodeA'].entryCount(channelId, streamId),
             equals(2),
           );
-
-          await network.dispose();
         },
       );
 
@@ -52,6 +51,7 @@ void main() {
           'spoke2',
           'spoke3',
         ]);
+        addTearDown(network.dispose);
         await network.connectStar('hub', ['spoke1', 'spoke2', 'spoke3']);
 
         final channelId = ChannelId('star-channel');
@@ -75,8 +75,6 @@ void main() {
             equals(3),
           );
         }
-
-        await network.dispose();
       });
 
       test('ring topology - entries propagate around the ring', () async {
@@ -87,6 +85,7 @@ void main() {
           'nodeC',
           'nodeD',
         ]);
+        addTearDown(network.dispose);
         await network.connectRing(['nodeA', 'nodeB', 'nodeC', 'nodeD']);
 
         final channelId = ChannelId('ring-channel');
@@ -100,8 +99,6 @@ void main() {
 
         // All nodes should have the entry
         expect(await network.hasConverged(channelId, streamId), isTrue);
-
-        await network.dispose();
       });
     });
   });

@@ -102,6 +102,7 @@ void main() {
     group('Multi-node partition scenarios', () {
       test('divergent writes during partition merge correctly', () async {
         final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+        addTearDown(network.dispose);
         await network.connectAll();
 
         final channelId = ChannelId('diverge-channel');
@@ -150,12 +151,11 @@ void main() {
           await network['node1'].entryCount(channelId, streamId),
           equals(4),
         );
-
-        await network.dispose();
       });
 
       test('three-way partition heals and all entries merge', () async {
         final network = await TestNetwork.create(['node1', 'node2', 'node3']);
+        addTearDown(network.dispose);
         await network.connectAll();
 
         final channelId = ChannelId('three-way-channel');
@@ -199,8 +199,6 @@ void main() {
           await network['node1'].entryCount(channelId, streamId),
           equals(3),
         );
-
-        await network.dispose();
       });
     });
   });

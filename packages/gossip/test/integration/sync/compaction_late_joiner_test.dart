@@ -54,6 +54,7 @@ void main() {
   test('late joiner vs compacted responder: floor adoption, content-checked, '
       'and traffic quiesces after convergence (COR3-1)', () async {
     final network = await TestNetwork.create(['a', 'b']);
+    addTearDown(network.dispose);
     // Only A has the channel at first — B joins later, after A has
     // already compacted.
     await network.setupChannel(
@@ -134,13 +135,12 @@ void main() {
           'traffic decays after convergence instead of looping on an '
           'unobtainable range',
     );
-
-    await network.dispose();
   });
 
   test('transitive floor propagation: C joins via B only and never talks to A '
       '(adoptVersionFloor raises the adopter\'s own servable floor)', () async {
     final network = await TestNetwork.create(['a', 'b', 'c']);
+    addTearDown(network.dispose);
     await network.setupChannel(
       channelId,
       streamId,
@@ -191,13 +191,12 @@ void main() {
           'C must hold exactly the entries B was able to serve, '
           'transitively inherited from A\'s original compaction',
     );
-
-    await network.dispose();
   });
 
   test('returning peer below the floor: reconnect after the responder has '
       'compacted past the peer\'s last-known position', () async {
     final network = await TestNetwork.create(['a', 'b']);
+    addTearDown(network.dispose);
     await network.setupChannel(
       channelId,
       streamId,
@@ -264,13 +263,12 @@ void main() {
           'must not surface as an error — it is designed behavior, not '
           'a fault',
     );
-
-    await network.dispose();
   });
 
   test('prune-all then new appends: a floor-only peer with no entries still '
       'accepts new contiguous history', () async {
     final network = await TestNetwork.create(['a', 'b']);
+    addTearDown(network.dispose);
     await network.setupChannel(
       channelId,
       streamId,
@@ -315,7 +313,5 @@ void main() {
     );
     final bEntries = await network['b'].entries(channelId, streamId);
     expect(bEntries.map((e) => e.sequence).toList(), equals([4]));
-
-    await network.dispose();
   });
 }
