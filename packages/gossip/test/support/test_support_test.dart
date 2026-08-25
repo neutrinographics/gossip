@@ -7,6 +7,8 @@ import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
+import 'package:gossip/src/sync/domain/aggregates/channel_aggregate.dart';
+import 'package:gossip/src/sync/infrastructure/in_memory_channel_repository.dart';
 import 'package:test/test.dart';
 
 import 'coordinator_builder.dart';
@@ -92,6 +94,55 @@ void main() {
         );
       },
     );
+  });
+
+  group('createTestCoordinator repository parameters', () {
+    test('a caller-supplied channelRepository is actually used, not shadowed '
+        'by a fresh internal instance', () async {
+      final channelRepo = InMemoryChannelRepository();
+      final channelId = ChannelId('pre-seeded');
+      await channelRepo.save(
+        ChannelAggregate(id: channelId, localNode: NodeId('local')),
+      );
+
+      final coordinator = await createTestCoordinator(
+        channelRepository: channelRepo,
+      );
+
+      expect(
+        coordinator.getChannel(channelId),
+        isNotNull,
+        reason:
+            'the channel was pre-seeded into channelRepo before create; '
+            'it is only visible if the builder passed this exact '
+            'instance through to Coordinator.create instead of building '
+            'its own',
+      );
+    });
+
+    test('two createTestCoordinator calls sharing one channelRepository see '
+        'the same data', () async {
+      final channelRepo = InMemoryChannelRepository();
+      final channelId = ChannelId('shared');
+
+      final coordinator1 = await createTestCoordinator(
+        channelRepository: channelRepo,
+      );
+      await coordinator1.createChannel(channelId);
+
+      final coordinator2 = await createTestCoordinator(
+        channelRepository: channelRepo,
+      );
+
+      expect(
+        coordinator2.getChannel(channelId),
+        isNotNull,
+        reason:
+            'coordinator2 was built with the same channelRepository '
+            'instance coordinator1 wrote through, so it must load the '
+            'channel coordinator1 created',
+      );
+    });
   });
 
   group('createTestCoordinator teardown', () {
