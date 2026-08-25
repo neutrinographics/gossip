@@ -9,6 +9,7 @@ void main() {
   group('RetentionPolicy', () {
     final author1 = NodeId('node-1');
     final author2 = NodeId('node-2');
+    final author3 = NodeId('node-3');
 
     LogEntry makeEntry(NodeId author, int seq, int timestampMs) => LogEntry(
       author: author,
@@ -166,19 +167,32 @@ void main() {
           makeEntry(author1, 1, 1000), // Too old, and NOT last (seq 2 is last)
           makeEntry(author1, 2, 8000), // Recent and last for author1
           makeEntry(author2, 1, 9000), // Recent and last for author2
+          // author3's only entry: old enough that TimeBasedRetention drops
+          // it (timestamp 500 is well before the 7000 cutoff), but it's
+          // author3's most recent (only) entry, so CountBasedRetention
+          // keeps it. Retained by exactly one sub-policy: this is the entry
+          // that distinguishes union semantics from intersection semantics.
+          // Without it, every entry above is either kept-by-both or
+          // dropped-by-both, so a composite that intersects instead of
+          // unions would pass this test just as well.
+          makeEntry(author3, 1, 500),
         ];
         final now = Hlc(10000, 0);
 
         final result = policy.compact(entries, now);
 
-        // 2 should be kept:
+        // 3 should be kept:
         // - entry1 dropped by both (too old, not highest seq)
         // - entry2 kept by both
         // - entry3 kept by both
-        expect(result.length, equals(2));
+        // - entry4 kept by count only, dropped by time — union retains it
+        expect(result.length, equals(3));
         expect(result[0].sequence, equals(2));
+        expect(result[0].author, equals(author1));
         expect(result[1].sequence, equals(1));
         expect(result[1].author, equals(author2));
+        expect(result[2].sequence, equals(1));
+        expect(result[2].author, equals(author3));
       });
 
       test('deduplicates entries', () {

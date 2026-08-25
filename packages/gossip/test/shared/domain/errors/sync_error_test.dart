@@ -113,18 +113,29 @@ void main() {
     });
 
     group('SyncErrorType', () {
-      test('enum has all expected values', () {
-        expect(SyncErrorType.values, contains(SyncErrorType.peerUnreachable));
-        expect(SyncErrorType.values, contains(SyncErrorType.peerTimeout));
-        expect(SyncErrorType.values, contains(SyncErrorType.messageCorrupted));
-        expect(SyncErrorType.values, contains(SyncErrorType.messageTooLarge));
-        expect(SyncErrorType.values, contains(SyncErrorType.versionMismatch));
-        expect(SyncErrorType.values, contains(SyncErrorType.storageFailure));
-        expect(SyncErrorType.values, contains(SyncErrorType.storageFull));
-        expect(SyncErrorType.values, contains(SyncErrorType.transformFailure));
-        expect(SyncErrorType.values, contains(SyncErrorType.protocolError));
-        expect(SyncErrorType.values, contains(SyncErrorType.bufferOverflow));
-        expect(SyncErrorType.values, contains(SyncErrorType.notAMember));
+      test('enum surface is pinned exactly', () {
+        // An exact-set comparison, not per-value `contains`: `contains`
+        // checks are tautological for an enum (`values` always contains
+        // every one of its own members, so this could never fail at
+        // runtime). This equality fails the moment a member is added,
+        // removed, or reordered, which is the surface this test exists to
+        // pin deliberately — callers pattern-match on these values.
+        expect(
+          SyncErrorType.values,
+          equals(const [
+            SyncErrorType.peerUnreachable,
+            SyncErrorType.peerTimeout,
+            SyncErrorType.messageCorrupted,
+            SyncErrorType.messageTooLarge,
+            SyncErrorType.versionMismatch,
+            SyncErrorType.storageFailure,
+            SyncErrorType.storageFull,
+            SyncErrorType.transformFailure,
+            SyncErrorType.protocolError,
+            SyncErrorType.bufferOverflow,
+            SyncErrorType.notAMember,
+          ]),
+        );
       });
     });
 

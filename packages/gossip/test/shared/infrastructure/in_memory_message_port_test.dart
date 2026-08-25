@@ -30,15 +30,22 @@ void main() {
       final bus = InMemoryMessageBus();
       final node1 = NodeId('node1');
       final unknownNode = NodeId('unknown');
+      final thirdParty = NodeId('node3');
 
       final port1 = InMemoryMessagePort(node1, bus);
+      final port3 = InMemoryMessagePort(thirdParty, bus);
+
+      final received = <IncomingMessage>[];
+      port3.incoming.listen(received.add);
 
       final bytes = Uint8List.fromList([1, 2, 3]);
       // Should not throw, just silently drop
-      await port1.send(unknownNode, bytes);
+      await expectLater(port1.send(unknownNode, bytes), completes);
+      await pumpEventQueue();
 
-      // Test completes without error
-      expect(true, isTrue);
+      // A registered, unrelated party must observe nothing from a send
+      // aimed at a destination that was never registered.
+      expect(received, isEmpty);
     });
 
     test('can handle multiple nodes', () async {
