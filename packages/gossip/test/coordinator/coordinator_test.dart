@@ -720,7 +720,12 @@ void main() {
     });
 
     test('create accepts custom config', () async {
-      final config = CoordinatorConfig(suspicionThreshold: 3);
+      // 7 collides with neither CoordinatorConfig.suspicionThreshold's own
+      // default (5) nor FailureDetector.failureThreshold's independent
+      // default (3) — a value of 3 or 5 here would let the assertion
+      // below pass even if the config were silently dropped and the
+      // detector fell back to its own hardcoded default.
+      final config = CoordinatorConfig(suspicionThreshold: 7);
 
       final messageBus = InMemoryMessageBus();
       final coordinator = await createTestCoordinator(
@@ -735,7 +740,7 @@ void main() {
       // not just get accepted and ignored.
       expect(
         coordinator.failureDetectorForTesting!.failureThreshold,
-        equals(3),
+        equals(7),
       );
     });
 
