@@ -11,6 +11,8 @@ import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:test/test.dart';
 
+import '../../../support/pump.dart';
+
 /// Counts entries; `initial()` can be gated on a completer, and the FIRST
 /// `save()` call can be gated on another.
 class _GatedMaterializer extends StateMaterializer<int> {
@@ -87,7 +89,7 @@ void main() {
 
       // Initialization runs to its save() and suspends there.
       final init = service.getState<int>(channelId, streamId);
-      await Future.delayed(Duration.zero);
+      await pumpEventQueue();
 
       // A new entry lands and is folded mid-initialization.
       final e2 = entryOf(2, 2000);
@@ -96,7 +98,10 @@ void main() {
 
       mat.gateFirstSave!.complete();
       await Future.wait([init, fold]);
-      await Future.delayed(Duration.zero);
+      await pumpUntil(
+        () => emissions.isNotEmpty && emissions.last == 2,
+        describe: 'the state stream settling on the post-fold state',
+      );
 
       expect(
         await service.getState<int>(channelId, streamId),
@@ -128,7 +133,10 @@ void main() {
           .listen((_) {}, onDone: () => done = true);
 
       await service.register<int>(channelId, streamId, _GatedMaterializer());
-      await Future.delayed(Duration.zero);
+      await pumpUntil(
+        () => done,
+        describe: 'the replaced state stream closing',
+      );
 
       expect(
         done,

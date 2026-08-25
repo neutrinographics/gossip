@@ -20,6 +20,7 @@ import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:test/test.dart';
 
 import '../../support/failing_delay_time_port.dart';
+import '../../support/pump.dart';
 import '../../support/scripted_delay_time_port.dart';
 import 'gossip_engine_test_harness.dart';
 
@@ -191,8 +192,7 @@ void main() {
       engine.start();
 
       // Let the failed delay future propagate.
-      await Future.delayed(Duration.zero);
-      await Future.delayed(Duration.zero);
+      await pumpEventQueue();
 
       expect(
         errors,
@@ -270,9 +270,7 @@ void main() {
         // Let call #1's scripted failure propagate through
         // GenerationScheduler's catchError into onSchedulingError's live
         // branch (isRunning reads false by the time that callback runs).
-        await Future.delayed(Duration.zero);
-        await Future.delayed(Duration.zero);
-        await Future.delayed(Duration.zero);
+        await pumpEventQueue();
 
         expect(
           errors,
@@ -321,8 +319,12 @@ void main() {
         // since the round's own gossip has no reachable-peer digest state
         // to disturb this assertion).
         await timePort.advance(const Duration(milliseconds: 250));
-        await Future.delayed(Duration.zero);
-        await Future.delayed(Duration.zero);
+        await pumpUntil(
+          () => received.whereType<DeltaResponse>().any(
+            (r) => r.entries.any((e) => e.sequence == 2),
+          ),
+          describe: 'the post-restart local write reaching the peer',
+        );
 
         expect(
           received.whereType<DeltaResponse>().any(

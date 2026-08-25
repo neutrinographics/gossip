@@ -18,6 +18,7 @@ import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 import 'package:test/test.dart';
 
 import '../support/coordinator_builder.dart';
+import '../support/pump.dart';
 
 void main() {
   group('Coordinator', () {
@@ -51,8 +52,10 @@ void main() {
 
       await coordinator.createChannel(channelId);
 
-      // Allow event to propagate
-      await Future.delayed(Duration.zero);
+      await pumpUntil(
+        () => events.isNotEmpty,
+        describe: 'the ChannelCreated event propagating',
+      );
 
       expect(events.length, equals(1));
       expect(events.first, isA<ChannelCreated>());
@@ -225,7 +228,10 @@ void main() {
         coordinator.stateChanges.listen(states.add);
 
         await coordinator.start();
-        await Future.delayed(Duration.zero);
+        await pumpUntil(
+          () => states.isNotEmpty,
+          describe: 'the running state change propagating',
+        );
 
         expect(states, equals([SyncState.running]));
       });
@@ -238,7 +244,10 @@ void main() {
         coordinator.stateChanges.listen(states.add);
 
         await coordinator.stop();
-        await Future.delayed(Duration.zero);
+        await pumpUntil(
+          () => states.isNotEmpty,
+          describe: 'the stopped state change propagating',
+        );
 
         expect(states, equals([SyncState.stopped]));
       });
@@ -252,7 +261,10 @@ void main() {
         await coordinator.start();
         await coordinator.pause();
         await coordinator.resume();
-        await Future.delayed(Duration.zero);
+        await pumpUntil(
+          () => states.length >= 3,
+          describe: 'the running/paused/running state changes propagating',
+        );
 
         expect(
           states,
@@ -268,7 +280,10 @@ void main() {
 
         // Dispose is the act under test — not builder-teardown cleanup.
         await coordinator.dispose();
-        await Future.delayed(Duration.zero);
+        await pumpUntil(
+          () => states.isNotEmpty,
+          describe: 'the disposed state change propagating',
+        );
 
         expect(states, equals([SyncState.disposed]));
       });
@@ -282,7 +297,10 @@ void main() {
         await coordinator.stop(); // Already stopped — no emit
         await coordinator.start();
         await coordinator.start(); // Already running — no emit
-        await Future.delayed(Duration.zero);
+        await pumpUntil(
+          () => states.isNotEmpty,
+          describe: 'the running state change propagating',
+        );
 
         expect(states, equals([SyncState.running]));
       });
@@ -364,7 +382,10 @@ void main() {
         coordinator.stateChanges.listen(states.add);
 
         await coordinator.destroy();
-        await Future.delayed(Duration.zero);
+        await pumpUntil(
+          () => states.isNotEmpty,
+          describe: 'the disposed state change propagating',
+        );
 
         expect(states, equals([SyncState.disposed]));
       });
@@ -493,7 +514,10 @@ void main() {
       final sub = coordinator.events.listen(events.add);
 
       await coordinator.addPeer(NodeId('peer1'));
-      await Future.delayed(Duration.zero);
+      await pumpUntil(
+        () => events.whereType<PeerAdded>().isNotEmpty,
+        describe: 'the PeerAdded event propagating',
+      );
       expect(
         events.whereType<PeerAdded>().length,
         equals(1),
@@ -501,7 +525,10 @@ void main() {
       );
 
       await coordinator.removePeer(NodeId('peer1'));
-      await Future.delayed(Duration.zero);
+      await pumpUntil(
+        () => events.whereType<PeerRemoved>().isNotEmpty,
+        describe: 'the PeerRemoved event propagating',
+      );
       expect(events.whereType<PeerRemoved>().length, equals(1));
 
       await sub.cancel();

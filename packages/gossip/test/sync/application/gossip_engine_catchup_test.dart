@@ -246,13 +246,7 @@ void main() {
       // A single round kicks it off; continuations drain the rest through
       // the microtask cascade — no timer advance.
       await engineA.performGossipRound();
-      for (
-        var i = 0;
-        i < 100 && await entryRepoA.entryCount(channelId, streamId) < 20;
-        i++
-      ) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      await pumpEventQueue();
 
       expect(
         await entryRepoA.entryCount(channelId, streamId),

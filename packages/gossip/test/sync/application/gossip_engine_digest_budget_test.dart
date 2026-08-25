@@ -470,9 +470,7 @@ void main() {
 
       for (var round = 0; round < 40 && await totalA() < 30; round++) {
         await engineA.performGossipRound();
-        for (var p = 0; p < 12; p++) {
-          await Future<void>.delayed(Duration.zero);
-        }
+        await pumpEventQueue();
         // Real exchanges take real time; this test drives many rounds
         // back-to-back against a frozen clock, so age the exchange after
         // each round — otherwise recency suppression (WIRE4-1) would stop

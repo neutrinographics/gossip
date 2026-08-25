@@ -15,6 +15,8 @@ import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 
+import '../../support/pump.dart';
+
 // ---------------------------------------------------------------------------
 // Reusable test doubles
 // ---------------------------------------------------------------------------
@@ -341,8 +343,14 @@ class FailureDetectorTestHarness {
 
   /// Runs a probe round that times out (no Ack is sent).
   Future<void> probeWithTimeout() async {
+    final sentBefore = sentMessageCount;
     final probeFuture = detector.performProbeRound();
-    await flush();
+    // The round must actually get its Ping out before time is advanced
+    // past the timeout — otherwise the timeout races the send.
+    await pumpUntil(
+      () => sentMessageCount > sentBefore,
+      describe: 'the probe round sending its Ping',
+    );
     await advancePastTimeout();
     await probeFuture;
   }
@@ -411,6 +419,17 @@ class FailureDetectorTestHarness {
 
   /// Yields the microtask queue [count] times to allow async message
   /// processing.
+  ///
+  /// Stays a fixed-count settle rather than a [pumpUntil] condition: it
+  /// backs [sendAck], [sendPing], and [sendPingReq] (each waiting on
+  /// whatever downstream effect that particular call site's test checks —
+  /// an RTT sample, a pending-ping completion, an error surfacing, a
+  /// captured reply — plus dozens of external call sites across other
+  /// tests with their own distinct targets. No single observable
+  /// condition covers all of them, so the caller-supplied count is the
+  /// only intent [flush] itself can express; [probeWithTimeout] is the
+  /// one internal caller with a single, nameable target, and waits on
+  /// that directly instead of calling this.
   Future<void> flush([int count = 1]) async {
     for (var i = 0; i < count; i++) {
       await Future.delayed(Duration.zero);

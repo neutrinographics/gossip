@@ -11,6 +11,8 @@ import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:test/test.dart';
 
+import '../../../support/pump.dart';
+
 /// Counts folded entries; `save()` throws on demand via a settable flag —
 /// mirrors `materialization_robustness_test.dart`'s `_ThrowingMaterializer`
 /// style (always-on failure), applied here to the save path so a failure
@@ -105,7 +107,10 @@ void main() {
       // double-count.
       mat.shouldThrowOnSave = false;
       await service.foldEntries(channelId, streamId, [e2]);
-      await Future.delayed(Duration.zero);
+      await pumpUntil(
+        () => emissions.isNotEmpty,
+        describe: 'the recovered retry emitting on the state stream',
+      );
 
       expect(
         await service.getState<int>(channelId, streamId),
@@ -244,7 +249,10 @@ void main() {
     await service.foldEntries(channelId, streamId, [
       e2,
     ], containsOutOfOrderEntries: true);
-    await Future.delayed(Duration.zero);
+    await pumpUntil(
+      () => emissions.isNotEmpty,
+      describe: 'the recovered rebuild emitting on the state stream',
+    );
 
     expect(
       await service.getState<int>(channelId, streamId),
@@ -298,7 +306,10 @@ void main() {
       // initialization normally.
       mat.shouldThrowOnSave = false;
       final state = await service.getState<int>(channelId, streamId);
-      await Future.delayed(Duration.zero);
+      await pumpUntil(
+        () => emissions.isNotEmpty,
+        describe: 'the completed initialization emitting on the state stream',
+      );
 
       expect(
         state,

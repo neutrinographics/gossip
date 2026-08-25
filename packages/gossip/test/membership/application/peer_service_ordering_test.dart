@@ -85,7 +85,7 @@ void main() {
         final slowSave = service.addPeer(peerId);
         // Let the save chain pass its registry snapshot and enter the
         // repository write before the peer is removed.
-        await Future<void>.delayed(Duration.zero);
+        await pumpEventQueue();
         await service.removePeer(peerId);
         await slowSave;
 

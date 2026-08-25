@@ -40,7 +40,7 @@ void main() {
         reason: 'membership must survive re-creation',
       );
 
-      await Future<void>.delayed(Duration.zero);
+      await pumpEventQueue();
       expect(
         events.whereType<ChannelCreated>(),
         isEmpty,

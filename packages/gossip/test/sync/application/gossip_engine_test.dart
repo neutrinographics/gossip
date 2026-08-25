@@ -984,10 +984,7 @@ void main() {
         // Node A initiates gossip round → sends DigestRequest to B
         await engineA.performGossipRound();
         // Allow message processing (DigestRequest → DigestResponse → DeltaRequest → DeltaResponse)
-        await Future.delayed(Duration.zero);
-        await Future.delayed(Duration.zero);
-        await Future.delayed(Duration.zero);
-        await Future.delayed(Duration.zero);
+        await pumpEventQueue();
 
         // Node A should now have the entries
         expect(await entryRepoA.entryCount(channelId, streamId), equals(2));

@@ -5,6 +5,7 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:test/test.dart';
 
 import '../support/coordinator_builder.dart';
+import '../support/pump.dart';
 
 /// Regression tests for audit COR3-3: the Coordinator must wire `onError`
 /// into the application services it constructs, so errors they emit reach
@@ -27,8 +28,10 @@ void main() {
       await coordinator.removeChannel(channelId);
       await channel.addMember(NodeId('peer-1'));
 
-      // Let the broadcast stream deliver.
-      await Future<void>.delayed(Duration.zero);
+      await pumpUntil(
+        () => errors.isNotEmpty,
+        describe: 'the ChannelSyncError reaching coordinator.errors',
+      );
 
       expect(errors, isNotEmpty, reason: 'error should reach the app');
       expect(errors.first, isA<ChannelSyncError>());

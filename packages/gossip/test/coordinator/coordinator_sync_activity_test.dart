@@ -6,6 +6,7 @@ import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:test/test.dart';
 
 import '../support/coordinator_builder.dart';
+import '../support/pump.dart';
 
 void main() {
   final localNode = NodeId('local');
@@ -61,9 +62,10 @@ void main() {
           ),
         ),
       );
-      for (var i = 0; i < 5; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      await pumpUntil(
+        () => coordinator.gossipSyncActivity.outstandingPulls == 1,
+        describe: 'the engine arming a pending pull for the advertised entry',
+      );
       expect(coordinator.gossipSyncActivity.outstandingPulls, equals(1));
 
       // The peer disconnects before answering: its pull can never

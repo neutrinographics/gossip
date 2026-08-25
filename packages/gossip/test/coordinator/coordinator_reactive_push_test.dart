@@ -11,6 +11,7 @@ import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:test/test.dart';
 
 import '../support/coordinator_builder.dart';
+import '../support/pump.dart';
 
 void main() {
   final peerId = NodeId('peer1');
@@ -50,8 +51,10 @@ void main() {
 
       // Advance past the reactive-push debounce window.
       await timePort.advance(const Duration(milliseconds: 150));
-      await Future.delayed(Duration.zero);
-      await Future.delayed(Duration.zero);
+      await pumpUntil(
+        () => pushes.isNotEmpty,
+        describe: 'the reactive push reaching the peer',
+      );
 
       expect(
         pushes.length,

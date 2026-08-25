@@ -9,6 +9,7 @@ import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:test/test.dart';
 
 import '../support/coordinator_builder.dart';
+import '../support/pump.dart';
 
 void main() {
   final peerId = NodeId('peer1');
@@ -45,8 +46,10 @@ void main() {
 
       // No periodic round has fired yet (interval is 100s).
       await coordinator.addPeer(peerId);
-      await Future.delayed(Duration.zero);
-      await Future.delayed(Duration.zero);
+      await pumpUntil(
+        () => digestRequests.isNotEmpty,
+        describe: 'addPeer triggering an immediate sync-on-connect round',
+      );
 
       expect(
         digestRequests.length,

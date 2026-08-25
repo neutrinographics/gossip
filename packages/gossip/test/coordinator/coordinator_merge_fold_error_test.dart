@@ -6,6 +6,7 @@ import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:test/test.dart';
 
 import '../support/coordinator_builder.dart';
+import '../support/pump.dart';
 
 /// A buggy app materializer: folding always throws.
 class _ThrowingMaterializer extends StateMaterializer<int> {
@@ -69,9 +70,12 @@ void main() {
         ),
       ),
     );
-    for (var i = 0; i < 8; i++) {
-      await Future<void>.delayed(Duration.zero);
-    }
+    await pumpUntil(
+      () => events.whereType<EntriesMerged>().isNotEmpty && errors.isNotEmpty,
+      describe:
+          "EntriesMerged firing and the throwing materializer's error "
+          'reaching coordinator.errors',
+    );
 
     expect(
       events.whereType<EntriesMerged>(),

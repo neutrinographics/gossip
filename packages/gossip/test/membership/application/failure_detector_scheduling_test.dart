@@ -31,7 +31,7 @@ void main() {
         // 130ms > the 100ms interval + its max +20% jitter, so the round
         // always fires (but not far enough to fire the reschedule too).
         await h.timePort.advance(const Duration(milliseconds: 130));
-        await flushMicrotasks();
+        await pumpEventQueue();
 
         expect(
           h.timePort.pendingDelayCount,
@@ -61,7 +61,7 @@ void main() {
         // exactly once per interval.
         for (var i = 0; i < 3; i++) {
           await h.timePort.advance(const Duration(milliseconds: 130));
-          await flushMicrotasks();
+          await pumpEventQueue();
           expect(
             h.timePort.pendingDelayCount,
             equals(1),
@@ -93,8 +93,7 @@ void main() {
       detector.start();
 
       // Let the failed delay future propagate.
-      await Future.delayed(Duration.zero);
-      await Future.delayed(Duration.zero);
+      await pumpEventQueue();
 
       expect(
         errors,
@@ -108,11 +107,4 @@ void main() {
       );
     });
   });
-}
-
-/// Yields the microtask queue a few times so async round chains settle.
-Future<void> flushMicrotasks([int count = 3]) async {
-  for (var i = 0; i < count; i++) {
-    await Future.delayed(Duration.zero);
-  }
 }

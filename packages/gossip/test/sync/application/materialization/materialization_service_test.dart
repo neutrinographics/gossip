@@ -11,6 +11,8 @@ import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:test/test.dart';
 
+import '../../../support/pump.dart';
+
 // ---------------------------------------------------------------------------
 // Test materializers
 // ---------------------------------------------------------------------------
@@ -311,14 +313,20 @@ void main() {
 
         // Initialize (emits initial state)
         await service.getState<int>(channelId, streamId);
-        await Future.delayed(Duration.zero);
+        await pumpUntil(
+          () => emissions.isNotEmpty,
+          describe: 'the initial state emitting',
+        );
         expect(emissions, equals([0]));
 
         // Fold entries
         final e1 = _entry(1);
         await entryRepo.append(channelId, streamId, e1);
         await service.foldEntries(channelId, streamId, [e1]);
-        await Future.delayed(Duration.zero);
+        await pumpUntil(
+          () => emissions.length >= 2,
+          describe: 'the folded state emitting',
+        );
         expect(emissions, equals([0, 1]));
 
         await sub.cancel();
@@ -375,7 +383,10 @@ void main() {
         final sub = intStream.listen(emissions.add);
 
         await service.getState<int>(channelId, streamId);
-        await Future.delayed(Duration.zero);
+        await pumpUntil(
+          () => emissions.isNotEmpty,
+          describe: 'the initial state emitting',
+        );
         expect(emissions, equals([0]));
 
         await sub.cancel();
@@ -417,7 +428,10 @@ void main() {
         // Initialize both
         await service.getState<int>(channelId, streamId);
         await service.getState<String>(channelId, streamId);
-        await Future.delayed(Duration.zero);
+        await pumpUntil(
+          () => intEmissions.isNotEmpty && strEmissions.isNotEmpty,
+          describe: 'both materializers emitting their initial state',
+        );
 
         expect(intEmissions, equals([0]));
         expect(strEmissions, equals(['']));
@@ -426,7 +440,10 @@ void main() {
         final e1 = _entry(1);
         await entryRepo.append(channelId, streamId, e1);
         await service.foldEntries(channelId, streamId, [e1]);
-        await Future.delayed(Duration.zero);
+        await pumpUntil(
+          () => intEmissions.length >= 2 && strEmissions.length >= 2,
+          describe: 'both materializers emitting their folded state',
+        );
 
         expect(intEmissions, equals([0, 1]));
         expect(strEmissions, equals(['', 'node']));

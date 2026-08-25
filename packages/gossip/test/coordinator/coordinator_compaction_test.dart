@@ -46,9 +46,7 @@ void main() {
 
         // Advance past the compaction interval.
         await timePort.advance(const Duration(minutes: 1));
-        for (var i = 0; i < 5; i++) {
-          await Future<void>.delayed(Duration.zero);
-        }
+        await pumpEventQueue();
 
         expect(
           (await stream.getAll()).length,
@@ -86,9 +84,7 @@ void main() {
         }
 
         await timePort.advance(const Duration(hours: 1));
-        for (var i = 0; i < 5; i++) {
-          await Future<void>.delayed(Duration.zero);
-        }
+        await pumpEventQueue();
 
         expect(
           (await stream.getAll()).length,
@@ -119,8 +115,7 @@ void main() {
       await coordinator.start();
 
       // Let the failed delay future propagate.
-      await Future<void>.delayed(Duration.zero);
-      await Future<void>.delayed(Duration.zero);
+      await pumpEventQueue();
 
       expect(errors, hasLength(1));
       expect(
@@ -150,9 +145,7 @@ void main() {
       // Advancing time well past several intervals ticks nothing further —
       // the scheduler stopped itself rather than silently dying.
       await timePort.inner.advance(const Duration(seconds: 1));
-      for (var i = 0; i < 5; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      await pumpEventQueue();
       expect(
         errors,
         hasLength(1),
@@ -164,9 +157,7 @@ void main() {
       await coordinator.stop();
       await coordinator.start();
       await timePort.inner.advance(const Duration(seconds: 1));
-      for (var i = 0; i < 5; i++) {
-        await Future<void>.delayed(Duration.zero);
-      }
+      await pumpEventQueue();
       expect(
         errors,
         hasLength(1),

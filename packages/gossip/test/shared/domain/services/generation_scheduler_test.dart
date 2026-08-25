@@ -27,14 +27,14 @@ void main() {
       // Act: let the first interval elapse.
       scheduler.start();
       await timePort.advance(interval);
-      await flushMicrotasks();
+      await pumpEventQueue();
 
       // Assert: exactly one tick fired.
       expect(tickCount, equals(1));
 
       // Act: let a second interval elapse.
       await timePort.advance(interval);
-      await flushMicrotasks();
+      await pumpEventQueue();
 
       // Assert: the loop rescheduled after the first tick settled, so a
       // second tick fires too.
@@ -64,7 +64,7 @@ void main() {
       // still gated (in flight, never completing).
       gatedScheduler.start();
       await gatedTimePort.advance(interval * 2);
-      await flushMicrotasks();
+      await pumpEventQueue();
 
       // Assert: the second interval's delay can only be scheduled once
       // the in-flight tick settles and reschedules — so the tick body
@@ -80,7 +80,7 @@ void main() {
       );
 
       gate.complete();
-      await flushMicrotasks();
+      await pumpEventQueue();
       gatedScheduler.stop();
     });
 
@@ -109,14 +109,14 @@ void main() {
       // Act: the first 100ms elapses.
       scheduler.start();
       await timePort.advance(const Duration(milliseconds: 100));
-      await flushMicrotasks();
+      await pumpEventQueue();
 
       // Assert: the first cycle used the first nextDelay() value.
       expect(tickCount, equals(1));
 
       // Act: only 100 of the second cycle's 200ms have elapsed.
       await timePort.advance(const Duration(milliseconds: 100));
-      await flushMicrotasks();
+      await pumpEventQueue();
 
       // Assert: no tick yet — the second cycle re-evaluated nextDelay()
       // and got 200ms, not another 100ms.
@@ -124,7 +124,7 @@ void main() {
 
       // Act: the remaining 100ms of the second cycle's 200ms delay elapses.
       await timePort.advance(const Duration(milliseconds: 100));
-      await flushMicrotasks();
+      await pumpEventQueue();
 
       // Assert: the second tick now fires.
       expect(tickCount, equals(2));
@@ -148,7 +148,7 @@ void main() {
       scheduler.start();
       scheduler.stop();
       await timePort.advance(const Duration(milliseconds: 500));
-      await flushMicrotasks();
+      await pumpEventQueue();
 
       // Assert: the already-scheduled delay fires (fake time doesn't care
       // it was stopped) but its callback recognizes the stale generation
@@ -176,7 +176,7 @@ void main() {
       // Act: let the first tick start and hold it in flight.
       scheduler.start();
       await timePort.advance(const Duration(milliseconds: 100));
-      await flushMicrotasks();
+      await pumpEventQueue();
       expect(
         tickCount,
         equals(1),
@@ -186,11 +186,11 @@ void main() {
       // Act: stop while the tick is still gated, then release the gate.
       scheduler.stop();
       gate.complete();
-      await flushMicrotasks();
+      await pumpEventQueue();
 
       // Act: advance far past what would have been the reschedule.
       await timePort.advance(const Duration(milliseconds: 1000));
-      await flushMicrotasks();
+      await pumpEventQueue();
 
       // Assert: the in-flight tick's completion must not reschedule —
       // stop() already made its generation stale.
@@ -217,7 +217,7 @@ void main() {
       expect(timePort.pendingDelayCount, equals(2));
 
       await timePort.advance(const Duration(milliseconds: 100));
-      await flushMicrotasks();
+      await pumpEventQueue();
 
       // Assert: only the live generation's loop may tick. If the first
       // start()'s callback weren't stale, it would tick too — forking a
@@ -254,9 +254,9 @@ void main() {
       // Act: let two intervals elapse.
       scheduler.start();
       await timePort.advance(const Duration(milliseconds: 100));
-      await flushMicrotasks();
+      await pumpEventQueue();
       await timePort.advance(const Duration(milliseconds: 100));
-      await flushMicrotasks();
+      await pumpEventQueue();
 
       // Assert: both ticks ran, both errors were reported, and the loop
       // is still alive — a tick error is contained, never fatal.
@@ -285,7 +285,7 @@ void main() {
         // Act: start against the broken port.
         timePort.failNextDelay = true;
         scheduler.start();
-        await flushMicrotasks();
+        await pumpEventQueue();
 
         // Assert: the scheduling failure is reported once and the loop
         // stops itself so isRunning reflects reality.
@@ -296,7 +296,7 @@ void main() {
         // healed — a later start() must run normally.
         scheduler.start();
         await timePort.inner.advance(const Duration(milliseconds: 100));
-        await flushMicrotasks();
+        await pumpEventQueue();
 
         // Assert: the healed loop ticks like nothing happened.
         expect(tickCount, equals(1));
@@ -306,11 +306,4 @@ void main() {
       },
     );
   });
-}
-
-/// Yields the microtask queue a few times so async reschedule chains settle.
-Future<void> flushMicrotasks([int count = 3]) async {
-  for (var i = 0; i < count; i++) {
-    await Future.delayed(Duration.zero);
-  }
 }

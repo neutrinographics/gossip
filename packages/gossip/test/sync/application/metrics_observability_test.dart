@@ -24,6 +24,7 @@ import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:test/test.dart';
 
 import '../../support/coordinator_builder.dart';
+import '../../support/pump.dart';
 import 'gossip_engine_test_harness.dart';
 
 /// LocalNodeRepository whose clock-state persistence fails.
@@ -60,10 +61,12 @@ void main() {
           localNode,
           codec.encode(Ping(sender: peerId, sequence: 1)),
         );
-        await Future.delayed(Duration.zero);
-        await Future.delayed(Duration.zero);
-
         final registry = coordinator.failureDetectorForTesting!.peerRegistry;
+        await pumpUntil(
+          () => (registry.getPeer(peerId)?.metrics.messagesReceived ?? 0) > 0,
+          describe: 'the incoming Ping being recorded as a received message',
+        );
+
         expect(
           registry.getPeer(peerId)!.metrics.messagesReceived,
           equals(1),
@@ -111,8 +114,10 @@ void main() {
           ],
         ),
       );
-      await Future.delayed(Duration.zero);
-      await Future.delayed(Duration.zero);
+      await pumpUntil(
+        () => errors.isNotEmpty,
+        describe: 'the saveClockState failure surfacing via ErrorCallback',
+      );
 
       expect(
         errors,

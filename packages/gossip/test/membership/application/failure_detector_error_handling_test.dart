@@ -14,6 +14,7 @@ import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 import 'package:test/test.dart';
 
+import '../../support/pump.dart';
 import 'failure_detector_test_harness.dart';
 
 void main() {
@@ -354,7 +355,10 @@ void main() {
         // updatePeerStatus → onEvent, which throws.
         final ack = Ack(sender: peerNode, sequence: 1);
         await peerPort.send(localNode, codec.encode(ack));
-        await Future.delayed(Duration.zero);
+        await pumpUntil(
+          () => errors.isNotEmpty,
+          describe: 'the onEvent throw surfacing as a PeerSyncError',
+        );
 
         expect(errors, hasLength(1));
         final error = errors.first as PeerSyncError;
@@ -390,7 +394,10 @@ void main() {
       );
 
       final probeFuture = detector.probeNewPeer(peerNode);
-      await Future.delayed(Duration.zero);
+      await pumpUntil(
+        () => errors.isNotEmpty,
+        describe: 'the transport send failure emitting peerUnreachable',
+      );
 
       expect(errors, hasLength(1));
       final error = errors.first as PeerSyncError;
@@ -462,7 +469,10 @@ void main() {
 
       final ping = Ping(sender: peerNode, sequence: 10);
       await peerPort.send(localNode, codec.encode(ping));
-      await Future.delayed(Duration.zero);
+      await pumpUntil(
+        () => errors.isNotEmpty,
+        describe: 'the Ack response send failure emitting peerUnreachable',
+      );
 
       expect(errors, hasLength(1));
       final error = errors.first as PeerSyncError;

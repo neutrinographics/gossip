@@ -22,6 +22,7 @@ import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:test/test.dart';
 
 import '../support/coordinator_builder.dart';
+import '../support/pump.dart';
 
 class _CountMaterializer extends StateMaterializer<int> {
   @override
@@ -132,10 +133,10 @@ void main() {
 
       await coordinator.resume();
 
-      // Let a gossip round fire.
+      // Let a gossip round fire (up to 3 attempts).
       for (var i = 0; i < 3; i++) {
         await timePort.advance(const Duration(milliseconds: 101));
-        await Future.delayed(Duration.zero);
+        await pumpEventQueue();
       }
 
       expect(digests, isNotEmpty, reason: 'gossip rounds should have fired');
@@ -197,7 +198,10 @@ void main() {
 
       // Dispose is the act under test — not builder-teardown cleanup.
       await coordinator.dispose();
-      await Future.delayed(Duration.zero);
+      await pumpUntil(
+        () => done,
+        describe: 'the materializer state stream calling onDone after dispose',
+      );
 
       expect(
         done,
@@ -270,8 +274,10 @@ void main() {
       await coordinator.start();
 
       controller.addError(StateError('transport blew up'));
-      await Future.delayed(Duration.zero);
-      await Future.delayed(Duration.zero);
+      await pumpUntil(
+        () => errors.isNotEmpty,
+        describe: 'the transport stream error reaching coordinator.errors',
+      );
 
       expect(
         errors,

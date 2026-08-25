@@ -29,6 +29,8 @@ import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 
+import '../../support/pump.dart';
+
 // ---------------------------------------------------------------------------
 // Test peer
 // ---------------------------------------------------------------------------
@@ -354,6 +356,14 @@ class GossipEngineTestHarness {
   /// itself, not just in the handler it delegates to.
   ///
   /// Starts listening (idempotent) so the message is actually routed.
+  ///
+  /// The trailing `flush(3)` settles [engine]'s async handling chain
+  /// (decode, merge, callback, any reply) before returning. Left as a
+  /// fixed count rather than a [pumpUntil] condition: callers check
+  /// different downstream effects of the same delivery (merged entries,
+  /// pacing state, peer bookkeeping), and an empty `entries` push is a
+  /// legitimate call with nothing to observably wait for — no single
+  /// condition covers every caller's target.
   Future<void> deliverDeltaResponse({
     required GossipTestPeer from,
     required ChannelId channelId,
@@ -381,6 +391,11 @@ class GossipEngineTestHarness {
   /// calling `engine.handleDeltaRequest` directly.
   ///
   /// Starts listening (idempotent) so the message is actually routed.
+  ///
+  /// See [deliverDeltaResponse] for why the trailing `flush(3)` stays a
+  /// fixed count: this request's handling ends in a computed reply plus
+  /// pacing/bookkeeping side effects that different callers check
+  /// individually, with no single shared observable.
   Future<void> deliverDeltaRequest({
     required GossipTestPeer from,
     required ChannelId channelId,
@@ -406,6 +421,9 @@ class GossipEngineTestHarness {
   /// Starts listening (idempotent) so the message is actually routed.
   /// Defaults to an empty digest list — fine for tests that only care
   /// about the responder-side exchange bookkeeping, not the reply content.
+  ///
+  /// See [deliverDeltaResponse] for why the trailing `flush(3)` stays a
+  /// fixed count.
   Future<void> deliverDigestRequest({
     required GossipTestPeer from,
     List<ChannelDigest> digests = const [],
@@ -421,6 +439,13 @@ class GossipEngineTestHarness {
   // -------------------------------------------------------------------------
 
   /// Yields the microtask queue [count] times.
+  ///
+  /// Stays a fixed-count settle rather than a [pumpUntil] condition: it's
+  /// called both internally (by [deliverDeltaResponse],
+  /// [deliverDeltaRequest], [deliverDigestRequest] — see their docs) and
+  /// directly by dozens of tests across this suite, each waiting on its
+  /// own downstream effect of whatever it just sent or triggered. No
+  /// single observable condition covers all of them.
   Future<void> flush([int count = 1]) async {
     for (var i = 0; i < count; i++) {
       await Future.delayed(Duration.zero);
