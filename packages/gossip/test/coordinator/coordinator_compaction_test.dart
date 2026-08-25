@@ -95,7 +95,7 @@ void main() {
     );
   });
 
-  group('Coordinator auto-compaction scheduling failure (BD2)', () {
+  group('Coordinator auto-compaction scheduling failure', () {
     test('a delay failure emits exactly one scheduling error and the loop '
         'stays dead until the next stop/start cycle', () async {
       final timePort = FailingDelayTimePort();
@@ -125,7 +125,7 @@ void main() {
           'message',
           contains('Auto-compaction scheduling failed'),
         ),
-        reason: 'BD2: a scheduling failure must surface via ErrorCallback',
+        reason: 'a scheduling failure must surface via ErrorCallback',
       );
 
       // The errors-stream assertions alone can't distinguish "loop is
@@ -138,8 +138,8 @@ void main() {
         isFalse,
         reason:
             'a scheduler that retries after a scheduling failure would '
-            'still report isRunning == true here — BD2 requires it to '
-            'have stopped itself',
+            'still report isRunning == true here — a scheduling failure '
+            'must stop the loop, not retry it',
       );
 
       // Advancing time well past several intervals ticks nothing further —
@@ -156,6 +156,19 @@ void main() {
       // failure — failNextDelay only fired once).
       await coordinator.stop();
       await coordinator.start();
+
+      // "No further errors" alone can't tell a restarted loop from a
+      // loop that never came back — assert isRunning directly, the same
+      // way the pre-restart leg does for the dead state.
+      expect(
+        coordinator.compactionSchedulerForTesting!.isRunning,
+        isTrue,
+        reason:
+            'the stop/start cycle must leave a live scheduler behind, not '
+            'a dead one masked by "no channels to compact" being a no-op '
+            'either way',
+      );
+
       await timePort.inner.advance(const Duration(seconds: 1));
       await pumpEventQueue();
       expect(

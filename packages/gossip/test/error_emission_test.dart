@@ -18,7 +18,6 @@ import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:gossip/src/sync/application/channel_service.dart';
-import 'package:gossip/src/membership/application/peer_service.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
 
 /// A mock MessagePort that throws on send for testing error handling.
@@ -272,29 +271,6 @@ void main() {
         expect(errors.first, isA<StorageSyncError>());
       },
     );
-  });
-
-  group('PeerService error emission', () {
-    test('no repository is a supported mode: addPeer persists to registry '
-        'without emitting an error (D1)', () async {
-      final localNode = NodeId('local');
-      final peerId = NodeId('peer');
-      final registry = PeerRegistry(localNode: localNode);
-
-      final errors = <SyncError>[];
-      final service = PeerService(
-        registry: registry,
-        repository: null, // No repository
-        onError: (e) => errors.add(e),
-      );
-
-      await service.addPeer(peerId);
-
-      // Peer is added to registry; in-memory-only is documented, not an
-      // error, so persistence is silently skipped.
-      expect(registry.getPeer(peerId), isNotNull);
-      expect(errors, isEmpty);
-    });
   });
 
   group('PeerRegistry observability events', () {

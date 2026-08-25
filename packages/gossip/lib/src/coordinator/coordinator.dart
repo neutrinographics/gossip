@@ -295,7 +295,6 @@ class Coordinator {
     final peerService = PeerService(
       registry: peerRegistry,
       repository: peerRepository,
-      onError: (error) => coordinator._handleError(error),
     );
 
     coordinator = Coordinator._(

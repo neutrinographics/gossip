@@ -820,6 +820,7 @@ class FailureDetector {
       );
       _log(
         'Malformed SWIM message from ${message.sender}: $e',
+        level: LogLevel.error,
         error: e,
         stackTrace: st,
       );
@@ -857,6 +858,7 @@ class FailureDetector {
       _log(
         'Failed handling ${protocolMessage.runtimeType} from '
         '${message.sender}: $e',
+        level: LogLevel.error,
         error: e,
         stackTrace: st,
       );
@@ -1097,7 +1099,12 @@ class FailureDetector {
     onError?.call(error);
   }
 
-  void _log(String message, {Object? error, StackTrace? stackTrace}) {
-    onLog?.call(LogLevel.debug, '[SWIM] $message', error, stackTrace);
+  void _log(
+    String message, {
+    LogLevel level = LogLevel.debug,
+    Object? error,
+    StackTrace? stackTrace,
+  }) {
+    onLog?.call(level, '[SWIM] $message', error, stackTrace);
   }
 }

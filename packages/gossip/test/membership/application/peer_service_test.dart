@@ -1,5 +1,4 @@
 import 'package:test/test.dart';
-import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/membership/domain/interfaces/peer_repository.dart';
@@ -82,28 +81,24 @@ void main() {
       },
     );
 
-    test('a service with no repository adds and removes peers without '
-        'emitting errors', () async {
+    test('a service with no repository adds and removes peers through the '
+        'registry alone', () async {
       final localNode = NodeId('local');
       final registry = PeerRegistry(localNode: localNode);
-      final errors = <SyncError>[];
-      final service = PeerService(
-        registry: registry,
-        repository: null,
-        onError: (e) => errors.add(e),
-      );
+      final service = PeerService(registry: registry, repository: null);
       final peerId = NodeId('peer-1');
 
       await service.addPeer(peerId);
-      await service.removePeer(peerId);
-
       expect(
-        errors,
-        isEmpty,
+        registry.isKnown(peerId),
+        isTrue,
         reason:
-            'in-memory-only is a documented mode (D1), not a failure — '
-            'a null repository must not emit per-op errors',
+            'in-memory-only is a documented, supported mode — the registry '
+            'is the source of truth even without a repository',
       );
+
+      await service.removePeer(peerId);
+      expect(registry.isKnown(peerId), isFalse);
     });
   });
 }

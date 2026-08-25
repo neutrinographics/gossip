@@ -1,4 +1,3 @@
-import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/services/keyed_task_chain.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
@@ -32,16 +31,10 @@ class PeerService {
   ///
   /// When null, peers are not persisted (in-memory only). This is a
   /// supported mode, not a failure: add/remove operations silently skip
-  /// persistence by design (D1) rather than reporting an error per call.
+  /// persistence by design rather than reporting an error per call.
   final PeerRepository? repository;
 
-  /// Optional callback for reporting synchronization errors.
-  ///
-  /// When provided, errors that would otherwise be silent are reported
-  /// through this callback for observability.
-  final ErrorCallback? onError;
-
-  PeerService({required this.registry, this.repository, this.onError});
+  PeerService({required this.registry, this.repository});
 
   /// Per-peer chain of pending persistence writes (saves and deletes).
   ///

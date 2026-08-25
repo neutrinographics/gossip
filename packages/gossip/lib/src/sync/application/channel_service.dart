@@ -1,4 +1,5 @@
 import 'dart:typed_data';
+import 'package:gossip/src/shared/domain/errors/domain_exception.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/events/domain_event.dart';
 import 'package:gossip/src/sync/domain/events/sync_events.dart';
@@ -212,7 +213,8 @@ class ChannelService {
   /// Used when: The local app decides to record a peer as a member —
   /// membership metadata is local and never crosses the wire.
   ///
-  /// Throws [Exception] if channel doesn't exist in repository.
+  /// Does not throw for a missing repository or channel: [_withChannel]
+  /// emits an error and this returns an empty list instead.
   ///
   /// Returns: List of domain events emitted (e.g., [MemberAdded]).
   Future<List<DomainEvent>> addMember(
@@ -232,7 +234,11 @@ class ChannelService {
   ///
   /// Used when: Peer leaves channel or is evicted.
   ///
-  /// Throws [Exception] if channel doesn't exist in repository.
+  /// Does not throw for a missing repository or channel: [_withChannel]
+  /// emits an error and this returns an empty list instead. Throws
+  /// [DomainException] if [peerId] is the local node — removing the local
+  /// node from its own channel is an invariant violation, and that guard
+  /// lives in the aggregate, not this layer.
   ///
   /// Returns: List of domain events emitted (e.g., [MemberRemoved]).
   Future<List<DomainEvent>> removeMember(
@@ -252,7 +258,8 @@ class ChannelService {
   ///
   /// Used when: Application defines a new data stream to synchronize.
   ///
-  /// Throws [Exception] if channel doesn't exist in repository.
+  /// Does not throw for a missing repository or channel: [_withChannel]
+  /// emits an error and this returns an empty list instead.
   ///
   /// Returns: List of domain events emitted (e.g., [StreamCreated]).
   Future<List<DomainEvent>> createStream(

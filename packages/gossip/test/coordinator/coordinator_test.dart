@@ -318,7 +318,7 @@ void main() {
       });
 
       test('clears all repositories', () async {
-        // Category A: holds each repository to assert it was cleared.
+        // holds each repository to assert it was cleared.
         final channelRepo = InMemoryChannelRepository();
         final peerRepo = InMemoryPeerRepository();
         final entryRepo = InMemoryEntryRepository();
@@ -353,7 +353,7 @@ void main() {
       });
 
       test('resets local node identity', () async {
-        // Category A: holds localNodeRepo to assert identity was cleared.
+        // holds localNodeRepo to assert identity was cleared.
         final localNodeRepo = InMemoryLocalNodeRepository(nodeId: localNode);
 
         final coordinator = await createTestCoordinator(
@@ -392,7 +392,7 @@ void main() {
       });
 
       test('new coordinator after destroy gets fresh identity', () async {
-        // Category C: shares repositories across two sequential creates.
+        // shares repositories across two sequential creates.
         final channelRepo = InMemoryChannelRepository();
         final entryRepo = InMemoryEntryRepository();
         final localNodeRepo = InMemoryLocalNodeRepository(nodeId: localNode);
@@ -623,7 +623,7 @@ void main() {
     test(
       'coordinator loads existing channels from repository on create',
       () async {
-        // Category C: shares channelRepo across two sequential creates.
+        // shares channelRepo across two sequential creates.
         final channelRepo = InMemoryChannelRepository();
         final coordinator1 = await createTestCoordinator(
           channelRepository: channelRepo,
@@ -646,7 +646,7 @@ void main() {
     );
 
     test('coordinator channelIds includes loaded channels', () async {
-      // Category C: shares channelRepo across two sequential creates.
+      // shares channelRepo across two sequential creates.
       final channelRepo = InMemoryChannelRepository();
       final coordinator1 = await createTestCoordinator(
         channelRepository: channelRepo,
@@ -772,7 +772,7 @@ void main() {
       });
 
       test('removes channel entries from store', () async {
-        // Category A: holds entryRepo to assert entries were removed.
+        // holds entryRepo to assert entries were removed.
         final entryRepo = InMemoryEntryRepository();
         final coordinator = await createTestCoordinator(
           entryRepository: entryRepo,
@@ -872,7 +872,7 @@ void main() {
 
       group('clock state restoration', () {
         test('restores clock state from LocalNodeRepository', () async {
-          // Category B: pre-seeds localNodeRepo before create() runs.
+          // pre-seeds localNodeRepo before create() runs.
           final bus = InMemoryMessageBus();
           final localNodeRepo = InMemoryLocalNodeRepository(nodeId: localNode);
           await localNodeRepo.saveClockState(Hlc(5000, 42));
@@ -887,7 +887,7 @@ void main() {
         });
 
         test('persists clock state after appending entry', () async {
-          // Category A: holds localNodeRepo to assert the persisted state.
+          // holds localNodeRepo to assert the persisted state.
           final bus = InMemoryMessageBus();
           final localNodeRepo = InMemoryLocalNodeRepository(nodeId: localNode);
           final timePort = InMemoryTimePort();
@@ -911,7 +911,7 @@ void main() {
         test(
           'ignores LocalNodeRepository clock state without TimePort',
           () async {
-            // Category B: pre-seeds localNodeRepo before create() runs.
+            // pre-seeds localNodeRepo before create() runs.
             final localNodeRepo = InMemoryLocalNodeRepository(
               nodeId: localNode,
             );
@@ -928,7 +928,7 @@ void main() {
 
       group('round-trip persistence', () {
         test('clock survives across coordinator creates', () async {
-          // Category C: shares repositories across two sequential creates.
+          // shares repositories across two sequential creates.
           final bus = InMemoryMessageBus();
           final channelRepo = InMemoryChannelRepository();
           final entryRepo = InMemoryEntryRepository();

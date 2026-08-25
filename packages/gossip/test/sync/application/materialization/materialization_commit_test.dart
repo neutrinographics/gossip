@@ -193,7 +193,9 @@ void main() {
     );
   });
 
-  test('full rebuild: a failed save leaves prior state visible', () async {
+  test('full rebuild: a failed save throws to the fold\'s awaiter and leaves '
+      'the materializer uninitialized, so a later read throws too instead of '
+      'returning stale state', () async {
     // Arrange: an initialized materializer at state S0 (one entry folded),
     // then make the next save throw.
     final repo = InMemoryEntryRepository();

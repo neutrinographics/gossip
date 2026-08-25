@@ -341,5 +341,129 @@ void main() {
         engine.stop();
       },
     );
+
+    test('a stale scheduling failure alongside a live loop does not wedge '
+        'reactive push either', () async {
+      // The sibling test above pins the LIVE case: a failure that stops
+      // the loop (`_scheduler.isRunning == false` when onSchedulingError
+      // runs) must bump `_pushGeneration`. GenerationScheduler also
+      // invokes onSchedulingError for a STALE failure — one from a
+      // generation a restart has already superseded — and that path is
+      // the opposite: `_scheduler.isRunning` reads true (the restart's
+      // own loop is genuinely live), so the fix must NOT bump. An
+      // unconditional bump would invalidate the live loop's own
+      // in-flight debounce for no reason, wedging a write that never
+      // had anything go wrong with it.
+      //
+      // Delay-call ordering on the shared `timePort`:
+      //   call #1 — the round loop's delay from the first engine.start().
+      //             Scripted to fail. Its rejection is a Future.error
+      //             completed synchronously inside delay(), but Dart
+      //             never runs a Future's callbacks synchronously — so
+      //             it stays unprocessed until the next microtask
+      //             boundary, which is after calls #2 and #3 below.
+      //   call #2 — the round loop's delay from the restart's
+      //             engine.start(), issued synchronously right after
+      //             stop(). Real; this is the "live loop" the stale
+      //             call #1 must not disturb.
+      //   call #3 — notifyLocalWrite's debounce for a write issued
+      //             synchronously right after the restart, before call
+      //             #1's rejection has had a chance to run. Real.
+      // Only once all three calls are in flight does pumpEventQueue let
+      // call #1's rejection process — by then generation 1 is stale and
+      // the loop from call #2 is already the live one.
+      final timePort = ScriptedDelayTimePort(failDelayCalls: {1});
+      final localNode = NodeId('local');
+      final peerId = NodeId('peer');
+      final peerRegistry = PeerRegistry(localNode: localNode)
+        ..addPeer(peerId, occurredAt: DateTime.now());
+      final bus = InMemoryMessageBus();
+      final peerPort = InMemoryMessagePort(peerId, bus);
+      final codec = SyncMessageCodec();
+      final errors = <SyncError>[];
+      final channelId = ChannelId('ch1');
+      final streamId = StreamId('s1');
+
+      final engine = GossipEngine(
+        codec: codec,
+        localNode: localNode,
+        peerDirectory: MembershipPeerDirectory(peerRegistry),
+        entryRepository: InMemoryEntryRepository(),
+        timePort: timePort,
+        messagePort: InMemoryMessagePort(localNode, bus),
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+        onError: errors.add,
+        gossipInterval: const Duration(milliseconds: 100),
+      );
+
+      final received = <dynamic>[];
+      final sub = peerPort.incoming.listen(
+        (msg) => received.add(codec.decode(msg.bytes)),
+      );
+
+      // call #1 (scripted to fail, but not processed until a microtask
+      // boundary — see the ordering note above).
+      engine.start();
+      // call #2 (real): stop()/start() synchronously, before call #1's
+      // rejection is processed, so the restart's generation is already
+      // current by the time it runs.
+      engine.stop();
+      engine.start();
+      // call #3 (real debounce), also issued before call #1 resolves —
+      // this write's captured push generation must survive the stale
+      // failure below untouched.
+      engine.notifyLocalWrite(
+        channelId,
+        streamId,
+        LogEntry(
+          author: localNode,
+          sequence: 1,
+          timestamp: Hlc(1000, 0),
+          payload: Uint8List.fromList([0x01]),
+        ),
+      );
+
+      // Let call #1's stale rejection process.
+      await pumpEventQueue();
+
+      expect(
+        errors,
+        isNotEmpty,
+        reason:
+            'GenerationScheduler reports onSchedulingError for a stale '
+            'failure too, even though it does not act on it',
+      );
+      expect(
+        engine.isRunning,
+        isTrue,
+        reason:
+            'a stale scheduling failure must not stop the live loop the '
+            'restart established',
+      );
+
+      // Past the 150ms debounce window (generous enough to also cover
+      // the restarted round loop's own jittered delay, same as the
+      // sibling test).
+      await timePort.advance(const Duration(milliseconds: 250));
+      await pumpUntil(
+        () => received.whereType<DeltaResponse>().any(
+          (r) => r.entries.any((e) => e.sequence == 1),
+        ),
+        describe: 'the write reaching the peer despite the stale failure',
+      );
+
+      expect(
+        received.whereType<DeltaResponse>().any(
+          (r) => r.entries.any((e) => e.sequence == 1),
+        ),
+        isTrue,
+        reason:
+            'a stale scheduling failure must not wedge reactive push for '
+            'a write the live loop was never actually broken for',
+      );
+
+      await sub.cancel();
+      engine.stop();
+    });
   });
 }
