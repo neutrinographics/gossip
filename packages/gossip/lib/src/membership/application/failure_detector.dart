@@ -269,6 +269,11 @@ class FailureDetector {
   void clearProbingHold(NodeId peerId) => _selector.clearProbingHold(peerId);
 
   /// Returns true if the peer currently has an active probing hold.
+  ///
+  /// Coordinator never reads this back — it only sets/clears holds — so
+  /// production code has no caller; kept public solely for tests to assert
+  /// hold state directly.
+  @visibleForTesting
   bool hasProbingHold(NodeId peerId) => _selector.hasProbingHold(peerId);
 
   /// Drops all per-peer bookkeeping for a peer that has been removed from
@@ -354,6 +359,11 @@ class FailureDetector {
   /// 3. Wait for Ack (per-peer timeout)
   /// 4. If no Ack, fall back to indirect ping
   /// 5. Check if late Ack arrived during indirect phase
+  ///
+  /// Driven internally by [_scheduler]'s tick — production code never calls
+  /// this directly. Kept public only so tests can force a round
+  /// synchronously instead of waiting on the timer.
+  @visibleForTesting
   Future<void> performProbeRound() async {
     // Periodically probe one unreachable peer for recovery.
     if (unreachableProbeInterval > 0) {
@@ -474,10 +484,16 @@ class FailureDetector {
       _selector.nextProbeTarget(freshnessWindow: effectiveProbeInterval);
 
   // ---------------------------------------------------------------------------
-  // Public API: message handlers (public for testing)
+  // Public API: message handlers
   // ---------------------------------------------------------------------------
+  //
+  // Production traffic reaches these only through _handleIncomingMessage;
+  // each is public solely so tests can drive it directly. The
+  // @visibleForTesting annotation on each now enforces (via the analyzer)
+  // what this banner used to only ask of callers.
 
   /// Handles incoming Ping by returning Ack with matching sequence.
+  @visibleForTesting
   Ack handlePing(Ping ping) {
     return Ack(sender: localNode, sequence: ping.sequence);
   }
@@ -493,6 +509,7 @@ class FailureDetector {
   /// direct and indirect acks arrive for the same probe, or (c) a
   /// forwarded ack races with a direct ack. The peer contact timestamp
   /// is still updated regardless.
+  @visibleForTesting
   void handleAck(Ack ack, {required int timestampMs}) {
     _recordPeerContact(ack.sender, timestampMs);
 
@@ -519,6 +536,7 @@ class FailureDetector {
   }
 
   /// Records a failed probe attempt for a peer.
+  @visibleForTesting
   void recordProbeFailure(NodeId peerId) {
     peerRegistry.incrementFailedProbeCount(peerId);
   }
@@ -532,7 +550,8 @@ class FailureDetector {
   /// when the peer responds. SWIM incarnation/refutation is deliberately not
   /// implemented: this deployment relies on the transport's fast membership
   /// oracle and per-contact recovery instead.
-  void checkPeerHealth(NodeId peerId, {required DateTime occurredAt}) {
+  @visibleForTesting
+  void updatePeerHealth(NodeId peerId, {required DateTime occurredAt}) {
     final peer = peerRegistry.getPeer(peerId);
     if (peer == null) return;
 
@@ -642,7 +661,7 @@ class FailureDetector {
       'pings sent: $_pingsSent, acks received: $_acksReceived)',
     );
     recordProbeFailure(target);
-    checkPeerHealth(target, occurredAt: DateTime.now());
+    updatePeerHealth(target, occurredAt: DateTime.now());
   }
 
   // ---------------------------------------------------------------------------

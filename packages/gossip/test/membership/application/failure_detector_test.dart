@@ -482,7 +482,7 @@ void main() {
       for (var i = 0; i < 3; i++) {
         h.detector.recordProbeFailure(peer.id);
       }
-      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
+      h.detector.updatePeerHealth(peer.id, occurredAt: DateTime.now());
 
       expect(
         h.peerRegistry.getPeer(peer.id)!.status,
@@ -496,7 +496,7 @@ void main() {
 
       h.detector.recordProbeFailure(peer.id);
       h.detector.recordProbeFailure(peer.id);
-      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
+      h.detector.updatePeerHealth(peer.id, occurredAt: DateTime.now());
 
       final info = h.peerRegistry.getPeer(peer.id)!;
       expect(info.status, equals(PeerStatus.reachable));
@@ -510,14 +510,14 @@ void main() {
       for (var i = 0; i < 3; i++) {
         h.detector.recordProbeFailure(peer.id);
       }
-      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
+      h.detector.updatePeerHealth(peer.id, occurredAt: DateTime.now());
       expect(
         h.peerRegistry.getPeer(peer.id)!.status,
         equals(PeerStatus.suspected),
       );
 
       h.detector.recordProbeFailure(peer.id);
-      h.detector.checkPeerHealth(peer.id, occurredAt: DateTime.now());
+      h.detector.updatePeerHealth(peer.id, occurredAt: DateTime.now());
       expect(
         h.peerRegistry.getPeer(peer.id)!.status,
         equals(PeerStatus.suspected),
@@ -655,7 +655,10 @@ void main() {
 
     test('no-ops for unknown peer', () {
       final h = FailureDetectorTestHarness();
-      h.detector.checkPeerHealth(NodeId('unknown'), occurredAt: DateTime.now());
+      h.detector.updatePeerHealth(
+        NodeId('unknown'),
+        occurredAt: DateTime.now(),
+      );
     });
 
     test('suspected peer recovers when it responds to probe', () async {
