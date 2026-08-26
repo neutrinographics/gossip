@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:math';
 import 'dart:typed_data';
 
+import 'package:meta/meta.dart';
+
 import 'package:gossip/src/shared/domain/value_objects/log_level.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/services/duration_clamp.dart';
@@ -11,6 +13,7 @@ import 'package:gossip/src/shared/domain/services/rtt_tracker.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/membership/domain/entities/peer.dart';
+import 'package:gossip/src/membership/domain/services/probe_target_selector.dart';
 import 'package:gossip/src/membership/domain/services/probe_timing_policy.dart';
 import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
@@ -114,6 +117,13 @@ class FailureDetector {
   /// quiescence pacer. See [ProbeTimingPolicy] for why this is a
   /// separate object rather than fields here.
   late final ProbeTimingPolicy _timing;
+
+  /// Owns probe-target selection policy (CC5-2/CC5-14): round-robin peer
+  /// selection, indirect-ping intermediary picks, the unreachable-peer
+  /// recovery cursor, and the probing-hold grace period. See
+  /// [ProbeTargetSelector] for why this is a separate object rather than
+  /// fields here.
+  late final ProbeTargetSelector _selector;
   final Random _random;
 
   /// Codec for serializing/deserializing this context's (membership's)
@@ -153,6 +163,13 @@ class FailureDetector {
       staticPingTimeout: pingTimeout,
       staticProbeInterval: probeInterval,
     );
+    // Shares this same Random instance (not a fresh one) — seeded-test
+    // determinism depends on every draw coming from one generator.
+    _selector = ProbeTargetSelector(
+      peerRegistry: peerRegistry,
+      timePort: timePort,
+      random: _random,
+    );
     _scheduler = GenerationScheduler(
       timePort: timePort,
       // ±20% jitter decorrelates probe loops across nodes so they don't
@@ -191,17 +208,6 @@ class FailureDetector {
   /// out the grace period for a late direct Ack.
   static const int _indirectProbeFanout = 3;
 
-  /// Hard cap on how long freshness alone may suppress a probe: 4× the
-  /// 30 s ceiling, so freshness alone can never suppress a probe for more
-  /// than 2 minutes. Freshness-only suppression (below) keys on INBOUND
-  /// evidence — under asymmetric one-way loss (our probes to a peer die,
-  /// but the peer's own traffic to us, e.g. its own unreachable-probing of
-  /// us, keeps arriving) that inbound evidence never stops, so we would
-  /// never probe the peer and never detect the failure. This bounds
-  /// half-open detection instead of suppressing forever. Not configurable —
-  /// no new knobs.
-  static const Duration _maxProbeSuppression = Duration(minutes: 2);
-
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
@@ -215,90 +221,33 @@ class FailureDetector {
 
   int _nextSequence = 1;
   int _unreachableProbeCounter = 0;
-  int _unreachableProbeIndex = 0;
-
-  /// Shuffled round-robin order for main probe selection, with a cursor.
-  ///
-  /// Rebuilt (reshuffled) from the current probable set whenever the cursor
-  /// exhausts it. This guarantees every probable peer is probed once per
-  /// cycle — worst-case time-to-probe a specific peer is ~(n-1) rounds —
-  /// instead of pure-random selection's geometric coverage (which makes
-  /// SWIM detection latency scale O(n · threshold)). Ids no longer probable
-  /// (removed, held, gone unreachable) are skipped; newly probable peers
-  /// join at the next reshuffle.
-  final List<NodeId> _probeOrder = [];
-  int _probeOrderIndex = 0;
   StreamSubscription<IncomingMessage>? _messageSubscription;
   final Map<int, _PendingPing> _pendingPings = {};
   int _acksReceived = 0;
   int _pingsSent = 0;
 
-  /// Tracks peers that are temporarily held from failure detection probing.
-  ///
-  /// Key: peer NodeId, Value: timestamp (ms since epoch) until which the
-  /// peer should be excluded from probe selection.
-  ///
-  /// This is a protocol-layer concern: newly connected peers get a grace
-  /// period before being subject to failure detection, preventing false
-  /// positives during connection establishment.
-  final Map<NodeId, int> _probingHeldUntil = {};
-
-  /// Timestamp (ms since epoch) of the last time we actually sent this peer
-  /// a probe Ping — via [performProbeRound], [probeNewPeer], or
-  /// [_probeUnreachablePeer] (all funnel through [_sendPing]). Distinct from
-  /// [Peer.lastContactMs] (inbound evidence only): this tracks our own
-  /// outbound attempts, so [selectRandomPeer] can bound how long freshness
-  /// alone may suppress a peer (see [_maxProbeSuppression]).
-  ///
-  /// A missing entry means "never probed" — on a real device `nowMs` is a
-  /// huge wall-clock epoch reading, so treating a missing entry as 0 makes
-  /// a never-probed peer immediately cap-expired (probe-eligible), matching
-  /// cold-start expectations.
-  final Map<NodeId, int> _lastProbeAttemptMs = {};
-
   // ---------------------------------------------------------------------------
   // Public API: probing hold (startup grace period)
   // ---------------------------------------------------------------------------
+  //
+  // Delegates to _selector — see ProbeTargetSelector for the semantics.
+  // Kept public here (rather than routing callers through _selector
+  // directly) because Coordinator, the composition root, only ever sees
+  // the detector.
 
   /// Sets a probing hold for a peer until the given timestamp.
-  ///
-  /// The peer will be excluded from failure detection probing until
-  /// [holdUntilMs] is reached. This provides a grace period for newly
-  /// connected peers while the transport layer stabilizes.
-  ///
-  /// Call [clearProbingHold] to remove the hold early (e.g., when
-  /// [probeNewPeer] confirms connectivity).
-  void setProbingHold(NodeId peerId, int holdUntilMs) {
-    _probingHeldUntil[peerId] = holdUntilMs;
-  }
+  void setProbingHold(NodeId peerId, int holdUntilMs) =>
+      _selector.setProbingHold(peerId, holdUntilMs);
 
   /// Clears any probing hold for a peer, making them eligible for probing.
-  ///
-  /// Typically called when [probeNewPeer] succeeds, confirming the peer
-  /// is reachable and the transport layer is working.
-  void clearProbingHold(NodeId peerId) {
-    _probingHeldUntil.remove(peerId);
-  }
+  void clearProbingHold(NodeId peerId) => _selector.clearProbingHold(peerId);
 
   /// Returns true if the peer currently has an active probing hold.
-  bool hasProbingHold(NodeId peerId) {
-    final holdUntil = _probingHeldUntil[peerId];
-    if (holdUntil == null) return false;
-    return timePort.nowMs < holdUntil;
-  }
+  bool hasProbingHold(NodeId peerId) => _selector.hasProbingHold(peerId);
 
   /// Drops all per-peer bookkeeping for a peer that has been removed from
   /// the system entirely.
-  ///
-  /// Unlike [clearProbingHold] — which is also called when [probeNewPeer]
-  /// merely *confirms* connectivity, and so must not touch probe-attempt
-  /// history — this is for actual removal: the peer is gone, so its
-  /// probing hold and its [_maxProbeSuppression] tracking are both moot
-  /// and would otherwise accumulate under peer churn.
-  void forgetPeer(NodeId peerId) {
-    _probingHeldUntil.remove(peerId);
-    _lastProbeAttemptMs.remove(peerId);
-  }
+  void forgetPeer(NodeId peerId) => _selector.forgetPeer(peerId);
 
   // ---------------------------------------------------------------------------
   // Public API: adaptive timing
@@ -390,7 +339,9 @@ class FailureDetector {
     }
 
     // Regular probe round: select reachable or suspected peer.
-    final peer = selectRandomPeer();
+    final peer = _selector.nextProbeTarget(
+      freshnessWindow: effectiveProbeInterval,
+    );
     if (peer == null) {
       // Nothing needs probing (empty registry or everyone fresh) —
       // that is quiescence, not a stall.
@@ -482,13 +433,8 @@ class FailureDetector {
   /// Ack, [handleAck] → [_recordPeerContact] → [PeerRegistry.updatePeerContact]
   /// transitions it back to reachable.
   Future<void> _probeUnreachablePeer() async {
-    final unreachable = peerRegistry.unreachablePeers;
-    if (unreachable.isEmpty) return;
-
-    // Round-robin: wrap index if peers changed since last probe.
-    _unreachableProbeIndex = _unreachableProbeIndex % unreachable.length;
-    final peer = unreachable[_unreachableProbeIndex];
-    _unreachableProbeIndex = (_unreachableProbeIndex + 1) % unreachable.length;
+    final peer = _selector.nextUnreachableTarget();
+    if (peer == null) return;
 
     _log('Probing unreachable peer ${peer.id} (best-effort recovery)');
 
@@ -530,63 +476,12 @@ class FailureDetector {
     }
   }
 
-  /// Selects the next peer to probe (reachable or suspected), round-robin
-  /// over a shuffled order.
-  ///
-  /// Includes suspected peers so they can recover by responding to probes.
-  /// Peers with an active probing hold are excluded to prevent false
-  /// positives during connection startup.
-  ///
-  /// Selection cycles through a shuffled permutation of the probable set:
-  /// every peer is probed exactly once per cycle, then the set is
-  /// reshuffled. This bounds the worst-case time to probe a specific
-  /// (e.g. silently-dead) peer to ~(n-1) rounds — pure-random selection
-  /// would give a geometric distribution with a long tail, the root of
-  /// H3's O(n · threshold) detection latency.
-  Peer? selectRandomPeer() {
-    final nowMs = timePort.nowMs;
-    final intervalMs = effectiveProbeInterval.inMilliseconds;
-    final maxSuppressionMs = _maxProbeSuppression.inMilliseconds;
-    final probable = peerRegistry.probablePeers.where((p) {
-      final holdUntil = _probingHeldUntil[p.id];
-      if (holdUntil != null && nowMs < holdUntil) return false;
-      // Suppression (WIRE4-3): any inbound message already proved this
-      // peer alive within the current interval — a probe adds nothing.
-      final isFresh = nowMs - p.lastContactMs < intervalMs;
-      if (!isFresh) return true;
-      // Cap: freshness alone keys on INBOUND evidence, which
-      // under asymmetric one-way loss can be perpetually refreshed by the
-      // peer's own traffic (e.g. it probing us) even though OUR probes to
-      // IT are the ones dying — suppressing forever and never detecting
-      // the failure. Bound it: a peer we haven't actually probed in
-      // _maxProbeSuppression is probe-eligible regardless of freshness.
-      // A missing entry (never probed) reads as 0, so on a real device
-      // (huge wall-clock nowMs) a brand-new peer is immediately eligible —
-      // consistent with cold start.
-      final lastAttempt = _lastProbeAttemptMs[p.id] ?? 0;
-      final capExpired = nowMs - lastAttempt >= maxSuppressionMs;
-      return capExpired;
-    }).toList();
-    if (probable.isEmpty) return null;
-
-    final byId = {for (final p in probable) p.id: p};
-
-    // Advance the cursor, skipping ids that are no longer probable
-    // (removed / held / gone unreachable since the last reshuffle).
-    while (_probeOrderIndex < _probeOrder.length) {
-      final peer = byId[_probeOrder[_probeOrderIndex++]];
-      if (peer != null) return peer;
-    }
-
-    // Cycle exhausted (or first call / membership changed): reshuffle the
-    // current probable set and begin a fresh cycle.
-    _probeOrder
-      ..clear()
-      ..addAll(byId.keys)
-      ..shuffle(_random);
-    _probeOrderIndex = 0;
-    return byId[_probeOrder[_probeOrderIndex++]];
-  }
+  /// Exposes [ProbeTargetSelector.nextProbeTarget] (with this detector's
+  /// current [effectiveProbeInterval] as its freshness window) for tests —
+  /// production code reaches it only through [performProbeRound].
+  @visibleForTesting
+  Peer? nextProbeTarget() =>
+      _selector.nextProbeTarget(freshnessWindow: effectiveProbeInterval);
 
   // ---------------------------------------------------------------------------
   // Public API: message handlers (public for testing)
@@ -711,7 +606,7 @@ class FailureDetector {
   /// target. When no intermediaries are available (2-device scenario),
   /// waits for a grace period to allow late Acks to arrive.
   Future<bool> _performIndirectPing(NodeId target) async {
-    final intermediaries = _selectRandomIntermediaries(
+    final intermediaries = _selector.selectIntermediaries(
       target,
       _indirectProbeFanout,
     );
@@ -941,7 +836,7 @@ class FailureDetector {
     // clock. Deliberately NOT used by the PingReq intermediary
     // role (_handlePingReq sends its relay Ping directly via _safeSend):
     // relaying on someone else's behalf isn't our own scheduling decision.
-    _lastProbeAttemptMs[target] = timePort.nowMs;
+    _selector.recordProbeAttempt(target, timePort.nowMs);
     _log('Sending Ping to $target seq=$sequence (pings sent: $_pingsSent)');
     final ping = Ping(sender: localNode, sequence: sequence);
     await _safeSend(target, _codec.encode(ping), 'Ping');
@@ -962,25 +857,6 @@ class FailureDetector {
 
   void _cleanupPendingPing(int sequence) {
     _pendingPings.remove(sequence);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Private: peer selection
-  // ---------------------------------------------------------------------------
-
-  List<Peer> _selectRandomIntermediaries(NodeId target, int count) {
-    final candidates = peerRegistry.reachablePeers
-        .where((p) => p.id != target)
-        .toList();
-    if (candidates.isEmpty) return [];
-
-    final numToSelect = min(count, candidates.length);
-    final selected = <Peer>[];
-    for (var i = 0; i < numToSelect; i++) {
-      final index = _random.nextInt(candidates.length);
-      selected.add(candidates.removeAt(index));
-    }
-    return selected;
   }
 
   Future<void> _sendPingRequests(

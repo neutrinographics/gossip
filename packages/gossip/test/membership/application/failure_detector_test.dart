@@ -24,16 +24,16 @@ void main() {
       expect(h.detector, isNotNull);
     });
 
-    test('selectRandomPeer returns null when no reachable peers', () {
+    test('nextProbeTarget returns null when no reachable peers', () {
       final h = FailureDetectorTestHarness();
-      expect(h.detector.selectRandomPeer(), isNull);
+      expect(h.detector.nextProbeTarget(), isNull);
     });
 
-    test('selectRandomPeer returns a reachable peer', () {
+    test('nextProbeTarget returns a reachable peer', () {
       final h = FailureDetectorTestHarness();
       final peer = h.addPeer('peer1');
 
-      final selected = h.detector.selectRandomPeer();
+      final selected = h.detector.nextProbeTarget();
       expect(selected, isNotNull);
       expect(selected!.id, equals(peer.id));
     });
@@ -52,7 +52,7 @@ void main() {
       final holdUntil = h.timePort.nowMs + 10000;
       h.detector.setProbingHold(peer.id, holdUntil);
 
-      expect(h.detector.selectRandomPeer(), isNull);
+      expect(h.detector.nextProbeTarget(), isNull);
     });
 
     test('peer becomes selectable after hold expires', () async {
@@ -63,12 +63,12 @@ void main() {
       final holdUntil = h.timePort.nowMs + 100;
       h.detector.setProbingHold(peer.id, holdUntil);
 
-      expect(h.detector.selectRandomPeer(), isNull);
+      expect(h.detector.nextProbeTarget(), isNull);
 
       // Advance past hold expiry
       await h.timePort.advance(const Duration(milliseconds: 101));
 
-      final selected = h.detector.selectRandomPeer();
+      final selected = h.detector.nextProbeTarget();
       expect(selected, isNotNull);
       expect(selected!.id, equals(peer.id));
     });
@@ -81,11 +81,11 @@ void main() {
       final holdUntil = h.timePort.nowMs + 10000;
       h.detector.setProbingHold(peer.id, holdUntil);
 
-      expect(h.detector.selectRandomPeer(), isNull);
+      expect(h.detector.nextProbeTarget(), isNull);
 
       h.detector.clearProbingHold(peer.id);
 
-      final selected = h.detector.selectRandomPeer();
+      final selected = h.detector.nextProbeTarget();
       expect(selected, isNotNull);
       expect(selected!.id, equals(peer.id));
     });
@@ -127,7 +127,7 @@ void main() {
 
       // Should always select peer2
       for (var i = 0; i < 10; i++) {
-        final selected = h.detector.selectRandomPeer();
+        final selected = h.detector.nextProbeTarget();
         expect(selected, isNotNull);
         expect(selected!.id, equals(peer2.id));
       }
@@ -140,7 +140,7 @@ void main() {
       // Should not throw
       h.detector.clearProbingHold(peer.id);
 
-      final selected = h.detector.selectRandomPeer();
+      final selected = h.detector.nextProbeTarget();
       expect(selected, isNotNull);
       expect(selected!.id, equals(peer.id));
     });
@@ -613,7 +613,7 @@ void main() {
       );
 
       // Unreachable peer should not be selectable
-      expect(h.detector.selectRandomPeer(), isNull);
+      expect(h.detector.nextProbeTarget(), isNull);
 
       h.stopListening();
     });
@@ -677,7 +677,7 @@ void main() {
       expect(suspectedPeer.failedProbeCount, equals(3));
 
       // Suspected peer is still selected for probing (via probablePeers)
-      final selected = h.detector.selectRandomPeer();
+      final selected = h.detector.nextProbeTarget();
       expect(selected, isNotNull);
       expect(selected!.id, equals(peer.id));
 
@@ -779,7 +779,7 @@ void main() {
         });
 
         // Run 3 probe rounds — unreachable probe fires on the 3rd
-        // (selectRandomPeer returns null since peer is unreachable,
+        // (nextProbeTarget returns null since peer is unreachable,
         // so only the unreachable probe mechanism sends pings)
         for (var i = 0; i < 3; i++) {
           final probeFuture = h.detector.performProbeRound();
