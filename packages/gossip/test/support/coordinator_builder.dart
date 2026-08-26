@@ -37,10 +37,20 @@ final Expando<List<SyncError>> _recordedErrors = Expando<List<SyncError>>(
 /// state survives a simulated restart. Each defaults to null, in which
 /// case the builder constructs the same fresh in-memory instance it always
 /// has — every existing call site keeps identical behavior. [nodeId] is
-/// only used to build a fresh [InMemoryLocalNodeRepository]; if a caller
-/// supplies [localNodeRepository] directly, [nodeId] is ignored and the
-/// repository's own resolved identity wins (mirrors `Coordinator.create`,
-/// which reads identity from the repository, not a separate argument).
+/// only used to build a fresh [InMemoryLocalNodeRepository]; supplying both
+/// [nodeId] and [localNodeRepository] throws [ArgumentError], since the
+/// repository's own resolved identity would silently win (mirrors
+/// `Coordinator.create`, which reads identity from the repository, not a
+/// separate argument) and a caller passing both likely believes [nodeId]
+/// took effect. One sharp edge remains unenforced: combining
+/// [localNodeRepository] with [bus] registers the message port under
+/// `'local'` regardless of the repository's resolved identity. The existing
+/// callers that combine them (`coordinator_test.dart`'s clock-state
+/// restoration tests) all use a repository resolving to `'local'`, so the
+/// edge is latent there, not exercised — a repository resolving to any
+/// other identity would silently never receive traffic. Enforcing this
+/// would break those callers, so it's left as a signpost: extend the
+/// builder before writing a test that needs a non-`'local'` identity here.
 ///
 /// This builder deliberately does *not* serve tests of
 /// `Coordinator.create`'s own constructor contract — passing a `null`
@@ -63,7 +73,7 @@ final Expando<List<SyncError>> _recordedErrors = Expando<List<SyncError>>(
 /// [onError] takes over that responsibility entirely — [recordedErrorsOf]
 /// then has nothing to return and throws.
 Future<Coordinator> createTestCoordinator({
-  String nodeId = 'local',
+  String? nodeId,
   InMemoryMessageBus? bus,
   TimePort? timePort,
   CoordinatorConfig? config,
@@ -75,7 +85,14 @@ Future<Coordinator> createTestCoordinator({
   PeerRepository? peerRepository,
   EntryRepository? entryRepository,
 }) async {
-  final localNode = NodeId(nodeId);
+  if (nodeId != null && localNodeRepository != null) {
+    throw ArgumentError(
+      'Pass either nodeId or localNodeRepository, not both: the builder '
+      'ignores nodeId when a repository is supplied (the repository\'s own '
+      'resolved identity wins, mirroring Coordinator.create).',
+    );
+  }
+  final localNode = NodeId(nodeId ?? 'local');
 
   final coordinator = await Coordinator.create(
     localNodeRepository:

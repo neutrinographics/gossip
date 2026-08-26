@@ -5,6 +5,7 @@ import 'package:gossip/src/coordinator/sync_state.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 import 'package:gossip/src/sync/domain/aggregates/channel_aggregate.dart';
@@ -36,6 +37,23 @@ void main() {
     test('nodeId overrides the default local node identity', () async {
       final coordinator = await createTestCoordinator(nodeId: 'peer-a');
       expect(coordinator.localNode, equals(NodeId('peer-a')));
+    });
+
+    test('supplying both nodeId and localNodeRepository throws '
+        'ArgumentError', () {
+      // The builder ignores nodeId when a repository is supplied (repository
+      // identity wins, mirroring Coordinator.create). A caller passing both
+      // believes nodeId took effect — reject the call instead of silently
+      // honoring only half of it.
+      expect(
+        () => createTestCoordinator(
+          nodeId: 'alice',
+          localNodeRepository: InMemoryLocalNodeRepository(
+            nodeId: NodeId('bob'),
+          ),
+        ),
+        throwsArgumentError,
+      );
     });
 
     test('bus and timePort opt the coordinator into network sync', () async {
