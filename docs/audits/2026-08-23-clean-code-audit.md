@@ -326,7 +326,7 @@ Gates: `melos run test` (gossip 1076, gossip_nearby 189, gossip_bluey 228 — al
 
 ## Remediation — Batch D follow-up (2026-08-26)
 
-Commits `af60301..056c739` + this commit, branch `cc5-batch-d-followup`. Six tasks, zero fix rounds, zero `lib/` files changed in any committed diff.
+Commits `af60301..056c739` + this commit, branch `cc5-batch-d-followup`. Six tasks: five had zero fix rounds; Task 1 took one docs-only fix round (its builder-doc caller-grounding claim was corrected). Zero `lib/` files changed in any committed diff.
 
 Items closed, from Batch D's outcome record (`docs/superpowers/plans/2026-08-24-cc5-batch-d.md`, §Batch D — outcome record):
 - **M1 → CC5-30 now fully closed:** non-empty golden fixtures extend the envelope pins to the nested payload keys the empty-collection goldens couldn't reach — `LogEntry`'s `author`/`sequence`/`timestamp{physicalMs,logical}`/base64 `payload`, `ChannelDigest`'s `{channelId,streams}`, `StreamDigest`'s `{streamId,version}`, `DeltaRequest.since`/`DeltaResponse.floor` version-vector maps.
@@ -336,7 +336,7 @@ Items closed, from Batch D's outcome record (`docs/superpowers/plans/2026-08-24-
 - **M7:** the storage-usage pin is now the literal `112`, independent of `LogEntry.sizeBytes`'s formula.
 - **M8:** the fourth hand-rolled detector setup now states why it stays hand-rolled — the harness builds its own `PeerRegistry` and exposes no `onEvent` seam.
 
-**Suite count:** 1076 → 1081 (+1 builder-guard test, +4 nested-payload goldens; M2/M3/M5 left the count level). No tests deleted.
+**Suite count:** 1076 → 1081 (+1 builder-guard test, +4 nested-payload goldens; M3/M5/M7 left the count level). No tests deleted.
 
 **Mutation proofs run:** `protocolError`→`messageCorrupted` at the engine's stream-error emission; a message-string swap at the HLC-persist emission; `52`→`60` in `LogEntry.sizeBytes`; `'author'`→`'a'` on both codec sides — for the last two, the *old* assertions (the formula mirror; the round-trip tests) were verified to stay green under the mutant, exactly the co-drift/mirror defect class these closures remove. Reviews reproduced proofs independently (the wire-golden reviewer re-ran the codec mutant; the M3 reviewer re-verified vacuity per site).
 
