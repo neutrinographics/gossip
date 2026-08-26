@@ -7,11 +7,11 @@ import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/services/duration_clamp.dart';
 import 'package:gossip/src/shared/domain/services/generation_scheduler.dart';
 import 'package:gossip/src/shared/domain/services/jitter.dart';
-import 'package:gossip/src/shared/domain/services/quiescence_pacer.dart';
 import 'package:gossip/src/shared/domain/services/rtt_tracker.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/membership/domain/entities/peer.dart';
+import 'package:gossip/src/membership/domain/services/probe_timing_policy.dart';
 import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_port.dart';
@@ -107,16 +107,13 @@ class FailureDetector {
   final ErrorCallback? onError;
   final LogCallback? onLog;
 
-  final Duration _pingTimeout;
-  final Duration _probeInterval;
   final RttTracker _rttTracker;
 
-  /// Whether a static ping timeout / probe interval was supplied. Tracked
-  /// independently: passing one static knob must NOT disable adaptive
-  /// timing on the other (a static `probeInterval` must not pin the ping
-  /// timeout at its 500ms fallback — the ADR-013 regression).
-  final bool _staticPingTimeoutProvided;
-  final bool _staticProbeIntervalProvided;
+  /// Owns the ping-timeout / probe-interval policy (CC5-13): static vs.
+  /// adaptive per knob, the 3x-timeout interval formula, and the
+  /// quiescence pacer. See [ProbeTimingPolicy] for why this is a
+  /// separate object rather than fields here.
+  late final ProbeTimingPolicy _timing;
   final Random _random;
 
   /// Codec for serializing/deserializing this context's (membership's)
@@ -148,12 +145,14 @@ class FailureDetector {
     Random? random,
     RttTracker? rttTracker,
   }) : _codec = codec,
-       _pingTimeout = pingTimeout ?? const Duration(milliseconds: 500),
-       _probeInterval = probeInterval ?? const Duration(milliseconds: 1000),
        _random = random ?? Random(),
-       _rttTracker = rttTracker ?? RttTracker(),
-       _staticPingTimeoutProvided = pingTimeout != null,
-       _staticProbeIntervalProvided = probeInterval != null {
+       _rttTracker = rttTracker ?? RttTracker() {
+    _timing = ProbeTimingPolicy(
+      peerRegistry: peerRegistry,
+      rttTracker: _rttTracker,
+      staticPingTimeout: pingTimeout,
+      staticProbeInterval: probeInterval,
+    );
     _scheduler = GenerationScheduler(
       timePort: timePort,
       // ±20% jitter decorrelates probe loops across nodes so they don't
@@ -187,12 +186,6 @@ class FailureDetector {
   // Constants
   // ---------------------------------------------------------------------------
 
-  static const Duration _minPingTimeout = Duration(milliseconds: 500);
-  static const Duration _maxPingTimeout = Duration(seconds: 10);
-  static const Duration _minProbeInterval = Duration(milliseconds: 500);
-  static const Duration _maxProbeInterval = Duration(seconds: 30);
-  static const int _probeIntervalMultiplier = 3;
-
   /// SWIM's k: number of intermediaries asked to relay a ping when a
   /// direct probe times out, before falling back to (or alongside) waiting
   /// out the grace period for a late direct Ack.
@@ -212,14 +205,6 @@ class FailureDetector {
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
-
-  /// Two-tier pacing for the probe loop (spec 2026-08-20).
-  ///
-  /// Independent from GossipEngine's pacer instance: each protocol loop
-  /// paces its own cadence toward its own ceiling. All-healthy rounds
-  /// stretch [effectiveProbeInterval] toward [_maxProbeInterval]; a full
-  /// miss or a membership change (new peer, recovery) snaps it back.
-  final QuiescencePacer _pacer = QuiescencePacer(ceiling: _maxProbeInterval);
 
   /// Drives the periodic probe round loop: computes each tick's delay
   /// (jittered [effectiveProbeInterval]), runs [performProbeRound], and
@@ -323,51 +308,18 @@ class FailureDetector {
 
   RttTracker get rttTracker => _rttTracker;
 
-  /// Effective ping timeout from global RTT estimate.
-  ///
-  /// Falls back to static timeout if one was provided at construction.
-  Duration get effectivePingTimeout {
-    if (_staticPingTimeoutProvided) return _pingTimeout;
-    return _rttTracker.suggestedTimeout(
-      minTimeout: _minPingTimeout,
-      maxTimeout: _maxPingTimeout,
-    );
-  }
+  /// Effective ping timeout. Delegates to [_timing] — see
+  /// [ProbeTimingPolicy.effectivePingTimeout].
+  Duration get effectivePingTimeout => _timing.effectivePingTimeout;
 
-  /// Per-peer ping timeout, falling back to global estimate.
-  ///
-  /// Uses the peer's own RTT estimate if available, otherwise uses the
-  /// global [effectivePingTimeout]. This lets fast peers use shorter
-  /// timeouts while slow peers get longer ones.
-  Duration effectivePingTimeoutForPeer(NodeId peerId) {
-    if (_staticPingTimeoutProvided) return _pingTimeout;
-    final peerRtt = peerRegistry.getPeer(peerId)?.metrics.rttEstimate;
-    if (peerRtt != null) {
-      return peerRtt.suggestedTimeout(
-        minTimeout: _minPingTimeout,
-        maxTimeout: _maxPingTimeout,
-      );
-    }
-    return effectivePingTimeout;
-  }
+  /// Per-peer ping timeout. Delegates to [_timing] — see
+  /// [ProbeTimingPolicy.effectivePingTimeoutForPeer].
+  Duration effectivePingTimeoutForPeer(NodeId peerId) =>
+      _timing.effectivePingTimeoutForPeer(peerId);
 
-  /// Effective probe interval (time between probe rounds).
-  ///
-  /// Computed as 3× the effective ping timeout to allow time for both
-  /// direct and indirect probes within each interval, then paced: quiet
-  /// (all-answered) rounds stretch this toward [_maxProbeInterval]; a miss
-  /// or membership change snaps it back to the formula's raw value. A
-  /// static override bypasses the pacer entirely.
-  Duration get effectiveProbeInterval {
-    if (_staticProbeIntervalProvided) return _probeInterval;
-    final baseInterval = effectivePingTimeout * _probeIntervalMultiplier;
-    final clampedBase = clampDuration(
-      baseInterval,
-      min: _minProbeInterval,
-      max: _maxProbeInterval,
-    );
-    return _pacer.apply(clampedBase);
-  }
+  /// Effective probe interval (time between probe rounds). Delegates to
+  /// [_timing] — see [ProbeTimingPolicy.effectiveProbeInterval].
+  Duration get effectiveProbeInterval => _timing.effectiveProbeInterval;
 
   // ---------------------------------------------------------------------------
   // Public API: lifecycle
@@ -377,7 +329,7 @@ class FailureDetector {
   void start() {
     if (_scheduler.isRunning) return;
     // A restart is news — never resume mid-backoff into a stale world.
-    _pacer.news();
+    _timing.news();
     _scheduler.start();
   }
 
@@ -442,7 +394,7 @@ class FailureDetector {
     if (peer == null) {
       // Nothing needs probing (empty registry or everyone fresh) —
       // that is quiescence, not a stall.
-      if (peerRegistry.probablePeers.isNotEmpty) _pacer.quietRound();
+      if (peerRegistry.probablePeers.isNotEmpty) _timing.quietRound();
       return;
     }
 
@@ -468,7 +420,7 @@ class FailureDetector {
         // it self-corrects, since the next quiet round continues growing
         // from wherever this landed, and the next real news() resets it
         // to 1 regardless.
-        _pacer.quietRound();
+        _timing.quietRound();
       }
     } finally {
       // Always drop the pending entry — a throw above must not leave a
@@ -486,7 +438,7 @@ class FailureDetector {
   /// Called fire-and-forget from Coordinator.addPeer() to get the first
   /// RTT sample quickly instead of waiting for random probe selection.
   Future<bool> probeNewPeer(NodeId peerId) async {
-    _pacer.news();
+    _timing.news();
     final peer = peerRegistry.getPeer(peerId);
     if (peer == null) return false;
 
@@ -747,7 +699,7 @@ class FailureDetector {
       // intermediaries stays suspected forever (excluded from gossip,
       // never unreachable, never recovered).
       _recordPeerContact(target, timePort.nowMs);
-      _pacer.quietRound();
+      _timing.quietRound();
       return;
     }
     _handleProbeFailure(target);
@@ -786,7 +738,7 @@ class FailureDetector {
   }
 
   void _handleProbeFailure(NodeId target) {
-    _pacer.news();
+    _timing.news();
     final peer = peerRegistry.getPeer(target);
     final failedCount = peer?.failedProbeCount ?? 0;
     _log(
@@ -1085,7 +1037,7 @@ class FailureDetector {
     peerRegistry.updatePeerContact(peerId, timestampMs);
 
     if (oldStatus != null && oldStatus != PeerStatus.reachable) {
-      _pacer.news();
+      _timing.news();
       _log(
         'Peer $peerId transitioning to REACHABLE '
         '(was: ${oldStatus.name}, '
