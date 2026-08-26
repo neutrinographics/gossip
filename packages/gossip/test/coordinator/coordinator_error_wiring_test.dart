@@ -33,7 +33,6 @@ void main() {
         describe: 'the ChannelSyncError reaching coordinator.errors',
       );
 
-      expect(errors, isNotEmpty, reason: 'error should reach the app');
       expect(errors.first, isA<ChannelSyncError>());
 
       await sub.cancel();

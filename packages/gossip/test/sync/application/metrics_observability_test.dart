@@ -120,8 +120,14 @@ void main() {
       );
 
       expect(
-        errors,
-        isNotEmpty,
+        errors.first,
+        isA<StorageSyncError>()
+            .having((e) => e.type, 'type', SyncErrorType.storageFailure)
+            .having(
+              (e) => e.message,
+              'message',
+              contains('Failed to persist HLC clock state'),
+            ),
         reason: 'a storage failure must be logged or emitted, never silent',
       );
     });

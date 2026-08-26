@@ -135,13 +135,9 @@ void main() {
       await service.register<int>(channelId, streamId, _GatedMaterializer());
       await pumpUntil(
         () => done,
-        describe: 'the replaced state stream closing',
-      );
-
-      expect(
-        done,
-        isTrue,
-        reason: 'the replaced state must be disposed (awaited, not dropped)',
+        describe:
+            'the replaced state stream closing (the old state must be '
+            'disposed — awaited, not dropped)',
       );
       await sub.cancel();
     });

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
@@ -200,13 +201,9 @@ void main() {
       await coordinator.dispose();
       await pumpUntil(
         () => done,
-        describe: 'the materializer state stream calling onDone after dispose',
-      );
-
-      expect(
-        done,
-        isTrue,
-        reason: 'listeners must get onDone instead of leaking forever',
+        describe:
+            'the materializer state stream calling onDone after dispose '
+            '(listeners must not leak forever)',
       );
       await sub.cancel();
     });
@@ -280,11 +277,16 @@ void main() {
       );
 
       expect(
-        errors,
-        isNotEmpty,
+        errors.first,
+        isA<PeerSyncError>().having(
+          (e) => e.type,
+          'type',
+          SyncErrorType.protocolError,
+        ),
         reason:
-            'a transport error must surface via the errors stream, not '
-            'kill SWIM/gossip listening as an unhandled zone error',
+            'a transport error must surface via the errors stream as a '
+            'protocol-level error, not kill SWIM/gossip listening as an '
+            'unhandled zone error',
       );
 
       await coordinator.dispose();

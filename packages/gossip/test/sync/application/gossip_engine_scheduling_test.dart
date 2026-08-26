@@ -323,18 +323,11 @@ void main() {
           () => received.whereType<DeltaResponse>().any(
             (r) => r.entries.any((e) => e.sequence == 2),
           ),
-          describe: 'the post-restart local write reaching the peer',
-        );
-
-        expect(
-          received.whereType<DeltaResponse>().any(
-            (r) => r.entries.any((e) => e.sequence == 2),
-          ),
-          isTrue,
-          reason:
-              'a local write after a healed restart must still reach peers '
-              'via reactive push — a live scheduling failure must not '
-              'permanently wedge notifyLocalWrite',
+          describe:
+              'the post-restart local write reaching the peer (a local '
+              'write after a healed restart must still reach peers via '
+              'reactive push — a live scheduling failure must not '
+              'permanently wedge notifyLocalWrite)',
         );
 
         await sub.cancel();
@@ -449,17 +442,10 @@ void main() {
         () => received.whereType<DeltaResponse>().any(
           (r) => r.entries.any((e) => e.sequence == 1),
         ),
-        describe: 'the write reaching the peer despite the stale failure',
-      );
-
-      expect(
-        received.whereType<DeltaResponse>().any(
-          (r) => r.entries.any((e) => e.sequence == 1),
-        ),
-        isTrue,
-        reason:
-            'a stale scheduling failure must not wedge reactive push for '
-            'a write the live loop was never actually broken for',
+        describe:
+            'the write reaching the peer despite the stale failure (a '
+            'stale scheduling failure must not wedge reactive push for a '
+            'write the live loop was never actually broken for)',
       );
 
       await sub.cancel();
