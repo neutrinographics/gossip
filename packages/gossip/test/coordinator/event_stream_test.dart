@@ -47,6 +47,23 @@ class LastAuthorMaterializer extends StateMaterializer<String> {
   String fold(String state, LogEntry entry) => entry.author.value;
 }
 
+// Probe materializer that records whether the fold engine ever reached it —
+// used to observe resetState's stream-existence guard from outside the
+// materialization service (which has no other externally visible signal
+// for "did a rebuild happen").
+class _RecordingMaterializer extends StateMaterializer<int> {
+  int initialCallCount = 0;
+
+  @override
+  (int, String?) initial({required bool isReset}) {
+    initialCallCount++;
+    return (0, null);
+  }
+
+  @override
+  int fold(int state, LogEntry entry) => state + 1;
+}
+
 void main() {
   group('EventStream', () {
     late ChannelId channelId;
@@ -307,6 +324,33 @@ void main() {
           // getState should return null
           final state = await facade.getState<int>();
           expect(state, isNull);
+        },
+      );
+
+      test(
+        'resetState is a no-op when stream does not exist (mirrors getState)',
+        () async {
+          // Create facade for non-existent stream
+          final nonExistentStreamId = StreamId('nonexistent');
+          final facade = EventStream(
+            id: nonExistentStreamId,
+            channelId: channelId,
+            channelService: channelService,
+          );
+
+          // A materializer can be registered against a stream id that
+          // doesn't exist in the channel yet (see the test above) — so
+          // resetState must check existence itself rather than relying on
+          // "nothing registered" to make it a no-op.
+          final materializer = _RecordingMaterializer();
+          await facade.registerMaterializer(materializer);
+
+          await facade.resetState();
+
+          // If resetState reached the materialization service, the full
+          // rebuild path would have called initial(isReset: true) at least
+          // once.
+          expect(materializer.initialCallCount, equals(0));
         },
       );
     });

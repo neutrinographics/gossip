@@ -188,40 +188,6 @@ void main() {
       });
     });
 
-    group('reset', () {
-      test('resets to initial estimate', () {
-        final tracker = RttTracker();
-
-        tracker.recordSample(const Duration(milliseconds: 100));
-        tracker.recordSample(const Duration(milliseconds: 150));
-
-        tracker.reset();
-
-        expect(
-          tracker.estimate.smoothedRtt,
-          equals(const Duration(milliseconds: 500)),
-        );
-        expect(tracker.sampleCount, equals(0));
-        expect(tracker.hasReceivedSamples, isFalse);
-      });
-
-      test('resets to custom initial estimate', () {
-        final initialEstimate = RttEstimate(
-          smoothedRtt: const Duration(milliseconds: 500),
-          rttVariance: const Duration(milliseconds: 100),
-        );
-        final tracker = RttTracker(initialEstimate: initialEstimate);
-
-        tracker.recordSample(const Duration(milliseconds: 100));
-        tracker.reset();
-
-        expect(
-          tracker.estimate.smoothedRtt,
-          equals(const Duration(milliseconds: 500)),
-        );
-      });
-    });
-
     group('convergence', () {
       test('converges to stable RTT over many samples', () {
         final tracker = RttTracker();

@@ -1171,15 +1171,6 @@ class GossipEngine {
     return handleDigestRequest(request, requestedChannels);
   }
 
-  /// Selects a random reachable peer for gossip.
-  ///
-  /// Delegates to [PeerDirectory.selectRandomPartner].
-  ///
-  /// Returns null if no reachable peers exist.
-  SyncPartner? selectRandomPeer() {
-    return peerDirectory.selectRandomPartner(_random);
-  }
-
   /// Generates a digest (version vector summary) for a channel.
   ///
   /// Creates a compact representation of sync state by computing version

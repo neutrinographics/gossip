@@ -38,9 +38,6 @@ class RttTracker {
   /// Maximum RTT sample value (reasonable upper limit).
   static const Duration maxSample = Duration(seconds: 30);
 
-  /// The initial estimate to use when reset.
-  final RttEstimate _initialEstimate;
-
   /// Current RTT estimate.
   RttEstimate _estimate;
 
@@ -52,8 +49,7 @@ class RttTracker {
   /// If no initial estimate is provided, see [RttEstimate.initial] for the
   /// cold-start defaults.
   RttTracker({RttEstimate? initialEstimate})
-    : _initialEstimate = initialEstimate ?? RttEstimate.initial(),
-      _estimate = initialEstimate ?? RttEstimate.initial();
+    : _estimate = initialEstimate ?? RttEstimate.initial();
 
   /// Current RTT estimate.
   RttEstimate get estimate => _estimate;
@@ -64,7 +60,7 @@ class RttTracker {
   /// Current RTT variance.
   Duration get rttVariance => _estimate.rttVariance;
 
-  /// Number of samples recorded since creation or last reset.
+  /// Number of samples recorded since creation.
   int get sampleCount => _sampleCount;
 
   /// Whether any samples have been recorded.
@@ -107,13 +103,5 @@ class RttTracker {
       return _estimate.suggestedTimeout(maxTimeout: maxTimeout);
     }
     return _estimate.suggestedTimeout();
-  }
-
-  /// Resets the tracker to its initial state.
-  ///
-  /// Clears all samples and restores the initial estimate.
-  void reset() {
-    _estimate = _initialEstimate;
-    _sampleCount = 0;
   }
 }

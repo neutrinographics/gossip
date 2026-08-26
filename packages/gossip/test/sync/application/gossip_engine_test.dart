@@ -57,32 +57,6 @@ void main() {
       expect(engine.localNode, equals(localNode));
     });
 
-    test('selectRandomPeer returns null when no reachable peers', () {
-      final localNode = NodeId('local');
-      final registry = PeerRegistry(localNode: localNode);
-      final entryRepo = InMemoryEntryRepository();
-      final engine = createEngine(localNode, registry, entryRepo);
-
-      final peer = engine.selectRandomPeer();
-
-      expect(peer, isNull);
-    });
-
-    test('selectRandomPeer returns a reachable peer', () {
-      final localNode = NodeId('local');
-      final registry = PeerRegistry(localNode: localNode);
-      final peerId = NodeId('peer-1');
-      registry.addPeer(peerId, occurredAt: DateTime.now());
-
-      final entryRepo = InMemoryEntryRepository();
-      final engine = createEngine(localNode, registry, entryRepo);
-
-      final peer = engine.selectRandomPeer();
-
-      expect(peer, isNotNull);
-      expect(peer!.nodeId, equals(peerId));
-    });
-
     test('generateDigest creates digest for channel with no streams', () async {
       final localNode = NodeId('local');
       final registry = PeerRegistry(localNode: localNode);
