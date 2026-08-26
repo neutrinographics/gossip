@@ -590,10 +590,12 @@ class ChannelService {
   /// [registerMaterializer]), so "nothing registered" isn't a reliable
   /// signal that there's nothing to rebuild.
   Future<void> resetState(ChannelId channelId, StreamId streamId) async {
+    if (_materializationService == null) return;
+
     final streamExists = await hasStream(channelId, streamId);
     if (!streamExists) return;
 
-    await _materializationService?.reset(channelId, streamId);
+    await _materializationService.reset(channelId, streamId);
   }
 
   /// Removes specific entries from a stream during compaction.

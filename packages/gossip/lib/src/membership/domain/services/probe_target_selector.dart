@@ -192,10 +192,8 @@ class ProbeTargetSelector {
   }
 
   /// Round-robins over [PeerRegistry.unreachablePeers], returning the next
-  /// target for periodic recovery probing (breaks mutual-unreachable
-  /// deadlocks where both sides have marked each other unreachable and
-  /// neither sends messages). Returns null when there are no unreachable
-  /// peers.
+  /// target for periodic recovery probing. Returns null when there are no
+  /// unreachable peers.
   ///
   /// Wraps the cursor into range first, so index drift from membership
   /// changes (a peer recovering or being removed) since the last call

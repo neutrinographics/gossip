@@ -22,15 +22,16 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 /// scattered across the detector's construction, constants, and getters.
 class ProbeTimingPolicy {
   ProbeTimingPolicy({
-    required this.peerRegistry,
+    required PeerRegistry peerRegistry,
     required RttTracker rttTracker,
     Duration? staticPingTimeout,
     Duration? staticProbeInterval,
-  }) : _rttTracker = rttTracker,
+  }) : _peerRegistry = peerRegistry,
+       _rttTracker = rttTracker,
        _staticPingTimeout = staticPingTimeout,
        _staticProbeInterval = staticProbeInterval;
 
-  final PeerRegistry peerRegistry;
+  final PeerRegistry _peerRegistry;
   final RttTracker _rttTracker;
 
   /// A caller-supplied fixed ping timeout, or null for the adaptive
@@ -61,10 +62,9 @@ class ProbeTimingPolicy {
   /// [news].
   final QuiescencePacer _pacer = QuiescencePacer(ceiling: _maxProbeInterval);
 
-  /// Effective ping timeout from the global RTT estimate.
-  ///
-  /// Falls back to [_staticPingTimeout] if one was supplied at
-  /// construction.
+  /// Effective ping timeout: [_staticPingTimeout] if one was supplied at
+  /// construction, otherwise the adaptive estimate from the global RTT
+  /// tracker.
   Duration get effectivePingTimeout {
     if (_staticPingTimeout != null) return _staticPingTimeout;
     return _rttTracker.suggestedTimeout(
@@ -80,7 +80,7 @@ class ProbeTimingPolicy {
   /// timeouts while slow peers get longer ones.
   Duration effectivePingTimeoutForPeer(NodeId peerId) {
     if (_staticPingTimeout != null) return _staticPingTimeout;
-    final peerRtt = peerRegistry.getPeer(peerId)?.metrics.rttEstimate;
+    final peerRtt = _peerRegistry.getPeer(peerId)?.metrics.rttEstimate;
     if (peerRtt != null) {
       return peerRtt.suggestedTimeout(
         minTimeout: _minPingTimeout,

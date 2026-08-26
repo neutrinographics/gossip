@@ -59,11 +59,12 @@ class _PendingPing {
 /// The classification [FailureDetector._probe] returns for one probe
 /// attempt (direct leg plus indirect fallback).
 ///
-/// Split into three "alive" cases rather than one, even though most
-/// callers fold [aliveIndirect] and [aliveLateDirect] back together, so
-/// [FailureDetector.performProbeRound] can single out the late-direct-Ack
-/// case for its own diagnostic logging without [FailureDetector._probe]
-/// having to know which caller is asking.
+/// Split into three "alive" cases rather than one so [FailureDetector._probe]
+/// can log the late-direct-Ack race distinctly at the point it detects it —
+/// even though every caller ([FailureDetector.performProbeRound] and
+/// [FailureDetector._probeUnreachablePeer]) folds [aliveIndirect] and
+/// [aliveLateDirect] back together when deciding what to do about the
+/// outcome.
 enum _ProbeOutcome {
   /// The target's own Ack answered the direct Ping before its timeout.
   aliveDirect,

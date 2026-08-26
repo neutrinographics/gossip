@@ -45,7 +45,6 @@ void main() {
           rttVariance: const Duration(milliseconds: 5),
         ),
       );
-      rttTracker.recordSample(const Duration(milliseconds: 20));
       final policy = ProbeTimingPolicy(
         peerRegistry: peerRegistry,
         rttTracker: rttTracker,
@@ -65,7 +64,6 @@ void main() {
           rttVariance: const Duration(seconds: 3),
         ),
       );
-      rttTracker.recordSample(const Duration(seconds: 5));
       final policy = ProbeTimingPolicy(
         peerRegistry: peerRegistry,
         rttTracker: rttTracker,
