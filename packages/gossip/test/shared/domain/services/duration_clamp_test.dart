@@ -1,7 +1,7 @@
 import 'package:gossip/src/shared/domain/services/duration_clamp.dart';
 import 'package:test/test.dart';
 
-/// L2: one clamp for the whole library — the audit found three hand-rolled
+/// CC5-42/CC5-43: one clamp for the whole library — the audit found three hand-rolled
 /// styles for the same "keep a Duration inside [min, max]" operation.
 void main() {
   group('clampDuration', () {

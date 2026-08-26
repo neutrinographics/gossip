@@ -92,7 +92,7 @@ enum _ProbeOutcome {
 /// ## Protocol Flow
 ///
 /// **Probe Round (adaptive interval)**:
-/// 1. Select random reachable peer
+/// 1. Select the next probe target (round-robin over probable peers — see ProbeTargetSelector)
 /// 2. Send direct Ping
 /// 3. Wait for Ack (per-peer RTT-adaptive timeout)
 /// 4. If no Ack, initiate indirect ping via intermediaries
@@ -355,7 +355,7 @@ class FailureDetector {
 
   /// Performs a single probe round.
   ///
-  /// 1. Select random reachable peer
+  /// 1. Select the next probe target (round-robin over probable peers — see ProbeTargetSelector)
   /// 2. Send direct Ping
   /// 3. Wait for Ack (per-peer timeout)
   /// 4. If no Ack, fall back to indirect ping
