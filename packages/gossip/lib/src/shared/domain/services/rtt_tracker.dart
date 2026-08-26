@@ -1,3 +1,4 @@
+import 'package:gossip/src/shared/domain/services/duration_clamp.dart';
 import 'package:gossip/src/shared/domain/value_objects/rtt_estimate.dart';
 
 /// Domain service for tracking Round-Trip Time measurements.
@@ -32,10 +33,10 @@ import 'package:gossip/src/shared/domain/value_objects/rtt_estimate.dart';
 /// (see ADR-001).
 class RttTracker {
   /// Minimum RTT sample value (network physics floor).
-  static const Duration _minSample = Duration(milliseconds: 50);
+  static const Duration minSample = Duration(milliseconds: 50);
 
   /// Maximum RTT sample value (reasonable upper limit).
-  static const Duration _maxSample = Duration(seconds: 30);
+  static const Duration maxSample = Duration(seconds: 30);
 
   /// The initial estimate to use when reset.
   final RttEstimate _initialEstimate;
@@ -71,7 +72,7 @@ class RttTracker {
 
   /// Records an RTT sample and updates the estimate.
   ///
-  /// The sample is clamped to [_minSample, _maxSample] to prevent
+  /// The sample is clamped to [minSample, maxSample] to prevent
   /// extreme values from destabilizing the estimate.
   ///
   /// Negative samples are ignored (likely measurement errors).
@@ -88,11 +89,8 @@ class RttTracker {
   }
 
   /// Clamps sample to valid range.
-  Duration _clampSample(Duration sample) {
-    if (sample < _minSample) return _minSample;
-    if (sample > _maxSample) return _maxSample;
-    return sample;
-  }
+  Duration _clampSample(Duration sample) =>
+      clampDuration(sample, min: minSample, max: maxSample);
 
   /// Returns the suggested timeout based on current RTT estimate.
   ///

@@ -4,6 +4,7 @@ import 'dart:typed_data';
 
 import 'package:gossip/src/shared/domain/value_objects/log_level.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
+import 'package:gossip/src/shared/domain/services/duration_clamp.dart';
 import 'package:gossip/src/shared/domain/services/generation_scheduler.dart';
 import 'package:gossip/src/shared/domain/services/jitter.dart';
 import 'package:gossip/src/shared/domain/services/quiescence_pacer.dart';
@@ -360,9 +361,11 @@ class FailureDetector {
   Duration get effectiveProbeInterval {
     if (_staticProbeIntervalProvided) return _probeInterval;
     final baseInterval = effectivePingTimeout * _probeIntervalMultiplier;
-    final clampedBase = baseInterval < _minProbeInterval
-        ? _minProbeInterval
-        : (baseInterval > _maxProbeInterval ? _maxProbeInterval : baseInterval);
+    final clampedBase = clampDuration(
+      baseInterval,
+      min: _minProbeInterval,
+      max: _maxProbeInterval,
+    );
     return _pacer.apply(clampedBase);
   }
 
@@ -934,20 +937,16 @@ class FailureDetector {
   /// numbers so every Ack is unambiguously matched. Recording all samples
   /// lets the EWMA adapt upward when latency increases, preventing a
   /// survivorship bias where only fast samples feed the estimate.
-  /// Clamp bounds for RTT samples, mirroring [RttTracker]'s internal
-  /// clamping so the per-peer estimates get the same protection against
-  /// wall-clock jumps and sub-physical readings.
-  static const Duration _minRttSample = Duration(milliseconds: 50);
-  static const Duration _maxRttSample = Duration(seconds: 30);
-
   void _recordRtt(_PendingPing pending, NodeId ackSender, int timestampMs) {
     final rttMs = timestampMs - pending.sentAtMs;
 
     if (rttMs <= 0) return;
 
-    var rttSample = Duration(milliseconds: rttMs);
-    if (rttSample < _minRttSample) rttSample = _minRttSample;
-    if (rttSample > _maxRttSample) rttSample = _maxRttSample;
+    final rttSample = clampDuration(
+      Duration(milliseconds: rttMs),
+      min: RttTracker.minSample,
+      max: RttTracker.maxSample,
+    );
 
     _rttTracker.recordSample(rttSample);
     // A forwarded Ack (indirect phase) measures the 2-hop path
