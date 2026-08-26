@@ -196,6 +196,7 @@ void main() {
         (_) {},
         onDone: () => done = true,
       );
+      addTearDown(sub.cancel);
 
       // Dispose is the act under test — not builder-teardown cleanup.
       await coordinator.dispose();
@@ -205,7 +206,6 @@ void main() {
             'the materializer state stream calling onDone after dispose '
             '(listeners must not leak forever)',
       );
-      await sub.cancel();
     });
   });
 
@@ -267,6 +267,7 @@ void main() {
         messagePort: port,
         timerPort: InMemoryTimePort(),
       );
+      addTearDown(coordinator.dispose);
       coordinator.errors.listen(errors.add);
       await coordinator.start();
 
@@ -289,7 +290,6 @@ void main() {
             'unhandled zone error',
       );
 
-      await coordinator.dispose();
       await controller.close();
     });
   });

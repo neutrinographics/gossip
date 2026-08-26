@@ -131,6 +131,7 @@ void main() {
       final sub = service
           .getStateStream<int>(channelId, streamId)!
           .listen((_) {}, onDone: () => done = true);
+      addTearDown(sub.cancel);
 
       await service.register<int>(channelId, streamId, _GatedMaterializer());
       await pumpUntil(
@@ -139,7 +140,6 @@ void main() {
             'the replaced state stream closing (the old state must be '
             'disposed — awaited, not dropped)',
       );
-      await sub.cancel();
     });
   });
 }

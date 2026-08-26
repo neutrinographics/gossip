@@ -363,6 +363,7 @@ void main() {
         pingTimeout: const Duration(milliseconds: 500),
         random: Random(2),
       );
+      addTearDown(h.stopListening);
       final target = h.addPeer('target');
       final intermediary = h.addPeer('intermediary');
 
@@ -374,6 +375,7 @@ void main() {
         final decoded = h.codec.decode(msg.bytes);
         if (decoded is Ping) targetPing = decoded;
       });
+      addTearDown(targetSub.cancel);
       final intermediarySub = intermediary.port.incoming.listen((msg) {
         final decoded = h.codec.decode(msg.bytes);
         if (decoded is PingReq) {
@@ -383,6 +385,7 @@ void main() {
           intermediary.port.send(h.localNode, h.codec.encode(ack));
         }
       });
+      addTearDown(intermediarySub.cancel);
 
       final probeRoundFuture = h.detector.performProbeRound();
       await h.flush();
@@ -410,10 +413,6 @@ void main() {
         reason: 'Indirect Ack from intermediary should prevent probe failure',
       );
       expect(probed.status, equals(PeerStatus.reachable));
-
-      await intermediarySub.cancel();
-      await targetSub.cancel();
-      h.stopListening();
     });
 
     test('performProbeRound with no peers returns immediately', () async {
