@@ -67,10 +67,7 @@ void main() {
     });
 
     test('calculates storage bytes across all channels and streams', () async {
-      final entryRepo = InMemoryEntryRepository();
-      final coordinator = await createTestCoordinator(
-        entryRepository: entryRepo,
-      );
+      final coordinator = await createTestCoordinator();
 
       final channel1Id = ChannelId('channel1');
       final stream1Id = StreamId('stream1');
@@ -88,15 +85,11 @@ void main() {
 
       final usage = await coordinator.getResourceUsage();
 
-      // Independently sum each stream's bytes from the repository so this
-      // pins the actual total, not just "some positive number" — it would
-      // fail if the coordinator only summed one channel's streams.
-      final expectedBytes =
-          await entryRepo.sizeBytes(channel1Id, stream1Id) +
-          await entryRepo.sizeBytes(channel2Id, stream2Id);
-
-      expect(usage.totalStorageBytes, equals(expectedBytes));
-      expect(usage.totalStorageBytes, greaterThan(0));
+      // 52-byte per-entry overhead + payload length (LogEntry.sizeBytes — the
+      // documented storage-quota heuristic). A literal, not a call into the
+      // same repository the production path sums: if it mirrored the formula,
+      // a bug in the formula would cancel out of both sides. (52+3)+(52+5).
+      expect(usage.totalStorageBytes, equals(112));
     });
   });
 
