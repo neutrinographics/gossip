@@ -321,3 +321,23 @@ Commits `10db7b5..d9d0c7e` on branch `cc5-batch-d`. Ten tasks (D2 split into a/b
 **Suite count:** 1059 → 1076.
 
 Gates: `melos run test` (gossip 1076, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages) both pass as of `d9d0c7e`; `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
+
+---
+
+## Remediation — Batch D follow-up (2026-08-26)
+
+Commits `af60301..056c739` + this commit, branch `cc5-batch-d-followup`. Six tasks, zero fix rounds, zero `lib/` files changed in any committed diff.
+
+Items closed, from Batch D's outcome record (`docs/superpowers/plans/2026-08-24-cc5-batch-d.md`, §Batch D — outcome record):
+- **M1 → CC5-30 now fully closed:** non-empty golden fixtures extend the envelope pins to the nested payload keys the empty-collection goldens couldn't reach — `LogEntry`'s `author`/`sequence`/`timestamp{physicalMs,logical}`/base64 `payload`, `ChannelDigest`'s `{channelId,streams}`, `StreamDigest`'s `{streamId,version}`, `DeltaRequest.since`/`DeltaResponse.floor` version-vector maps.
+- **M2:** the builder rejects `nodeId` alongside `localNodeRepository` via `ArgumentError` + message — chosen over the outcome record's assert suggestion for unconditional (release-mode) enforcement.
+- **M3:** six vacuous pins deleted with the static vacuity argument per site; two strengthened to typed pins (`PeerSyncError`/`protocolError`; `StorageSyncError`/`storageFailure` + message).
+- **M5:** cleanup registered at construction at both named sites, plus trailing `sub.cancel()`s in the tests touched along the way.
+- **M7:** the storage-usage pin is now the literal `112`, independent of `LogEntry.sizeBytes`'s formula.
+- **M8:** the fourth hand-rolled detector setup now states why it stays hand-rolled — the harness builds its own `PeerRegistry` and exposes no `onEvent` seam.
+
+**Suite count:** 1076 → 1081 (+1 builder-guard test, +4 nested-payload goldens; M2/M3/M5 left the count level). No tests deleted.
+
+**Mutation proofs run:** `protocolError`→`messageCorrupted` at the engine's stream-error emission; a message-string swap at the HLC-persist emission; `52`→`60` in `LogEntry.sizeBytes`; `'author'`→`'a'` on both codec sides — for the last two, the *old* assertions (the formula mirror; the round-trip tests) were verified to stay green under the mutant, exactly the co-drift/mirror defect class these closures remove. Reviews reproduced proofs independently (the wire-golden reviewer re-ran the codec mutant; the M3 reviewer re-verified vacuity per site).
+
+Gates: `melos run test` (gossip 1081, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages); `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
