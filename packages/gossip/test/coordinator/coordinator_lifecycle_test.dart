@@ -277,6 +277,11 @@ void main() {
         describe: 'the transport stream error reaching coordinator.errors',
       );
 
+      // GossipEngine and FailureDetector both listen on this same broadcast
+      // stream, so this one error deterministically reaches errors twice —
+      // but the two PeerSyncErrors are byte-identical (same peer/type/
+      // message/cause) with nothing to attribute either to its listener, so
+      // only the shape is pinned below rather than a count.
       expect(
         errors.first,
         isA<PeerSyncError>().having(
