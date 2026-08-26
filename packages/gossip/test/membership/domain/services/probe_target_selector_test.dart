@@ -123,14 +123,21 @@ void main() {
       // Prime a cycle so the cursor holds a shuffled order.
       selector.nextProbeTarget(freshnessWindow: Duration.zero);
 
-      // Peer goes unreachable mid-cycle — no longer in probablePeers.
+      // Under seed 3, the shuffle is [peer1, peer0, peer2, peer3] and the
+      // priming call above already consumed peer1 — so the cursor now
+      // sits on peer0 (ids[0]). It must be *that* id — not just any id —
+      // that goes unreachable: only the id actually under the cursor
+      // exercises the skip-and-advance branch below; marking an
+      // already-consumed or not-yet-reached id unreachable would let this
+      // assertion pass on the eligibility filter alone, never touching the
+      // cursor-skip loop.
       peerRegistry.updatePeerStatus(
-        ids[1],
+        ids[0],
         PeerStatus.suspected,
         occurredAt: DateTime.now(),
       );
       peerRegistry.updatePeerStatus(
-        ids[1],
+        ids[0],
         PeerStatus.unreachable,
         occurredAt: DateTime.now(),
       );
@@ -141,7 +148,7 @@ void main() {
           selector.nextProbeTarget(freshnessWindow: Duration.zero)!.id,
         );
       }
-      expect(selected, isNot(contains(ids[1])));
+      expect(selected, isNot(contains(ids[0])));
     });
   });
 
