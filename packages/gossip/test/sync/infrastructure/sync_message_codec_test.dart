@@ -462,6 +462,104 @@ void main() {
           equals({'sender', 'channelId', 'streamId', 'entries', 'hasMore'}),
         );
       });
+
+      test('DigestRequest nested digest encodes channelId/streams/streamId/'
+          'version with version-vector entries as author→seq', () {
+        final request = DigestRequest(
+          sender: NodeId('peer1'),
+          digests: [
+            ChannelDigest(
+              channelId: ChannelId('ch1'),
+              streams: [
+                StreamDigest(
+                  streamId: StreamId('s1'),
+                  version: VersionVector({NodeId('peer1'): 5}),
+                ),
+              ],
+            ),
+          ],
+        );
+
+        final json = jsonOf(codec.encode(request));
+        final digest = (json['digests'] as List).single as Map<String, dynamic>;
+        expect(digest.keys.toSet(), equals({'channelId', 'streams'}));
+        final stream =
+            (digest['streams'] as List).single as Map<String, dynamic>;
+        expect(stream.keys.toSet(), equals({'streamId', 'version'}));
+        expect(stream['version'], equals({'peer1': 5}));
+      });
+
+      test('DigestResponse nested digest uses the same wire shape as '
+          'DigestRequest', () {
+        final response = DigestResponse(
+          sender: NodeId('peer1'),
+          digests: [
+            ChannelDigest(
+              channelId: ChannelId('ch1'),
+              streams: [
+                StreamDigest(
+                  streamId: StreamId('s1'),
+                  version: VersionVector({NodeId('peer1'): 5}),
+                ),
+              ],
+            ),
+          ],
+        );
+
+        final json = jsonOf(codec.encode(response));
+        final digest = (json['digests'] as List).single as Map<String, dynamic>;
+        expect(digest.keys.toSet(), equals({'channelId', 'streams'}));
+        final stream =
+            (digest['streams'] as List).single as Map<String, dynamic>;
+        expect(stream.keys.toSet(), equals({'streamId', 'version'}));
+        expect(stream['version'], equals({'peer1': 5}));
+      });
+
+      test(
+        'DeltaRequest since encodes as a version-vector map of author→seq',
+        () {
+          final request = DeltaRequest(
+            sender: NodeId('peer1'),
+            channelId: ChannelId('ch1'),
+            streamId: StreamId('s1'),
+            since: VersionVector({NodeId('peer1'): 3, NodeId('peer2'): 7}),
+          );
+
+          final json = jsonOf(codec.encode(request));
+          expect(json['since'], equals({'peer1': 3, 'peer2': 7}));
+        },
+      );
+
+      test('DeltaResponse entry encodes author/sequence/timestamp/payload with '
+          'an Hlc timestamp object and base64 payload; a non-empty floor '
+          'encodes as a version-vector map', () {
+        final response = DeltaResponse(
+          sender: NodeId('peer2'),
+          channelId: ChannelId('ch1'),
+          streamId: StreamId('s1'),
+          entries: [
+            LogEntry(
+              author: NodeId('peer1'),
+              sequence: 1,
+              timestamp: Hlc(1000, 2),
+              payload: Uint8List.fromList([1, 2, 3]),
+            ),
+          ],
+          floor: VersionVector({NodeId('peer1'): 3}),
+        );
+
+        final json = jsonOf(codec.encode(response));
+        final entry = (json['entries'] as List).single as Map<String, dynamic>;
+        expect(
+          entry.keys.toSet(),
+          equals({'author', 'sequence', 'timestamp', 'payload'}),
+        );
+        expect(entry['author'], equals('peer1'));
+        expect(entry['sequence'], equals(1));
+        expect(entry['timestamp'], equals({'physicalMs': 1000, 'logical': 2}));
+        expect(entry['payload'], equals('AQID')); // base64 of [1, 2, 3]
+        expect(json['floor'], equals({'peer1': 3}));
+      });
     });
 
     group('byte-budget helpers', () {
