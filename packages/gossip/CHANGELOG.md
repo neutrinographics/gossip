@@ -56,7 +56,14 @@ publish under the existing pub.dev `gossip` name must version above the old
   with the `const` keyword — both constructors now validate their
   argument (a non-negative `maxAge`, a non-empty `policies` list), and a
   value-dependent guard is incompatible with const invocation in Dart.
-  Construct them without `const`.
+  Construct them without `const`. That validation is a runtime
+  `ArgumentError`, not `assert` — `assert` is stripped from release/AOT
+  builds, which would otherwise let a negative `maxAge` or an empty
+  `policies` list through silently and prune every entry on the next
+  compaction. `CountBasedRetention` keeps its `const` constructor and
+  `assert`: a negative count still fails loudly at `compact()` time in
+  every build mode, via `List.take`'s own unconditional `RangeError`, so
+  there is no silent-data-loss gap for a runtime throw to close there.
 - `CompactionResult.noChange` removed (unused; construct a
   `CompactionResult` directly with zero counts if a caller ever needs
   one).
@@ -78,6 +85,13 @@ publish under the existing pub.dev `gossip` name must version above the old
 - `InMemoryTimePort.advance()` now fires each periodic callback once per
   interval boundary the elapsed time crosses (previously fired every
   periodic callback once per `advance()` call, ignoring the interval).
+  Overdue boundaries fire in global deadline order across every live
+  timer, not one timer's boundaries exhausted before another's are even
+  considered, so a callback that cancels or reschedules another timer
+  takes effect on the very next boundary. Each timer's boundary is
+  advanced before its callback runs, so a callback that throws still
+  consumes that boundary instead of leaving the timer stuck retrying the
+  same overdue one on every later `advance()` call.
   `schedulePeriodic` rejects a non-positive interval with `ArgumentError`
   instead of registering a timer `advance()` could never reach.
 - `VersionVector` now copies its constructor argument and normalizes

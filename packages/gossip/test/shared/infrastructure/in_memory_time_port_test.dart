@@ -1,6 +1,7 @@
 // ignore_for_file: deprecated_member_use_from_same_package -- this file exercises tick()'s own contract, which advance() doesn't cover.
 import 'package:test/test.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
+import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 
 void main() {
   group('InMemoryTimePort', () {
@@ -243,6 +244,98 @@ void main() {
           expect(callCount, equals(1));
         },
       );
+
+      test('a throwing callback still consumes its boundary — a later '
+          'advance() reaches the NEXT boundary rather than retrying the '
+          'same overdue one forever (a callback exception must not be able '
+          'to wedge the timer)', () async {
+        final timer = InMemoryTimePort();
+        var callCount = 0;
+        var shouldThrow = true;
+
+        timer.schedulePeriodic(Duration(milliseconds: 100), () {
+          callCount++;
+          if (shouldThrow) {
+            shouldThrow = false;
+            throw StateError('boom');
+          }
+        });
+
+        // First boundary (100ms): the callback throws. advance() must
+        // propagate that error to the caller...
+        await expectLater(
+          () => timer.advance(Duration(milliseconds: 100)),
+          throwsA(isA<StateError>()),
+        );
+        expect(callCount, equals(1));
+
+        // ...but the 100ms boundary must already be consumed by the
+        // time the error propagates. A bug that only advances the
+        // boundary *after* a successful callback call would leave the
+        // timer stuck at 100ms forever: this next advance() would fire
+        // the SAME (100ms) boundary again instead of the next one
+        // (200ms), and callCount would still read 1 rather than 2.
+        await timer.advance(Duration(milliseconds: 100));
+        expect(callCount, equals(2));
+      });
+
+      test('advance() fires overdue boundaries in global deadline order '
+          'across all live timers, rather than exhausting one timer\'s '
+          'boundaries before considering another\'s', () async {
+        final timer = InMemoryTimePort();
+        final fireOrder = <String>[];
+        late final TimerHandle handleA;
+
+        // A's boundaries (100, 200, 300) all fall within the 300ms
+        // advance below. B fires once at 150ms and cancels A right
+        // there — strictly between A's first (100ms) and second
+        // (200ms) boundaries. Correct global-deadline-order firing
+        // must interleave A and B by boundary time, so A's
+        // cancellation takes effect before its second boundary is
+        // ever considered: A fires exactly once, not three times.
+        // (A per-timer loop that exhausts A's boundaries — 100, 200,
+        // 300 — before ever giving B a turn would fire A three times
+        // regardless of B's cancellation, because the cancellation
+        // arrives too late to matter.)
+        //
+        // B is never cancelled, so its own two boundaries within the
+        // 300ms window (150 and 300) both fire — that count is
+        // orthogonal to A's cancellation and to this fix.
+        handleA = timer.schedulePeriodic(Duration(milliseconds: 100), () {
+          fireOrder.add('A');
+        });
+        timer.schedulePeriodic(Duration(milliseconds: 150), () {
+          fireOrder.add('B');
+          handleA.cancel();
+        });
+
+        await timer.advance(Duration(milliseconds: 300));
+
+        expect(fireOrder, equals(['A', 'B', 'B']));
+      });
+
+      test('a timer cancelled mid-advance by an earlier-deadline timer never '
+          'fires, even though it was registered first (deadline order '
+          'governs selection, not registration order)', () async {
+        final timer = InMemoryTimePort();
+        var victimCallCount = 0;
+        late final TimerHandle victimHandle;
+
+        // Registered FIRST but with the LATER deadline (100ms).
+        victimHandle = timer.schedulePeriodic(Duration(milliseconds: 100), () {
+          victimCallCount++;
+        });
+        // Registered SECOND but with the EARLIER deadline (50ms) — the
+        // canceller must still be selected first, strictly before the
+        // victim's first boundary is ever considered.
+        timer.schedulePeriodic(Duration(milliseconds: 50), () {
+          victimHandle.cancel();
+        });
+
+        await timer.advance(Duration(milliseconds: 300));
+
+        expect(victimCallCount, equals(0));
+      });
     });
   });
 }

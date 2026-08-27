@@ -158,10 +158,13 @@ void main() {
     });
 
     group('constructor guards', () {
-      test('TimeBasedRetention rejects a negative maxAge', () {
+      test('TimeBasedRetention rejects a negative maxAge with ArgumentError, '
+          'not assert — asserts are stripped from release/AOT builds, so a '
+          'value-dependent guard can only survive there as an unconditional '
+          'runtime throw', () {
         expect(
           () => TimeBasedRetention(const Duration(seconds: -1)),
-          throwsA(isA<AssertionError>()),
+          throwsArgumentError,
         );
       });
 
@@ -170,15 +173,23 @@ void main() {
         expect(const CountBasedRetention(0).maxEntriesPerAuthor, equals(0));
       });
 
-      test('CountBasedRetention rejects a negative maxEntriesPerAuthor', () {
-        expect(() => CountBasedRetention(-1), throwsA(isA<AssertionError>()));
-      });
+      test(
+        'CountBasedRetention rejects a negative maxEntriesPerAuthor at '
+        'construction — kept as assert (unlike TimeBasedRetention and '
+        'CompositeRetention): a negative count still fails loudly at '
+        'compact() time in every build mode, because List.take raises its '
+        'own unconditional RangeError, so the assert-stripped-in-release '
+        'gap that motivates converting the other two does not apply here',
+        () {
+          expect(() => CountBasedRetention(-1), throwsA(isA<AssertionError>()));
+        },
+      );
 
-      test('CompositeRetention rejects an empty policy list', () {
-        expect(
-          () => CompositeRetention(const []),
-          throwsA(isA<AssertionError>()),
-        );
+      test('CompositeRetention rejects an empty policy list with '
+          'ArgumentError, not assert — asserts are stripped from '
+          'release/AOT builds, so a value-dependent guard can only survive '
+          'there as an unconditional runtime throw', () {
+        expect(() => CompositeRetention(const []), throwsArgumentError);
       });
     });
 

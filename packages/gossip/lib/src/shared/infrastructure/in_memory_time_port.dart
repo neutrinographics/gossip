@@ -124,12 +124,20 @@ class InMemoryTimePort implements TimePort {
   /// This method:
   /// 1. Advances [nowMs] by the duration
   /// 2. Completes any pending [delay] futures whose deadlines have passed
-  /// 3. Fires each periodic timer once per interval boundary the advance
-  ///    crosses — advancing by exactly `n × interval` fires that timer `n`
-  ///    times (never once per [advance] call regardless of the timer's own
-  ///    interval), matching what a real [Timer.periodic] would produce over
-  ///    that much wall-clock time. Sub-interval advances that don't reach
-  ///    the next boundary fire zero times but still count toward it.
+  /// 3. Fires every overdue periodic-timer boundary, one boundary per
+  ///    firing, in GLOBAL deadline order across all live timers (ties break
+  ///    by registration order) — never exhausting one timer's boundaries
+  ///    before another is even considered. Advancing by exactly
+  ///    `n × interval` fires an uncancelled timer `n` times total (never
+  ///    once per [advance] call regardless of the timer's own interval),
+  ///    matching what independently-firing real [Timer.periodic]s would
+  ///    produce over that much wall-clock time. Sub-interval advances that
+  ///    don't reach the next boundary fire zero times but still count
+  ///    toward it. Each timer's boundary is advanced *before* its callback
+  ///    runs, so a callback that throws still consumes that boundary —
+  ///    [advance] propagates the exception, but the timer resumes at its
+  ///    next boundary on a later call rather than retrying the same
+  ///    overdue one forever.
   ///
   /// ```dart
   /// // Advance 500ms - any delay(Duration(milliseconds: 500)) will complete,
@@ -149,18 +157,43 @@ class InMemoryTimePort implements TimePort {
     }
     _pendingDelays.removeWhere((p) => completed.contains(p));
 
-    // Fire each periodic timer once per interval boundary crossed by this
-    // advance. Snapshot the ids first: a callback may cancel its own timer
-    // (or another's) or schedule a new one, and neither should disturb this
-    // loop — a newly-scheduled timer's first boundary is always in the
-    // future relative to _nowMs, so it can't fire within this same advance.
-    for (final id in List<int>.from(_timers.keys)) {
-      while (true) {
-        final timer = _timers[id];
-        if (timer == null || timer.nextFireAtMs > _nowMs) break;
-        timer.callback();
-        timer.nextFireAtMs += timer.intervalMs;
+    // Fire every overdue boundary in global deadline order — across ALL
+    // live timers, not one timer exhausted fully before the next is even
+    // considered. A callback that cancels another timer (or registers a
+    // new one) must be able to preempt boundaries that haven't fired yet,
+    // which a per-timer-first loop cannot honor. Re-scan _timers fresh on
+    // every iteration (rather than snapshotting ids up front) precisely so
+    // cancellations and new registrations made by a callback are visible
+    // to the next selection.
+    //
+    // Ties (equal boundaries) fall to the earlier-registered timer: _timers
+    // preserves insertion order, and the scan below keeps the first
+    // minimum it finds (strict `<`, not `<=`).
+    //
+    // A newly-scheduled timer's first boundary is always strictly after
+    // _nowMs (schedulePeriodic seeds it at `_nowMs + interval`), so a
+    // timer registered by a callback mid-advance can never fire within
+    // this same advance() call — no special-casing needed for that case.
+    while (true) {
+      int? dueId;
+      int? dueAtMs;
+      for (final entry in _timers.entries) {
+        final nextFireAtMs = entry.value.nextFireAtMs;
+        if (nextFireAtMs > _nowMs) continue;
+        if (dueAtMs == null || nextFireAtMs < dueAtMs) {
+          dueId = entry.key;
+          dueAtMs = nextFireAtMs;
+        }
       }
+      if (dueId == null) break;
+
+      final timer = _timers[dueId]!;
+      // Advance the boundary BEFORE invoking the callback: if the
+      // callback throws, the boundary must already be consumed —
+      // otherwise this timer would stay stuck at the same overdue
+      // boundary and re-fire it on every later advance() forever.
+      timer.nextFireAtMs += timer.intervalMs;
+      timer.callback();
     }
 
     // Allow microtasks to run (important for async code to proceed)
