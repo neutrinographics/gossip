@@ -5,8 +5,8 @@ import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 
-/// Owns `GossipEngine`'s reactive-push debounce state machine (CC5-1,
-/// task F5): coalescing a burst of local writes within [_pushDebounce]
+/// Owns `GossipEngine`'s reactive-push debounce state machine (CC5-1):
+/// coalescing a burst of local writes within [_pushDebounce]
 /// into a single push, instead of one push per write.
 ///
 /// Pulled out of `GossipEngine`, which interleaved this bookkeeping with
@@ -61,7 +61,7 @@ class ReactivePusher {
   /// scheduled by a run any of those has since superseded recognizes
   /// itself as stale and does nothing. (For the pre-GenerationScheduler
   /// shared-counter design this descends from, see gossip_engine.dart's
-  /// history prior to the CC5-1 F5 extraction.)
+  /// history prior to the CC5-1 extraction.)
   int _pushGeneration = 0;
 
   /// Reactive dissemination (rumor mongering): buffers [entry] for a

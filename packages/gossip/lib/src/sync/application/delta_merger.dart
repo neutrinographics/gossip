@@ -14,7 +14,7 @@ import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
 
-/// Owns `GossipEngine`'s delta-merge pipeline (CC5-1, task F6): filtering a
+/// Owns `GossipEngine`'s delta-merge pipeline (CC5-1): filtering a
 /// [DeltaResponse] down to the per-author contiguous prefix it can safely
 /// apply, appending it, advancing the local HLC, and deciding whether a
 /// continuation [DeltaRequest] is owed — the whole body of what used to be
@@ -46,8 +46,7 @@ import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
 ///   the pull tracker's pending flag from outside the chain would add a
 ///   Future-chaining hop that a concurrently in-flight message for the
 ///   same (peer, channel, stream) could interleave into, which the
-///   pre-extraction code's single synchronous span never allowed. See
-///   `task-6-report.md` for the full ordering analysis.
+///   pre-extraction code's single synchronous span never allowed.
 class DeltaMerger {
   DeltaMerger({
     required NodeId localNode,

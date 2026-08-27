@@ -37,7 +37,7 @@ import 'package:gossip/src/sync/application/reactive_pusher.dart';
 /// Protocol service implementing gossip-based anti-entropy synchronization.
 ///
 /// [GossipEngine] synchronizes log entries across peers through periodic
-/// digest exchange. It implements a 4-step anti-entropy protocol:
+/// digest exchange.
 ///
 /// Five extracted collaborators own specialized concerns this class
 /// orchestrates but no longer implements directly: [GossipTimingPolicy]
@@ -46,6 +46,8 @@ import 'package:gossip/src/sync/application/reactive_pusher.dart';
 /// (push debounce), and [DeltaMerger] (the delta-merge pipeline).
 ///
 /// ## Anti-Entropy Protocol (4 Steps)
+///
+/// It implements a 4-step anti-entropy protocol:
 ///
 /// **Step 1: Digest Request** (see [effectiveGossipInterval] for the interval policy)
 /// - Select the least-recently-synced reachable peer, filtered to exclude
@@ -72,7 +74,7 @@ import 'package:gossip/src/sync/application/reactive_pusher.dart';
 ///
 /// - **Convergence time**: O(log n) rounds. At n=2 with a fast interval this
 ///   can be sub-second; at larger n it is roughly log2(n) × the gossip
-///   interval — a few seconds at the 1s default, longer on a slow BLE mesh
+///   interval — a few seconds at a ~1 s interval, longer on a slow BLE mesh
 ///   (fan-out is 1). Reactive push-on-write disseminates new *local* writes
 ///   faster than this periodic anti-entropy sweep.
 /// - **Bidirectional sync**: Each round reciprocates (push-pull), so a single
@@ -195,7 +197,7 @@ class GossipEngine {
   /// already be initialized.
   late final GenerationScheduler _scheduler;
 
-  /// Owns the reactive-push debounce state machine (CC5-1, task F5):
+  /// Owns the reactive-push debounce state machine (CC5-1):
   /// coalescing a burst of local writes into one push instead of one per
   /// write, and recognizing a stale debounce across [start]/[stop]/a live
   /// round-loop scheduling failure. See [ReactivePusher]'s class doc for
@@ -243,7 +245,7 @@ class GossipEngine {
   /// come from ping-based RTT.
   late final PendingPullTracker _pendingPullTracker;
 
-  /// Owns the delta-merge pipeline (CC5-1, task F6): filtering a
+  /// Owns the delta-merge pipeline (CC5-1): filtering a
   /// [DeltaResponse] to its per-author contiguous prefix, applying it,
   /// advancing the HLC, and deciding on a continuation request. See
   /// [DeltaMerger] for why it's notified of this engine's batch-count/news
