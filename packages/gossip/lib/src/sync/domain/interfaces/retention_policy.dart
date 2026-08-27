@@ -70,7 +70,27 @@ class TimeBasedRetention implements RetentionPolicy {
   /// Maximum age of entries to retain.
   final Duration maxAge;
 
-  const TimeBasedRetention(this.maxAge);
+  // Not `const`, and validated with a runtime throw rather than `assert`:
+  // `assert` is compiled out of release/AOT builds entirely (Dart strips
+  // it), so a negative [maxAge] would pass silently in production and
+  // move compaction's cutoff into the future — pruning every entry on
+  // the next compaction. An unconditional `ArgumentError` survives every
+  // build mode. That guard requires a constructor body (the initializer
+  // list can only assign fields or `assert`), and a const constructor
+  // can't have a body — so trading `const` away is the price of a check
+  // that actually holds in production. No caller in this codebase
+  // constructs this with the `const` keyword, so dropping it costs
+  // nothing but gains a real guard.
+  TimeBasedRetention(this.maxAge) {
+    if (maxAge.isNegative) {
+      throw ArgumentError.value(
+        maxAge,
+        'maxAge',
+        'must not be negative — compact subtracts it from the current '
+            'HLC, and Hlc.subtract throws on the resulting negative time',
+      );
+    }
+  }
 
   @override
   List<LogEntry> compact(List<LogEntry> entries, Hlc now) {
@@ -100,7 +120,26 @@ class CountBasedRetention implements RetentionPolicy {
   /// Maximum entries to retain per author.
   final int maxEntriesPerAuthor;
 
-  const CountBasedRetention(this.maxEntriesPerAuthor);
+  // Kept `const` and `assert` (unlike [TimeBasedRetention] and
+  // [CompositeRetention], both converted to a runtime `ArgumentError`
+  // throw): a negative [maxEntriesPerAuthor] does not fail silently even
+  // with `assert` stripped in release/AOT builds. `compact` below passes
+  // it straight to `List.take`, and `take`'s own bounds check
+  // (`RangeError.checkNotNegative`, in `dart:_internal`) runs
+  // unconditionally in every build mode — verified empirically: a
+  // `dart compile exe` binary (asserts stripped) still throws
+  // `RangeError` from `[x].take(-1)`, the same as running under `dart
+  // test`. Because that loud, build-mode-independent failure is already
+  // the backstop the release-stripped `assert` would otherwise be the
+  // only guard against, there is nothing to gain by trading `const`
+  // away here the way the other two constructors do.
+  const CountBasedRetention(this.maxEntriesPerAuthor)
+    : assert(
+        maxEntriesPerAuthor >= 0,
+        'maxEntriesPerAuthor must not be negative — zero is legal and '
+        'deliberately prunes every entry; a negative count has no meaning '
+        'for `take(n)` below',
+      );
 
   @override
   List<LogEntry> compact(List<LogEntry> entries, Hlc now) {
@@ -144,7 +183,26 @@ class CompositeRetention implements RetentionPolicy {
   /// The policies to combine (union semantics).
   final List<RetentionPolicy> policies;
 
-  const CompositeRetention(this.policies);
+  // Not `const`, for the same reason as [TimeBasedRetention]'s
+  // constructor: `assert` is stripped from release/AOT builds, so an
+  // empty [policies] list would pass silently in production, and
+  // `compact` would then retain nothing — union of zero sets is the
+  // empty set — silently discarding every entry on the next compaction.
+  // The unconditional `ArgumentError` that survives release builds needs
+  // a constructor body, and a const constructor can't have one. No
+  // caller in this codebase constructs this with the `const` keyword, so
+  // dropping it costs nothing but gains a real guard.
+  CompositeRetention(this.policies) {
+    if (policies.isEmpty) {
+      throw ArgumentError.value(
+        policies,
+        'policies',
+        'must not be empty — a composite with no sub-policies would '
+            'retain nothing, silently discarding every entry on the next '
+            'compaction',
+      );
+    }
+  }
 
   @override
   List<LogEntry> compact(List<LogEntry> entries, Hlc now) {

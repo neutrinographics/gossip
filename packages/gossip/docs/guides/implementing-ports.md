@@ -9,7 +9,10 @@ signatures alone.
 
 Every 200-500ms the gossip engine runs a round:
 
-1. Select a random reachable peer (filtered by backpressure)
+1. Select the least-recently-synced reachable peer (filtered by
+   backpressure and by recency — peers already gossiped with this
+   interval are skipped — with a random tiebreak among equally-stale
+   peers)
 2. Generate a **digest** for each channel (calls `getVersionVector()` per stream)
 3. Send digest to peer
 4. Peer computes **delta** (calls `entriesSince()` per stream)
@@ -49,7 +52,6 @@ cached value or sorted index.
 
 - `getAll()` **must** return entries sorted by HLC timestamp
 - `entriesSince()` **must** return entries sorted by HLC timestamp
-- `entriesForAuthorAfter()` **must** return entries in sequence order
 
 Violating these causes silent data corruption in materializers that
 depend on fold order.
@@ -100,19 +102,21 @@ only hit on cache misses (startup, first access).
 
 ## PeerRepository
 
-Stores peer state (health, metrics, incarnation numbers).
+Stores peer identity and membership — which peers are known, not live
+SWIM state.
 
 ### Write volume
 
-`save()` is called after **every protocol message** sent or received,
-because each message updates peer metrics (RTT, throughput, timestamps).
-In an active 5-peer network this can mean 50+ saves per second.
+`save()` and `delete()` fire only when peer membership changes (a peer is
+added or removed), not per protocol message. Reachability status, contact
+timestamps, and RTT/traffic metrics are SWIM-driven state that lives
+exclusively in the in-memory `PeerRegistry` and is never persisted here —
+a persistent implementation only ever sees peers appear and disappear.
 
-Consider:
-- Batching or debouncing writes (peer state is eventually consistent;
-  stale reads are acceptable)
-- Writing only changed fields instead of full object replacement
-- Using an in-memory buffer with periodic flush
+Because writes track peer churn (devices connecting and disconnecting)
+rather than gossip traffic, no batching, debouncing, or buffering is
+needed — a straightforward save/delete per call is sufficient at typical
+peer counts.
 
 ---
 

@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:gossip/src/membership/application/peer_service.dart';
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/membership/domain/entities/peer.dart';
-import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:gossip/src/membership/domain/interfaces/peer_repository.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:test/test.dart';
@@ -47,16 +46,6 @@ class _ScriptedLatencyRepository implements PeerRepository {
 
   @override
   Future<List<Peer>> findAll() async => stored.values.toList();
-
-  @override
-  Future<List<Peer>> findReachable() async =>
-      stored.values.where((p) => p.status == PeerStatus.reachable).toList();
-
-  @override
-  Future<bool> exists(NodeId id) async => stored.containsKey(id);
-
-  @override
-  Future<int> get count async => stored.length;
 
   @override
   Future<void> clearAll() async => stored.clear();

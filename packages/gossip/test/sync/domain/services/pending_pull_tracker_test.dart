@@ -64,6 +64,25 @@ void main() {
 
       expect(tracker.tryMark(peerA, channelId, streamId), isFalse);
     });
+
+    test('treats exactly-effectiveTimeout elapsed as already expired '
+        '(strict < boundary: elapsed < timeout refuses; elapsed == timeout '
+        'does not, so the entry is replaced)', () async {
+      expect(tracker.tryMark(peerA, channelId, streamId), isTrue);
+
+      // Cold-start default is 8s exactly — not 8s + 1ms as in the
+      // "just past it" case above.
+      await timePort.advance(const Duration(seconds: 8));
+
+      expect(
+        tracker.tryMark(peerA, channelId, streamId),
+        isTrue,
+        reason:
+            'the comparison is elapsed < effectiveTimeout: at elapsed == '
+            'effectiveTimeout the refusal condition is false, so the '
+            'entry counts as expired and tryMark succeeds',
+      );
+    });
   });
 
   group('release', () {
@@ -207,6 +226,21 @@ void main() {
         reason: 'a pull whose peer never answered is dead, not still syncing',
       );
     });
+
+    test(
+      'excludes an entry at exactly effectiveTimeout elapsed '
+      '(strict < boundary: nowMs - since < timeoutMs is false at ==, '
+      'so the entry is already excluded, not counted through one more tick)',
+      () async {
+        tracker.tryMark(peerA, channelId, streamId);
+        expect(tracker.outstandingCount, equals(1));
+
+        // Cold-start default is 8s exactly — not 8s + 1ms as above.
+        await timePort.advance(const Duration(seconds: 8));
+
+        expect(tracker.outstandingCount, equals(0));
+      },
+    );
 
     test('drops to zero once the entry is completed', () async {
       tracker.tryMark(peerA, channelId, streamId);

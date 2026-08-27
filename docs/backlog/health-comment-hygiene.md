@@ -50,3 +50,13 @@ conventions) needs an owner decision before planning.
   natural neighbor; this item should run after it so the sweep's edits land first.
 - The audit records under `docs/audits/` remain the permanent home of the finding
   rationales that comments currently cite.
+- `packages/gossip/architecture.md` is wholly stale — it predates the
+  bounded-context reorganization and still describes a layer-first
+  structure, a facade marked "not yet implemented", and types that no
+  longer exist. It needs a supersede-or-delete decision as part of this
+  cleanup rather than a line-by-line edit.
+- Three redundant defensive copies became dead weight once
+  `VersionVector`'s own constructor started copying its argument: the two
+  `Map<NodeId, int>.from` calls in the in-memory entry repository's
+  version-vector reads, and the `Map.unmodifiable` wrapping the merged map
+  in `VersionVector.merge`. Remove them during this pass.

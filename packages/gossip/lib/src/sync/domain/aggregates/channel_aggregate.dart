@@ -13,6 +13,11 @@ import 'package:gossip/src/sync/domain/interfaces/entry_repository.dart';
 /// It maintains membership (which peers can participate) and stream
 /// metadata (which streams exist and their retention policies).
 ///
+/// This type is exported for `ChannelRepository` implementers, who
+/// reconstitute and persist it directly; mutating it any other way bypasses
+/// domain event emission and leaves the coordinator's facade cache stale, so
+/// all other mutation should go through `ChannelService`.
+///
 /// ## Responsibilities
 /// - **Membership management**: Add/remove members, enforce local node membership
 /// - **Stream lifecycle**: Create streams with retention policies

@@ -1,7 +1,6 @@
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/entities/peer.dart';
 import 'package:gossip/src/membership/domain/interfaces/peer_repository.dart';
-import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 
 /// In-memory implementation of [PeerRepository] — the default and
 /// recommended repository for most applications.
@@ -33,16 +32,6 @@ class InMemoryPeerRepository implements PeerRepository {
 
   @override
   Future<List<Peer>> findAll() async => _peers.values.toList();
-
-  @override
-  Future<List<Peer>> findReachable() async =>
-      _peers.values.where((p) => p.status == PeerStatus.reachable).toList();
-
-  @override
-  Future<bool> exists(NodeId id) async => _peers.containsKey(id);
-
-  @override
-  Future<int> get count async => _peers.length;
 
   @override
   Future<void> clearAll() async {

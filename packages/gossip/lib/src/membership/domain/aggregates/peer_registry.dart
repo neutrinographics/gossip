@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:gossip/src/shared/domain/errors/domain_exception.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/entities/peer.dart';
@@ -97,20 +95,6 @@ class PeerRegistry {
   /// Used for selecting peers for gossip rounds and message routing.
   List<Peer> get reachablePeers =>
       _peers.values.where((p) => p.status == PeerStatus.reachable).toList();
-
-  /// Selects a random reachable peer.
-  ///
-  /// Uses the provided [random] generator to ensure even distribution of
-  /// selections over time. Only considers peers in [PeerStatus.reachable] status.
-  ///
-  /// Returns null if no reachable peers exist.
-  ///
-  /// Used by: GossipEngine for peer selection (gossip only with reachable peers).
-  Peer? selectRandomReachablePeer(Random random) {
-    final reachable = reachablePeers;
-    if (reachable.isEmpty) return null;
-    return reachable[random.nextInt(reachable.length)];
-  }
 
   /// Returns peers with unreachable status.
   ///

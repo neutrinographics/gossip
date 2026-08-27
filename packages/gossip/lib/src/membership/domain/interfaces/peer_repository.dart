@@ -1,10 +1,13 @@
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/entities/peer.dart';
 
-/// Repository for peer state.
+/// Repository for peer identity and membership.
 ///
-/// [PeerRepository] stores the state of known peers, including their
-/// reachability status and communication metrics.
+/// [PeerRepository] stores which peers are known — their identity, added
+/// and removed as devices connect and disconnect. It does not store live
+/// SWIM state: reachability status, contact times, and RTT/traffic metrics
+/// are never persisted here (see "What actually reaches this interface"
+/// below).
 ///
 /// ## Persistence is not required
 ///
@@ -48,29 +51,6 @@ abstract interface class PeerRepository {
   /// Not called by the library; retained for application-side queries.
   /// Candidate for removal in a future API surface review.
   Future<List<Peer>> findAll();
-
-  /// Returns only reachable peers.
-  ///
-  /// Filters for peers with status == PeerStatus.reachable. Not called by
-  /// the library; retained for application-side queries. Candidate for
-  /// removal in a future API surface review. Because status is never
-  /// persisted (see the class-level contract above), the filter reflects
-  /// only whatever status a [Peer] carried at [save] time, not live SWIM
-  /// state — implementations that honor the contract will find it
-  /// perpetually empty or stale.
-  Future<List<Peer>> findReachable();
-
-  /// Returns true if a peer with the given node ID exists.
-  ///
-  /// Not called by the library; retained for application-side queries.
-  /// Candidate for removal in a future API surface review.
-  Future<bool> exists(NodeId id);
-
-  /// Returns the total number of persisted peers.
-  ///
-  /// Not called by the library; retained for application-side queries.
-  /// Candidate for removal in a future API surface review.
-  Future<int> get count;
 
   /// Removes all persisted peers.
   ///

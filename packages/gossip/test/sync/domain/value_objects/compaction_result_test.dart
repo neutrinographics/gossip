@@ -6,29 +6,14 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 void main() {
   group('CompactionResult', () {
     final node1 = NodeId('node-1');
-    final oldVersion = VersionVector({node1: 10});
-    final newVersion = VersionVector({node1: 15});
-
-    test(
-      'CompactionResult.noChange returns zero counts with given version',
-      () {
-        final result = CompactionResult.noChange(oldVersion);
-
-        expect(result.entriesRemoved, equals(0));
-        expect(result.entriesRetained, equals(0));
-        expect(result.bytesFreed, equals(0));
-        expect(result.oldBaseVersion, equals(oldVersion));
-        expect(result.newBaseVersion, equals(oldVersion));
-      },
-    );
+    final version = VersionVector({node1: 10});
 
     test('contains entriesRemoved, entriesRetained, bytesFreed', () {
       final result = CompactionResult(
         entriesRemoved: 10,
         entriesRetained: 5,
         bytesFreed: 500,
-        oldBaseVersion: oldVersion,
-        newBaseVersion: newVersion,
+        baseVersion: version,
       );
 
       expect(result.entriesRemoved, equals(10));
@@ -36,17 +21,15 @@ void main() {
       expect(result.bytesFreed, equals(500));
     });
 
-    test('contains oldBaseVersion and newBaseVersion', () {
+    test('contains baseVersion', () {
       final result = CompactionResult(
         entriesRemoved: 10,
         entriesRetained: 5,
         bytesFreed: 500,
-        oldBaseVersion: oldVersion,
-        newBaseVersion: newVersion,
+        baseVersion: version,
       );
 
-      expect(result.oldBaseVersion, equals(oldVersion));
-      expect(result.newBaseVersion, equals(newVersion));
+      expect(result.baseVersion, equals(version));
     });
 
     test('equality works correctly', () {
@@ -54,15 +37,13 @@ void main() {
         entriesRemoved: 10,
         entriesRetained: 5,
         bytesFreed: 500,
-        oldBaseVersion: oldVersion,
-        newBaseVersion: newVersion,
+        baseVersion: version,
       );
       final result2 = CompactionResult(
         entriesRemoved: 10,
         entriesRetained: 5,
         bytesFreed: 500,
-        oldBaseVersion: oldVersion,
-        newBaseVersion: newVersion,
+        baseVersion: version,
       );
 
       expect(result1, equals(result2));
@@ -73,15 +54,13 @@ void main() {
         entriesRemoved: 10,
         entriesRetained: 5,
         bytesFreed: 500,
-        oldBaseVersion: oldVersion,
-        newBaseVersion: newVersion,
+        baseVersion: version,
       );
       final result2 = CompactionResult(
         entriesRemoved: 10,
         entriesRetained: 5,
         bytesFreed: 500,
-        oldBaseVersion: oldVersion,
-        newBaseVersion: newVersion,
+        baseVersion: version,
       );
 
       expect(result1.hashCode, equals(result2.hashCode));

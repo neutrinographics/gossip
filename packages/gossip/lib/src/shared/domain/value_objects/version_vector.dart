@@ -24,10 +24,21 @@ class VersionVector {
 
   /// Creates a [VersionVector] with the given node-to-sequence mappings.
   ///
+  /// Copies [versions] rather than aliasing it — the caller's map is free
+  /// to mutate afterward without reaching back into this (supposedly
+  /// immutable) value object. Explicit zero entries are dropped during
+  /// the copy: [operator []] already reads a missing node as 0, so a
+  /// stored `{node: 0}` and an absent `node` are the same value — keeping
+  /// both around as distinct representations would break equality and
+  /// hashCode for vectors that are observably identical.
+  ///
   /// Throws [ArgumentError] if any sequence number is negative.
   VersionVector([Map<NodeId, int>? versions])
-    : _versions = versions ?? const {} {
-    for (final entry in _versions.entries) {
+    : _versions = _normalized(versions ?? const {});
+
+  static Map<NodeId, int> _normalized(Map<NodeId, int> versions) {
+    final normalized = <NodeId, int>{};
+    for (final entry in versions.entries) {
       if (entry.value < 0) {
         throw ArgumentError.value(
           entry.value,
@@ -35,7 +46,10 @@ class VersionVector {
           'Sequence numbers must be non-negative',
         );
       }
+      if (entry.value == 0) continue;
+      normalized[entry.key] = entry.value;
     }
+    return normalized;
   }
 
   /// Private const constructor for empty constant.

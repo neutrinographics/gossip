@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:test/test.dart';
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
@@ -138,41 +136,6 @@ void main() {
           directory.recordMessageSent(a, 64);
 
           expect(registry.getPeer(a)!.metrics.bytesSent, equals(64));
-        });
-      },
-    );
-
-    group(
-      'selectRandomPartner (contract clause 3: registry-consistent selection)',
-      () {
-        test('returns null when no reachable peers exist', () {
-          expect(directory.selectRandomPartner(Random(1)), isNull);
-        });
-
-        test('returns the same peer the registry would select for an '
-            'identically-seeded Random', () {
-          final a = NodeId('peer-a');
-          registry.addPeer(a, occurredAt: DateTime.now());
-
-          final expected = registry.selectRandomReachablePeer(Random(7));
-          final actual = directory.selectRandomPartner(Random(7));
-
-          expect(actual, isNotNull);
-          expect(actual!.nodeId, equals(expected!.id));
-        });
-
-        test('selection is registry-consistent across many seeds (no '
-            'reimplemented semantics)', () {
-          final a = NodeId('peer-a');
-          final b = NodeId('peer-b');
-          registry.addPeer(a, occurredAt: DateTime.now());
-          registry.addPeer(b, occurredAt: DateTime.now());
-
-          for (var seed = 0; seed < 50; seed++) {
-            final expected = registry.selectRandomReachablePeer(Random(seed));
-            final actual = directory.selectRandomPartner(Random(seed));
-            expect(actual!.nodeId, equals(expected!.id));
-          }
         });
       },
     );

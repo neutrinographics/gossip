@@ -155,9 +155,18 @@ class GossipEngine {
   /// backlog produces one giant message that the transport can never send,
   /// livelocking sync (the 32KB Android Nearby limit is the design target).
   ///
-  /// Defaults to 30KB, leaving envelope headroom under the 32KB transport
-  /// limit.
+  /// Defaults to [defaultMaxMessageBytes], leaving envelope headroom under
+  /// the 32KB transport limit.
   final int maxMessageBytes;
+
+  /// Default value for [maxMessageBytes]: 30KB.
+  ///
+  /// A named constant rather than a literal repeated at every call site
+  /// that needs "the same default the engine would pick anyway" (e.g.
+  /// test harnesses building a [GossipEngine] with an explicit
+  /// [maxMessageBytes] that should just track the engine's own default) —
+  /// so the two can't silently drift apart.
+  static const int defaultMaxMessageBytes = 30 * 1024;
 
   /// Codec for serializing/deserializing this context's (sync's) protocol
   /// messages.
@@ -292,7 +301,7 @@ class GossipEngine {
     Random? random,
     Duration? gossipInterval,
     bool adaptiveTimingEnabled = false,
-    this.maxMessageBytes = 30 * 1024,
+    this.maxMessageBytes = defaultMaxMessageBytes,
   }) : _codec = codec,
        _hlcClock = hlcClock,
        _localNodeRepository = localNodeRepository,
@@ -536,7 +545,15 @@ class GossipEngine {
     if (batches.isEmpty) return;
 
     final partners = peerDirectory.reachablePartners();
-    if (partners.isEmpty) return;
+    if (partners.isEmpty) {
+      _log(
+        LogLevel.trace,
+        'Reactive push flush found no reachable partners for '
+        '${batches.length} drained batch(es); entries remain in the '
+        'repository and anti-entropy will re-deliver them',
+      );
+      return;
+    }
 
     for (final batch in batches.entries) {
       final (channelId, streamId) = batch.key;
@@ -546,7 +563,16 @@ class GossipEngine {
         streamId: streamId,
         entries: batch.value,
       );
-      if (_codec.encode(push).length > maxMessageBytes) continue;
+      final encodedLength = _codec.encode(push).length;
+      if (encodedLength > maxMessageBytes) {
+        _log(
+          LogLevel.trace,
+          'Reactive push for channel=${channelId.value} '
+          'stream=${streamId.value} skipped: encoded size '
+          '${encodedLength}B exceeds maxMessageBytes=$maxMessageBytes',
+        );
+        continue;
+      }
       for (final partner in partners) {
         await _sendMessage(partner.nodeId, push);
       }
@@ -1515,16 +1541,6 @@ class GossipEngine {
     );
     final result = await _merger.merge(response, solicited: elapsed != null);
     return result.continuation;
-  }
-
-  /// Clears all pending delta requests.
-  ///
-  /// Call this when a peer disconnects to allow immediate re-sync when
-  /// the peer reconnects. Without clearing, pending requests would block
-  /// new delta requests until they expire.
-  void clearPendingRequests() {
-    _pendingPullTracker.clearAll();
-    _merger.clearReportedGaps();
   }
 
   /// Clears pending delta requests addressed to [peer].

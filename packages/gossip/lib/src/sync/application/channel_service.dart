@@ -645,6 +645,9 @@ class ChannelService {
   /// The version vector is a monotonic high-water mark, so it never regresses
   /// on compaction — pruned entries are not re-advertised (which would
   /// resurrect them via gossip).
+  ///
+  /// Emits [StreamCompacted] when entries were actually pruned; a no-op
+  /// pass (nothing needs pruning, so this returns null) emits nothing.
   Future<CompactionResult?> compactStream(
     ChannelId channelId,
     StreamId streamId, {
@@ -664,21 +667,41 @@ class ChannelService {
     final toPrune = entries.where((e) => !survivorIds.contains(e.id)).toList();
     if (toPrune.isEmpty) return null;
 
-    final oldVersion = await getVersionVector(channelId, streamId);
     await removeEntries(channelId, streamId, toPrune.map((e) => e.id).toList());
-    final newVersion = await getVersionVector(channelId, streamId);
+    final baseVersion = await getVersionVector(channelId, streamId);
 
     if (resetMaterializers) {
       await resetState(channelId, streamId);
     }
 
-    return CompactionResult(
+    final result = CompactionResult(
       entriesRemoved: toPrune.length,
       entriesRetained: survivors.length,
       bytesFreed: toPrune.fold(0, (sum, e) => sum + e.payload.length),
-      oldBaseVersion: oldVersion,
-      newBaseVersion: newVersion,
+      baseVersion: baseVersion,
     );
+
+    // Guard on the result's own count rather than leaning on the
+    // toPrune.isEmpty early return above: the event's contract is "a real
+    // compaction happened", so the emit site verifies that from the result
+    // it is about to hand out, not from a separate code path reaching this
+    // line. Every path currently reaching this point already guarantees
+    // entriesRemoved > 0 (the toPrune.isEmpty return above), so the false
+    // branch is presently unreachable — the guard is kept as defense
+    // against a future change to the returns above that could make it
+    // reachable again.
+    if (result.entriesRemoved > 0) {
+      _emitEvents([
+        StreamCompacted(
+          channelId,
+          streamId,
+          result,
+          occurredAt: DateTime.now(),
+        ),
+      ]);
+    }
+
+    return result;
   }
 
   /// Applies every stream's retention policy across all channels. Retain-all

@@ -40,9 +40,40 @@ publish under the existing pub.dev `gossip` name must version above the old
 - The public `channelService` field on `Channel`/`EventStream` is gone; it
   existed only as a leak of an internal collaborator — use `Coordinator`
   and the facade methods instead.
+- `EntryRepository.entriesForAuthorAfter` removed (unused; implementers
+  drop the override).
+- `PeerRepository.findReachable`/`exists`/`count` removed (unused;
+  implementers drop the overrides).
+- `BufferOverflowOccurred` event removed (never emitted; no buffering
+  subsystem exists to fire it).
+- The phantom domain types `StreamConfig`, `ChannelDelta`, and
+  `MergeResult` removed (never constructed by the library).
+- `CompactionResult.oldBaseVersion`/`newBaseVersion` collapsed into a single
+  `baseVersion` field. `EntryRepository.removeEntries` must never regress
+  the version vector, so the two fields could never actually differ —
+  compaction reports the stream's (unchanged) version vector once.
+- `TimeBasedRetention` and `CompositeRetention` are no longer invocable
+  with the `const` keyword — both constructors now validate their
+  argument (a non-negative `maxAge`, a non-empty `policies` list), and a
+  value-dependent guard is incompatible with const invocation in Dart.
+  Construct them without `const`. That validation is a runtime
+  `ArgumentError`, not `assert` — `assert` is stripped from release/AOT
+  builds, which would otherwise let a negative `maxAge` or an empty
+  `policies` list through silently and prune every entry on the next
+  compaction. `CountBasedRetention` keeps its `const` constructor and
+  `assert`: a negative count still fails loudly at `compact()` time in
+  every build mode, via `List.take`'s own unconditional `RangeError`, so
+  there is no silent-data-loss gap for a runtime throw to close there.
+- `CompactionResult.noChange` removed (unused; construct a
+  `CompactionResult` directly with zero counts if a caller ever needs
+  one).
 
 ### Behavioral
 
+- `StreamCompacted` is now emitted, from `ChannelService.compactStream`,
+  whenever a compaction pass actually prunes entries (manual
+  `EventStream.compact()` calls and the Coordinator's periodic
+  auto-compaction loop alike). Previously declared but never fired.
 - A null peer repository is a supported in-memory-only mode (no more
   per-operation storage errors).
 - Errors surfacing after `dispose()` are routed to `onLog` instead of
@@ -51,6 +82,30 @@ publish under the existing pub.dev `gossip` name must version above the old
   substantially reworked (SWIM suppression, adaptive pacing, compaction);
   observable protocol behavior is pinned by the test suite, and audit
   records in `docs/audits/` document each change.
+- `InMemoryTimePort.advance()` now fires each periodic callback once per
+  interval boundary the elapsed time crosses (previously fired every
+  periodic callback once per `advance()` call, ignoring the interval).
+  Overdue boundaries fire in global deadline order across every live
+  timer, not one timer's boundaries exhausted before another's are even
+  considered, so a callback that cancels or reschedules another timer
+  takes effect on the very next boundary. Each timer's boundary is
+  advanced before its callback runs, so a callback that throws still
+  consumes that boundary instead of leaving the timer stuck retrying the
+  same overdue one on every later `advance()` call.
+  `schedulePeriodic` rejects a non-positive interval with `ArgumentError`
+  instead of registering a timer `advance()` could never reach.
+- `VersionVector` now copies its constructor argument and normalizes
+  explicit zero entries away — `VersionVector({a: 0})` equals
+  `VersionVector.empty`, and later mutation of the passed map no longer
+  alters the vector.
+
+### Changed
+
+- `EventStream.getAll()` now returns `Future<List<LogEntry>>` instead of
+  `Future<List<dynamic>>` — the facade was erasing the type that
+  `ChannelService.getEntries` already returned. Source-compatible for the
+  common `final entries = await stream.getAll()` call site; type inference
+  simply tightens.
 
 ## 1.0.0
 

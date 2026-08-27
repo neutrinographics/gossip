@@ -170,7 +170,7 @@ class GossipEngineTestHarness {
       hlcClock: hlcClock,
       gossipInterval: gossipInterval,
       adaptiveTimingEnabled: adaptiveTimingEnabled,
-      maxMessageBytes: maxMessageBytes ?? 30 * 1024,
+      maxMessageBytes: maxMessageBytes ?? GossipEngine.defaultMaxMessageBytes,
       random: random,
     );
 
@@ -202,6 +202,7 @@ class GossipEngineTestHarness {
     ErrorCallback? onError,
     LogCallback? onLog,
     bool withHlcClock = false,
+    int? maxMessageBytes,
   }) {
     final bus = InMemoryMessageBus();
     return GossipEngine(
@@ -215,6 +216,7 @@ class GossipEngineTestHarness {
       onError: onError,
       onLog: onLog,
       hlcClock: withHlcClock ? HlcClock(TimeSource(timePort)) : null,
+      maxMessageBytes: maxMessageBytes ?? GossipEngine.defaultMaxMessageBytes,
     );
   }
 

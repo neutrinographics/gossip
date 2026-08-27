@@ -314,17 +314,6 @@ class DebugLogger {
           '[$timestamp] Stream compacted: ${_shortId(channelId.value)}/${streamId.value} '
               'removed=${result.entriesRemoved}',
         );
-      case BufferOverflowOccurred(
-        :final channelId,
-        :final streamId,
-        :final author,
-        :final droppedCount,
-      ):
-        _logWarning(
-          'WARN',
-          '[$timestamp] Buffer overflow: ${_shortId(channelId.value)}/${streamId.value} '
-              'author=$author dropped=$droppedCount',
-        );
       case NonMemberEntriesRejected(
         :final channelId,
         :final streamId,

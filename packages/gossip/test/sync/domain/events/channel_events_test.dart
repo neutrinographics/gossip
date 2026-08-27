@@ -121,8 +121,7 @@ void main() {
           entriesRemoved: 10,
           entriesRetained: 5,
           bytesFreed: 500,
-          oldBaseVersion: VersionVector.empty,
-          newBaseVersion: VersionVector({memberId: 5}),
+          baseVersion: VersionVector({memberId: 5}),
         );
         final event = StreamCompacted(
           channelId,
@@ -134,24 +133,6 @@ void main() {
         expect(event.channelId, equals(channelId));
         expect(event.streamId, equals(streamId));
         expect(event.result, equals(result));
-        expect(event.occurredAt, equals(now));
-      });
-    });
-
-    group('BufferOverflowOccurred', () {
-      test('contains channelId, streamId, author, droppedCount', () {
-        final event = BufferOverflowOccurred(
-          channelId,
-          streamId,
-          memberId,
-          5,
-          occurredAt: now,
-        );
-
-        expect(event.channelId, equals(channelId));
-        expect(event.streamId, equals(streamId));
-        expect(event.author, equals(memberId));
-        expect(event.droppedCount, equals(5));
         expect(event.occurredAt, equals(now));
       });
     });

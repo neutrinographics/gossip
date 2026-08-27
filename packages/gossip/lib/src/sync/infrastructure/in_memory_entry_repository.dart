@@ -188,19 +188,6 @@ class InMemoryEntryRepository implements EntryRepository {
   }
 
   @override
-  Future<List<LogEntry>> entriesForAuthorAfter(
-    ChannelId channel,
-    StreamId stream,
-    NodeId author,
-    int afterSequence,
-  ) async {
-    final entries = await getAll(channel, stream);
-    return entries
-        .where((e) => e.author == author && e.sequence > afterSequence)
-        .toList();
-  }
-
-  @override
   Future<int> latestSequence(
     ChannelId channel,
     StreamId stream,

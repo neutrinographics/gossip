@@ -28,12 +28,12 @@ void main() {
 
       test('pruning policies report retainsAll false', () {
         expect(
-          const TimeBasedRetention(Duration(seconds: 5)).retainsAll,
+          TimeBasedRetention(const Duration(seconds: 5)).retainsAll,
           isFalse,
         );
         expect(const CountBasedRetention(1).retainsAll, isFalse);
         expect(
-          const CompositeRetention([CountBasedRetention(1)]).retainsAll,
+          CompositeRetention(const [CountBasedRetention(1)]).retainsAll,
           isFalse,
         );
       });
@@ -41,7 +41,7 @@ void main() {
       test('a composite containing a retain-all policy retains all (union)', () {
         // Union semantics: if any sub-policy keeps everything, nothing prunes.
         expect(
-          const CompositeRetention([
+          CompositeRetention(const [
             KeepAllRetention(),
             CountBasedRetention(1),
           ]).retainsAll,
@@ -71,7 +71,7 @@ void main() {
         // now=1s, maxAge=1h: the cutoff would be negative. Hlc.subtract
         // throws on negative results — compaction must retain all entries
         // instead of blowing up (common with test clocks starting at 0).
-        const policy = TimeBasedRetention(Duration(hours: 1));
+        final policy = TimeBasedRetention(const Duration(hours: 1));
         final entries = [
           makeEntry(author1, 1, 500),
           makeEntry(author1, 2, 800),
@@ -84,7 +84,7 @@ void main() {
       });
 
       test('filters entries older than maxAge', () {
-        const policy = TimeBasedRetention(Duration(seconds: 5));
+        final policy = TimeBasedRetention(const Duration(seconds: 5));
         final entries = [
           makeEntry(author1, 1, 1000), // 9 seconds old
           makeEntry(author1, 2, 6000), // 4 seconds old
@@ -100,7 +100,7 @@ void main() {
       });
 
       test('keeps entries at exactly the cutoff', () {
-        const policy = TimeBasedRetention(Duration(seconds: 5));
+        final policy = TimeBasedRetention(const Duration(seconds: 5));
         final entries = [
           makeEntry(author1, 1, 5000), // Exactly 5 seconds old
           makeEntry(author1, 2, 5001), // Just under 5 seconds
@@ -154,6 +154,42 @@ void main() {
             reason: 'Entries should be sorted by timestamp',
           );
         }
+      });
+    });
+
+    group('constructor guards', () {
+      test('TimeBasedRetention rejects a negative maxAge with ArgumentError, '
+          'not assert — asserts are stripped from release/AOT builds, so a '
+          'value-dependent guard can only survive there as an unconditional '
+          'runtime throw', () {
+        expect(
+          () => TimeBasedRetention(const Duration(seconds: -1)),
+          throwsArgumentError,
+        );
+      });
+
+      test('CountBasedRetention accepts zero (deliberately prunes everything '
+          '— see compaction_late_joiner_test\'s floor-only scenario)', () {
+        expect(const CountBasedRetention(0).maxEntriesPerAuthor, equals(0));
+      });
+
+      test(
+        'CountBasedRetention rejects a negative maxEntriesPerAuthor at '
+        'construction — kept as assert (unlike TimeBasedRetention and '
+        'CompositeRetention): a negative count still fails loudly at '
+        'compact() time in every build mode, because List.take raises its '
+        'own unconditional RangeError, so the assert-stripped-in-release '
+        'gap that motivates converting the other two does not apply here',
+        () {
+          expect(() => CountBasedRetention(-1), throwsA(isA<AssertionError>()));
+        },
+      );
+
+      test('CompositeRetention rejects an empty policy list with '
+          'ArgumentError, not assert — asserts are stripped from '
+          'release/AOT builds, so a value-dependent guard can only survive '
+          'there as an unconditional runtime throw', () {
+        expect(() => CompositeRetention(const []), throwsArgumentError);
       });
     });
 

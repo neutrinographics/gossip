@@ -118,7 +118,6 @@ export 'package:gossip/src/sync/domain/aggregates/channel_aggregate.dart';
 // Domain entities
 export 'package:gossip/src/membership/domain/entities/peer.dart';
 export 'package:gossip/src/membership/domain/entities/peer_metrics.dart';
-export 'package:gossip/src/sync/domain/entities/stream_config.dart';
 
 // Domain events
 export 'package:gossip/src/shared/domain/events/domain_event.dart';

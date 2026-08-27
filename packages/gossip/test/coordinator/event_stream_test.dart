@@ -128,6 +128,25 @@ void main() {
       expect(entries[0].payload, equals(payload));
     });
 
+    test(
+      'getAll is statically typed List<LogEntry> (no cast needed)',
+      () async {
+        final facade = EventStream(
+          id: streamId,
+          channelId: channelId,
+          service: channelService,
+        );
+
+        await facade.append(Uint8List.fromList([1]));
+
+        // The facade must not erase ChannelService.getEntries' typed
+        // return — assigning without a cast is itself the pin: it fails to
+        // compile if getAll() ever regresses to `Future<List<dynamic>>`.
+        final List<LogEntry> entries = await facade.getAll();
+        expect(entries.length, equals(1));
+      },
+    );
+
     test('getAll returns all entries in stream', () async {
       final facade = EventStream(
         id: streamId,

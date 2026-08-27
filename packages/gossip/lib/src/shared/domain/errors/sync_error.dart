@@ -114,7 +114,7 @@ final class TransformSyncError extends SyncError {
 /// Error when out-of-order buffer capacity is exceeded.
 ///
 /// Represents buffer overflow when receiving out-of-order entries.
-/// Triggers when `StreamConfig` limits are exceeded to prevent memory
+/// Triggers when out-of-order buffer limits are exceeded to prevent memory
 /// exhaustion from malicious or buggy peers.
 final class BufferOverflowError extends SyncError {
   /// The channel containing the overflowing stream.
