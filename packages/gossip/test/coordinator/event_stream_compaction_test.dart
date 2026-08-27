@@ -39,7 +39,7 @@ void main() {
       final stream = EventStream(
         id: streamId,
         channelId: channelId,
-        channelService: service,
+        service: service,
       );
       final result = await stream.compact(resetState: false);
 

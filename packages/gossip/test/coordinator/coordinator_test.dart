@@ -63,6 +63,41 @@ void main() {
       expect((events.first as ChannelCreated).channelId, equals(channelId));
     });
 
+    test('a synchronous ChannelCreated listener observes the facade already '
+        'registered', () async {
+      // Contract this pins: by the time a lifecycle event reaches
+      // listeners, the public surface (channelIds/getChannel) already
+      // reflects it — a listener never has to defer or re-poll to see
+      // consistent state. Today that holds because the emit sits after
+      // the service call's own await chain, so the coordinator's
+      // continuation (which populates the facade cache) always finishes
+      // before the event's delivery microtask fires. If a future
+      // refactor shortens that chain enough to flip the ordering, this
+      // test fails loudly instead of a consumer silently reading a
+      // not-yet-registered channel.
+      final coordinator = await createTestCoordinator();
+      final channelId = ChannelId('channel1');
+
+      var seenFacade = coordinator.getChannel(channelId);
+      List<ChannelId>? seenIds;
+      coordinator.events.listen((event) {
+        if (event is ChannelCreated) {
+          seenFacade = coordinator.getChannel(channelId);
+          seenIds = coordinator.channelIds;
+        }
+      });
+
+      await coordinator.createChannel(channelId);
+
+      await pumpUntil(
+        () => seenIds != null,
+        describe: 'the ChannelCreated listener observing state',
+      );
+
+      expect(seenFacade, isNotNull);
+      expect(seenIds, contains(channelId));
+    });
+
     test('getChannel returns null for non-existent channel', () async {
       final coordinator = await createTestCoordinator();
 
@@ -555,6 +590,40 @@ void main() {
       );
     });
 
+    test('addPeer\'s startup grace hold expires on its own once '
+        'startupGracePeriod elapses, making the peer probable again', () async {
+      final bus = InMemoryMessageBus();
+      final timePort = InMemoryTimePort();
+      final coordinator = await createTestCoordinator(
+        bus: bus,
+        timePort: timePort,
+        config: const CoordinatorConfig(
+          startupGracePeriod: Duration(seconds: 5),
+        ),
+      );
+
+      final peerId = NodeId('peer1');
+      await coordinator.addPeer(peerId);
+      final detector = coordinator.failureDetectorForTesting!;
+      expect(detector.hasProbingHold(peerId), isTrue);
+      expect(
+        detector.nextProbeTarget(),
+        isNull,
+        reason: 'a peer under grace hold must not be selected for probing',
+      );
+
+      await timePort.advance(const Duration(seconds: 5, milliseconds: 1));
+
+      expect(
+        detector.hasProbingHold(peerId),
+        isFalse,
+        reason:
+            'a peer whose grace hold never expires would never be '
+            'probed for failure again',
+      );
+      expect(detector.nextProbeTarget()?.id, equals(peerId));
+    });
+
     test('removePeer removes peer from registry', () async {
       final coordinator = await createTestCoordinator();
 
@@ -845,6 +914,44 @@ void main() {
         await coordinator.removeChannel(ChannelId('nonexistent'));
 
         expect(events, isEmpty);
+      });
+
+      test('a synchronous ChannelRemoved listener observes the facade cache '
+          'already reflecting the removal', () async {
+        // Contract this pins (mirrors the ChannelCreated pin above): a
+        // lifecycle event's listeners see the public surface already
+        // consistent with the event, never a stale snapshot from before
+        // the coordinator finished its own cleanup. Today that holds
+        // because the emit sits after the service call's own await
+        // chain, so the coordinator's continuation (which removes the
+        // facade from the cache) always finishes before the event's
+        // delivery microtask fires. A listener that synchronously reads
+        // channelIds/getChannel on ChannelRemoved — the way
+        // examples/gossip_chat's ChatController refreshes its channel
+        // list — depends on this: if a future refactor shortens the
+        // service call enough to flip the ordering, this test fails
+        // loudly instead of that consumer silently showing a
+        // just-removed channel.
+        final coordinator = await createTestCoordinator();
+
+        final channelId = ChannelId('channel1');
+        await coordinator.createChannel(channelId);
+
+        List<ChannelId>? channelIdsAtEventTime;
+        coordinator.events.listen((event) {
+          if (event is ChannelRemoved) {
+            channelIdsAtEventTime = coordinator.channelIds;
+          }
+        });
+
+        await coordinator.removeChannel(channelId);
+
+        await pumpUntil(
+          () => channelIdsAtEventTime != null,
+          describe: 'the ChannelRemoved listener observing channelIds',
+        );
+
+        expect(channelIdsAtEventTime, isNot(contains(channelId)));
       });
     });
 

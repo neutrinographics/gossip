@@ -85,6 +85,25 @@ void main() {
       );
     });
 
+    test('removeChannel emits exactly one ChannelRemoved event', () async {
+      await service.createChannel(channelId);
+      emitted.clear();
+
+      final removed = await service.removeChannel(channelId);
+
+      expect(removed, isTrue);
+      final removedEvents = emitted.whereType<ChannelRemoved>().toList();
+      expect(removedEvents.length, equals(1));
+      expect(removedEvents.single.channelId, equals(channelId));
+    });
+
+    test('removeChannel on a nonexistent channel emits nothing', () async {
+      final removed = await service.removeChannel(ChannelId('missing'));
+
+      expect(removed, isFalse);
+      expect(emitted, isEmpty);
+    });
+
     test('aggregates do not accumulate uncommitted events', () async {
       await service.createChannel(channelId);
       await service.addMember(channelId, NodeId('peer1'));

@@ -144,6 +144,24 @@ void main() {
       expect(selected, isNotNull);
       expect(selected!.id, equals(peer.id));
     });
+
+    test('holdProbing holds the peer now and releases it once the '
+        'detector\'s own clock passes the given duration', () async {
+      final h = FailureDetectorTestHarness();
+      final peer = h.addPeer('peer1');
+
+      h.detector.holdProbing(peer.id, const Duration(seconds: 5));
+
+      expect(h.detector.hasProbingHold(peer.id), isTrue);
+      expect(h.detector.nextProbeTarget(), isNull);
+
+      await h.timePort.advance(const Duration(seconds: 5, milliseconds: 1));
+
+      expect(h.detector.hasProbingHold(peer.id), isFalse);
+      final selected = h.detector.nextProbeTarget();
+      expect(selected, isNotNull);
+      expect(selected!.id, equals(peer.id));
+    });
   });
 
   // ---------------------------------------------------------------------------

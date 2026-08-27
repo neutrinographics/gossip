@@ -364,7 +364,7 @@ class Coordinator {
   Future<void> _loadExistingChannels() async {
     final channelIds = await _channelRepository.listIds();
     for (final id in channelIds) {
-      _channelFacades[id] = Channel(id: id, channelService: _channelService);
+      _channelFacades[id] = Channel(id: id, service: _channelService);
     }
   }
 
@@ -529,7 +529,7 @@ class Coordinator {
     await _channelService.createChannel(channelId);
 
     // Create and cache the facade
-    final facade = Channel(id: channelId, channelService: _channelService);
+    final facade = Channel(id: channelId, service: _channelService);
     _channelFacades[channelId] = facade;
 
     // Update GossipEngine with new channel if running
@@ -549,11 +549,11 @@ class Coordinator {
   /// Removes a channel and all its associated data.
   ///
   /// This operation:
-  /// 1. Removes the channel from the facade cache
-  /// 2. Clears all entries for this channel from the entry store
-  /// 3. Deletes the channel from the repository
-  /// 4. Updates the gossip engine (if running) to stop syncing this channel
-  /// 5. Emits a [ChannelRemoved] event
+  /// 1. Clears all entries, materializer state, and the channel aggregate
+  ///    itself from persistence (via [ChannelService.removeChannel], which
+  ///    also emits [ChannelRemoved])
+  /// 2. Removes the channel from the facade cache
+  /// 3. Updates the gossip engine (if running) to stop syncing this channel
   ///
   /// Returns true if the channel was removed, false if it didn't exist.
   Future<bool> removeChannel(ChannelId channelId) async {
@@ -575,13 +575,6 @@ class Coordinator {
     if (_state == SyncState.running && _gossipEngine != null) {
       final channels = await _loadChannels();
       _gossipEngine!.setChannels(channels);
-    }
-
-    // Emit ChannelRemoved event
-    if (!_eventsController.isClosed) {
-      _eventsController.add(
-        ChannelRemoved(channelId, occurredAt: DateTime.now()),
-      );
     }
 
     return true;
@@ -634,10 +627,7 @@ class Coordinator {
     // The hold is cleared early if probeNewPeer succeeds below.
     if (_failureDetector != null &&
         _config.startupGracePeriod > Duration.zero) {
-      final holdUntilMs =
-          _failureDetector!.timePort.nowMs +
-          _config.startupGracePeriod.inMilliseconds;
-      _failureDetector!.setProbingHold(id, holdUntilMs);
+      _failureDetector!.holdProbing(id, _config.startupGracePeriod);
     }
 
     // Fire-and-forget immediate probe to bootstrap per-peer RTT estimate.
@@ -830,43 +820,20 @@ class Coordinator {
       return null;
     }
 
-    // Build per-peer RTT map and derive global fields from per-peer data.
-    final perPeerRtt = <NodeId, RttEstimate>{};
-    Duration? minSrtt;
-    Duration? minSrttVariance;
-    int totalSamples = 0;
-
-    for (final peer in _peerRegistry.allPeers) {
-      final rttEstimate = peer.metrics.rttEstimate;
-      if (rttEstimate != null) {
-        perPeerRtt[peer.id] = rttEstimate;
-        totalSamples++;
-        if (minSrtt == null || rttEstimate.smoothedRtt < minSrtt) {
-          minSrtt = rttEstimate.smoothedRtt;
-          minSrttVariance = rttEstimate.rttVariance;
-        }
-      }
-    }
-
-    // Fall back to global tracker when no per-peer data exists.
-    final rttTracker = _failureDetector!.rttTracker;
-    final smoothedRtt = minSrtt ?? rttTracker.smoothedRtt;
-    final rttVariance = minSrttVariance ?? rttTracker.rttVariance;
-    final sampleCount = totalSamples > 0
-        ? totalSamples
-        : rttTracker.sampleCount;
-    final hasSamples = totalSamples > 0 ? true : rttTracker.hasReceivedSamples;
+    // Each context assembles its own timing state; this facade only
+    // reshapes the two snapshots into the public, cross-context DTO.
+    final membershipTiming = _failureDetector!.timingSnapshot();
 
     return AdaptiveTimingStatus(
-      smoothedRtt: smoothedRtt,
-      rttVariance: rttVariance,
-      rttSampleCount: sampleCount,
-      hasRttSamples: hasSamples,
+      smoothedRtt: membershipTiming.smoothedRtt,
+      rttVariance: membershipTiming.rttVariance,
+      rttSampleCount: membershipTiming.sampleCount,
+      hasRttSamples: membershipTiming.hasSamples,
       effectiveGossipInterval: _gossipEngine!.effectiveGossipInterval,
-      effectivePingTimeout: _failureDetector!.effectivePingTimeout,
-      effectiveProbeInterval: _failureDetector!.effectiveProbeInterval,
-      totalPendingSendCount: _gossipEngine!.messagePort.totalPendingSendCount,
-      perPeerRtt: perPeerRtt,
+      effectivePingTimeout: membershipTiming.pingTimeout,
+      effectiveProbeInterval: membershipTiming.probeInterval,
+      totalPendingSendCount: _gossipEngine!.transportBacklog,
+      perPeerRtt: membershipTiming.perPeerRtt,
     );
   }
 

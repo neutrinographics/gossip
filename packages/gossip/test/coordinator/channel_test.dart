@@ -39,13 +39,13 @@ void main() {
     });
 
     test('constructor creates facade with id', () {
-      final facade = Channel(id: channelId, channelService: channelService);
+      final facade = Channel(id: channelId, service: channelService);
 
       expect(facade.id, equals(channelId));
     });
 
     test('members includes local node by default', () async {
-      final facade = Channel(id: channelId, channelService: channelService);
+      final facade = Channel(id: channelId, service: channelService);
 
       final members = await facade.members;
       expect(members, contains(localNode));
@@ -53,7 +53,7 @@ void main() {
     });
 
     test('addMember adds member to channel', () async {
-      final facade = Channel(id: channelId, channelService: channelService);
+      final facade = Channel(id: channelId, service: channelService);
 
       await facade.addMember(peer1);
 
@@ -62,7 +62,7 @@ void main() {
     });
 
     test('removeMember removes member from channel', () async {
-      final facade = Channel(id: channelId, channelService: channelService);
+      final facade = Channel(id: channelId, service: channelService);
 
       await facade.addMember(peer1);
       await facade.removeMember(peer1);
@@ -72,14 +72,14 @@ void main() {
     });
 
     test('streamIds returns empty list initially', () async {
-      final facade = Channel(id: channelId, channelService: channelService);
+      final facade = Channel(id: channelId, service: channelService);
 
       final streamIds = await facade.streamIds;
       expect(streamIds, isEmpty);
     });
 
     test('getOrCreateStream creates and returns stream facade', () async {
-      final facade = Channel(id: channelId, channelService: channelService);
+      final facade = Channel(id: channelId, service: channelService);
 
       final streamId = StreamId('stream1');
       final streamFacade = await facade.getOrCreateStream(
@@ -95,7 +95,7 @@ void main() {
     });
 
     test('getStream returns facade even for non-existent stream', () async {
-      final facade = Channel(id: channelId, channelService: channelService);
+      final facade = Channel(id: channelId, service: channelService);
 
       // getStream always returns a facade (operations fail if stream doesn't exist)
       final streamFacade = facade.getStream(StreamId('nonexistent'));
@@ -104,7 +104,7 @@ void main() {
     });
 
     test('getStream returns facade for existing stream', () async {
-      final facade = Channel(id: channelId, channelService: channelService);
+      final facade = Channel(id: channelId, service: channelService);
 
       final streamId = StreamId('stream1');
       await facade.getOrCreateStream(
