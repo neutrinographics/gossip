@@ -265,7 +265,7 @@ void main() {
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
         messagePort: port,
-        timerPort: InMemoryTimePort(),
+        timePort: InMemoryTimePort(),
       );
       addTearDown(coordinator.dispose);
       coordinator.errors.listen(errors.add);

@@ -53,7 +53,7 @@
 ///   peerRepository: peerRepo,
 ///   entryRepository: entryRepo,
 ///   messagePort: MyBluetoothPort(),  // Your transport implementation
-///   timerPort: RealTimePort(),        // Real time for production
+///   timePort: RealTimePort(),        // Real time for production
 /// );
 ///
 /// // Add peers discovered via your transport

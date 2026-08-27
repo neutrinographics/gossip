@@ -99,7 +99,7 @@ class TestNetwork {
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
         messagePort: messagePort,
-        timerPort: timePort,
+        timePort: timePort,
         random: random,
         config: config,
       );

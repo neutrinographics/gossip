@@ -63,7 +63,7 @@ import 'package:gossip/src/coordinator/sync_state.dart';
 ///   channelRepository: channelRepo,
 ///   entryRepository: entryRepo,
 ///   messagePort: MyBluetoothMessagePort(),  // Your transport implementation
-///   timerPort: RealTimePort(),               // Or InMemoryTimePort for testing
+///   timePort: RealTimePort(),               // Or InMemoryTimePort for testing
 /// );
 /// ```
 ///
@@ -125,7 +125,7 @@ class Coordinator {
 
   /// Timer port, used for the periodic auto-compaction loop. Null in
   /// local-only mode (no auto-compaction).
-  final TimePort? _timerPort;
+  final TimePort? _timePort;
 
   /// Drives the periodic auto-compaction loop. Null until [_startCompaction]
   /// constructs it on the first `start`/`resume`; every stop/pause/dispose
@@ -175,7 +175,7 @@ class Coordinator {
     required EntryRepository entryRepository,
     required CoordinatorConfig config,
     required HlcClock? hlcClock,
-    required TimePort? timerPort,
+    required TimePort? timePort,
     required StreamController<DomainEvent> eventsController,
     required LogCallback? onLog,
   }) : _peerRegistry = peerRegistry,
@@ -187,7 +187,7 @@ class Coordinator {
        _entryRepository = entryRepository,
        _config = config,
        _hlcClock = hlcClock,
-       _timerPort = timerPort,
+       _timePort = timePort,
        _eventsController = eventsController,
        _onLog = onLog;
 
@@ -195,7 +195,7 @@ class Coordinator {
   ///
   /// This is the main entry point for applications using the library.
   ///
-  /// [messagePort] and [timerPort] are optional. If both are provided, the
+  /// [messagePort] and [timePort] are optional. If both are provided, the
   /// coordinator will enable gossip protocol and failure detection for
   /// synchronization. If null, the coordinator operates in local-only mode
   /// without network sync.
@@ -219,7 +219,7 @@ class Coordinator {
     required EntryRepository entryRepository,
     PeerRepository? peerRepository,
     MessagePort? messagePort,
-    TimePort? timerPort,
+    TimePort? timePort,
     Random? random,
     CoordinatorConfig? config,
     LogCallback? onLog,
@@ -246,8 +246,8 @@ class Coordinator {
 
     // Create HlcClock if TimePort is provided for proper timestamp generation
     HlcClock? hlcClock;
-    if (timerPort != null) {
-      final timeSource = TimeSource(timerPort);
+    if (timePort != null) {
+      final timeSource = TimeSource(timePort);
       hlcClock = HlcClock(timeSource, maxDrift: cfg.hlcMaxDrift);
 
       // Restore clock state from LocalNodeRepository
@@ -280,7 +280,7 @@ class Coordinator {
       entryRepository: entryRepository,
       localNodeRepository: localNodeRepository,
       maxPayloadBytes: SyncMessageCodec.maxEntryPayloadForBudget(
-        cfg.maxDeltaResponseBytes,
+        cfg.maxMessageBytes,
       ),
       materializationService: materializationService,
       onEvent: (event) => coordinator._onChannelServiceEvent(event),
@@ -304,13 +304,13 @@ class Coordinator {
       entryRepository: entryRepository,
       config: cfg,
       hlcClock: hlcClock,
-      timerPort: timerPort,
+      timePort: timePort,
       eventsController: eventsController,
       onLog: onLog,
     );
 
     // Create GossipEngine and FailureDetector if ports are provided, wiring error callbacks
-    if (messagePort != null && timerPort != null) {
+    if (messagePort != null && timePort != null) {
       // GossipEngine computes its interval from per-peer RTT data in PeerRegistry.
       // FailureDetector gets its own RttTracker as a conservative fallback
       // for peers that don't yet have per-peer RTT estimates.
@@ -321,7 +321,7 @@ class Coordinator {
         localNode: localNode,
         peerDirectory: MembershipPeerDirectory(peerRegistry),
         entryRepository: entryRepository,
-        timePort: timerPort,
+        timePort: timePort,
         messagePort: messagePort,
         onError: coordinator._handleError,
         onEntriesMerged: coordinator._handleEntriesMerged,
@@ -331,14 +331,14 @@ class Coordinator {
         random: random,
         adaptiveTimingEnabled: cfg.adaptiveTimingEnabled,
         gossipInterval: cfg.gossipInterval,
-        maxDeltaResponseBytes: cfg.maxDeltaResponseBytes,
+        maxMessageBytes: cfg.maxMessageBytes,
       );
 
       coordinator._failureDetector = FailureDetector(
         codec: MembershipMessageCodec(),
         localNode: localNode,
         peerRegistry: peerRegistry,
-        timePort: timerPort,
+        timePort: timePort,
         messagePort: messagePort,
         onError: coordinator._handleError,
         onLog: onLog,
@@ -411,17 +411,17 @@ class Coordinator {
   /// disabled (null / non-positive).
   ///
   /// Constructs [_compactionScheduler] on first use — it needs the resolved
-  /// [_timerPort] and [CoordinatorConfig.compactionInterval], neither of
+  /// [_timePort] and [CoordinatorConfig.compactionInterval], neither of
   /// which are available at construction time in local-only mode — then
   /// reuses it across subsequent stop/start or pause/resume cycles.
   void _startCompaction() {
-    final timerPort = _timerPort;
+    final timePort = _timePort;
     final interval = _config.compactionInterval;
-    if (timerPort == null || interval == null || interval <= Duration.zero) {
+    if (timePort == null || interval == null || interval <= Duration.zero) {
       return;
     }
     _compactionScheduler ??= GenerationScheduler(
-      timePort: timerPort,
+      timePort: timePort,
       nextDelay: () => interval,
       tick: _channelService.compactAll,
       onTickError: (error, stackTrace) => _handleError(
@@ -1124,7 +1124,7 @@ class Coordinator {
   ///   channelRepository: channelRepo,
   ///   entryRepository: entryRepo,
   ///   messagePort: messagePort,
-  ///   timerPort: timerPort,
+  ///   timePort: timePort,
   /// );
   /// await coordinator.start();
   /// ```

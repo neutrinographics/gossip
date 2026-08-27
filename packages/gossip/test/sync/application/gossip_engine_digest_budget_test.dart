@@ -104,7 +104,7 @@ void main() {
       'an oversized digest is paginated to fit the transport budget',
       () async {
         final h = GossipEngineTestHarness(
-          maxDeltaResponseBytes: 300,
+          maxMessageBytes: 300,
           gossipInterval: const Duration(seconds: 100),
         );
         final peer = h.addPeer('peer1');
@@ -144,7 +144,7 @@ void main() {
 
     test('rotation covers every stream over successive rounds', () async {
       final h = GossipEngineTestHarness(
-        maxDeltaResponseBytes: 300,
+        maxMessageBytes: 300,
         gossipInterval: const Duration(seconds: 100),
       );
       final peer = h.addPeer('peer1');
@@ -197,7 +197,7 @@ void main() {
       () async {
         final errors = <SyncError>[];
         final h = GossipEngineTestHarness(
-          maxDeltaResponseBytes: 250,
+          maxMessageBytes: 250,
           gossipInterval: const Duration(seconds: 100),
         );
         // Route engine errors into our list.
@@ -259,7 +259,7 @@ void main() {
       'handleDigestRequest budgets its response to the transport limit',
       () async {
         final h = GossipEngineTestHarness(
-          maxDeltaResponseBytes: 300,
+          maxMessageBytes: 300,
           gossipInterval: const Duration(seconds: 100),
         );
         final peer = h.addPeer('peer1');
@@ -320,7 +320,7 @@ void main() {
     test('successive over-budget responses rotate the fitted window instead of '
         'truncating the same tail every exchange', () async {
       final h = GossipEngineTestHarness(
-        maxDeltaResponseBytes: 300,
+        maxMessageBytes: 300,
         gossipInterval: const Duration(seconds: 100),
       );
       final peer = h.addPeer('peer1');
@@ -458,7 +458,7 @@ void main() {
         timePort: InMemoryTimePort(),
         messagePort: InMemoryMessagePort(node, bus),
         localNodeRepository: InMemoryLocalNodeRepository(nodeId: node),
-        maxDeltaResponseBytes: 300, // forces digest pagination
+        maxMessageBytes: 300, // forces digest pagination
       );
 
       final engineA = engine(nodeA, registryA, entryRepoA);

@@ -321,7 +321,7 @@ void main() {
       final peerRegistry = PeerRegistry(localNode: localNode);
       final entryRepo = InMemoryEntryRepository();
       final port = InMemoryMessagePort(localNode, InMemoryMessageBus());
-      final timerPort = InMemoryTimePort();
+      final timePort = InMemoryTimePort();
 
       // Track emitted errors
       final errors = <SyncError>[];
@@ -332,7 +332,7 @@ void main() {
         entryRepository: entryRepo,
         messagePort: port,
         localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        timePort: timerPort,
+        timePort: timePort,
         onError: errors.add,
       );
 
@@ -360,7 +360,7 @@ void main() {
         final localNode = NodeId('local');
         final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
-        final timerPort = InMemoryTimePort();
+        final timePort = InMemoryTimePort();
         final messagePort = InMemoryMessagePort(
           localNode,
           InMemoryMessageBus(),
@@ -371,7 +371,7 @@ void main() {
           localNode: localNode,
           peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
-          timePort: timerPort,
+          timePort: timePort,
           messagePort: messagePort,
           localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           gossipInterval: Duration(milliseconds: 100),
@@ -391,7 +391,7 @@ void main() {
         final registry = PeerRegistry(localNode: localNode);
         registry.addPeer(peer, occurredAt: DateTime.now());
         final entryRepo = InMemoryEntryRepository();
-        final timerPort = InMemoryTimePort();
+        final timePort = InMemoryTimePort();
         final messagePort = InMemoryMessagePort(
           localNode,
           InMemoryMessageBus(),
@@ -401,7 +401,7 @@ void main() {
           localNode: localNode,
           peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
-          timePort: timerPort,
+          timePort: timePort,
           messagePort: messagePort,
           localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           adaptiveTimingEnabled: true,
@@ -429,7 +429,7 @@ void main() {
         final registry = PeerRegistry(localNode: localNode);
         registry.addPeer(peer, occurredAt: DateTime.now());
         final entryRepo = InMemoryEntryRepository();
-        final timerPort = InMemoryTimePort();
+        final timePort = InMemoryTimePort();
         final messagePort = InMemoryMessagePort(
           localNode,
           InMemoryMessageBus(),
@@ -439,7 +439,7 @@ void main() {
           localNode: localNode,
           peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
-          timePort: timerPort,
+          timePort: timePort,
           messagePort: messagePort,
           localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           adaptiveTimingEnabled: true,
@@ -463,7 +463,7 @@ void main() {
         final registry = PeerRegistry(localNode: localNode);
         registry.addPeer(peer, occurredAt: DateTime.now());
         final entryRepo = InMemoryEntryRepository();
-        final timerPort = InMemoryTimePort();
+        final timePort = InMemoryTimePort();
         final messagePort = InMemoryMessagePort(
           localNode,
           InMemoryMessageBus(),
@@ -473,7 +473,7 @@ void main() {
           localNode: localNode,
           peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
-          timePort: timerPort,
+          timePort: timePort,
           messagePort: messagePort,
           localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           adaptiveTimingEnabled: true,
@@ -492,7 +492,7 @@ void main() {
         final localNode = NodeId('local');
         final registry = PeerRegistry(localNode: localNode);
         final entryRepo = InMemoryEntryRepository();
-        final timerPort = InMemoryTimePort();
+        final timePort = InMemoryTimePort();
         final messagePort = InMemoryMessagePort(
           localNode,
           InMemoryMessageBus(),
@@ -503,7 +503,7 @@ void main() {
           localNode: localNode,
           peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
-          timePort: timerPort,
+          timePort: timePort,
           messagePort: messagePort,
           localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           // adaptiveTimingEnabled defaults to false
@@ -531,7 +531,7 @@ void main() {
           registry.recordPeerRtt(slowPeer, const Duration(milliseconds: 3000));
 
           final entryRepo = InMemoryEntryRepository();
-          final timerPort = InMemoryTimePort();
+          final timePort = InMemoryTimePort();
           final messagePort = InMemoryMessagePort(
             localNode,
             InMemoryMessageBus(),
@@ -542,7 +542,7 @@ void main() {
             localNode: localNode,
             peerDirectory: MembershipPeerDirectory(registry),
             entryRepository: entryRepo,
-            timePort: timerPort,
+            timePort: timePort,
             messagePort: messagePort,
             localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
             adaptiveTimingEnabled: true,
@@ -566,7 +566,7 @@ void main() {
           // No RTT recorded for peer
 
           final entryRepo = InMemoryEntryRepository();
-          final timerPort = InMemoryTimePort();
+          final timePort = InMemoryTimePort();
           final messagePort = InMemoryMessagePort(
             localNode,
             InMemoryMessageBus(),
@@ -577,7 +577,7 @@ void main() {
             localNode: localNode,
             peerDirectory: MembershipPeerDirectory(registry),
             entryRepository: entryRepo,
-            timePort: timerPort,
+            timePort: timePort,
             messagePort: messagePort,
             localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
             adaptiveTimingEnabled: true,
@@ -607,7 +607,7 @@ void main() {
         registry.recordPeerRtt(slowPeer, const Duration(milliseconds: 5000));
 
         final entryRepo = InMemoryEntryRepository();
-        final timerPort = InMemoryTimePort();
+        final timePort = InMemoryTimePort();
         final messagePort = InMemoryMessagePort(
           localNode,
           InMemoryMessageBus(),
@@ -618,7 +618,7 @@ void main() {
           localNode: localNode,
           peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
-          timePort: timerPort,
+          timePort: timePort,
           messagePort: messagePort,
           localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           adaptiveTimingEnabled: true,
@@ -639,7 +639,7 @@ void main() {
         registry.addPeer(peerId, occurredAt: DateTime.now());
 
         final entryRepo = InMemoryEntryRepository();
-        final timerPort = InMemoryTimePort();
+        final timePort = InMemoryTimePort();
         final messagePort = InMemoryMessagePort(
           localNode,
           InMemoryMessageBus(),
@@ -650,7 +650,7 @@ void main() {
           localNode: localNode,
           peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
-          timePort: timerPort,
+          timePort: timePort,
           messagePort: messagePort,
           localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         );
@@ -678,7 +678,7 @@ void main() {
         registry.addPeer(peerId, occurredAt: DateTime.now());
 
         final entryRepo = InMemoryEntryRepository();
-        final timerPort = InMemoryTimePort();
+        final timePort = InMemoryTimePort();
         final bus = InMemoryMessageBus();
         final messagePort = InMemoryMessagePort(localNode, bus);
 
@@ -690,7 +690,7 @@ void main() {
           localNode: localNode,
           peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
-          timePort: timerPort,
+          timePort: timePort,
           messagePort: messagePort,
           localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         );
@@ -721,7 +721,7 @@ void main() {
         registry.addPeer(peerId, occurredAt: DateTime.now());
 
         final entryRepo = InMemoryEntryRepository();
-        final timerPort = InMemoryTimePort();
+        final timePort = InMemoryTimePort();
         final bus = InMemoryMessageBus();
         final messagePort = InMemoryMessagePort(localNode, bus);
 
@@ -733,7 +733,7 @@ void main() {
           localNode: localNode,
           peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
-          timePort: timerPort,
+          timePort: timePort,
           messagePort: messagePort,
           localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         );
@@ -774,7 +774,7 @@ void main() {
           registry.addPeer(healthyPeerId, occurredAt: DateTime.now());
 
           final entryRepo = InMemoryEntryRepository();
-          final timerPort = InMemoryTimePort();
+          final timePort = InMemoryTimePort();
           final bus = InMemoryMessageBus();
           final messagePort = InMemoryMessagePort(localNode, bus);
 
@@ -787,7 +787,7 @@ void main() {
             localNode: localNode,
             peerDirectory: MembershipPeerDirectory(registry),
             entryRepository: entryRepo,
-            timePort: timerPort,
+            timePort: timePort,
             messagePort: messagePort,
             localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           );
@@ -829,7 +829,7 @@ void main() {
         registry.addPeer(peer2, occurredAt: DateTime.now());
 
         final entryRepo = InMemoryEntryRepository();
-        final timerPort = InMemoryTimePort();
+        final timePort = InMemoryTimePort();
         final bus = InMemoryMessageBus();
         final messagePort = InMemoryMessagePort(localNode, bus);
 
@@ -841,7 +841,7 @@ void main() {
           localNode: localNode,
           peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
-          timePort: timerPort,
+          timePort: timePort,
           messagePort: messagePort,
           localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         );

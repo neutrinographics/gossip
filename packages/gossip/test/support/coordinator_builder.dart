@@ -101,7 +101,7 @@ Future<Coordinator> createTestCoordinator({
     peerRepository: peerRepository ?? InMemoryPeerRepository(),
     entryRepository: entryRepository ?? InMemoryEntryRepository(),
     messagePort: bus == null ? null : InMemoryMessagePort(localNode, bus),
-    timerPort: timePort,
+    timePort: timePort,
     config: config,
     onLog: onLog,
   );

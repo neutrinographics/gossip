@@ -34,12 +34,12 @@ class _PendingDelay {
 ///
 /// ## Usage in Tests
 /// ```dart
-/// final timerPort = InMemoryTimePort();
+/// final timePort = InMemoryTimePort();
 /// engine.start(); // Schedules periodic gossip
 ///
 /// // Advance time by 1 second, triggering any scheduled callbacks
 /// // and completing any delays that have elapsed
-/// await timerPort.advance(Duration(seconds: 1));
+/// await timePort.advance(Duration(seconds: 1));
 /// ```
 ///
 /// ## Time Simulation
@@ -86,7 +86,7 @@ class InMemoryTimePort implements TimePort {
   ///
   /// ```dart
   /// // Advance 500ms - any delay(Duration(milliseconds: 500)) will complete
-  /// await timerPort.advance(Duration(milliseconds: 500));
+  /// await timePort.advance(Duration(milliseconds: 500));
   /// ```
   Future<void> advance(Duration duration) async {
     _nowMs += duration.inMilliseconds;

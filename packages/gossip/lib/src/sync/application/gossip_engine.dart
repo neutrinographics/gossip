@@ -134,7 +134,8 @@ class GossipEngine {
   /// When provided, logs message types, sizes, and other protocol details.
   final LogCallback? onLog;
 
-  /// Maximum encoded size (in bytes) of a single [DeltaResponse].
+  /// The byte budget for every sync protocol message — digests, delta
+  /// pages, and pushes — sized to the 32 KB transport limit.
   ///
   /// [handleDeltaRequest] truncates the delta to a prefix that fits this
   /// budget; the remainder is delivered by subsequent anti-entropy rounds
@@ -144,7 +145,7 @@ class GossipEngine {
   ///
   /// Defaults to 30KB, leaving envelope headroom under the 32KB transport
   /// limit.
-  final int maxDeltaResponseBytes;
+  final int maxMessageBytes;
 
   /// Codec for serializing/deserializing this context's (sync's) protocol
   /// messages.
@@ -345,7 +346,7 @@ class GossipEngine {
     Random? random,
     Duration? gossipInterval,
     bool adaptiveTimingEnabled = false,
-    this.maxDeltaResponseBytes = 30 * 1024,
+    this.maxMessageBytes = 30 * 1024,
   }) : _codec = codec,
        _hlcClock = hlcClock,
        _localNodeRepository = localNodeRepository,
@@ -631,7 +632,7 @@ class GossipEngine {
         streamId: streamId,
         entries: batch.value,
       );
-      if (_codec.encode(push).length > maxDeltaResponseBytes) continue;
+      if (_codec.encode(push).length > maxMessageBytes) continue;
       for (final partner in partners) {
         await _sendMessage(partner.nodeId, push);
       }
@@ -796,7 +797,7 @@ class GossipEngine {
     }
 
     final full = DigestRequest(sender: localNode, digests: all);
-    if (_codec.encode(full).length <= maxDeltaResponseBytes) {
+    if (_codec.encode(full).length <= maxMessageBytes) {
       return full;
     }
 
@@ -823,7 +824,7 @@ class GossipEngine {
   }
 
   /// Selects the largest prefix of [flat] (starting at [startIndex], wrapping)
-  /// whose encoded digest message fits [maxDeltaResponseBytes], regrouped by
+  /// whose encoded digest message fits [maxMessageBytes], regrouped by
   /// channel. Returns the selected digests and the number of items consumed
   /// (for advancing the rotation cursor).
   ///
@@ -855,13 +856,13 @@ class GossipEngine {
           item.channel.value.length +
           _channelEnvelopeOverheadBytes;
 
-      if (base + cost > maxDeltaResponseBytes) {
+      if (base + cost > maxMessageBytes) {
         _emitError(
           ChannelSyncError(
             item.channel,
             SyncErrorType.protocolError,
             'Digest for ${item.channel}/${item.digest.streamId} is ~$cost '
-            'bytes and cannot fit maxDeltaResponseBytes=$maxDeltaResponseBytes; '
+            'bytes and cannot fit maxMessageBytes=$maxMessageBytes; '
             'that stream has too many authors to sync (consider compaction '
             'or sharding the channel)',
             occurredAt: DateTime.now(),
@@ -871,7 +872,7 @@ class GossipEngine {
         continue;
       }
 
-      if (size + cost > maxDeltaResponseBytes) break; // window full
+      if (size + cost > maxMessageBytes) break; // window full
 
       size += cost;
       selected.putIfAbsent(item.channel, () => []).add(item.digest);
@@ -1488,7 +1489,7 @@ class GossipEngine {
   ///
   /// Computes the entries the peer is missing via [computeDelta] and
   /// returns them in a [DeltaResponse], truncated so the encoded message
-  /// fits [maxDeltaResponseBytes]. Truncation keeps a prefix of the
+  /// fits [maxMessageBytes]. Truncation keeps a prefix of the
   /// repository's timestamp order — per-author HLC monotonicity means a
   /// prefix is per-author sequence-contiguous, so the requester's version
   /// vector never develops holes. The requester obtains the remainder in
@@ -1554,7 +1555,7 @@ class GossipEngine {
   }
 
   /// Selects the prefix of [delta] whose encoded [DeltaResponse] fits
-  /// [maxDeltaResponseBytes].
+  /// [maxMessageBytes].
   ///
   /// An entry too large to ever fit (even alone in an empty message) can
   /// never be synced: it is reported via [ErrorCallback] and its author's
@@ -1590,7 +1591,7 @@ class GossipEngine {
       // +1 per entry for the JSON array separator.
       final cost = _syncCodec.encodedEntrySize(entry) + 1;
 
-      if (baseSize + cost > maxDeltaResponseBytes) {
+      if (baseSize + cost > maxMessageBytes) {
         // Undeliverable: no message can ever carry this entry.
         _emitError(
           ChannelSyncError(
@@ -1599,7 +1600,7 @@ class GossipEngine {
             'Entry ${entry.author}#${entry.sequence} in '
             '${request.channelId}/${request.streamId} encodes to '
             '$cost bytes and can never fit '
-            'maxDeltaResponseBytes=$maxDeltaResponseBytes; '
+            'maxMessageBytes=$maxMessageBytes; '
             'it cannot be synced to peers',
             occurredAt: DateTime.now(),
           ),
@@ -1608,7 +1609,7 @@ class GossipEngine {
         continue;
       }
 
-      if (size + cost > maxDeltaResponseBytes) {
+      if (size + cost > maxMessageBytes) {
         // Page full and this entry is deliverable in a future page — signal
         // the requester to continue immediately.
         truncated = true;

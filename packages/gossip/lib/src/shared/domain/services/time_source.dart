@@ -11,7 +11,7 @@ import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 ///
 /// ## Usage
 /// ```dart
-/// final timeSource = TimeSource(timerPort);
+/// final timeSource = TimeSource(timePort);
 /// final now = timeSource.nowMillis();
 /// ```
 class TimeSource {

@@ -35,6 +35,8 @@ publish under the existing pub.dev `gossip` name must version above the old
 - Local-node invariant violations (`removeMember` of the local node,
   `addPeer` of self) throw typed `DomainException` instead of generic
   exceptions.
+- `Coordinator.create(timerPort:)` renamed to `timePort:`.
+- `CoordinatorConfig.maxDeltaResponseBytes` renamed to `maxMessageBytes`.
 
 ### Behavioral
 

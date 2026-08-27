@@ -32,7 +32,7 @@ abstract class TimerHandle {
 ///   peerRepository: peerRepo,
 ///   entryRepository: entryRepo,
 ///   messagePort: myMessagePort,
-///   timerPort: RealTimePort(),  // Use real time
+///   timePort: RealTimePort(),  // Use real time
 /// );
 /// ```
 ///
@@ -43,7 +43,7 @@ abstract class TimerHandle {
 /// final coordinator = await Coordinator.create(
 ///   localNodeRepository: InMemoryLocalNodeRepository(),
 ///   // ... other params
-///   timerPort: timePort,
+///   timePort: timePort,
 /// );
 ///
 /// await coordinator.start();

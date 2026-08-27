@@ -32,7 +32,7 @@ void main() {
     test(
       'handleDeltaRequest caps the encoded DeltaResponse under the budget',
       () async {
-        final h = GossipEngineTestHarness(maxDeltaResponseBytes: 30 * 1024);
+        final h = GossipEngineTestHarness(maxMessageBytes: 30 * 1024);
         h.createChannel('ch1', streamIds: ['s1']);
 
         // 20 entries x 4KB: far more than one 30KB message can carry.
@@ -77,7 +77,7 @@ void main() {
     );
 
     test('truncated deltas converge over repeated request cycles', () async {
-      final h = GossipEngineTestHarness(maxDeltaResponseBytes: 30 * 1024);
+      final h = GossipEngineTestHarness(maxMessageBytes: 30 * 1024);
       h.createChannel('ch1', streamIds: ['s1']);
 
       for (var i = 1; i <= 20; i++) {
@@ -121,7 +121,7 @@ void main() {
 
     test('an entry that can never fit emits an error and does not block '
         'other authors', () async {
-      final h = GossipEngineTestHarness(maxDeltaResponseBytes: 30 * 1024);
+      final h = GossipEngineTestHarness(maxMessageBytes: 30 * 1024);
       h.createChannel('ch1', streamIds: ['s1']);
 
       // Author A's entry is oversized even alone (40KB raw payload);

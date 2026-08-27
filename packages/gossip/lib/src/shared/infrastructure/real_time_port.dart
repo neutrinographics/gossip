@@ -20,10 +20,10 @@ class _RealTimerHandle implements TimerHandle {
 ///
 /// ## Usage
 /// ```dart
-/// final timerPort = RealTimePort();
+/// final timePort = RealTimePort();
 /// final coordinator = await Coordinator.create(
 ///   localNodeRepository: InMemoryLocalNodeRepository(nodeId: nodeId),
-///   timerPort: timerPort,
+///   timePort: timePort,
 ///   // ...
 /// );
 /// ```
