@@ -63,6 +63,41 @@ void main() {
       expect((events.first as ChannelCreated).channelId, equals(channelId));
     });
 
+    test('a synchronous ChannelCreated listener observes the facade already '
+        'registered', () async {
+      // Contract this pins: by the time a lifecycle event reaches
+      // listeners, the public surface (channelIds/getChannel) already
+      // reflects it — a listener never has to defer or re-poll to see
+      // consistent state. Today that holds because the emit sits after
+      // the service call's own await chain, so the coordinator's
+      // continuation (which populates the facade cache) always finishes
+      // before the event's delivery microtask fires. If a future
+      // refactor shortens that chain enough to flip the ordering, this
+      // test fails loudly instead of a consumer silently reading a
+      // not-yet-registered channel.
+      final coordinator = await createTestCoordinator();
+      final channelId = ChannelId('channel1');
+
+      var seenFacade = coordinator.getChannel(channelId);
+      List<ChannelId>? seenIds;
+      coordinator.events.listen((event) {
+        if (event is ChannelCreated) {
+          seenFacade = coordinator.getChannel(channelId);
+          seenIds = coordinator.channelIds;
+        }
+      });
+
+      await coordinator.createChannel(channelId);
+
+      await pumpUntil(
+        () => seenIds != null,
+        describe: 'the ChannelCreated listener observing state',
+      );
+
+      expect(seenFacade, isNotNull);
+      expect(seenIds, contains(channelId));
+    });
+
     test('getChannel returns null for non-existent channel', () async {
       final coordinator = await createTestCoordinator();
 
@@ -879,6 +914,44 @@ void main() {
         await coordinator.removeChannel(ChannelId('nonexistent'));
 
         expect(events, isEmpty);
+      });
+
+      test('a synchronous ChannelRemoved listener observes the facade cache '
+          'already reflecting the removal', () async {
+        // Contract this pins (mirrors the ChannelCreated pin above): a
+        // lifecycle event's listeners see the public surface already
+        // consistent with the event, never a stale snapshot from before
+        // the coordinator finished its own cleanup. Today that holds
+        // because the emit sits after the service call's own await
+        // chain, so the coordinator's continuation (which removes the
+        // facade from the cache) always finishes before the event's
+        // delivery microtask fires. A listener that synchronously reads
+        // channelIds/getChannel on ChannelRemoved — the way
+        // examples/gossip_chat's ChatController refreshes its channel
+        // list — depends on this: if a future refactor shortens the
+        // service call enough to flip the ordering, this test fails
+        // loudly instead of that consumer silently showing a
+        // just-removed channel.
+        final coordinator = await createTestCoordinator();
+
+        final channelId = ChannelId('channel1');
+        await coordinator.createChannel(channelId);
+
+        List<ChannelId>? channelIdsAtEventTime;
+        coordinator.events.listen((event) {
+          if (event is ChannelRemoved) {
+            channelIdsAtEventTime = coordinator.channelIds;
+          }
+        });
+
+        await coordinator.removeChannel(channelId);
+
+        await pumpUntil(
+          () => channelIdsAtEventTime != null,
+          describe: 'the ChannelRemoved listener observing channelIds',
+        );
+
+        expect(channelIdsAtEventTime, isNot(contains(channelId)));
       });
     });
 
