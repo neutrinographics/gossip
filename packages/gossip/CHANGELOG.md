@@ -52,6 +52,11 @@ publish under the existing pub.dev `gossip` name must version above the old
   `baseVersion` field. `EntryRepository.removeEntries` must never regress
   the version vector, so the two fields could never actually differ —
   compaction reports the stream's (unchanged) version vector once.
+- `TimeBasedRetention` and `CompositeRetention` are no longer invocable
+  with the `const` keyword — both constructors now validate their
+  argument (a non-negative `maxAge`, a non-empty `policies` list), and a
+  value-dependent guard is incompatible with const invocation in Dart.
+  Construct them without `const`.
 
 ### Behavioral
 

@@ -155,9 +155,18 @@ class GossipEngine {
   /// backlog produces one giant message that the transport can never send,
   /// livelocking sync (the 32KB Android Nearby limit is the design target).
   ///
-  /// Defaults to 30KB, leaving envelope headroom under the 32KB transport
-  /// limit.
+  /// Defaults to [defaultMaxMessageBytes], leaving envelope headroom under
+  /// the 32KB transport limit.
   final int maxMessageBytes;
+
+  /// Default value for [maxMessageBytes]: 30KB.
+  ///
+  /// A named constant rather than a literal repeated at every call site
+  /// that needs "the same default the engine would pick anyway" (e.g.
+  /// test harnesses building a [GossipEngine] with an explicit
+  /// [maxMessageBytes] that should just track the engine's own default) —
+  /// so the two can't silently drift apart.
+  static const int defaultMaxMessageBytes = 30 * 1024;
 
   /// Codec for serializing/deserializing this context's (sync's) protocol
   /// messages.
@@ -292,7 +301,7 @@ class GossipEngine {
     Random? random,
     Duration? gossipInterval,
     bool adaptiveTimingEnabled = false,
-    this.maxMessageBytes = 30 * 1024,
+    this.maxMessageBytes = defaultMaxMessageBytes,
   }) : _codec = codec,
        _hlcClock = hlcClock,
        _localNodeRepository = localNodeRepository,

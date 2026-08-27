@@ -135,7 +135,10 @@ class Hlc implements Comparable<Hlc> {
   /// Parses an HLC from its string representation.
   ///
   /// Expected format: `Hlc(physicalMs:logical)` as produced by [toString].
-  /// Throws [FormatException] if the string is malformed.
+  /// Throws [FormatException] if the string doesn't match that shape, or
+  /// [ArgumentError] if it does but a component is out of the [Hlc]
+  /// constructor's range (e.g. a logical counter over 16 bits) — the shape
+  /// check and the range check are independent, so either can fail.
   factory Hlc.parse(String s) {
     final match = RegExp(r'^Hlc\((\d+):(\d+)\)$').firstMatch(s);
     if (match == null) {

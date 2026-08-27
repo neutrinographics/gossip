@@ -70,15 +70,18 @@ class TimeBasedRetention implements RetentionPolicy {
   /// Maximum age of entries to retain.
   final Duration maxAge;
 
-  // Not `const`: a const constructor's assert clause must be a
-  // "potentially constant expression" per the Dart language spec, and
-  // that grammar excludes arbitrary instance-getter access (verified:
-  // `Duration.isNegative`/`inMicroseconds` are both rejected at
-  // declaration time, unconditionally, the moment the constructor is
-  // marked const — unlike `List.length`, which the grammar special-cases
-  // and which is what keeps [CompositeRetention] below const-compatible).
-  // No caller in this codebase constructs this with the `const` keyword,
-  // so dropping it costs nothing but gains a real guard.
+  // Not `const`: validating a parameter's *value* (not just its type)
+  // makes const invocation impossible, full stop — a const constructor
+  // can't have a body (so a factory-with-a-throw isn't an option
+  // either), which leaves `assert(...)` in the initializer list as the
+  // only place to put such a check, and Dart's constant-expression
+  // evaluator rejects instance-getter/property access there regardless
+  // of the parameter's type. Verified empirically for both this class
+  // (`Duration.isNegative`) and [CompositeRetention] (`List.length`):
+  // both fail to const-fold identically — there is no type for which
+  // this guard and `const` coexist. No caller in this codebase
+  // constructs this with the `const` keyword, so dropping it costs
+  // nothing but gains a real guard.
   TimeBasedRetention(this.maxAge)
     : assert(
         !maxAge.isNegative,
@@ -165,14 +168,15 @@ class CompositeRetention implements RetentionPolicy {
   /// The policies to combine (union semantics).
   final List<RetentionPolicy> policies;
 
-  const CompositeRetention(this.policies)
+  // Not `const`, for the same reason as [TimeBasedRetention]'s
+  // constructor: a value-dependent guard and const invocation cannot
+  // coexist (verified empirically for both this class's `List.isNotEmpty`
+  // and TimeBasedRetention's `Duration.isNegative` — no type escapes
+  // this). No caller in this codebase constructs this with the `const`
+  // keyword, so dropping it costs nothing but gains a real guard.
+  CompositeRetention(this.policies)
     : assert(
-        // `.length`, not `.isNotEmpty`: the const-expression grammar
-        // special-cases List.length but rejects derived getters like
-        // isNotEmpty outright, even at declaration time (see
-        // [TimeBasedRetention]'s constructor for the same limitation
-        // hitting Duration, which has no such carve-out).
-        policies.length > 0,
+        policies.isNotEmpty,
         'policies must not be empty — a composite with no sub-policies '
         'would retain nothing, silently discarding every entry on the '
         'next compaction',

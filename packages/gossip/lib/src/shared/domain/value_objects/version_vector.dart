@@ -30,7 +30,7 @@ class VersionVector {
   /// the copy: [operator []] already reads a missing node as 0, so a
   /// stored `{node: 0}` and an absent `node` are the same value — keeping
   /// both around as distinct representations would break equality and
-  /// hashCode for vectors that are observably identical (DH5).
+  /// hashCode for vectors that are observably identical.
   ///
   /// Throws [ArgumentError] if any sequence number is negative.
   VersionVector([Map<NodeId, int>? versions])
