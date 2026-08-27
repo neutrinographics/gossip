@@ -72,8 +72,8 @@ class LogEntry implements Comparable<LogEntry> {
 
   /// Compares entries for deterministic ordering: primarily by HLC
   /// timestamp (preserving causality), falling back to author then
-  /// sequence number as tiebreakers so nodes with identical HLCs still
-  /// sort identically everywhere.
+  /// sequence number as tiebreakers so entries with identical HLCs still
+  /// sort identically across all nodes.
   @override
   int compareTo(LogEntry other) {
     final timestampCmp = timestamp.compareTo(other.timestamp);

@@ -552,7 +552,8 @@ class Coordinator {
   /// Removes a channel and all its associated data — entries, materializer
   /// state, and the channel aggregate itself — from persistence, emitting
   /// [ChannelRemoved]. If the gossip engine is running, it stops syncing
-  /// this channel immediately rather than on its next periodic reload.
+  /// this channel immediately rather than only after the next stop/start
+  /// or pause/resume cycle.
   ///
   /// Returns true if the channel was removed, false if it didn't exist.
   Future<bool> removeChannel(ChannelId channelId) async {
