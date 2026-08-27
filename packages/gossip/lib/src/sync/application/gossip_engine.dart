@@ -97,9 +97,6 @@ import 'package:gossip/src/sync/application/reactive_pusher.dart';
 /// incoming messages. Both are independent; typically both are started together.
 ///
 /// Used by: Application facades (Coordinator) to manage data synchronization.
-///
-/// Comment keys like COR3-n / WIRE4-n / H-n refer to findings in
-/// `docs/audits/`.
 class GossipEngine {
   /// Local node identifier for this instance.
   final NodeId localNode;
@@ -206,16 +203,14 @@ class GossipEngine {
   /// already be initialized.
   late final GenerationScheduler _scheduler;
 
-  /// Owns the reactive-push debounce state machine (CC5-1):
-  /// coalescing a burst of local writes into one push instead of one per
-  /// write, and recognizing a stale debounce across [start]/[stop]/a live
-  /// round-loop scheduling failure. See [ReactivePusher]'s class doc for
-  /// why this split from [_scheduler] (which owns the round loop's own,
-  /// separate generation) rather than sharing one counter — that history
-  /// predates this class's adoption of [GenerationScheduler] and is
-  /// preserved in gossip_engine.dart's history, not restated here. Built
-  /// in the constructor body, after [_scheduler], since its `isRunning`
-  /// callback reads `_scheduler.isRunning`.
+  /// Owns the reactive-push debounce state machine: coalescing a burst of
+  /// local writes into one push instead of one per write, and recognizing
+  /// a stale debounce across [start]/[stop]/a live round-loop scheduling
+  /// failure. See [ReactivePusher]'s class doc for why this split from
+  /// [_scheduler] (which owns the round loop's own, separate generation)
+  /// rather than sharing one counter. Built in the constructor body, after
+  /// [_scheduler], since its `isRunning` callback reads
+  /// `_scheduler.isRunning`.
   late final ReactivePusher _pusher;
 
   /// Subscription to incoming messages (for cleanup on stop).
@@ -227,8 +222,8 @@ class GossipEngine {
   /// channels the local node is a member of.
   Map<ChannelId, ChannelAggregate> _channels = {};
 
-  /// Owns the gossip-round interval policy (CC5-13): static vs. adaptive,
-  /// the median-SRTT formula, and the quiescence pacer. See
+  /// Owns the gossip-round interval policy: static vs. adaptive, the
+  /// median-SRTT formula, and the quiescence pacer. See
   /// [GossipTimingPolicy] for why this is a separate object rather than
   /// fields here.
   late final GossipTimingPolicy _timing;
@@ -248,35 +243,34 @@ class GossipEngine {
 
   /// Owns pull-request dedup (at most one outstanding DeltaRequest per
   /// (peer, channel, stream) at a time) and the adaptive per-request
-  /// timeout derived from observed delta round-trip time (CC5-1). See
+  /// timeout derived from observed delta round-trip time. See
   /// [PendingPullTracker] for the per-peer keying rationale, the
   /// RFC-6298 timeout formula, and why a BLE page-transmit signal can't
   /// come from ping-based RTT.
   late final PendingPullTracker _pendingPullTracker;
 
-  /// Owns the delta-merge pipeline (CC5-1): filtering a
-  /// [DeltaResponse] to its per-author contiguous prefix, applying it,
-  /// advancing the HLC, and deciding on a continuation request. See
-  /// [DeltaMerger] for why it's notified of this engine's batch-count/news
-  /// bookkeeping and pull-tracker re-arming via injected callbacks rather
-  /// than reacting to its return value after [handleDeltaResponse] awaits
-  /// it — both must land at the exact point the pre-extraction code did,
-  /// inside the per-stream serialized merge body.
+  /// Owns the delta-merge pipeline: filtering a [DeltaResponse] to its
+  /// per-author contiguous prefix, applying it, advancing the HLC, and
+  /// deciding on a continuation request. See [DeltaMerger] for why it's
+  /// notified of this engine's batch-count/news bookkeeping and
+  /// pull-tracker re-arming via injected callbacks rather than reacting to
+  /// its return value after [handleDeltaResponse] awaits it — both must
+  /// fire at a specific point inside the per-stream serialized merge body.
   late final DeltaMerger _merger;
 
   /// Monotonic count of delta batches that merged at least one new entry.
   /// Exposed via [mergedBatchCount] as a coarse "recent sync activity"
-  /// signal for applications (G5).
+  /// signal for applications.
   int _mergedBatchCount = 0;
 
   static const Duration _metricsWindow = Duration(seconds: 10);
 
-  /// Owns byte-budgeted digest windowing (CC5-1): fitting a digest
-  /// request/response to [maxMessageBytes] by selecting a round-robin
-  /// rotated subset of (channel, stream) digests when the full set doesn't
-  /// fit, so no message is oversized and every stream is covered across
-  /// successive rounds (H4). See [DigestBudgeter] for the request/response
-  /// cursor split (OBS-3) and the conservative cost model.
+  /// Owns byte-budgeted digest windowing: fitting a digest request/response
+  /// to [maxMessageBytes] by selecting a round-robin rotated subset of
+  /// (channel, stream) digests when the full set doesn't fit, so no
+  /// message is oversized and every stream is covered across successive
+  /// rounds. See [DigestBudgeter] for the request/response cursor split
+  /// and the conservative cost model.
   late final DigestBudgeter _digestBudgeter;
 
   /// Per-peer congestion threshold for backpressure.
@@ -326,25 +320,25 @@ class GossipEngine {
       onEntriesMerged: onEntriesMerged,
       onError: onError,
       onLog: onLog,
-      // Fires at the exact point the pre-extraction `_mergeDeltaResponse`
-      // incremented `_mergedBatchCount`/called `_recordNews()` — before
-      // `onEntriesMerged` is awaited (see [DeltaMerger]'s doc).
+      // Must fire before `onEntriesMerged` is awaited — see [DeltaMerger]'s
+      // doc for why the ordering matters.
       onNewEntriesMerged: () {
         _mergedBatchCount++;
         _recordNews();
       },
-      // Fires at the exact point the pre-extraction code re-armed the
-      // pending-pull flag — still inside the merger's chained merge body,
-      // before the continuation is returned (see [DeltaMerger]'s doc).
+      // Re-arms the pending-pull flag from inside the merger's chained
+      // merge body, before the continuation is returned — see
+      // [DeltaMerger]'s doc for why this must happen synchronously there
+      // rather than after [merge] returns.
       onContinuationIssued: (peer, channelId, streamId) {
         _pendingPullTracker.markContinuation(peer, channelId, streamId);
       },
     );
     // Built here rather than the initializer list, mirroring
-    // FailureDetector's ProbeTimingPolicy construction (E2/CC5-13): keeps
-    // every extracted timing-policy collaborator constructed at the same
-    // site across the two engines rather than one in the initializer list
-    // and one in the body.
+    // FailureDetector's ProbeTimingPolicy construction: keeps every
+    // extracted timing-policy collaborator constructed at the same site
+    // across the two engines rather than one in the initializer list and
+    // one in the body.
     _timing = GossipTimingPolicy(
       peerDirectory: peerDirectory,
       staticInterval: gossipInterval,
@@ -466,7 +460,7 @@ class GossipEngine {
       _pendingPullTracker.effectiveTimeout;
 
   /// Number of delta requests currently in flight (pulls we are awaiting a
-  /// response for). A coarse "am I mid-sync?" signal for applications (G5):
+  /// response for). A coarse "am I mid-sync?" signal for applications:
   /// non-zero means we are actively pulling data from a peer. Delegates to
   /// [_pendingPullTracker] — see [PendingPullTracker.outstandingCount] for
   /// the expiry-exclusion rationale.
@@ -475,7 +469,7 @@ class GossipEngine {
   /// Monotonic count of delta batches that merged at least one new entry
   /// since construction. Poll it to detect recent sync activity: a value
   /// that stops advancing (together with [outstandingPullCount] == 0)
-  /// indicates the node has gone quiescent / caught up (G5).
+  /// indicates the node has gone quiescent / caught up.
   int get mergedBatchCount => _mergedBatchCount;
 
   /// Starts periodic gossip rounds.
@@ -660,31 +654,17 @@ class GossipEngine {
     final reachable = peerDirectory.reachablePartners();
     if (reachable.isEmpty) return;
 
-    // Filter out congested peers (per-peer backpressure) AND peers we
-    // already exchanged with inside the current interval.
-    //
     // Deliberate: this reads effectiveGossipInterval AFTER the quietRound()
     // above may have just grown it this very round, so the suppression
     // window here is already the just-grown interval, not the pre-round
     // one. That's intentional and self-correcting — it's time-based (see
-    // the recency-suppression note below), so widening the window only
-    // widens how long an idle pair goes between exchanges, consistent
-    // with the pacer's own stretch, never a correctness issue.
+    // [_staleUncongestedCandidates]'s recency-suppression note), so
+    // widening the window only widens how long an idle pair goes between
+    // exchanges, consistent with the pacer's own stretch, never a
+    // correctness issue.
     final interval = effectiveGossipInterval.inMilliseconds;
     final nowMs = timePort.nowMs;
-    final candidates = reachable
-        .where(
-          (p) =>
-              messagePort.pendingSendCount(p.nodeId) <=
-                  _perPeerCongestionThreshold &&
-              // Recency suppression (time-based — deliberately NOT
-              // cached-VV state): skip peers we exchanged with inside
-              // the current interval. Worst case of a wrong skip is one
-              // interval of delay.
-              (p.lastAntiEntropyMs == null ||
-                  nowMs - p.lastAntiEntropyMs! >= interval),
-        )
-        .toList();
+    final candidates = _staleUncongestedCandidates(reachable, interval, nowMs);
 
     if (candidates.isEmpty) {
       _log(
@@ -701,15 +681,39 @@ class GossipEngine {
     await _sendMessage(partner.nodeId, await _buildDigestRequest());
   }
 
+  /// Filters [reachable] down to peers that are both uncongested
+  /// (per-peer backpressure) and not exchanged with inside the current
+  /// [interval], as of [nowMs].
+  List<SyncPartner> _staleUncongestedCandidates(
+    List<SyncPartner> reachable,
+    int interval,
+    int nowMs,
+  ) {
+    return reachable
+        .where(
+          (p) =>
+              messagePort.pendingSendCount(p.nodeId) <=
+                  _perPeerCongestionThreshold &&
+              // Recency suppression (time-based — deliberately NOT
+              // cached-VV state): skip peers we exchanged with inside
+              // the current interval. Worst case of a wrong skip is one
+              // interval of delay.
+              (p.lastAntiEntropyMs == null ||
+                  nowMs - p.lastAntiEntropyMs! >= interval),
+        )
+        .toList();
+  }
+
   /// Selects the gossip partner from [candidates], preferring the
   /// least-recently-gossiped peer (a peer we have never gossiped with —
   /// null timestamp — counts as the most stale), with a random tiebreak
   /// among equally-stale peers.
   ///
   /// This bounds gossip coverage to ~(n-1) rounds instead of pure-random
-  /// selection's geometric distribution (the same win H3 gave SWIM probing),
-  /// while the tiebreak keeps selection decorrelated across nodes — each node
-  /// holds its own per-peer anti-entropy timestamps.
+  /// selection's geometric distribution (the same win bounded coverage
+  /// gives SWIM probing), while the tiebreak keeps selection decorrelated
+  /// across nodes — each node holds its own per-peer anti-entropy
+  /// timestamps.
   SyncPartner _selectGossipPartner(List<SyncPartner> candidates) {
     // Never-gossiped (null) sorts before any real timestamp: -1 < 0 <= nowMs.
     int staleKey(SyncPartner p) => p.lastAntiEntropyMs ?? -1;
@@ -729,7 +733,7 @@ class GossipEngine {
   /// case). When it doesn't, sends a byte-budgeted, round-robin-rotated
   /// subset of streams so no message is oversized and every stream is
   /// covered across rounds — instead of a giant message the transport can
-  /// never carry (which would livelock sync entirely, H4). Budgeting itself
+  /// never carry (which would livelock sync entirely). Budgeting itself
   /// is [_digestBudgeter]'s job; this method only generates the input and
   /// renders any [OversizedDigest] diagnostics it reports.
   Future<DigestRequest> _buildDigestRequest() async {
@@ -763,7 +767,7 @@ class GossipEngine {
   /// DigestRequest, rather than waiting for the random periodic round to
   /// select it. The gossip analogue of `FailureDetector.probeNewPeer`:
   /// called when a peer connects/reconnects so a fresh join or a healed
-  /// partition reconciles right away. With push-pull reciprocation (M1) the
+  /// partition reconciles right away. With push-pull reciprocation the
   /// single exchange syncs both directions. No-op when not running.
   Future<void> syncWithPeer(NodeId peerId) async {
     if (!_scheduler.isRunning) return;
@@ -838,8 +842,7 @@ class GossipEngine {
     }
     // Foreign-family frame (e.g. a membership Ping/Ack/PingReq sharing
     // the same transport) — not ours to handle. Routine traffic, not an
-    // error: mirrors the pre-injection behavior where the type-dispatch
-    // below simply had no matching branch for it.
+    // error.
     if (protocolMessage == null) return;
 
     try {
@@ -890,8 +893,7 @@ class GossipEngine {
       '${request.digests.length} channels',
     );
     // A reciprocated exchange is coverage for BOTH sides: record it
-    // so our own selector/suppression see this peer as fresh
-    // (missing half of WIRE4-1).
+    // so our own selector/suppression see this peer as fresh.
     peerDirectory.recordAntiEntropy(sender, nowMs);
     final response = await _handleDigestRequest(request);
     await _sendMessage(sender, response);
@@ -1145,7 +1147,7 @@ class GossipEngine {
     // larger, so the response is fitted independently by
     // [_digestBudgeter.fitResponse], with its own rotation cursor so an
     // over-budget response covers every stream across successive exchanges
-    // too, instead of truncating the same tail every time (OBS-3).
+    // too, instead of truncating the same tail every time.
     final byId = {for (final channel in channels) channel.id: channel};
 
     final flat = <({ChannelId channel, StreamDigest digest})>[];
@@ -1158,10 +1160,10 @@ class GossipEngine {
           channelDigest.channelId,
           streamDigest.streamId,
         );
-        // Dominance filter (WIRE4-5): if the requester's vector already
-        // covers ours, echoing it back is pure redundancy. Safe: the
-        // requester pulls only when the response shows us ahead, and the
-        // responder-behind direction is our own reciprocal pull.
+        // Dominance filter: if the requester's vector already covers ours,
+        // echoing it back is pure redundancy. Safe: the requester pulls
+        // only when the response shows us ahead, and the responder-behind
+        // direction is our own reciprocal pull.
         if (streamDigest.version.dominates(version)) continue;
         flat.add((
           channel: channelDigest.channelId,
@@ -1332,8 +1334,8 @@ class GossipEngine {
   /// with it — the new entries would be invisible to every peer whose
   /// vector already covers the numbers, and two payloads would exist
   /// under one entry identity. Adopt the claim as a sequence floor so
-  /// new local appends allocate past it (COR3-4). A lying peer can
-  /// only make us skip sequence numbers, which is harmless.
+  /// new local appends allocate past it. A lying peer can only make us
+  /// skip sequence numbers, which is harmless.
   Future<VersionVector> _adoptClaimedAuthorshipFloor(
     NodeId peer,
     ChannelId channelId,
@@ -1373,8 +1375,7 @@ class GossipEngine {
   Future<DeltaResponse> handleDeltaRequest(DeltaRequest request) async {
     // Serve only channels/streams this node actually has (mirrors the
     // ingestion guard in [handleDeltaResponse]): data for a channel we
-    // never joined — e.g. phantom entries persisted before the ingestion
-    // guard existed — must not cross the membership boundary (COR3-2).
+    // never joined must not cross the membership boundary.
     final channel = _channels[request.channelId];
     if (channel == null || !channel.hasStream(request.streamId)) {
       _log(
@@ -1396,23 +1397,11 @@ class GossipEngine {
       request.since,
     );
 
-    // A requester positioned below our compaction floor asked for entries
-    // retention pruned away — nobody can serve them from here. Report the
-    // floor so the requester can adopt truncated history; otherwise it
-    // drops the survivors as gapped and re-requests the same page forever
-    // (COR3-1).
     final fullFloor = await entryRepository.getCompactionFloor(
       request.channelId,
       request.streamId,
     );
-    var floor = VersionVector.empty;
-    if (fullFloor.entries.isNotEmpty) {
-      final belowFloor = <NodeId, int>{
-        for (final f in fullFloor.entries.entries)
-          if (request.since[f.key] < f.value) f.key: f.value,
-      };
-      if (belowFloor.isNotEmpty) floor = VersionVector(belowFloor);
-    }
+    final floor = _reportableFloor(request, fullFloor);
 
     final (fitted, hasMore) = _fitDeltaToBudget(request, delta);
     // Serving data back to a puller is news; an empty response (nothing to
@@ -1426,6 +1415,28 @@ class GossipEngine {
       hasMore: hasMore,
       floor: floor,
     );
+  }
+
+  /// The portion of our compaction floor [request]'s sender is still
+  /// behind — what to report as [DeltaResponse.floor].
+  ///
+  /// A requester positioned below our compaction floor asked for entries
+  /// retention pruned away — nobody can serve them from here. Reporting
+  /// the floor lets the requester adopt truncated history; otherwise it
+  /// drops the survivors as gapped and re-requests the same page forever.
+  VersionVector _reportableFloor(
+    DeltaRequest request,
+    VersionVector fullFloor,
+  ) {
+    var floor = VersionVector.empty;
+    if (fullFloor.entries.isNotEmpty) {
+      final belowFloor = <NodeId, int>{
+        for (final f in fullFloor.entries.entries)
+          if (request.since[f.key] < f.value) f.key: f.value,
+      };
+      if (belowFloor.isNotEmpty) floor = VersionVector(belowFloor);
+    }
+    return floor;
   }
 
   /// Selects the prefix of [delta] whose encoded [DeltaResponse] fits
@@ -1514,10 +1525,10 @@ class GossipEngine {
     // fan out to every reachable peer, so receiving data for a channel we
     // never joined is routine — silently storing it would accumulate
     // unbounded phantom data (never advertised, never compacted) and leak
-    // channel content across the membership boundary (COR3-2). The
-    // request path applies the same rule when computing pulls. This guard
-    // reads engine-owned channel state, so it stays here rather than
-    // moving into [DeltaMerger] with the rest of the merge pipeline.
+    // channel content across the membership boundary. The request path
+    // applies the same rule when computing pulls. This guard reads
+    // engine-owned channel state, so it stays here rather than moving
+    // into [DeltaMerger] with the rest of the merge pipeline.
     final channel = _channels[response.channelId];
     if (channel == null || !channel.hasStream(response.streamId)) {
       _log(

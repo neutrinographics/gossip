@@ -151,10 +151,6 @@ class MaterializationService {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Private helpers
-  // ---------------------------------------------------------------------------
-
   /// Returns all materializer states registered for a (channel, stream) pair.
   Iterable<MaterializerState<dynamic>> _statesForStream(
     ChannelId channelId,
@@ -164,10 +160,6 @@ class MaterializationService {
         .where((e) => e.key.$1 == channelId && e.key.$2 == streamId)
         .map((e) => e.value);
   }
-
-  // ---------------------------------------------------------------------------
-  // Fold engine
-  // ---------------------------------------------------------------------------
 
   /// Type-safe dispatch: initializes if needed, then rebuilds or folds.
   Future<void> _foldForState<T>(
@@ -225,7 +217,6 @@ class MaterializationService {
     if (cursorStr != null) {
       cursor = FoldCursor.tryParse(cursorStr);
       if (cursor == null) {
-        // Invalid cursor — force full rebuild
         await _fullRebuild<T>(matState, channelId, streamId);
         return;
       }
