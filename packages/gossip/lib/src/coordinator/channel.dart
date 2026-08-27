@@ -144,9 +144,6 @@ class Channel {
   /// write would be invisible data loss.
   /// Use [getOrCreateStream] if you want to create the stream automatically.
   EventStream getStream(StreamId streamId) {
-    // We always return a facade: reads on a missing stream are harmless
-    // (empty results); only append throws. For a sync check, use
-    // getStreamIds() first.
     return EventStream(id: streamId, channelId: id, service: _service);
   }
 }

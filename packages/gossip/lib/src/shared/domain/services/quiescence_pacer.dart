@@ -1,6 +1,6 @@
 import 'dart:math' as math;
 
-/// Pure quiescence pacing state machine (two-tier scheduling, WIRE4-1/2/4).
+/// Pure quiescence pacing state machine (two-tier scheduling).
 ///
 /// Owned by a protocol loop: the loop reports [quietRound] when a round
 /// carried no news and [news] the moment anything happens; [apply]

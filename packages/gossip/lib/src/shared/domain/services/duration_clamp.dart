@@ -1,8 +1,8 @@
 /// Constrains [value] to `[min, max]`, saturating rather than throwing.
 ///
-/// A single home for "keep a Duration inside its bounds" — an audit found
-/// three hand-rolled variants of this operation scattered across the
-/// library, each free to drift from the others.
+/// A single home for "keep a Duration inside its bounds" — hand-rolled
+/// clamping scattered across the library is free to drift into
+/// inconsistent bounds.
 Duration clampDuration(
   Duration value, {
   required Duration min,

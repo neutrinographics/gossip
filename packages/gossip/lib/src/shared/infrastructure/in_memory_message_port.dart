@@ -131,10 +131,6 @@ class InMemoryMessageBus {
     _ports.remove(nodeId);
   }
 
-  // ---------------------------------------------------------------------
-  // Link condition configuration
-  // ---------------------------------------------------------------------
-
   /// Blocks all messages sent [from] → [to] (one-way partition).
   ///
   /// The reverse direction is unaffected; block both directions for a full
@@ -270,10 +266,6 @@ class InMemoryMessageBus {
     _pruneIfNeutral(from, to);
   }
 
-  // ---------------------------------------------------------------------
-  // Held (in-flight) messages
-  // ---------------------------------------------------------------------
-
   /// Holds all subsequent messages sent [from] → [to] in an in-flight queue
   /// instead of delivering them (latency simulation).
   ///
@@ -326,10 +318,6 @@ class InMemoryMessageBus {
     return total;
   }
 
-  // ---------------------------------------------------------------------
-  // Cleanup
-  // ---------------------------------------------------------------------
-
   /// Resets every condition on the [from] → [to] link, delivering any held
   /// messages first.
   void clearLinkConditions(NodeId from, NodeId to) {
@@ -346,10 +334,6 @@ class InMemoryMessageBus {
       clearLinkConditions(from, to);
     }
   }
-
-  // ---------------------------------------------------------------------
-  // Delivery
-  // ---------------------------------------------------------------------
 
   /// Delivers a message from sender to destination.
   ///

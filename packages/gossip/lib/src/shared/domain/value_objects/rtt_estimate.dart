@@ -80,11 +80,10 @@ class RttEstimate {
   /// Creates an initial estimate with conservative default values.
   ///
   /// Default smoothed RTT is 500ms with variance 250ms, yielding an initial
-  /// timeout of 1500ms and probe interval of 4500ms. This is conservative
-  /// enough for BLE (typical RTT ~150ms) while halving the cold-start
-  /// penalty compared to the previous 1000ms/500ms defaults. The first
-  /// real RTT sample (via probeNewPeer) replaces these values immediately
-  /// per RFC 6298's first-sample rule.
+  /// timeout of 1500ms and probe interval of 4500ms — conservative enough
+  /// for BLE (typical RTT ~150ms) without an excessive cold-start penalty.
+  /// The first real RTT sample (via probeNewPeer) replaces these values
+  /// immediately per RFC 6298's first-sample rule.
   factory RttEstimate.initial() {
     return RttEstimate(
       smoothedRtt: const Duration(milliseconds: 500),

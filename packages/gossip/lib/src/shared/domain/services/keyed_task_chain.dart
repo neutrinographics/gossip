@@ -4,9 +4,9 @@ import 'package:meta/meta.dart';
 /// Serializes async work per key: tasks enqueued under the same key run
 /// strictly in order; different keys run independently.
 ///
-/// Centralizes the chain idiom previously hand-rolled at five sites, whose
-/// subtleties have bitten before (a `whenComplete` returning the map entry
-/// self-deadlocks — see the caching-repository regression test):
+/// Centralizes a chain idiom whose subtleties have bitten before (a
+/// `whenComplete` returning the map entry self-deadlocks — a regression
+/// this class's tests pin against):
 /// - a failed predecessor never blocks the chain — its error surfaces only
 ///   to its own awaiter;
 /// - the returned future is the caller's typed result, never the map entry;

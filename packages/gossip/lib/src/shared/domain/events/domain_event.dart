@@ -24,10 +24,6 @@ abstract class DomainEvent {
   const DomainEvent({required this.occurredAt});
 }
 
-// ─────────────────────────────────────────────────────────────
-// Error Events
-// ─────────────────────────────────────────────────────────────
-
 /// Emitted when a synchronization error occurs.
 ///
 /// Fired when: Operations encounter recoverable errors during sync
