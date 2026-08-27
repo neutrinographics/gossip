@@ -11,6 +11,8 @@ import 'package:gossip/src/shared/domain/services/generation_scheduler.dart';
 import 'package:gossip/src/shared/domain/services/jitter.dart';
 import 'package:gossip/src/shared/domain/services/rtt_tracker.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/rtt_estimate.dart';
+import 'package:gossip/src/membership/application/membership_timing_snapshot.dart';
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/membership/domain/entities/peer.dart';
 import 'package:gossip/src/membership/domain/services/probe_target_selector.dart';
@@ -319,6 +321,51 @@ class FailureDetector {
   /// Effective probe interval (time between probe rounds). Delegates to
   /// [_timing] — see [ProbeTimingPolicy.effectiveProbeInterval].
   Duration get effectiveProbeInterval => _timing.effectiveProbeInterval;
+
+  /// Snapshots this detector's RTT and timing state for observability
+  /// callers outside membership (see [MembershipTimingSnapshot]).
+  ///
+  /// Selects the minimum per-peer smoothed RTT, paired with that SAME
+  /// peer's variance (never an independently-chosen minimum variance across
+  /// peers — that would report a timeout basis no single peer actually
+  /// has). Falls back to the global [_rttTracker] estimate, as one unit,
+  /// only when no peer has an RTT estimate yet.
+  MembershipTimingSnapshot timingSnapshot() {
+    final perPeerRtt = <NodeId, RttEstimate>{};
+    Duration? minSrtt;
+    Duration? minSrttVariance;
+    int totalSamples = 0;
+
+    for (final peer in peerRegistry.allPeers) {
+      final rttEstimate = peer.metrics.rttEstimate;
+      if (rttEstimate != null) {
+        perPeerRtt[peer.id] = rttEstimate;
+        totalSamples++;
+        if (minSrtt == null || rttEstimate.smoothedRtt < minSrtt) {
+          minSrtt = rttEstimate.smoothedRtt;
+          minSrttVariance = rttEstimate.rttVariance;
+        }
+      }
+    }
+
+    // Fall back to the global tracker when no per-peer data exists.
+    final smoothedRtt = minSrtt ?? _rttTracker.smoothedRtt;
+    final rttVariance = minSrttVariance ?? _rttTracker.rttVariance;
+    final sampleCount = totalSamples > 0
+        ? totalSamples
+        : _rttTracker.sampleCount;
+    final hasSamples = totalSamples > 0 ? true : _rttTracker.hasReceivedSamples;
+
+    return MembershipTimingSnapshot(
+      perPeerRtt: perPeerRtt,
+      smoothedRtt: smoothedRtt,
+      rttVariance: rttVariance,
+      sampleCount: sampleCount,
+      hasSamples: hasSamples,
+      pingTimeout: effectivePingTimeout,
+      probeInterval: effectiveProbeInterval,
+    );
+  }
 
   // ---------------------------------------------------------------------------
   // Public API: lifecycle

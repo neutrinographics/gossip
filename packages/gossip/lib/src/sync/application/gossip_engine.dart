@@ -443,6 +443,11 @@ class GossipEngine {
   /// [GossipTimingPolicy.effectiveInterval] for the interval policy.
   Duration get effectiveGossipInterval => _timing.effectiveInterval;
 
+  /// Total messages pending send across all peers, as reported by
+  /// [messagePort]. Exposed here so observability callers (the coordinator
+  /// facade) never reach through this engine into its own port.
+  int get transportBacklog => messagePort.totalPendingSendCount;
+
   /// How long a pending delta request is honoured before it is considered
   /// stale and a replacement may be issued. Delegates to
   /// [_pendingPullTracker] — see [PendingPullTracker.effectiveTimeout] for

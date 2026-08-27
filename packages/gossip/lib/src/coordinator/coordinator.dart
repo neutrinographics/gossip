@@ -820,43 +820,20 @@ class Coordinator {
       return null;
     }
 
-    // Build per-peer RTT map and derive global fields from per-peer data.
-    final perPeerRtt = <NodeId, RttEstimate>{};
-    Duration? minSrtt;
-    Duration? minSrttVariance;
-    int totalSamples = 0;
-
-    for (final peer in _peerRegistry.allPeers) {
-      final rttEstimate = peer.metrics.rttEstimate;
-      if (rttEstimate != null) {
-        perPeerRtt[peer.id] = rttEstimate;
-        totalSamples++;
-        if (minSrtt == null || rttEstimate.smoothedRtt < minSrtt) {
-          minSrtt = rttEstimate.smoothedRtt;
-          minSrttVariance = rttEstimate.rttVariance;
-        }
-      }
-    }
-
-    // Fall back to global tracker when no per-peer data exists.
-    final rttTracker = _failureDetector!.rttTracker;
-    final smoothedRtt = minSrtt ?? rttTracker.smoothedRtt;
-    final rttVariance = minSrttVariance ?? rttTracker.rttVariance;
-    final sampleCount = totalSamples > 0
-        ? totalSamples
-        : rttTracker.sampleCount;
-    final hasSamples = totalSamples > 0 ? true : rttTracker.hasReceivedSamples;
+    // Each context assembles its own timing state; this facade only
+    // reshapes the two snapshots into the public, cross-context DTO.
+    final membershipTiming = _failureDetector!.timingSnapshot();
 
     return AdaptiveTimingStatus(
-      smoothedRtt: smoothedRtt,
-      rttVariance: rttVariance,
-      rttSampleCount: sampleCount,
-      hasRttSamples: hasSamples,
+      smoothedRtt: membershipTiming.smoothedRtt,
+      rttVariance: membershipTiming.rttVariance,
+      rttSampleCount: membershipTiming.sampleCount,
+      hasRttSamples: membershipTiming.hasSamples,
       effectiveGossipInterval: _gossipEngine!.effectiveGossipInterval,
-      effectivePingTimeout: _failureDetector!.effectivePingTimeout,
-      effectiveProbeInterval: _failureDetector!.effectiveProbeInterval,
-      totalPendingSendCount: _gossipEngine!.messagePort.totalPendingSendCount,
-      perPeerRtt: perPeerRtt,
+      effectivePingTimeout: membershipTiming.pingTimeout,
+      effectiveProbeInterval: membershipTiming.probeInterval,
+      totalPendingSendCount: _gossipEngine!.transportBacklog,
+      perPeerRtt: membershipTiming.perPeerRtt,
     );
   }
 
