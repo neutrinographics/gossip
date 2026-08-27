@@ -803,95 +803,13 @@ class GossipEngine {
 
     try {
       if (protocolMessage is DigestRequest) {
-        _log(
-          LogLevel.trace,
-          'RECV DigestRequest from ${_shortId(message.sender.value)}: '
-          '${protocolMessage.digests.length} channels',
-        );
-        // A reciprocated exchange is coverage for BOTH sides: record it
-        // so our own selector/suppression see this peer as fresh
-        // (missing half of WIRE4-1).
-        peerDirectory.recordAntiEntropy(message.sender, nowMs);
-        final response = await _handleDigestRequest(protocolMessage);
-        await _sendMessage(message.sender, response);
-        // Push-pull: the request already carries the initiator's version
-        // vectors, so reciprocate by pulling anything they advertised that
-        // we lack — making each exchange bidirectional instead of pulling
-        // only toward the initiator. Reciprocation is *active* sync, so
-        // gate it on running: a paused/listen-only engine still answers
-        // digests (serves data) but must not initiate new pulls.
-        if (_scheduler.isRunning) {
-          // A DigestRequest by design carries ALL the sender's channels, so
-          // ones we don't share are routine under partial channel overlap —
-          // filter them out here rather than letting _computeDeltaRequests
-          // emit a protocolError per non-shared channel per round. (On the
-          // DigestResponse path the digests are scoped to our own request,
-          // so an unknown channel there stays an anomaly worth reporting.)
-          final sharedDigests = <ChannelDigest>[];
-          for (final digest in protocolMessage.digests) {
-            if (_channels.containsKey(digest.channelId)) {
-              sharedDigests.add(digest);
-            } else {
-              _log(
-                LogLevel.trace,
-                'ignoring reciprocal digest for non-shared channel '
-                '${digest.channelId}',
-              );
-            }
-          }
-          await _sendDeltaRequests(
-            message.sender,
-            await _computeDeltaRequests(message.sender, sharedDigests),
-          );
-        }
+        await _onDigestRequest(protocolMessage, message.sender, nowMs);
       } else if (protocolMessage is DigestResponse) {
-        _log(
-          LogLevel.trace,
-          'RECV DigestResponse from ${_shortId(message.sender.value)}: '
-          '${protocolMessage.digests.length} channels',
-        );
-        // Pulling is active sync — a paused/listen-only engine serves but
-        // does not pull. (A DigestResponse is only ever a reply to our own
-        // request, which we make only while running.)
-        if (_scheduler.isRunning) {
-          await _sendDeltaRequests(
-            message.sender,
-            await handleDigestResponse(protocolMessage),
-          );
-        }
+        await _onDigestResponse(protocolMessage, message.sender);
       } else if (protocolMessage is DeltaRequest) {
-        _log(
-          LogLevel.debug,
-          'RECV DeltaRequest from ${_shortId(message.sender.value)}: '
-          'channel=${_shortId(protocolMessage.channelId.value)} '
-          'stream=${protocolMessage.streamId.value}',
-        );
-        // An inbound DeltaRequest means the peer is actively pulling from
-        // us — news regardless of whether we can serve anything back.
-        _recordNews();
-        final response = await handleDeltaRequest(protocolMessage);
-        await _sendMessage(message.sender, response);
+        await _onDeltaRequest(protocolMessage, message.sender);
       } else if (protocolMessage is DeltaResponse) {
-        final level = protocolMessage.entries.isEmpty
-            ? LogLevel.trace
-            : LogLevel.debug;
-        _log(
-          level,
-          'RECV DeltaResponse from ${_shortId(message.sender.value)}: '
-          'channel=${_shortId(protocolMessage.channelId.value)} '
-          'stream=${protocolMessage.streamId.value} '
-          'entries=${protocolMessage.entries.length}',
-        );
-        // Ingesting new data is active sync — a paused/listen-only engine
-        // drops incoming deltas (including unsolicited reactive pushes) and
-        // relies on anti-entropy to re-fetch them after resume.
-        if (_scheduler.isRunning) {
-          final continuation = await handleDeltaResponse(protocolMessage);
-          if (continuation != null) {
-            // Drain the rest of a truncated backlog immediately.
-            await _sendDeltaRequests(message.sender, [continuation]);
-          }
-        }
+        await _onDeltaResponse(protocolMessage, message.sender);
       }
     } catch (e, st) {
       // A handler failure is distinct from a decode failure: the message
@@ -914,6 +832,121 @@ class GossipEngine {
         e,
         st,
       );
+    }
+  }
+
+  /// Handles an inbound [DigestRequest] (Step 2 initiator side): answers it
+  /// with our own digests and, for channels we share, reciprocates by
+  /// pulling anything the peer advertised that we lack.
+  Future<void> _onDigestRequest(
+    DigestRequest request,
+    NodeId sender,
+    int nowMs,
+  ) async {
+    _log(
+      LogLevel.trace,
+      'RECV DigestRequest from ${_shortId(sender.value)}: '
+      '${request.digests.length} channels',
+    );
+    // A reciprocated exchange is coverage for BOTH sides: record it
+    // so our own selector/suppression see this peer as fresh
+    // (missing half of WIRE4-1).
+    peerDirectory.recordAntiEntropy(sender, nowMs);
+    final response = await _handleDigestRequest(request);
+    await _sendMessage(sender, response);
+    // Push-pull: the request already carries the initiator's version
+    // vectors, so reciprocate by pulling anything they advertised that
+    // we lack — making each exchange bidirectional instead of pulling
+    // only toward the initiator. Reciprocation is *active* sync, so
+    // gate it on running: a paused/listen-only engine still answers
+    // digests (serves data) but must not initiate new pulls.
+    if (_scheduler.isRunning) {
+      // A DigestRequest by design carries ALL the sender's channels, so
+      // ones we don't share are routine under partial channel overlap —
+      // filter them out here rather than letting _computeDeltaRequests
+      // emit a protocolError per non-shared channel per round. (On the
+      // DigestResponse path the digests are scoped to our own request,
+      // so an unknown channel there stays an anomaly worth reporting.)
+      final sharedDigests = _sharedDigests(request.digests);
+      await _sendDeltaRequests(
+        sender,
+        await _computeDeltaRequests(sender, sharedDigests),
+      );
+    }
+  }
+
+  /// Filters [digests] down to the channels we're a member of, logging the
+  /// rest — a [DigestRequest] carries all of the sender's channels by
+  /// design, so one we don't share is routine, not an anomaly.
+  List<ChannelDigest> _sharedDigests(List<ChannelDigest> digests) {
+    final sharedDigests = <ChannelDigest>[];
+    for (final digest in digests) {
+      if (_channels.containsKey(digest.channelId)) {
+        sharedDigests.add(digest);
+      } else {
+        _log(
+          LogLevel.trace,
+          'ignoring reciprocal digest for non-shared channel '
+          '${digest.channelId}',
+        );
+      }
+    }
+    return sharedDigests;
+  }
+
+  /// Handles an inbound [DigestResponse] (Step 3): pulls anything it shows
+  /// us missing.
+  Future<void> _onDigestResponse(DigestResponse response, NodeId sender) async {
+    _log(
+      LogLevel.trace,
+      'RECV DigestResponse from ${_shortId(sender.value)}: '
+      '${response.digests.length} channels',
+    );
+    // Pulling is active sync — a paused/listen-only engine serves but
+    // does not pull. (A DigestResponse is only ever a reply to our own
+    // request, which we make only while running.)
+    if (_scheduler.isRunning) {
+      await _sendDeltaRequests(sender, await handleDigestResponse(response));
+    }
+  }
+
+  /// Handles an inbound [DeltaRequest] (Step 4): serves the entries the
+  /// peer is missing.
+  Future<void> _onDeltaRequest(DeltaRequest request, NodeId sender) async {
+    _log(
+      LogLevel.debug,
+      'RECV DeltaRequest from ${_shortId(sender.value)}: '
+      'channel=${_shortId(request.channelId.value)} '
+      'stream=${request.streamId.value}',
+    );
+    // An inbound DeltaRequest means the peer is actively pulling from
+    // us — news regardless of whether we can serve anything back.
+    _recordNews();
+    final response = await handleDeltaRequest(request);
+    await _sendMessage(sender, response);
+  }
+
+  /// Handles an inbound [DeltaResponse]: merges the entries and, if the
+  /// peer signaled more remain, immediately drains the rest of a truncated
+  /// backlog.
+  Future<void> _onDeltaResponse(DeltaResponse response, NodeId sender) async {
+    final level = response.entries.isEmpty ? LogLevel.trace : LogLevel.debug;
+    _log(
+      level,
+      'RECV DeltaResponse from ${_shortId(sender.value)}: '
+      'channel=${_shortId(response.channelId.value)} '
+      'stream=${response.streamId.value} '
+      'entries=${response.entries.length}',
+    );
+    // Ingesting new data is active sync — a paused/listen-only engine
+    // drops incoming deltas (including unsolicited reactive pushes) and
+    // relies on anti-entropy to re-fetch them after resume.
+    if (_scheduler.isRunning) {
+      final continuation = await handleDeltaResponse(response);
+      if (continuation != null) {
+        // Drain the rest of a truncated backlog immediately.
+        await _sendDeltaRequests(sender, [continuation]);
+      }
     }
   }
 
@@ -1169,88 +1202,113 @@ class GossipEngine {
       }
 
       for (final streamDigest in channelDigest.streams) {
-        // Skip streams we don't have locally. Stream creation is a local
-        // operation (by design — apps coordinate stream names), so a
-        // peer's stream we never created is invisible here FOREVER; log
-        // it so the situation is diagnosable in the field.
-        if (!channel.hasStream(streamDigest.streamId)) {
-          _log(
-            LogLevel.trace,
-            'ignoring digest for ${channelDigest.channelId}/'
-            '${streamDigest.streamId}: stream not created locally',
-          );
-          continue;
-        }
-
-        // Dedup gate: skip if a non-expired pull to THIS peer for this
-        // stream is already pending. A single synchronous call — see
-        // [PendingPullTracker.tryMark] for why the check and the mark
-        // must happen together, with no `await` between them.
-        if (!_pendingPullTracker.tryMark(
+        final request = await _evaluateStreamDigest(
           peer,
           channelDigest.channelId,
-          streamDigest.streamId,
-        )) {
-          continue;
-        }
-
-        var ourVersion = await _computeVersionVector(
-          channelDigest.channelId,
-          streamDigest.streamId,
+          streamDigest,
         );
-
-        // The peer claims entries under OUR authorship beyond our own
-        // high-water mark: this channel/stream identity was removed and
-        // recreated (or local storage was reset) while peers kept the old
-        // history. Appending from the stale-low sequence would collide
-        // with it — the new entries would be invisible to every peer whose
-        // vector already covers the numbers, and two payloads would exist
-        // under one entry identity. Adopt the claim as a sequence floor so
-        // new local appends allocate past it (COR3-4). A lying peer can
-        // only make us skip sequence numbers, which is harmless.
-        final theirClaimForUs = streamDigest.version[localNode];
-        if (theirClaimForUs > ourVersion[localNode]) {
-          await entryRepository.adoptVersionFloor(
-            channelDigest.channelId,
-            streamDigest.streamId,
-            VersionVector({localNode: theirClaimForUs}),
-          );
-          _log(
-            LogLevel.warning,
-            'peer ${_shortId(peer.value)} holds our authorship up to '
-            '$theirClaimForUs in ${channelDigest.channelId}/'
-            '${streamDigest.streamId} but our mark is '
-            '${ourVersion[localNode]} — adopting as sequence floor '
-            '(recreated channel identity?)',
-          );
-          ourVersion = await _computeVersionVector(
-            channelDigest.channelId,
-            streamDigest.streamId,
-          );
-        }
-
-        // Only request delta if peer has entries we don't have
-        if (!ourVersion.dominates(streamDigest.version)) {
-          deltaRequests.add(
-            DeltaRequest(
-              sender: localNode,
-              channelId: channelDigest.channelId,
-              streamId: streamDigest.streamId,
-              since: ourVersion,
-            ),
-          );
-        } else {
-          // Nothing to request after all — release the flag.
-          _pendingPullTracker.release(
-            peer,
-            channelDigest.channelId,
-            streamDigest.streamId,
-          );
-        }
+        if (request != null) deltaRequests.add(request);
       }
     }
 
     return deltaRequests;
+  }
+
+  /// Evaluates one peer [StreamDigest] against our local state and returns
+  /// the [DeltaRequest] needed to pull what we're missing — or null when
+  /// the stream is skipped (not created locally, or a pull is already
+  /// pending) or our version already dominates the peer's.
+  Future<DeltaRequest?> _evaluateStreamDigest(
+    NodeId peer,
+    ChannelId channelId,
+    StreamDigest streamDigest,
+  ) async {
+    final channel = _channels[channelId];
+    if (channel == null) return null;
+
+    // Skip streams we don't have locally. Stream creation is a local
+    // operation (by design — apps coordinate stream names), so a
+    // peer's stream we never created is invisible here FOREVER; log
+    // it so the situation is diagnosable in the field.
+    if (!channel.hasStream(streamDigest.streamId)) {
+      _log(
+        LogLevel.trace,
+        'ignoring digest for $channelId/'
+        '${streamDigest.streamId}: stream not created locally',
+      );
+      return null;
+    }
+
+    // Dedup gate: skip if a non-expired pull to THIS peer for this
+    // stream is already pending. A single synchronous call — see
+    // [PendingPullTracker.tryMark] for why the check and the mark
+    // must happen together, with no `await` between them.
+    if (!_pendingPullTracker.tryMark(peer, channelId, streamDigest.streamId)) {
+      return null;
+    }
+
+    var ourVersion = await _computeVersionVector(
+      channelId,
+      streamDigest.streamId,
+    );
+    ourVersion = await _adoptClaimedAuthorshipFloor(
+      peer,
+      channelId,
+      streamDigest,
+      ourVersion,
+    );
+
+    // Only request delta if peer has entries we don't have
+    if (!ourVersion.dominates(streamDigest.version)) {
+      return DeltaRequest(
+        sender: localNode,
+        channelId: channelId,
+        streamId: streamDigest.streamId,
+        since: ourVersion,
+      );
+    } else {
+      // Nothing to request after all — release the flag.
+      _pendingPullTracker.release(peer, channelId, streamDigest.streamId);
+      return null;
+    }
+  }
+
+  /// Adopts the peer's claimed authorship watermark as our sequence floor
+  /// when it exceeds ours, and returns the (possibly refreshed) version
+  /// vector.
+  ///
+  /// The peer claims entries under OUR authorship beyond our own
+  /// high-water mark: this channel/stream identity was removed and
+  /// recreated (or local storage was reset) while peers kept the old
+  /// history. Appending from the stale-low sequence would collide
+  /// with it — the new entries would be invisible to every peer whose
+  /// vector already covers the numbers, and two payloads would exist
+  /// under one entry identity. Adopt the claim as a sequence floor so
+  /// new local appends allocate past it (COR3-4). A lying peer can
+  /// only make us skip sequence numbers, which is harmless.
+  Future<VersionVector> _adoptClaimedAuthorshipFloor(
+    NodeId peer,
+    ChannelId channelId,
+    StreamDigest streamDigest,
+    VersionVector ourVersion,
+  ) async {
+    final theirClaimForUs = streamDigest.version[localNode];
+    if (theirClaimForUs <= ourVersion[localNode]) return ourVersion;
+
+    await entryRepository.adoptVersionFloor(
+      channelId,
+      streamDigest.streamId,
+      VersionVector({localNode: theirClaimForUs}),
+    );
+    _log(
+      LogLevel.warning,
+      'peer ${_shortId(peer.value)} holds our authorship up to '
+      '$theirClaimForUs in $channelId/'
+      '${streamDigest.streamId} but our mark is '
+      '${ourVersion[localNode]} — adopting as sequence floor '
+      '(recreated channel identity?)',
+    );
+    return _computeVersionVector(channelId, streamDigest.streamId);
   }
 
   /// Handles delta request from a peer (Step 4).
