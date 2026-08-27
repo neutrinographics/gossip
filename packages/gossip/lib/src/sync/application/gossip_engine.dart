@@ -31,6 +31,7 @@ import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/events/sync_events.dart';
+import 'package:gossip/src/sync/application/digest_budgeter.dart';
 
 /// Protocol service implementing gossip-based anti-entropy synchronization.
 ///
@@ -166,7 +167,10 @@ class GossipEngine {
   /// needs. The gossip engine is a sync-context component, so its injected
   /// codec is always a [SyncMessageCodec] in practice (`Coordinator` and
   /// every test harness wire exactly that); this getter makes that
-  /// assumption explicit at its two call sites instead of scattering casts.
+  /// assumption explicit at its call sites instead of scattering casts —
+  /// [_fitDeltaToBudget]'s `encodedEntrySize` call, and constructing
+  /// [_digestBudgeter] (which needs the concrete type, not the shared
+  /// [MessageCodec] seam, for its own digest-sizing helpers).
   SyncMessageCodec get _syncCodec => _codec as SyncMessageCodec;
 
   /// Random number generator for peer selection.
@@ -264,13 +268,6 @@ class GossipEngine {
   static const Duration _minPendingTimeout = Duration(seconds: 2);
   static const Duration _maxPendingTimeout = Duration(seconds: 30);
 
-  /// Conservative per-item overhead budgeted for a channel's envelope
-  /// (channelId field, structural JSON) in [_fitDigests]'s cost estimate.
-  /// Deliberately approximate — [SyncMessageCodec] owns the real encoded
-  /// format; this only has to never underestimate it, so the budget check
-  /// never lets an over-size message through.
-  static const int _channelEnvelopeOverheadBytes = 40;
-
   static const Duration _metricsWindow = Duration(seconds: 10);
 
   /// Debounce window for coalescing a burst of local writes into a single
@@ -285,22 +282,13 @@ class GossipEngine {
   /// one flush).
   bool _pushFlushScheduled = false;
 
-  /// Round-robin cursor over the flattened (channel, stream) digest list.
-  /// Used only when a full digest exceeds the transport budget: each round
-  /// advertises a byte-budgeted window, and the cursor advances so every
-  /// stream is covered across successive rounds (otherwise the streams past
-  /// the truncation point would never sync).
-  int _digestRotation = 0;
-
-  /// Round-robin cursor for [handleDigestRequest]'s fitted response,
-  /// independent of [_digestRotation] (the requester-side cursor).
-  ///
-  /// Without its own cursor, an over-budget response always fits starting
-  /// at the same index, so it truncates the same tail every exchange — some
-  /// streams are never advertised by this node as a responder, no matter how
-  /// many times a peer asks (OBS-3). Advanced by [_fitDigests]'s
-  /// items-consumed return, same as the requester side.
-  int _responseDigestCursor = 0;
+  /// Owns byte-budgeted digest windowing (CC5-1): fitting a digest
+  /// request/response to [maxMessageBytes] by selecting a round-robin
+  /// rotated subset of (channel, stream) digests when the full set doesn't
+  /// fit, so no message is oversized and every stream is covered across
+  /// successive rounds (H4). See [DigestBudgeter] for the request/response
+  /// cursor split (OBS-3) and the conservative cost model.
+  late final DigestBudgeter _digestBudgeter;
 
   /// Per-peer congestion threshold for backpressure.
   ///
@@ -338,6 +326,15 @@ class GossipEngine {
       peerDirectory: peerDirectory,
       staticInterval: gossipInterval,
       adaptiveEnabled: adaptiveTimingEnabled,
+    );
+    // Needs the concrete SyncMessageCodec (its digest-sizing helpers aren't
+    // part of the shared MessageCodec seam) — built here, after `_codec` is
+    // assigned by the initializer list above, so `_syncCodec`'s cast is
+    // valid; same body-construction rationale as `_timing` above.
+    _digestBudgeter = DigestBudgeter(
+      codec: _syncCodec,
+      localNode: localNode,
+      maxMessageBytes: maxMessageBytes,
     );
     _scheduler = GenerationScheduler(
       timePort: timePort,
@@ -721,101 +718,35 @@ class GossipEngine {
   /// case). When it doesn't, sends a byte-budgeted, round-robin-rotated
   /// subset of streams so no message is oversized and every stream is
   /// covered across rounds — instead of a giant message the transport can
-  /// never carry (which would livelock sync entirely, H4).
+  /// never carry (which would livelock sync entirely, H4). Budgeting itself
+  /// is [_digestBudgeter]'s job; this method only generates the input and
+  /// renders any [OversizedDigest] diagnostics it reports.
   Future<DigestRequest> _buildDigestRequest() async {
     final all = <ChannelDigest>[];
     for (final channel in _channels.values) {
       all.add(await generateDigest(channel));
     }
 
-    final full = DigestRequest(sender: localNode, digests: all);
-    if (_codec.encode(full).length <= maxMessageBytes) {
-      return full;
-    }
-
-    final flat = _flattenDigests(all);
-    final (digests, consumed) = _fitDigests(flat, _digestRotation);
-    if (flat.isNotEmpty) {
-      _digestRotation = (_digestRotation + consumed) % flat.length;
+    final (digests, oversized) = _digestBudgeter.fitRequest(all);
+    for (final o in oversized) {
+      _emitError(_oversizedDigestError(o));
     }
     return DigestRequest(sender: localNode, digests: digests);
   }
 
-  /// Flattens grouped channel digests into a `(channel, stream digest)` list
-  /// for byte-budgeted selection.
-  List<({ChannelId channel, StreamDigest digest})> _flattenDigests(
-    List<ChannelDigest> all,
-  ) {
-    final flat = <({ChannelId channel, StreamDigest digest})>[];
-    for (final channelDigest in all) {
-      for (final streamDigest in channelDigest.streams) {
-        flat.add((channel: channelDigest.channelId, digest: streamDigest));
-      }
-    }
-    return flat;
-  }
-
-  /// Selects the largest prefix of [flat] (starting at [startIndex], wrapping)
-  /// whose encoded digest message fits [maxMessageBytes], regrouped by
-  /// channel. Returns the selected digests and the number of items consumed
-  /// (for advancing the rotation cursor).
-  ///
-  /// A single stream digest that alone exceeds the budget can never be sent;
-  /// it is skipped with a distinct error rather than silently blocking the
-  /// whole message every round.
-  (List<ChannelDigest>, int) _fitDigests(
-    List<({ChannelId channel, StreamDigest digest})> flat,
-    int startIndex,
-  ) {
-    final n = flat.length;
-    if (n == 0) return (const <ChannelDigest>[], 0);
-
-    final base = _codec
-        .encode(DigestRequest(sender: localNode, digests: const []))
-        .length;
-
-    final selected = <ChannelId, List<StreamDigest>>{};
-    var size = base;
-    var consumed = 0;
-
-    for (var i = 0; i < n; i++) {
-      final item = flat[(startIndex + i) % n];
-      // Conservative cost: the stream digest plus a full channel envelope
-      // (channelId + structural JSON), so we never exceed the budget even
-      // when a stream is the first of its channel.
-      final cost =
-          _syncCodec.encodedStreamDigestSize(item.digest) +
-          item.channel.value.length +
-          _channelEnvelopeOverheadBytes;
-
-      if (base + cost > maxMessageBytes) {
-        _emitError(
-          ChannelSyncError(
-            item.channel,
-            SyncErrorType.protocolError,
-            'Digest for ${item.channel}/${item.digest.streamId} is ~$cost '
-            'bytes and cannot fit maxMessageBytes=$maxMessageBytes; '
-            'that stream has too many authors to sync (consider compaction '
-            'or sharding the channel)',
-            occurredAt: DateTime.now(),
-          ),
-        );
-        consumed = i + 1;
-        continue;
-      }
-
-      if (size + cost > maxMessageBytes) break; // window full
-
-      size += cost;
-      selected.putIfAbsent(item.channel, () => []).add(item.digest);
-      consumed = i + 1;
-    }
-
-    final digests = selected.entries
-        .map((e) => ChannelDigest(channelId: e.key, streams: e.value))
-        .toList();
-    return (digests, consumed);
-  }
+  /// Renders an [OversizedDigest] diagnostic (a stream whose digest alone
+  /// exceeds [maxMessageBytes]) into the [ChannelSyncError] surfaced via
+  /// [ErrorCallback]. Kept on the engine (not [_digestBudgeter]) because the
+  /// budgeter doesn't know about the engine's error types.
+  ChannelSyncError _oversizedDigestError(OversizedDigest o) => ChannelSyncError(
+    o.channel,
+    SyncErrorType.protocolError,
+    'Digest for ${o.channel}/${o.streamId} is ~${o.cost} '
+    'bytes and cannot fit maxMessageBytes=$maxMessageBytes; '
+    'that stream has too many authors to sync (consider compaction '
+    'or sharding the channel)',
+    occurredAt: DateTime.now(),
+  );
 
   /// Immediately starts anti-entropy with [peerId] by sending it a
   /// DigestRequest, rather than waiting for the random periodic round to
@@ -1167,10 +1098,10 @@ class GossipEngine {
     // and that we also have, budgeted to the transport limit. Scoping the
     // response to the request keeps it bounded — the initiator already
     // budgeted/rotated the request, and our own version vectors may be
-    // larger, so the response is fitted independently — with its own
-    // rotation cursor ([_responseDigestCursor]) so an over-budget response
-    // covers every stream across successive exchanges too, instead of
-    // truncating the same tail every time (OBS-3).
+    // larger, so the response is fitted independently by
+    // [_digestBudgeter.fitResponse], with its own rotation cursor so an
+    // over-budget response covers every stream across successive exchanges
+    // too, instead of truncating the same tail every time (OBS-3).
     final byId = {for (final channel in channels) channel.id: channel};
 
     final flat = <({ChannelId channel, StreamDigest digest})>[];
@@ -1198,9 +1129,9 @@ class GossipEngine {
       }
     }
 
-    final (digests, consumed) = _fitDigests(flat, _responseDigestCursor);
-    if (flat.isNotEmpty) {
-      _responseDigestCursor = (_responseDigestCursor + consumed) % flat.length;
+    final (digests, oversized) = _digestBudgeter.fitResponse(flat);
+    for (final o in oversized) {
+      _emitError(_oversizedDigestError(o));
     }
     return DigestResponse(sender: localNode, digests: digests);
   }
