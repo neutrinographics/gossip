@@ -72,7 +72,7 @@ void main() {
         // Create a payload at the maximum syncable size: the largest
         // entry that fits one delta message under the default budget.
         final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(
-          CoordinatorConfig.defaults.maxDeltaResponseBytes,
+          CoordinatorConfig.defaults.maxMessageBytes,
         );
         final largePayload = Uint8List(maxPayload);
         for (var i = 0; i < largePayload.length; i++) {
@@ -166,7 +166,7 @@ void main() {
           // message: it could never sync, so append must fail loudly
           // instead of storing an entry that livelocks the stream.
           final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(
-            CoordinatorConfig.defaults.maxDeltaResponseBytes,
+            CoordinatorConfig.defaults.maxMessageBytes,
           );
           final oversized = List.generate(maxPayload + 1, (i) => i % 256);
 

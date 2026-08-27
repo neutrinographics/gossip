@@ -36,7 +36,7 @@ void main() {
 
   group('DeltaResponse hasMore — sender (G4)', () {
     test('a budget-truncated response sets hasMore=true', () async {
-      final h = GossipEngineTestHarness(maxDeltaResponseBytes: 30 * 1024);
+      final h = GossipEngineTestHarness(maxMessageBytes: 30 * 1024);
       h.createChannel('ch1', streamIds: ['s1']);
       for (var i = 1; i <= 20; i++) {
         await h.appendEntry(
@@ -60,7 +60,7 @@ void main() {
     });
 
     test('a response that fits sets hasMore=false', () async {
-      final h = GossipEngineTestHarness(maxDeltaResponseBytes: 30 * 1024);
+      final h = GossipEngineTestHarness(maxMessageBytes: 30 * 1024);
       h.createChannel('ch1', streamIds: ['s1']);
       await h.appendEntry(channelId, streamId, entryOf(1, 1001));
 
@@ -233,7 +233,7 @@ void main() {
         timePort: InMemoryTimePort(),
         messagePort: InMemoryMessagePort(node, bus),
         localNodeRepository: InMemoryLocalNodeRepository(nodeId: node),
-        maxDeltaResponseBytes: 30 * 1024,
+        maxMessageBytes: 30 * 1024,
       );
 
       final engineA = engine(nodeA, registryA, entryRepoA);

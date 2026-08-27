@@ -69,7 +69,7 @@ import 'package:gossip/src/sync/sync.dart';
 ///
 /// [append] rejects payloads that cannot fit a single gossip delta
 /// message (~22KB at the default 30KB delta budget, configurable via
-/// `CoordinatorConfig.maxDeltaResponseBytes`). The wire encoding adds
+/// `CoordinatorConfig.maxMessageBytes`). The wire encoding adds
 /// ~1.33x base64 overhead plus a JSON envelope, and the resulting
 /// message must stay under the 32KB transport limit shared by Android
 /// Nearby Connections and the BLE frame codec. Larger payloads should

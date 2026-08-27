@@ -18,8 +18,8 @@ class SyncPartner {
   final NodeId nodeId;
 
   /// Smoothed round-trip-time estimate, or null if none has been observed
-  /// yet. Feeds `GossipEngine`'s median-SRTT adaptive base interval (see
-  /// `_adaptiveBaseInterval` in `../../application/gossip_engine.dart`).
+  /// yet. Feeds `GossipTimingPolicy`'s median-SRTT adaptive base interval
+  /// (see `_adaptiveBaseInterval` in `../services/gossip_timing_policy.dart`).
   final Duration? smoothedRtt;
 
   /// Milliseconds-since-epoch of the last anti-entropy exchange with this

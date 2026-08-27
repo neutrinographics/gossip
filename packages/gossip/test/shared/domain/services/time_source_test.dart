@@ -5,22 +5,22 @@ import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 void main() {
   group('TimeSource', () {
     test('nowMillis delegates to TimePort.nowMs', () {
-      final timerPort = InMemoryTimePort();
-      final timeSource = TimeSource(timerPort);
+      final timePort = InMemoryTimePort();
+      final timeSource = TimeSource(timePort);
 
       expect(timeSource.nowMillis(), equals(0));
 
-      timerPort.advance(Duration(milliseconds: 100));
+      timePort.advance(Duration(milliseconds: 100));
 
       expect(timeSource.nowMillis(), equals(100));
     });
 
     test('nowMillis tracks time advances', () async {
-      final timerPort = InMemoryTimePort();
-      final timeSource = TimeSource(timerPort);
+      final timePort = InMemoryTimePort();
+      final timeSource = TimeSource(timePort);
 
       final time1 = timeSource.nowMillis();
-      await timerPort.advance(Duration(milliseconds: 50));
+      await timePort.advance(Duration(milliseconds: 50));
       final time2 = timeSource.nowMillis();
 
       expect(time2, greaterThan(time1));

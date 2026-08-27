@@ -4,11 +4,10 @@ import 'package:gossip/src/shared/domain/value_objects/log_level.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/interfaces/local_node_repository.dart';
 import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
+import 'package:gossip/src/sync/domain/services/gossip_timing_policy.dart';
 import 'package:gossip/src/shared/domain/services/generation_scheduler.dart';
 import 'package:gossip/src/shared/domain/services/jitter.dart';
-import 'package:gossip/src/shared/domain/services/quiescence_pacer.dart';
-import 'package:gossip/src/shared/domain/services/rtt_tracker.dart';
-import 'package:gossip/src/shared/domain/services/keyed_task_chain.dart';
+import 'package:gossip/src/sync/domain/services/pending_pull_tracker.dart';
 
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
@@ -31,16 +30,29 @@ import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/events/sync_events.dart';
+import 'package:gossip/src/sync/application/delta_merger.dart';
+import 'package:gossip/src/sync/application/digest_budgeter.dart';
+import 'package:gossip/src/sync/application/reactive_pusher.dart';
 
 /// Protocol service implementing gossip-based anti-entropy synchronization.
 ///
 /// [GossipEngine] synchronizes log entries across peers through periodic
-/// digest exchange. It implements a 4-step anti-entropy protocol:
+/// digest exchange.
+///
+/// Five extracted collaborators own specialized concerns this class
+/// orchestrates but no longer implements directly: [GossipTimingPolicy]
+/// (round-interval pacing), [PendingPullTracker] (pull dedup and adaptive
+/// timeout), [DigestBudgeter] (digest byte-budgeting), [ReactivePusher]
+/// (push debounce), and [DeltaMerger] (the delta-merge pipeline).
 ///
 /// ## Anti-Entropy Protocol (4 Steps)
 ///
+/// It implements a 4-step anti-entropy protocol:
+///
 /// **Step 1: Digest Request** (see [effectiveGossipInterval] for the interval policy)
-/// - Select random reachable peer
+/// - Select the least-recently-synced reachable peer, filtered to exclude
+///   congested peers and ones already gossiped with this interval, with a
+///   random tiebreak among equally-stale peers (see [_selectGossipPartner])
 /// - Generate digests (version vectors) for all local channels/streams
 /// - Send [DigestRequest] containing our sync state
 ///
@@ -62,7 +74,7 @@ import 'package:gossip/src/sync/domain/events/sync_events.dart';
 ///
 /// - **Convergence time**: O(log n) rounds. At n=2 with a fast interval this
 ///   can be sub-second; at larger n it is roughly log2(n) × the gossip
-///   interval — a few seconds at the 1s default, longer on a slow BLE mesh
+///   interval — a few seconds at a ~1 s interval, longer on a slow BLE mesh
 ///   (fan-out is 1). Reactive push-on-write disseminates new *local* writes
 ///   faster than this periodic anti-entropy sweep.
 /// - **Bidirectional sync**: Each round reciprocates (push-pull), so a single
@@ -134,7 +146,8 @@ class GossipEngine {
   /// When provided, logs message types, sizes, and other protocol details.
   final LogCallback? onLog;
 
-  /// Maximum encoded size (in bytes) of a single [DeltaResponse].
+  /// The byte budget for every sync protocol message — digests, delta
+  /// pages, and pushes — sized to the 32 KB transport limit.
   ///
   /// [handleDeltaRequest] truncates the delta to a prefix that fits this
   /// budget; the remainder is delivered by subsequent anti-entropy rounds
@@ -144,7 +157,7 @@ class GossipEngine {
   ///
   /// Defaults to 30KB, leaving envelope headroom under the 32KB transport
   /// limit.
-  final int maxDeltaResponseBytes;
+  final int maxMessageBytes;
 
   /// Codec for serializing/deserializing this context's (sync's) protocol
   /// messages.
@@ -165,7 +178,10 @@ class GossipEngine {
   /// needs. The gossip engine is a sync-context component, so its injected
   /// codec is always a [SyncMessageCodec] in practice (`Coordinator` and
   /// every test harness wire exactly that); this getter makes that
-  /// assumption explicit at its two call sites instead of scattering casts.
+  /// assumption explicit at its call sites instead of scattering casts —
+  /// [_fitDeltaToBudget]'s `encodedEntrySize` call, and constructing
+  /// [_digestBudgeter] (which needs the concrete type, not the shared
+  /// [MessageCodec] seam, for its own digest-sizing helpers).
   SyncMessageCodec get _syncCodec => _codec as SyncMessageCodec;
 
   /// Random number generator for peer selection.
@@ -181,25 +197,17 @@ class GossipEngine {
   /// already be initialized.
   late final GenerationScheduler _scheduler;
 
-  /// Generation token for the reactive-push debounce timer only
-  /// ([notifyLocalWrite]/[_flushPendingPushes]).
-  ///
-  /// Before this class adopted [GenerationScheduler] for the round loop, a
-  /// single `_generation` counter guarded both the round loop's delay
-  /// callback AND this debounce's delay callback — [start] and [stop]
-  /// bumped it once and both mechanisms checked it; a *live* (non-stale)
-  /// round-loop scheduling failure bumped it too, staleness-gated the same
-  /// way. The round loop's half of that is now [_scheduler]'s own internal
-  /// concern, which this class cannot observe or reuse (by design — see
-  /// [GenerationScheduler]'s doc: it does not expose its generation). This
-  /// field keeps the debounce's half working exactly as before: bumped
-  /// everywhere the old shared counter was bumped relative to it —
-  /// [start], [stop], and (staleness-gated via `_scheduler.isRunning`, in
-  /// the `onSchedulingError` callback wired in the constructor) a live
-  /// round-loop scheduling failure — so a callback from a debounce
-  /// scheduled before any of those events recognizes itself as stale and
-  /// does nothing.
-  int _pushGeneration = 0;
+  /// Owns the reactive-push debounce state machine (CC5-1):
+  /// coalescing a burst of local writes into one push instead of one per
+  /// write, and recognizing a stale debounce across [start]/[stop]/a live
+  /// round-loop scheduling failure. See [ReactivePusher]'s class doc for
+  /// why this split from [_scheduler] (which owns the round loop's own,
+  /// separate generation) rather than sharing one counter — that history
+  /// predates this class's adoption of [GenerationScheduler] and is
+  /// preserved in gossip_engine.dart's history, not restated here. Built
+  /// in the constructor body, after [_scheduler], since its `isRunning`
+  /// callback reads `_scheduler.isRunning`.
+  late final ReactivePusher _pusher;
 
   /// Subscription to incoming messages (for cleanup on stop).
   StreamSubscription<IncomingMessage>? _messageSubscription;
@@ -210,118 +218,57 @@ class GossipEngine {
   /// channels the local node is a member of.
   Map<ChannelId, ChannelAggregate> _channels = {};
 
-  /// Whether adaptive timing is enabled.
-  ///
-  /// When true, gossip interval is computed from per-peer RTT data via
-  /// [PeerDirectory]. When false, uses static gossip interval.
-  final bool _adaptiveTimingEnabled;
-
-  /// Static gossip interval (used when RTT tracker not provided).
-  final Duration _staticGossipInterval;
-
-  /// Whether a static gossip interval was explicitly provided.
-  final bool _staticIntervalProvided;
-
-  /// Minimum gossip interval (prevent CPU spin).
-  static const Duration _minGossipInterval = Duration(milliseconds: 100);
-
-  /// Maximum gossip interval (ensure progress).
-  static const Duration _maxGossipInterval = Duration(seconds: 5);
-
-  /// Multiplier for gossip interval relative to RTT.
-  /// Gossip interval = 2x RTT (time for request + response round trip).
-  static const int _gossipIntervalMultiplier = 2;
-
-  /// Two-tier pacing (spec 2026-08-20): stretches the adaptive interval
-  /// toward [_idleCeiling] across quiet rounds; any news snaps it back.
-  final QuiescencePacer _pacer = QuiescencePacer(ceiling: _idleCeiling);
-
-  /// The slowest the anti-entropy safety net may get (owner decision:
-  /// 30 s, not configurable).
-  static const Duration _idleCeiling = Duration(seconds: 30);
+  /// Owns the gossip-round interval policy (CC5-13): static vs. adaptive,
+  /// the median-SRTT formula, and the quiescence pacer. See
+  /// [GossipTimingPolicy] for why this is a separate object rather than
+  /// fields here.
+  late final GossipTimingPolicy _timing;
 
   /// True when anything newsworthy happened since the last round began.
-  /// Read-and-cleared by [performGossipRound]; set by [_recordNews].
+  /// Read-and-cleared by [performGossipRound]; set by [_recordNews]. A
+  /// round-scoped read-and-clear flag, not pacing state, so it stays here
+  /// rather than moving into [GossipTimingPolicy] with the pacer.
   bool _newsSinceLastRound = true;
 
   /// News: local append, merge, delta traffic either direction, or a
   /// membership change. Resets the pacer and marks the round non-quiet.
   void _recordNews() {
     _newsSinceLastRound = true;
-    _pacer.news();
+    _timing.news();
   }
 
-  /// Tracks pending DeltaRequests to prevent duplicate requests.
-  ///
-  /// Keyed per-(peer, channel, stream): the timestamp (in ms) when the
-  /// request was sent. When the corresponding DeltaResponse is received, the
-  /// entry is removed. Entries older than [effectivePendingRequestTimeout]
-  /// are considered expired and can be replaced with new requests.
-  ///
-  /// Keying by peer (not just stream) does two things: it keeps deduping
-  /// duplicate DigestResponses from the *same* peer (the original sync-loop
-  /// bug), while no longer letting a stalled *slow* peer block requesting
-  /// the same stream from a *faster* peer — safe because duplicate/overlapping
-  /// entries are filtered by the contiguity guard before merge.
-  final Map<(NodeId, ChannelId, StreamId), int> _pendingDeltaRequests = {};
+  /// Owns pull-request dedup (at most one outstanding DeltaRequest per
+  /// (peer, channel, stream) at a time) and the adaptive per-request
+  /// timeout derived from observed delta round-trip time (CC5-1). See
+  /// [PendingPullTracker] for the per-peer keying rationale, the
+  /// RFC-6298 timeout formula, and why a BLE page-transmit signal can't
+  /// come from ping-based RTT.
+  late final PendingPullTracker _pendingPullTracker;
 
-  /// EWMA of observed delta round-trip times (request sent → response
-  /// received), used to derive [effectivePendingRequestTimeout]. This
-  /// directly measures page-transmit time on the deployment's transport —
-  /// a signal ping-based RTT can't provide (a 30KB page over BLE takes
-  /// ~1-2 orders of magnitude longer than a 66-byte ping).
-  final RttTracker _deltaRttTracker = RttTracker();
+  /// Owns the delta-merge pipeline (CC5-1): filtering a
+  /// [DeltaResponse] to its per-author contiguous prefix, applying it,
+  /// advancing the HLC, and deciding on a continuation request. See
+  /// [DeltaMerger] for why it's notified of this engine's batch-count/news
+  /// bookkeeping and pull-tracker re-arming via injected callbacks rather
+  /// than reacting to its return value after [handleDeltaResponse] awaits
+  /// it — both must land at the exact point the pre-extraction code did,
+  /// inside the per-stream serialized merge body.
+  late final DeltaMerger _merger;
 
   /// Monotonic count of delta batches that merged at least one new entry.
   /// Exposed via [mergedBatchCount] as a coarse "recent sync activity"
   /// signal for applications (G5).
   int _mergedBatchCount = 0;
 
-  /// Default pending-delta timeout used before any delta round-trip has been
-  /// observed. Sized to comfortably exceed one ~30KB page over a slow BLE
-  /// link (~7.5s at a few KB/s) so a request is never deemed stale
-  /// mid-transmission on a cold start.
-  static const Duration _defaultPendingTimeout = Duration(seconds: 8);
-  static const Duration _minPendingTimeout = Duration(seconds: 2);
-  static const Duration _maxPendingTimeout = Duration(seconds: 30);
-
-  /// Conservative per-item overhead budgeted for a channel's envelope
-  /// (channelId field, structural JSON) in [_fitDigests]'s cost estimate.
-  /// Deliberately approximate — [SyncMessageCodec] owns the real encoded
-  /// format; this only has to never underestimate it, so the budget check
-  /// never lets an over-size message through.
-  static const int _channelEnvelopeOverheadBytes = 40;
-
   static const Duration _metricsWindow = Duration(seconds: 10);
 
-  /// Debounce window for coalescing a burst of local writes into a single
-  /// reactive push (rumor mongering — see [notifyLocalWrite]).
-  static const Duration _pushDebounce = Duration(milliseconds: 150);
-
-  /// Locally-written entries pending a reactive push, buffered per stream so
-  /// a burst of writes within the debounce window coalesces into one push.
-  final Map<(ChannelId, StreamId), List<LogEntry>> _pendingPush = {};
-
-  /// True while a debounced push flush is scheduled (coalesces a burst into
-  /// one flush).
-  bool _pushFlushScheduled = false;
-
-  /// Round-robin cursor over the flattened (channel, stream) digest list.
-  /// Used only when a full digest exceeds the transport budget: each round
-  /// advertises a byte-budgeted window, and the cursor advances so every
-  /// stream is covered across successive rounds (otherwise the streams past
-  /// the truncation point would never sync).
-  int _digestRotation = 0;
-
-  /// Round-robin cursor for [handleDigestRequest]'s fitted response,
-  /// independent of [_digestRotation] (the requester-side cursor).
-  ///
-  /// Without its own cursor, an over-budget response always fits starting
-  /// at the same index, so it truncates the same tail every exchange — some
-  /// streams are never advertised by this node as a responder, no matter how
-  /// many times a peer asks (OBS-3). Advanced by [_fitDigests]'s
-  /// items-consumed return, same as the requester side.
-  int _responseDigestCursor = 0;
+  /// Owns byte-budgeted digest windowing (CC5-1): fitting a digest
+  /// request/response to [maxMessageBytes] by selecting a round-robin
+  /// rotated subset of (channel, stream) digests when the full set doesn't
+  /// fit, so no message is oversized and every stream is covered across
+  /// successive rounds (H4). See [DigestBudgeter] for the request/response
+  /// cursor split (OBS-3) and the conservative cost model.
+  late final DigestBudgeter _digestBudgeter;
 
   /// Per-peer congestion threshold for backpressure.
   ///
@@ -345,15 +292,64 @@ class GossipEngine {
     Random? random,
     Duration? gossipInterval,
     bool adaptiveTimingEnabled = false,
-    this.maxDeltaResponseBytes = 30 * 1024,
+    this.maxMessageBytes = 30 * 1024,
   }) : _codec = codec,
        _hlcClock = hlcClock,
        _localNodeRepository = localNodeRepository,
-       _random = random ?? Random(),
-       _staticGossipInterval =
-           gossipInterval ?? const Duration(milliseconds: 500),
-       _adaptiveTimingEnabled = adaptiveTimingEnabled,
-       _staticIntervalProvided = gossipInterval != null {
+       _random = random ?? Random() {
+    // Needs nothing but the `timePort` parameter, so it could live in the
+    // initializer list — built here instead, grouped with this
+    // constructor's other extracted domain-service collaborators
+    // ([_timing], [_digestBudgeter]) for one discoverable construction
+    // site rather than splitting collaborators across the initializer
+    // list and the body.
+    _pendingPullTracker = PendingPullTracker(timePort: timePort);
+    // Built here, after `_pendingPullTracker` (its `onContinuationIssued`
+    // wiring below calls into it) and after `_hlcClock`/
+    // `_localNodeRepository` are assigned by the initializer list —
+    // mirroring the other extracted collaborators' body-construction
+    // rationale above.
+    _merger = DeltaMerger(
+      localNode: localNode,
+      entryRepository: entryRepository,
+      hlcClock: _hlcClock,
+      localNodeRepository: _localNodeRepository,
+      onEntriesMerged: onEntriesMerged,
+      onError: onError,
+      onLog: onLog,
+      // Fires at the exact point the pre-extraction `_mergeDeltaResponse`
+      // incremented `_mergedBatchCount`/called `_recordNews()` — before
+      // `onEntriesMerged` is awaited (see [DeltaMerger]'s doc).
+      onNewEntriesMerged: () {
+        _mergedBatchCount++;
+        _recordNews();
+      },
+      // Fires at the exact point the pre-extraction code re-armed the
+      // pending-pull flag — still inside the merger's chained merge body,
+      // before the continuation is returned (see [DeltaMerger]'s doc).
+      onContinuationIssued: (peer, channelId, streamId) {
+        _pendingPullTracker.markContinuation(peer, channelId, streamId);
+      },
+    );
+    // Built here rather than the initializer list, mirroring
+    // FailureDetector's ProbeTimingPolicy construction (E2/CC5-13): keeps
+    // every extracted timing-policy collaborator constructed at the same
+    // site across the two engines rather than one in the initializer list
+    // and one in the body.
+    _timing = GossipTimingPolicy(
+      peerDirectory: peerDirectory,
+      staticInterval: gossipInterval,
+      adaptiveEnabled: adaptiveTimingEnabled,
+    );
+    // Needs the concrete SyncMessageCodec (its digest-sizing helpers aren't
+    // part of the shared MessageCodec seam) — built here, after `_codec` is
+    // assigned by the initializer list above, so `_syncCodec`'s cast is
+    // valid; same body-construction rationale as `_timing` above.
+    _digestBudgeter = DigestBudgeter(
+      codec: _syncCodec,
+      localNode: localNode,
+      maxMessageBytes: maxMessageBytes,
+    );
     _scheduler = GenerationScheduler(
       timePort: timePort,
       // ±20% jitter decorrelates gossip loops across nodes so they don't
@@ -373,30 +369,22 @@ class GossipEngine {
       ),
       onSchedulingError: (error, stackTrace) {
         // A dead round loop invalidates any reactive-push debounce still
-        // in flight too — see [_pushGeneration]'s doc for why this bump
-        // belongs here. But GenerationScheduler calls this callback for a
-        // STALE failure too (a delay from an old, already-superseded run
+        // in flight too — see [ReactivePusher.onRoundLoopDead]'s doc for
+        // why. But GenerationScheduler calls this callback for a STALE
+        // failure too (a delay from an old, already-superseded run
         // erroring out late) — its own internal stop is staleness-gated,
-        // this callback is not. Gating the bump on isRunning tells the two
-        // apart: by the time this callback runs, isRunning reads false
-        // exactly when the failure was live (the scheduler's conditional
-        // stop runs synchronously first) — a stale failure alongside a
-        // currently-live loop leaves isRunning true, so we must NOT bump,
-        // or we'd invalidate the live loop's own in-flight debounce and
-        // wedge reactive push permanently (only stop() resets the flag).
-        // A stale failure while already stopped still bumps here, which is
-        // harmless: the flag is already false and any captured generation
-        // is already stale regardless. A genuinely live failure must clear
-        // `_pushFlushScheduled` itself, not just bump the generation: the
-        // bump alone only makes an in-flight debounce recognize itself as
-        // stale when it fires — its "stale run — do nothing" early return
-        // does not reset the flag — and nothing else ever would, since the
-        // scheduler already stopped itself before this callback runs, so a
-        // caller's own [stop] (whose reset this flag would otherwise rely
-        // on) sees `isRunning` already false and short-circuits as a no-op.
+        // this callback is not. Gating on isRunning tells the two apart:
+        // by the time this callback runs, isRunning reads false exactly
+        // when the failure was live (the scheduler's conditional stop
+        // runs synchronously first) — a stale failure alongside a
+        // currently-live loop leaves isRunning true, so we must NOT
+        // invalidate, or we'd kill the live loop's own in-flight debounce
+        // and wedge reactive push permanently (only a real stop resets
+        // it). A stale failure while already stopped still reaches here,
+        // which is harmless: the pusher is already invalidated and stale
+        // regardless.
         if (!_scheduler.isRunning) {
-          _pushGeneration++;
-          _pushFlushScheduled = false;
+          _pusher.onRoundLoopDead();
         }
         _emitError(
           PeerSyncError(
@@ -406,6 +394,28 @@ class GossipEngine {
             occurredAt: DateTime.now(),
             cause: error,
           ),
+        );
+      },
+    );
+    _pusher = ReactivePusher(
+      timePort: timePort,
+      isRunning: () => _scheduler.isRunning,
+      flush: _flushPendingPushes,
+      onSchedulingFailure: (error, stackTrace) {
+        _emitError(
+          PeerSyncError(
+            localNode,
+            SyncErrorType.protocolError,
+            'Reactive push scheduling failed: $error',
+            occurredAt: DateTime.now(),
+            cause: error,
+          ),
+        );
+        _log(
+          LogLevel.error,
+          'Reactive push scheduling failed: $error',
+          error,
+          stackTrace,
         );
       },
     );
@@ -429,93 +439,24 @@ class GossipEngine {
   /// Whether gossip rounds are currently active.
   bool get isRunning => _scheduler.isRunning;
 
-  /// Default conservative gossip interval when no per-peer RTT data exists.
-  static const Duration _defaultConservativeInterval = Duration(
-    milliseconds: 1000,
-  );
-
-  /// Returns the effective gossip interval based on per-peer RTT measurements.
-  ///
-  /// If a static `gossipInterval` was provided at construction, uses that value.
-  /// Otherwise computes from the *median* per-peer smoothed RTT across all
-  /// reachable peers ([_adaptiveBaseInterval]: multiplied by
-  /// [_gossipIntervalMultiplier] (2x), clamped to [_minGossipInterval] and
-  /// [_maxGossipInterval] (100ms-5s active), with a
-  /// [_defaultConservativeInterval] (1000ms) fallback when no peer has an
-  /// RTT estimate yet).
-  ///
-  /// Median (not min) pacing keeps a single fast peer from pinning the loop
-  /// to a fast cadence that over-drives slower links, while a single very
-  /// slow peer can't stall the whole mesh either — each uniform-random round
-  /// is ~(n-1)/n likely to target a slower-than-fastest peer with a
-  /// potentially large payload, so the median is robust to an outlier at
-  /// either end. Latency-sensitive delivery is handled by reactive
-  /// push-on-write; this is the anti-entropy safety net, so a steadier
-  /// median cadence is the right trade-off.
-  ///
-  /// During quiet rounds this adaptive base is further stretched toward the
-  /// 30s idle ceiling by the quiescence pacer.
-  Duration get effectiveGossipInterval {
-    // Use static interval if explicitly provided (for backward compatibility)
-    if (_staticIntervalProvided || !_adaptiveTimingEnabled) {
-      return _staticGossipInterval;
-    }
-    return _pacer.apply(_adaptiveBaseInterval);
-  }
-
-  /// Latency-derived cadence input to [effectiveGossipInterval] — see there
-  /// for the interval policy (median SRTT × 2, clamping, and fallback).
-  Duration get _adaptiveBaseInterval {
-    final srtts = <Duration>[];
-    for (final partner in peerDirectory.reachablePartners()) {
-      final smoothedRtt = partner.smoothedRtt;
-      if (smoothedRtt != null) srtts.add(smoothedRtt);
-    }
-
-    // Fall back to conservative default when no peers have RTT estimates
-    if (srtts.isEmpty) {
-      return _defaultConservativeInterval;
-    }
-
-    srtts.sort();
-    final medianSrtt = srtts[srtts.length ~/ 2];
-    final computed = medianSrtt * _gossipIntervalMultiplier;
-    if (computed < _minGossipInterval) return _minGossipInterval;
-    if (computed > _maxGossipInterval) return _maxGossipInterval;
-    return computed;
-  }
+  /// Effective gossip round interval. Delegates to [_timing] — see
+  /// [GossipTimingPolicy.effectiveInterval] for the interval policy.
+  Duration get effectiveGossipInterval => _timing.effectiveInterval;
 
   /// How long a pending delta request is honoured before it is considered
-  /// stale and a replacement may be issued.
-  ///
-  /// Adaptive: derived (RFC-6298 style, SRTT + 4·RTTVAR) from observed delta
-  /// round-trips so it always exceeds one page's transmit time on the actual
-  /// transport, then clamped to [[_minPendingTimeout], [_maxPendingTimeout]].
-  /// Before any round-trip is observed it is [_defaultPendingTimeout]. This
-  /// stops a large page still in flight from being re-requested (duplicate
-  /// requests are pure congestion amplification on a slow link).
-  Duration get effectivePendingRequestTimeout {
-    if (!_deltaRttTracker.hasReceivedSamples) return _defaultPendingTimeout;
-    return _deltaRttTracker.suggestedTimeout(
-      minTimeout: _minPendingTimeout,
-      maxTimeout: _maxPendingTimeout,
-    );
-  }
+  /// stale and a replacement may be issued. Delegates to
+  /// [_pendingPullTracker] — see [PendingPullTracker.effectiveTimeout] for
+  /// the adaptive RFC-6298 formula, its clamping, and the cold-start
+  /// default.
+  Duration get effectivePendingRequestTimeout =>
+      _pendingPullTracker.effectiveTimeout;
 
   /// Number of delta requests currently in flight (pulls we are awaiting a
   /// response for). A coarse "am I mid-sync?" signal for applications (G5):
-  /// non-zero means we are actively pulling data from a peer.
-  ///
-  /// Excludes expired entries: a pull whose peer never answered is dead,
-  /// not "syncing…" — counting it would wedge the quiescence signal until
-  /// the same (peer, stream) key happens to be re-evaluated.
-  int get outstandingPullCount {
-    final timeoutMs = effectivePendingRequestTimeout.inMilliseconds;
-    final nowMs = timePort.nowMs;
-    return _pendingDeltaRequests.values
-        .where((since) => nowMs - since < timeoutMs)
-        .length;
-  }
+  /// non-zero means we are actively pulling data from a peer. Delegates to
+  /// [_pendingPullTracker] — see [PendingPullTracker.outstandingCount] for
+  /// the expiry-exclusion rationale.
+  int get outstandingPullCount => _pendingPullTracker.outstandingCount;
 
   /// Monotonic count of delta batches that merged at least one new entry
   /// since construction. Poll it to detect recent sync activity: a value
@@ -535,8 +476,8 @@ class GossipEngine {
     if (_scheduler.isRunning) return;
     // A restart is news — never resume mid-backoff into a stale world.
     _newsSinceLastRound = true;
-    _pacer.news();
-    _pushGeneration++;
+    _timing.news();
+    _pusher.invalidate();
     _scheduler.start();
   }
 
@@ -546,18 +487,16 @@ class GossipEngine {
   /// [stopListening] separately if needed.
   void stop() {
     if (!_scheduler.isRunning) return;
-    _pushGeneration++;
     _scheduler.stop();
     // Drop any buffered reactive push — the periodic anti-entropy loop is
     // also stopping, and a stale delay callback checks the generation.
-    _pendingPush.clear();
-    _pushFlushScheduled = false;
+    _pusher.invalidateAndClear();
     // Drop outstanding delta-request flags: while stopped we don't ingest
     // responses, so a resumed engine should be free to re-request
     // immediately rather than waiting out the pending-request timeout.
-    _pendingDeltaRequests.clear();
+    _pendingPullTracker.clearAll();
     // A restart is a fresh diagnosis window for persistent gaps.
-    _reportedGaps.clear();
+    _merger.clearReportedGaps();
   }
 
   /// Reactive dissemination (rumor mongering): notify the engine of a local
@@ -579,46 +518,17 @@ class GossipEngine {
   ) {
     if (!_scheduler.isRunning) return;
     _recordNews();
-    _pendingPush.putIfAbsent((channelId, streamId), () => []).add(entry);
-    if (_pushFlushScheduled) return;
-    _pushFlushScheduled = true;
-    final generation = _pushGeneration;
-    timePort
-        .delay(_pushDebounce)
-        .then((_) {
-          if (generation != _pushGeneration) return; // stale run — do nothing
-          _pushFlushScheduled = false;
-          if (_scheduler.isRunning) unawaited(_flushPendingPushes());
-        })
-        .catchError((Object error, StackTrace stackTrace) {
-          if (generation != _pushGeneration) return;
-          _pushFlushScheduled = false;
-          _pendingPush.clear();
-          _emitError(
-            PeerSyncError(
-              localNode,
-              SyncErrorType.protocolError,
-              'Reactive push scheduling failed: $error',
-              occurredAt: DateTime.now(),
-              cause: error,
-            ),
-          );
-          _log(
-            LogLevel.error,
-            'Reactive push scheduling failed: $error',
-            error,
-            stackTrace,
-          );
-        });
+    _pusher.notifyWrite(channelId, streamId, entry);
   }
 
-  /// Pushes buffered local writes to all reachable peers as unsolicited
-  /// DeltaResponses. Oversized bursts (rare — the debounce window is short)
-  /// fall back to paginated anti-entropy rather than a doomed oversized send.
-  Future<void> _flushPendingPushes() async {
-    if (_pendingPush.isEmpty) return;
-    final batches = Map.of(_pendingPush);
-    _pendingPush.clear();
+  /// Pushes buffered local writes ([batches], snapshotted and handed off by
+  /// [_pusher]) to all reachable peers as unsolicited DeltaResponses.
+  /// Oversized bursts (rare — the debounce window is short) fall back to
+  /// paginated anti-entropy rather than a doomed oversized send.
+  Future<void> _flushPendingPushes(
+    Map<(ChannelId, StreamId), List<LogEntry>> batches,
+  ) async {
+    if (batches.isEmpty) return;
 
     final partners = peerDirectory.reachablePartners();
     if (partners.isEmpty) return;
@@ -631,7 +541,7 @@ class GossipEngine {
         streamId: streamId,
         entries: batch.value,
       );
-      if (_codec.encode(push).length > maxDeltaResponseBytes) continue;
+      if (_codec.encode(push).length > maxMessageBytes) continue;
       for (final partner in partners) {
         await _sendMessage(partner.nodeId, push);
       }
@@ -713,7 +623,7 @@ class GossipEngine {
     if (_newsSinceLastRound) {
       _newsSinceLastRound = false;
     } else {
-      _pacer.quietRound();
+      _timing.quietRound();
     }
 
     final reachable = peerDirectory.reachablePartners();
@@ -788,101 +698,35 @@ class GossipEngine {
   /// case). When it doesn't, sends a byte-budgeted, round-robin-rotated
   /// subset of streams so no message is oversized and every stream is
   /// covered across rounds — instead of a giant message the transport can
-  /// never carry (which would livelock sync entirely, H4).
+  /// never carry (which would livelock sync entirely, H4). Budgeting itself
+  /// is [_digestBudgeter]'s job; this method only generates the input and
+  /// renders any [OversizedDigest] diagnostics it reports.
   Future<DigestRequest> _buildDigestRequest() async {
     final all = <ChannelDigest>[];
     for (final channel in _channels.values) {
       all.add(await generateDigest(channel));
     }
 
-    final full = DigestRequest(sender: localNode, digests: all);
-    if (_codec.encode(full).length <= maxDeltaResponseBytes) {
-      return full;
-    }
-
-    final flat = _flattenDigests(all);
-    final (digests, consumed) = _fitDigests(flat, _digestRotation);
-    if (flat.isNotEmpty) {
-      _digestRotation = (_digestRotation + consumed) % flat.length;
+    final (digests, oversized) = _digestBudgeter.fitRequest(all);
+    for (final o in oversized) {
+      _emitError(_oversizedDigestError(o));
     }
     return DigestRequest(sender: localNode, digests: digests);
   }
 
-  /// Flattens grouped channel digests into a `(channel, stream digest)` list
-  /// for byte-budgeted selection.
-  List<({ChannelId channel, StreamDigest digest})> _flattenDigests(
-    List<ChannelDigest> all,
-  ) {
-    final flat = <({ChannelId channel, StreamDigest digest})>[];
-    for (final channelDigest in all) {
-      for (final streamDigest in channelDigest.streams) {
-        flat.add((channel: channelDigest.channelId, digest: streamDigest));
-      }
-    }
-    return flat;
-  }
-
-  /// Selects the largest prefix of [flat] (starting at [startIndex], wrapping)
-  /// whose encoded digest message fits [maxDeltaResponseBytes], regrouped by
-  /// channel. Returns the selected digests and the number of items consumed
-  /// (for advancing the rotation cursor).
-  ///
-  /// A single stream digest that alone exceeds the budget can never be sent;
-  /// it is skipped with a distinct error rather than silently blocking the
-  /// whole message every round.
-  (List<ChannelDigest>, int) _fitDigests(
-    List<({ChannelId channel, StreamDigest digest})> flat,
-    int startIndex,
-  ) {
-    final n = flat.length;
-    if (n == 0) return (const <ChannelDigest>[], 0);
-
-    final base = _codec
-        .encode(DigestRequest(sender: localNode, digests: const []))
-        .length;
-
-    final selected = <ChannelId, List<StreamDigest>>{};
-    var size = base;
-    var consumed = 0;
-
-    for (var i = 0; i < n; i++) {
-      final item = flat[(startIndex + i) % n];
-      // Conservative cost: the stream digest plus a full channel envelope
-      // (channelId + structural JSON), so we never exceed the budget even
-      // when a stream is the first of its channel.
-      final cost =
-          _syncCodec.encodedStreamDigestSize(item.digest) +
-          item.channel.value.length +
-          _channelEnvelopeOverheadBytes;
-
-      if (base + cost > maxDeltaResponseBytes) {
-        _emitError(
-          ChannelSyncError(
-            item.channel,
-            SyncErrorType.protocolError,
-            'Digest for ${item.channel}/${item.digest.streamId} is ~$cost '
-            'bytes and cannot fit maxDeltaResponseBytes=$maxDeltaResponseBytes; '
-            'that stream has too many authors to sync (consider compaction '
-            'or sharding the channel)',
-            occurredAt: DateTime.now(),
-          ),
-        );
-        consumed = i + 1;
-        continue;
-      }
-
-      if (size + cost > maxDeltaResponseBytes) break; // window full
-
-      size += cost;
-      selected.putIfAbsent(item.channel, () => []).add(item.digest);
-      consumed = i + 1;
-    }
-
-    final digests = selected.entries
-        .map((e) => ChannelDigest(channelId: e.key, streams: e.value))
-        .toList();
-    return (digests, consumed);
-  }
+  /// Renders an [OversizedDigest] diagnostic (a stream whose digest alone
+  /// exceeds [maxMessageBytes]) into the [ChannelSyncError] surfaced via
+  /// [ErrorCallback]. Kept on the engine (not [_digestBudgeter]) because the
+  /// budgeter doesn't know about the engine's error types.
+  ChannelSyncError _oversizedDigestError(OversizedDigest o) => ChannelSyncError(
+    o.channel,
+    SyncErrorType.protocolError,
+    'Digest for ${o.channel}/${o.streamId} is ~${o.cost} '
+    'bytes and cannot fit maxMessageBytes=$maxMessageBytes; '
+    'that stream has too many authors to sync (consider compaction '
+    'or sharding the channel)',
+    occurredAt: DateTime.now(),
+  );
 
   /// Immediately starts anti-entropy with [peerId] by sending it a
   /// DigestRequest, rather than waiting for the random periodic round to
@@ -969,95 +813,13 @@ class GossipEngine {
 
     try {
       if (protocolMessage is DigestRequest) {
-        _log(
-          LogLevel.trace,
-          'RECV DigestRequest from ${_shortId(message.sender.value)}: '
-          '${protocolMessage.digests.length} channels',
-        );
-        // A reciprocated exchange is coverage for BOTH sides: record it
-        // so our own selector/suppression see this peer as fresh
-        // (missing half of WIRE4-1).
-        peerDirectory.recordAntiEntropy(message.sender, nowMs);
-        final response = await _handleDigestRequest(protocolMessage);
-        await _sendMessage(message.sender, response);
-        // Push-pull: the request already carries the initiator's version
-        // vectors, so reciprocate by pulling anything they advertised that
-        // we lack — making each exchange bidirectional instead of pulling
-        // only toward the initiator. Reciprocation is *active* sync, so
-        // gate it on running: a paused/listen-only engine still answers
-        // digests (serves data) but must not initiate new pulls.
-        if (_scheduler.isRunning) {
-          // A DigestRequest by design carries ALL the sender's channels, so
-          // ones we don't share are routine under partial channel overlap —
-          // filter them out here rather than letting _computeDeltaRequests
-          // emit a protocolError per non-shared channel per round. (On the
-          // DigestResponse path the digests are scoped to our own request,
-          // so an unknown channel there stays an anomaly worth reporting.)
-          final sharedDigests = <ChannelDigest>[];
-          for (final digest in protocolMessage.digests) {
-            if (_channels.containsKey(digest.channelId)) {
-              sharedDigests.add(digest);
-            } else {
-              _log(
-                LogLevel.trace,
-                'ignoring reciprocal digest for non-shared channel '
-                '${digest.channelId}',
-              );
-            }
-          }
-          await _sendDeltaRequests(
-            message.sender,
-            await _computeDeltaRequests(message.sender, sharedDigests),
-          );
-        }
+        await _onDigestRequest(protocolMessage, message.sender, nowMs);
       } else if (protocolMessage is DigestResponse) {
-        _log(
-          LogLevel.trace,
-          'RECV DigestResponse from ${_shortId(message.sender.value)}: '
-          '${protocolMessage.digests.length} channels',
-        );
-        // Pulling is active sync — a paused/listen-only engine serves but
-        // does not pull. (A DigestResponse is only ever a reply to our own
-        // request, which we make only while running.)
-        if (_scheduler.isRunning) {
-          await _sendDeltaRequests(
-            message.sender,
-            await handleDigestResponse(protocolMessage),
-          );
-        }
+        await _onDigestResponse(protocolMessage, message.sender);
       } else if (protocolMessage is DeltaRequest) {
-        _log(
-          LogLevel.debug,
-          'RECV DeltaRequest from ${_shortId(message.sender.value)}: '
-          'channel=${_shortId(protocolMessage.channelId.value)} '
-          'stream=${protocolMessage.streamId.value}',
-        );
-        // An inbound DeltaRequest means the peer is actively pulling from
-        // us — news regardless of whether we can serve anything back.
-        _recordNews();
-        final response = await handleDeltaRequest(protocolMessage);
-        await _sendMessage(message.sender, response);
+        await _onDeltaRequest(protocolMessage, message.sender);
       } else if (protocolMessage is DeltaResponse) {
-        final level = protocolMessage.entries.isEmpty
-            ? LogLevel.trace
-            : LogLevel.debug;
-        _log(
-          level,
-          'RECV DeltaResponse from ${_shortId(message.sender.value)}: '
-          'channel=${_shortId(protocolMessage.channelId.value)} '
-          'stream=${protocolMessage.streamId.value} '
-          'entries=${protocolMessage.entries.length}',
-        );
-        // Ingesting new data is active sync — a paused/listen-only engine
-        // drops incoming deltas (including unsolicited reactive pushes) and
-        // relies on anti-entropy to re-fetch them after resume.
-        if (_scheduler.isRunning) {
-          final continuation = await handleDeltaResponse(protocolMessage);
-          if (continuation != null) {
-            // Drain the rest of a truncated backlog immediately.
-            await _sendDeltaRequests(message.sender, [continuation]);
-          }
-        }
+        await _onDeltaResponse(protocolMessage, message.sender);
       }
     } catch (e, st) {
       // A handler failure is distinct from a decode failure: the message
@@ -1080,6 +842,121 @@ class GossipEngine {
         e,
         st,
       );
+    }
+  }
+
+  /// Handles an inbound [DigestRequest] (Step 2 initiator side): answers it
+  /// with our own digests and, for channels we share, reciprocates by
+  /// pulling anything the peer advertised that we lack.
+  Future<void> _onDigestRequest(
+    DigestRequest request,
+    NodeId sender,
+    int nowMs,
+  ) async {
+    _log(
+      LogLevel.trace,
+      'RECV DigestRequest from ${_shortId(sender.value)}: '
+      '${request.digests.length} channels',
+    );
+    // A reciprocated exchange is coverage for BOTH sides: record it
+    // so our own selector/suppression see this peer as fresh
+    // (missing half of WIRE4-1).
+    peerDirectory.recordAntiEntropy(sender, nowMs);
+    final response = await _handleDigestRequest(request);
+    await _sendMessage(sender, response);
+    // Push-pull: the request already carries the initiator's version
+    // vectors, so reciprocate by pulling anything they advertised that
+    // we lack — making each exchange bidirectional instead of pulling
+    // only toward the initiator. Reciprocation is *active* sync, so
+    // gate it on running: a paused/listen-only engine still answers
+    // digests (serves data) but must not initiate new pulls.
+    if (_scheduler.isRunning) {
+      // A DigestRequest by design carries ALL the sender's channels, so
+      // ones we don't share are routine under partial channel overlap —
+      // filter them out here rather than letting _computeDeltaRequests
+      // emit a protocolError per non-shared channel per round. (On the
+      // DigestResponse path the digests are scoped to our own request,
+      // so an unknown channel there stays an anomaly worth reporting.)
+      final sharedDigests = _sharedDigests(request.digests);
+      await _sendDeltaRequests(
+        sender,
+        await _computeDeltaRequests(sender, sharedDigests),
+      );
+    }
+  }
+
+  /// Filters [digests] down to the channels we're a member of, logging the
+  /// rest — a [DigestRequest] carries all of the sender's channels by
+  /// design, so one we don't share is routine, not an anomaly.
+  List<ChannelDigest> _sharedDigests(List<ChannelDigest> digests) {
+    final sharedDigests = <ChannelDigest>[];
+    for (final digest in digests) {
+      if (_channels.containsKey(digest.channelId)) {
+        sharedDigests.add(digest);
+      } else {
+        _log(
+          LogLevel.trace,
+          'ignoring reciprocal digest for non-shared channel '
+          '${digest.channelId}',
+        );
+      }
+    }
+    return sharedDigests;
+  }
+
+  /// Handles an inbound [DigestResponse] (Step 3): pulls anything it shows
+  /// us missing.
+  Future<void> _onDigestResponse(DigestResponse response, NodeId sender) async {
+    _log(
+      LogLevel.trace,
+      'RECV DigestResponse from ${_shortId(sender.value)}: '
+      '${response.digests.length} channels',
+    );
+    // Pulling is active sync — a paused/listen-only engine serves but
+    // does not pull. (A DigestResponse is only ever a reply to our own
+    // request, which we make only while running.)
+    if (_scheduler.isRunning) {
+      await _sendDeltaRequests(sender, await handleDigestResponse(response));
+    }
+  }
+
+  /// Handles an inbound [DeltaRequest] (Step 4): serves the entries the
+  /// peer is missing.
+  Future<void> _onDeltaRequest(DeltaRequest request, NodeId sender) async {
+    _log(
+      LogLevel.debug,
+      'RECV DeltaRequest from ${_shortId(sender.value)}: '
+      'channel=${_shortId(request.channelId.value)} '
+      'stream=${request.streamId.value}',
+    );
+    // An inbound DeltaRequest means the peer is actively pulling from
+    // us — news regardless of whether we can serve anything back.
+    _recordNews();
+    final response = await handleDeltaRequest(request);
+    await _sendMessage(sender, response);
+  }
+
+  /// Handles an inbound [DeltaResponse]: merges the entries and, if the
+  /// peer signaled more remain, immediately drains the rest of a truncated
+  /// backlog.
+  Future<void> _onDeltaResponse(DeltaResponse response, NodeId sender) async {
+    final level = response.entries.isEmpty ? LogLevel.trace : LogLevel.debug;
+    _log(
+      level,
+      'RECV DeltaResponse from ${_shortId(sender.value)}: '
+      'channel=${_shortId(response.channelId.value)} '
+      'stream=${response.streamId.value} '
+      'entries=${response.entries.length}',
+    );
+    // Ingesting new data is active sync — a paused/listen-only engine
+    // drops incoming deltas (including unsolicited reactive pushes) and
+    // relies on anti-entropy to re-fetch them after resume.
+    if (_scheduler.isRunning) {
+      final continuation = await handleDeltaResponse(response);
+      if (continuation != null) {
+        // Drain the rest of a truncated backlog immediately.
+        await _sendDeltaRequests(sender, [continuation]);
+      }
     }
   }
 
@@ -1234,10 +1111,10 @@ class GossipEngine {
     // and that we also have, budgeted to the transport limit. Scoping the
     // response to the request keeps it bounded — the initiator already
     // budgeted/rotated the request, and our own version vectors may be
-    // larger, so the response is fitted independently — with its own
-    // rotation cursor ([_responseDigestCursor]) so an over-budget response
-    // covers every stream across successive exchanges too, instead of
-    // truncating the same tail every time (OBS-3).
+    // larger, so the response is fitted independently by
+    // [_digestBudgeter.fitResponse], with its own rotation cursor so an
+    // over-budget response covers every stream across successive exchanges
+    // too, instead of truncating the same tail every time (OBS-3).
     final byId = {for (final channel in channels) channel.id: channel};
 
     final flat = <({ChannelId channel, StreamDigest digest})>[];
@@ -1265,9 +1142,9 @@ class GossipEngine {
       }
     }
 
-    final (digests, consumed) = _fitDigests(flat, _responseDigestCursor);
-    if (flat.isNotEmpty) {
-      _responseDigestCursor = (_responseDigestCursor + consumed) % flat.length;
+    final (digests, oversized) = _digestBudgeter.fitResponse(flat);
+    for (final o in oversized) {
+      _emitError(_oversizedDigestError(o));
     }
     return DigestResponse(sender: localNode, digests: digests);
   }
@@ -1281,66 +1158,6 @@ class GossipEngine {
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
   Future<List<DeltaRequest>> handleDigestResponse(DigestResponse response) {
     return _computeDeltaRequests(response.sender, response.digests);
-  }
-
-  /// Selects the entries that can be applied without leaving a per-author
-  /// sequence gap: for each author, the contiguous run starting at
-  /// `ourVersion[author] + 1`. Entries beyond a gap are dropped (anti-entropy
-  /// backfills them contiguously later); entries at or below our version are
-  /// skipped as already held. Preserves the original entry order.
-  ///
-  /// This upholds the version-vector high-water-mark invariant: applying a
-  /// gapped entry would advance the vector past entries we don't actually
-  /// hold, so no peer would ever return them again — a permanent silent gap.
-  /// Matters most for unsolicited pushes (reactive dissemination), which can
-  /// deliver an arbitrary suffix; the request/response path is already
-  /// contiguous by construction, so this is also defense-in-depth there.
-  ({List<LogEntry> accepted, List<ContiguityGap> gaps})
-  _selectContiguousEntries(List<LogEntry> entries, VersionVector ourVersion) {
-    final byAuthor = <NodeId, List<LogEntry>>{};
-    for (final entry in entries) {
-      byAuthor.putIfAbsent(entry.author, () => []).add(entry);
-    }
-
-    final acceptUpTo = <NodeId, int>{};
-    final gaps = <ContiguityGap>[];
-    for (final authorEntry in byAuthor.entries) {
-      final author = authorEntry.key;
-      final authorEntries = authorEntry.value
-        ..sort((a, b) => a.sequence.compareTo(b.sequence));
-      var next = ourVersion[author] + 1;
-      int? firstBeyondGap;
-      for (final entry in authorEntries) {
-        if (entry.sequence < next) continue; // already held
-        if (entry.sequence != next) {
-          // Gap — stop accepting this author; record it so the drop is
-          // diagnosable (a silent drop here is how a peer that compacted
-          // past our position stalls sync invisibly, COR3-1).
-          firstBeyondGap = entry.sequence;
-          break;
-        }
-        next++;
-      }
-      acceptUpTo[author] = next - 1;
-      if (firstBeyondGap != null) {
-        gaps.add(
-          ContiguityGap(
-            author: author,
-            expectedNext: next,
-            firstAvailable: firstBeyondGap,
-          ),
-        );
-      }
-    }
-
-    final accepted = entries
-        .where(
-          (e) =>
-              e.sequence > ourVersion[e.author] &&
-              e.sequence <= acceptUpTo[e.author]!,
-        )
-        .toList();
-    return (accepted: accepted, gaps: gaps);
   }
 
   /// Sends the given [requests] to [recipient], releasing the pending flag
@@ -1357,11 +1174,11 @@ class GossipEngine {
     for (final request in requests) {
       final sent = await _sendMessage(recipient, request);
       if (!sent) {
-        _pendingDeltaRequests.remove((
+        _pendingPullTracker.release(
           recipient,
           request.channelId,
           request.streamId,
-        ));
+        );
       }
     }
   }
@@ -1395,100 +1212,127 @@ class GossipEngine {
       }
 
       for (final streamDigest in channelDigest.streams) {
-        // Skip streams we don't have locally. Stream creation is a local
-        // operation (by design — apps coordinate stream names), so a
-        // peer's stream we never created is invisible here FOREVER; log
-        // it so the situation is diagnosable in the field.
-        if (!channel.hasStream(streamDigest.streamId)) {
-          _log(
-            LogLevel.trace,
-            'ignoring digest for ${channelDigest.channelId}/'
-            '${streamDigest.streamId}: stream not created locally',
-          );
-          continue;
-        }
-
-        final key = (peer, channelDigest.channelId, streamDigest.streamId);
-
-        // Skip if we already have a non-expired pending request to THIS peer
-        // for this stream.
-        final pendingTimestamp = _pendingDeltaRequests[key];
-        if (pendingTimestamp != null) {
-          final elapsed = timePort.nowMs - pendingTimestamp;
-          if (elapsed < effectivePendingRequestTimeout.inMilliseconds) {
-            continue;
-          }
-          // Request has expired, remove it and allow a new one
-          _pendingDeltaRequests.remove(key);
-        }
-
-        // Mark pending BEFORE the await below. The incoming-message
-        // listener doesn't await handlers, so two queued DigestResponses
-        // interleave here; setting the flag synchronously after the check
-        // is what makes the dedup effective (otherwise both pass the
-        // check above and emit duplicate DeltaRequests).
-        _pendingDeltaRequests[key] = timePort.nowMs;
-
-        var ourVersion = await _computeVersionVector(
+        final request = await _evaluateStreamDigest(
+          peer,
           channelDigest.channelId,
-          streamDigest.streamId,
+          streamDigest,
         );
-
-        // The peer claims entries under OUR authorship beyond our own
-        // high-water mark: this channel/stream identity was removed and
-        // recreated (or local storage was reset) while peers kept the old
-        // history. Appending from the stale-low sequence would collide
-        // with it — the new entries would be invisible to every peer whose
-        // vector already covers the numbers, and two payloads would exist
-        // under one entry identity. Adopt the claim as a sequence floor so
-        // new local appends allocate past it (COR3-4). A lying peer can
-        // only make us skip sequence numbers, which is harmless.
-        final theirClaimForUs = streamDigest.version[localNode];
-        if (theirClaimForUs > ourVersion[localNode]) {
-          await entryRepository.adoptVersionFloor(
-            channelDigest.channelId,
-            streamDigest.streamId,
-            VersionVector({localNode: theirClaimForUs}),
-          );
-          _log(
-            LogLevel.warning,
-            'peer ${_shortId(peer.value)} holds our authorship up to '
-            '$theirClaimForUs in ${channelDigest.channelId}/'
-            '${streamDigest.streamId} but our mark is '
-            '${ourVersion[localNode]} — adopting as sequence floor '
-            '(recreated channel identity?)',
-          );
-          ourVersion = await _computeVersionVector(
-            channelDigest.channelId,
-            streamDigest.streamId,
-          );
-        }
-
-        // Only request delta if peer has entries we don't have
-        if (!ourVersion.dominates(streamDigest.version)) {
-          deltaRequests.add(
-            DeltaRequest(
-              sender: localNode,
-              channelId: channelDigest.channelId,
-              streamId: streamDigest.streamId,
-              since: ourVersion,
-            ),
-          );
-        } else {
-          // Nothing to request after all — release the flag.
-          _pendingDeltaRequests.remove(key);
-        }
+        if (request != null) deltaRequests.add(request);
       }
     }
 
     return deltaRequests;
   }
 
+  /// Evaluates one peer [StreamDigest] against our local state and returns
+  /// the [DeltaRequest] needed to pull what we're missing — or null when
+  /// the stream is skipped (not created locally, or a pull is already
+  /// pending) or our version already dominates the peer's.
+  Future<DeltaRequest?> _evaluateStreamDigest(
+    NodeId peer,
+    ChannelId channelId,
+    StreamDigest streamDigest,
+  ) async {
+    final channel = _channels[channelId];
+    if (channel == null) {
+      _log(
+        LogLevel.trace,
+        'ignoring digest for $channelId/${streamDigest.streamId}: '
+        'not a channel of ours',
+      );
+      return null;
+    }
+
+    // Skip streams we don't have locally. Stream creation is a local
+    // operation (by design — apps coordinate stream names), so a
+    // peer's stream we never created is invisible here FOREVER; log
+    // it so the situation is diagnosable in the field.
+    if (!channel.hasStream(streamDigest.streamId)) {
+      _log(
+        LogLevel.trace,
+        'ignoring digest for $channelId/'
+        '${streamDigest.streamId}: stream not created locally',
+      );
+      return null;
+    }
+
+    // Dedup gate: skip if a non-expired pull to THIS peer for this
+    // stream is already pending. A single synchronous call — see
+    // [PendingPullTracker.tryMark] for why the check and the mark
+    // must happen together, with no `await` between them.
+    if (!_pendingPullTracker.tryMark(peer, channelId, streamDigest.streamId)) {
+      return null;
+    }
+
+    var ourVersion = await _computeVersionVector(
+      channelId,
+      streamDigest.streamId,
+    );
+    ourVersion = await _adoptClaimedAuthorshipFloor(
+      peer,
+      channelId,
+      streamDigest,
+      ourVersion,
+    );
+
+    // Only request delta if peer has entries we don't have
+    if (!ourVersion.dominates(streamDigest.version)) {
+      return DeltaRequest(
+        sender: localNode,
+        channelId: channelId,
+        streamId: streamDigest.streamId,
+        since: ourVersion,
+      );
+    } else {
+      // Nothing to request after all — release the flag.
+      _pendingPullTracker.release(peer, channelId, streamDigest.streamId);
+      return null;
+    }
+  }
+
+  /// Adopts the peer's claimed authorship watermark as our sequence floor
+  /// when it exceeds ours, and returns the (possibly refreshed) version
+  /// vector.
+  ///
+  /// The peer claims entries under OUR authorship beyond our own
+  /// high-water mark: this channel/stream identity was removed and
+  /// recreated (or local storage was reset) while peers kept the old
+  /// history. Appending from the stale-low sequence would collide
+  /// with it — the new entries would be invisible to every peer whose
+  /// vector already covers the numbers, and two payloads would exist
+  /// under one entry identity. Adopt the claim as a sequence floor so
+  /// new local appends allocate past it (COR3-4). A lying peer can
+  /// only make us skip sequence numbers, which is harmless.
+  Future<VersionVector> _adoptClaimedAuthorshipFloor(
+    NodeId peer,
+    ChannelId channelId,
+    StreamDigest streamDigest,
+    VersionVector ourVersion,
+  ) async {
+    final theirClaimForUs = streamDigest.version[localNode];
+    if (theirClaimForUs <= ourVersion[localNode]) return ourVersion;
+
+    await entryRepository.adoptVersionFloor(
+      channelId,
+      streamDigest.streamId,
+      VersionVector({localNode: theirClaimForUs}),
+    );
+    _log(
+      LogLevel.warning,
+      'peer ${_shortId(peer.value)} holds our authorship up to '
+      '$theirClaimForUs in $channelId/'
+      '${streamDigest.streamId} but our mark is '
+      '${ourVersion[localNode]} — adopting as sequence floor '
+      '(recreated channel identity?)',
+    );
+    return _computeVersionVector(channelId, streamDigest.streamId);
+  }
+
   /// Handles delta request from a peer (Step 4).
   ///
   /// Computes the entries the peer is missing via [computeDelta] and
   /// returns them in a [DeltaResponse], truncated so the encoded message
-  /// fits [maxDeltaResponseBytes]. Truncation keeps a prefix of the
+  /// fits [maxMessageBytes]. Truncation keeps a prefix of the
   /// repository's timestamp order — per-author HLC monotonicity means a
   /// prefix is per-author sequence-contiguous, so the requester's version
   /// vector never develops holes. The requester obtains the remainder in
@@ -1554,7 +1398,7 @@ class GossipEngine {
   }
 
   /// Selects the prefix of [delta] whose encoded [DeltaResponse] fits
-  /// [maxDeltaResponseBytes].
+  /// [maxMessageBytes].
   ///
   /// An entry too large to ever fit (even alone in an empty message) can
   /// never be synced: it is reported via [ErrorCallback] and its author's
@@ -1590,7 +1434,7 @@ class GossipEngine {
       // +1 per entry for the JSON array separator.
       final cost = _syncCodec.encodedEntrySize(entry) + 1;
 
-      if (baseSize + cost > maxDeltaResponseBytes) {
+      if (baseSize + cost > maxMessageBytes) {
         // Undeliverable: no message can ever carry this entry.
         _emitError(
           ChannelSyncError(
@@ -1599,7 +1443,7 @@ class GossipEngine {
             'Entry ${entry.author}#${entry.sequence} in '
             '${request.channelId}/${request.streamId} encodes to '
             '$cost bytes and can never fit '
-            'maxDeltaResponseBytes=$maxDeltaResponseBytes; '
+            'maxMessageBytes=$maxMessageBytes; '
             'it cannot be synced to peers',
             occurredAt: DateTime.now(),
           ),
@@ -1608,7 +1452,7 @@ class GossipEngine {
         continue;
       }
 
-      if (size + cost > maxDeltaResponseBytes) {
+      if (size + cost > maxMessageBytes) {
         // Page full and this entry is deliverable in a future page — signal
         // the requester to continue immediately.
         truncated = true;
@@ -1634,13 +1478,15 @@ class GossipEngine {
   /// backlog at link speed instead of one page per periodic round. Returns
   /// null otherwise (no more, or no progress — the latter guards against an
   /// infinite continuation loop).
-  Future<DeltaRequest?> handleDeltaResponse(DeltaResponse response) {
+  Future<DeltaRequest?> handleDeltaResponse(DeltaResponse response) async {
     // Ingest only channels/streams this node actually has. Reactive pushes
     // fan out to every reachable peer, so receiving data for a channel we
     // never joined is routine — silently storing it would accumulate
     // unbounded phantom data (never advertised, never compacted) and leak
     // channel content across the membership boundary (COR3-2). The
-    // request path applies the same rule when computing pulls.
+    // request path applies the same rule when computing pulls. This guard
+    // reads engine-owned channel state, so it stays here rather than
+    // moving into [DeltaMerger] with the rest of the merge pipeline.
     final channel = _channels[response.channelId];
     if (channel == null || !channel.hasStream(response.streamId)) {
       _log(
@@ -1648,137 +1494,22 @@ class GossipEngine {
         'ignoring delta for ${response.channelId}/${response.streamId}: '
         'not a channel/stream of ours',
       );
-      return Future.value(null);
+      return null;
     }
 
-    // Serialize merges per (channel, stream): the merge body reads the
-    // version vector, filters, and appends across awaits, so two
-    // overlapping responses (per-peer pending keys deliberately allow
-    // concurrent same-stream pulls from two peers) would both pass the
-    // filter against the same stale vector — the second append then
-    // rejects the whole batch and its genuinely-new entries are delayed
-    // to a later round, with a spurious error blaming the peer (COR3-9).
-    // Failure isolation between chained merges is [KeyedTaskChain]'s
-    // contract, not reimplemented here.
-    final chainKey = (response.channelId, response.streamId);
-    return _mergeChain.enqueue(chainKey, () => _mergeDeltaResponse(response));
-  }
-
-  /// Per-(channel, stream) chain of in-flight merges — see
-  /// [handleDeltaResponse].
-  final KeyedTaskChain<(ChannelId, StreamId)> _mergeChain = KeyedTaskChain();
-
-  Future<DeltaRequest?> _mergeDeltaResponse(DeltaResponse response) async {
-    final key = (response.sender, response.channelId, response.streamId);
-    // If this response answers a request we were tracking, the elapsed time
-    // is a sample of the real delta round-trip (dominated by page transmit
-    // time) — feed it to the adaptive-timeout estimator before clearing.
-    final pendingSince = _pendingDeltaRequests.remove(key);
-    if (pendingSince != null) {
-      final elapsedMs = timePort.nowMs - pendingSince;
-      if (elapsedMs > 0) {
-        var sample = Duration(milliseconds: elapsedMs);
-        if (sample < _minPendingTimeout) sample = _minPendingTimeout;
-        if (sample > _maxPendingTimeout) sample = _maxPendingTimeout;
-        _deltaRttTracker.recordSample(sample);
-      }
-    }
-
-    // A solicited response may carry the sender's compaction floor: the
-    // range below it was pruned by retention and is unobtainable, so adopt
-    // it as truncated history (raising our high-water mark and our own
-    // floor) BEFORE filtering — the surviving entries then pass the
-    // contiguity guard instead of being dropped forever (COR3-1).
-    // Unsolicited responses cannot move our floor: we never asked this
-    // sender, and honoring an unsolicited claim would let any peer make us
-    // skip history that is still obtainable elsewhere.
-    if (pendingSince != null && response.floor.entries.isNotEmpty) {
-      await entryRepository.adoptVersionFloor(
-        response.channelId,
-        response.streamId,
-        response.floor,
-      );
-      _log(
-        LogLevel.info,
-        'adopted truncated history for '
-        '${response.channelId}/${response.streamId} from ${response.sender}: '
-        'floor ${response.floor.entries}',
-      );
-    }
-
-    if (response.entries.isEmpty) return null;
-
-    // Keep only entries we don't already have, in per-author contiguous
-    // order. Duplicate/stale DeltaResponses (a slow peer answering after the
-    // pending timeout, overlap between two peers' responses) must not be
-    // handed to the repository — whose contract rejects duplicates — nor
-    // re-reported via onEntriesMerged as if they were new.
-    final ourVersion = await _computeVersionVector(
+    // If this response answers a request we were tracking, [complete]
+    // removes it and feeds the elapsed time to the adaptive-timeout
+    // estimator as an RTT sample (dominated by page transmit time) — see
+    // [PendingPullTracker.complete]. Whether we were tracking it is also
+    // what "solicited" means to [DeltaMerger.merge]: a peer's own claim
+    // can't be trusted for that, only our own pending-pull state can.
+    final elapsed = _pendingPullTracker.complete(
+      response.sender,
       response.channelId,
       response.streamId,
     );
-    final selection = _selectContiguousEntries(response.entries, ourVersion);
-    final newEntries = selection.accepted;
-    if (selection.gaps.isNotEmpty) {
-      _reportContiguityGaps(
-        response,
-        selection.gaps,
-        solicited: pendingSince != null,
-      );
-    }
-    if (newEntries.isEmpty) return null;
-
-    // Only entries we actually merge drive the clock: a rejected entry
-    // (gapped, duplicate) must not be able to touch local causality state
-    // (COR3-10).
-    _updateHlcFromEntries(newEntries);
-
-    // Snapshot the current tail HLC before appending to detect out-of-order
-    final previousTailHlc = await entryRepository.getTailTimestamp(
-      response.channelId,
-      response.streamId,
-    );
-
-    await entryRepository.appendAll(
-      response.channelId,
-      response.streamId,
-      newEntries,
-    );
-
-    // Out-of-order: any merged entry sorts before the previous tail. The
-    // tail is known only by timestamp, so an entry TYING it may still sort
-    // before it on the author tiebreak — treat ties as possibly
-    // out-of-order (a rare extra rebuild beats silent fold/rebuild
-    // divergence, COR3-27).
-    final containsOutOfOrderEntries =
-        previousTailHlc != null &&
-        newEntries.any((e) => e.timestamp <= previousTailHlc);
-
-    _mergedBatchCount++;
-    _recordNews();
-
-    await onEntriesMerged?.call(
-      response.channelId,
-      response.streamId,
-      newEntries,
-      containsOutOfOrderEntries,
-    );
-
-    if (response.hasMore) {
-      // Continue draining from the same peer at our advanced version.
-      final advanced = await _computeVersionVector(
-        response.channelId,
-        response.streamId,
-      );
-      _pendingDeltaRequests[key] = timePort.nowMs;
-      return DeltaRequest(
-        sender: localNode,
-        channelId: response.channelId,
-        streamId: response.streamId,
-        since: advanced,
-      );
-    }
-    return null;
+    final result = await _merger.merge(response, solicited: elapsed != null);
+    return result.continuation;
   }
 
   /// Clears all pending delta requests.
@@ -1787,8 +1518,8 @@ class GossipEngine {
   /// the peer reconnects. Without clearing, pending requests would block
   /// new delta requests until they expire.
   void clearPendingRequests() {
-    _pendingDeltaRequests.clear();
-    _reportedGaps.clear();
+    _pendingPullTracker.clearAll();
+    _merger.clearReportedGaps();
   }
 
   /// Clears pending delta requests addressed to [peer].
@@ -1798,133 +1529,7 @@ class GossipEngine {
   /// hold [outstandingPullCount] above zero until expiry.
   void clearPendingRequestsForPeer(NodeId peer) {
     _recordNews();
-    _pendingDeltaRequests.removeWhere((key, _) => key.$1 == peer);
-    _reportedGaps.removeWhere((key) => key.$1 == peer);
+    _pendingPullTracker.clearForPeer(peer);
+    _merger.clearReportedGapsForPeer(peer);
   }
-
-  /// Contiguity gaps already reported, keyed by
-  /// (peer, channel, stream, author, expectedNext).
-  ///
-  /// A persistent hole (e.g. a peer that compacted past our position)
-  /// recurs on every round — report it once per position, not per round.
-  /// Bounded structurally: one entry per (peer × stream × author × gap
-  /// position); cleared with the peer's pending state.
-  final Set<(NodeId, ChannelId, StreamId, NodeId, int)> _reportedGaps = {};
-
-  /// Reports entries dropped by the contiguity guard.
-  ///
-  /// A gapped SOLICITED response is always anomalous — the responder was
-  /// asked for everything after our version vector, so a hole means it no
-  /// longer has (or never had) entries we need; sync for that author is
-  /// stalled until the range becomes obtainable. Surface it via
-  /// [ErrorCallback] once per gap position.
-  ///
-  /// A gapped UNSOLICITED push is routine — a reactive push carries the
-  /// writer's newest entries, and we may simply not have pulled the prefix
-  /// yet; anti-entropy will catch up. Trace log only.
-  void _reportContiguityGaps(
-    DeltaResponse response,
-    List<ContiguityGap> gaps, {
-    required bool solicited,
-  }) {
-    for (final gap in gaps) {
-      if (!solicited) {
-        _log(
-          LogLevel.trace,
-          'push for ${response.channelId}/${response.streamId} dropped: '
-          'behind for ${gap.author} (next needed ${gap.expectedNext}, push '
-          'starts at ${gap.firstAvailable}); anti-entropy will catch up',
-        );
-        continue;
-      }
-      final key = (
-        response.sender,
-        response.channelId,
-        response.streamId,
-        gap.author,
-        gap.expectedNext,
-      );
-      if (!_reportedGaps.add(key)) continue;
-      _log(
-        LogLevel.warning,
-        'delta response from ${response.sender} has a sequence hole for '
-        '${gap.author} in ${response.channelId}/${response.streamId}: '
-        'expected ${gap.expectedNext}, first available ${gap.firstAvailable}',
-      );
-      _emitError(
-        ChannelSyncError(
-          response.channelId,
-          SyncErrorType.protocolError,
-          'Peer ${response.sender} answered a delta request with a sequence '
-          'hole for author ${gap.author} in '
-          '${response.channelId}/${response.streamId}: expected seq '
-          '${gap.expectedNext}, first available ${gap.firstAvailable}. The '
-          'peer has likely compacted entries we never received; sync for '
-          'this author is stalled until the missing range is obtainable.',
-          occurredAt: DateTime.now(),
-        ),
-      );
-    }
-  }
-
-  /// Updates the local HLC clock from received entries.
-  ///
-  /// Finds the maximum HLC timestamp among the entries and calls
-  /// [HlcClock.receive] to ensure causal consistency for subsequent writes.
-  void _updateHlcFromEntries(List<LogEntry> entries) {
-    if (_hlcClock == null || entries.isEmpty) return;
-
-    final maxHlc = entries
-        .map((e) => e.timestamp)
-        .reduce((a, b) => a.compareTo(b) > 0 ? a : b);
-
-    _hlcClock.receive(maxHlc);
-
-    // Persist clock state for restart recovery. Fire-and-forget for
-    // latency, but never silent: a persistent store failing (disk full)
-    // must surface via ErrorCallback instead of becoming an unhandled
-    // zone error.
-    unawaited(
-      _localNodeRepository.saveClockState(_hlcClock.current).catchError((
-        Object error,
-        StackTrace stackTrace,
-      ) {
-        _emitError(
-          StorageSyncError(
-            SyncErrorType.storageFailure,
-            'Failed to persist HLC clock state: $error',
-            occurredAt: DateTime.now(),
-            cause: error,
-          ),
-        );
-        _log(
-          LogLevel.error,
-          'Failed to persist HLC clock state: $error',
-          error,
-          stackTrace,
-        );
-      }),
-    );
-  }
-}
-
-/// A per-author sequence hole found while filtering a delta response.
-///
-/// The batch offered [firstAvailable] while we still need [expectedNext] —
-/// everything from [firstAvailable] on was dropped to preserve the
-/// version-vector high-water-mark invariant.
-class ContiguityGap {
-  final NodeId author;
-
-  /// The sequence we need next (our high-water mark + 1).
-  final int expectedNext;
-
-  /// The lowest offered sequence beyond the hole.
-  final int firstAvailable;
-
-  const ContiguityGap({
-    required this.author,
-    required this.expectedNext,
-    required this.firstAvailable,
-  });
 }

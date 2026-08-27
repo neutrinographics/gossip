@@ -104,7 +104,7 @@ void main() {
       'an oversized digest is paginated to fit the transport budget',
       () async {
         final h = GossipEngineTestHarness(
-          maxDeltaResponseBytes: 300,
+          maxMessageBytes: 300,
           gossipInterval: const Duration(seconds: 100),
         );
         final peer = h.addPeer('peer1');
@@ -144,7 +144,7 @@ void main() {
 
     test('rotation covers every stream over successive rounds', () async {
       final h = GossipEngineTestHarness(
-        maxDeltaResponseBytes: 300,
+        maxMessageBytes: 300,
         gossipInterval: const Duration(seconds: 100),
       );
       final peer = h.addPeer('peer1');
@@ -197,7 +197,7 @@ void main() {
       () async {
         final errors = <SyncError>[];
         final h = GossipEngineTestHarness(
-          maxDeltaResponseBytes: 250,
+          maxMessageBytes: 250,
           gossipInterval: const Duration(seconds: 100),
         );
         // Route engine errors into our list.
@@ -238,12 +238,21 @@ void main() {
             isA<ChannelSyncError>().having(
               (e) => e.message,
               'message',
-              contains('big'),
+              allOf(
+                contains('big'),
+                contains('cannot fit maxMessageBytes='),
+                contains(
+                  'that stream has too many authors to sync (consider '
+                  'compaction or sharding the channel)',
+                ),
+              ),
             ),
           ),
           reason:
               'an un-sendable stream digest must surface an error that '
-              'identifies the oversized stream ("big"), not just any error',
+              'identifies the oversized stream ("big") and explains why '
+              '(budget exceeded, with the compaction/sharding remedy) — '
+              'not just any error',
         );
         expect(sizes, everyElement(lessThanOrEqualTo(250)));
 
@@ -259,7 +268,7 @@ void main() {
       'handleDigestRequest budgets its response to the transport limit',
       () async {
         final h = GossipEngineTestHarness(
-          maxDeltaResponseBytes: 300,
+          maxMessageBytes: 300,
           gossipInterval: const Duration(seconds: 100),
         );
         final peer = h.addPeer('peer1');
@@ -320,7 +329,7 @@ void main() {
     test('successive over-budget responses rotate the fitted window instead of '
         'truncating the same tail every exchange', () async {
       final h = GossipEngineTestHarness(
-        maxDeltaResponseBytes: 300,
+        maxMessageBytes: 300,
         gossipInterval: const Duration(seconds: 100),
       );
       final peer = h.addPeer('peer1');
@@ -458,7 +467,7 @@ void main() {
         timePort: InMemoryTimePort(),
         messagePort: InMemoryMessagePort(node, bus),
         localNodeRepository: InMemoryLocalNodeRepository(nodeId: node),
-        maxDeltaResponseBytes: 300, // forces digest pagination
+        maxMessageBytes: 300, // forces digest pagination
       );
 
       final engineA = engine(nodeA, registryA, entryRepoA);

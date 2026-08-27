@@ -128,7 +128,7 @@ class GossipEngineTestHarness {
     bool adaptiveTimingEnabled = false,
     bool withHlcClock = false,
     MessagePort? messagePort,
-    int? maxDeltaResponseBytes,
+    int? maxMessageBytes,
     Random? random,
     EntriesMergedCallback? onEntriesMerged,
   }) {
@@ -170,7 +170,7 @@ class GossipEngineTestHarness {
       hlcClock: hlcClock,
       gossipInterval: gossipInterval,
       adaptiveTimingEnabled: adaptiveTimingEnabled,
-      maxDeltaResponseBytes: maxDeltaResponseBytes ?? 30 * 1024,
+      maxMessageBytes: maxMessageBytes ?? 30 * 1024,
       random: random,
     );
 

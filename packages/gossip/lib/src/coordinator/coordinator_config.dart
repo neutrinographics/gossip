@@ -115,7 +115,8 @@ class CoordinatorConfig {
   /// fallback constants instead of adaptive computation.
   final bool adaptiveTimingEnabled;
 
-  /// Maximum encoded size (bytes) of a single gossip DeltaResponse message.
+  /// The byte budget for every sync protocol message — digests, delta
+  /// pages, and pushes — sized to the 32 KB transport limit.
   ///
   /// Large entry backlogs are paginated across gossip rounds so no single
   /// message exceeds this budget. It also determines the maximum entry
@@ -127,7 +128,7 @@ class CoordinatorConfig {
   /// limit shared by Android Nearby Connections and the BLE frame codec.
   /// Only raise this if every transport in your deployment carries larger
   /// messages.
-  final int maxDeltaResponseBytes;
+  final int maxMessageBytes;
 
   /// How often the library applies each stream's retention policy, pruning
   /// entries the policy no longer keeps.
@@ -139,7 +140,7 @@ class CoordinatorConfig {
   ///
   /// **Default: 5 minutes.** Set to `null` (or [Duration.zero]) to disable
   /// auto-compaction, in which case the application must call
-  /// `EventStream.compact()` itself. Requires a `timerPort` (auto-compaction
+  /// `EventStream.compact()` itself. Requires a `timePort` (auto-compaction
   /// is inactive in local-only mode).
   ///
   /// A scheduling failure (the underlying timer itself breaking, not a
@@ -171,7 +172,7 @@ class CoordinatorConfig {
     this.probeInterval,
     this.pingTimeout,
     this.adaptiveTimingEnabled = true,
-    this.maxDeltaResponseBytes = 30 * 1024,
+    this.maxMessageBytes = 30 * 1024,
     this.compactionInterval = const Duration(minutes: 5),
     this.hlcMaxDrift = const Duration(hours: 1),
   });

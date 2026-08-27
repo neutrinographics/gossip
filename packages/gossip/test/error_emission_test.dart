@@ -86,7 +86,7 @@ void main() {
 
       final entryRepo = InMemoryEntryRepository();
       final throwingPort = ThrowingMessagePort(Exception('Network error'));
-      final timerPort = NoOpTimePort();
+      final timePort = NoOpTimePort();
 
       final errors = <SyncError>[];
       final engine = GossipEngine(
@@ -94,7 +94,7 @@ void main() {
         localNode: localNode,
         peerDirectory: MembershipPeerDirectory(peerRegistry),
         entryRepository: entryRepo,
-        timePort: timerPort,
+        timePort: timePort,
         messagePort: throwingPort,
         localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         onError: (error) => errors.add(error),
@@ -117,7 +117,7 @@ void main() {
 
       final entryRepo = InMemoryEntryRepository();
       final messagePort = ThrowingMessagePort(Exception('unused'));
-      final timerPort = NoOpTimePort();
+      final timePort = NoOpTimePort();
 
       final errors = <SyncError>[];
       final engine = GossipEngine(
@@ -125,7 +125,7 @@ void main() {
         localNode: localNode,
         peerDirectory: MembershipPeerDirectory(peerRegistry),
         entryRepository: entryRepo,
-        timePort: timerPort,
+        timePort: timePort,
         messagePort: messagePort,
         localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
         onError: (error) => errors.add(error),
@@ -161,14 +161,14 @@ void main() {
       final peerRegistry = PeerRegistry(localNode: localNode);
 
       final messagePort = ThrowingMessagePort(Exception('unused'));
-      final timerPort = NoOpTimePort();
+      final timePort = NoOpTimePort();
 
       final errors = <SyncError>[];
       final detector = FailureDetector(
         codec: MembershipMessageCodec(),
         localNode: localNode,
         peerRegistry: peerRegistry,
-        timePort: timerPort,
+        timePort: timePort,
         messagePort: messagePort,
         onError: (error) => errors.add(error),
       );

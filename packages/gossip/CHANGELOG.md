@@ -10,7 +10,7 @@ publish under the existing pub.dev `gossip` name must version above the old
   still decode the legacy JSON int-list form, but old nodes cannot decode
   new messages — mixed-version fleets cannot gossip with each other.
 - Maximum entry payload is ≈22 KB, derived from
-  `CoordinatorConfig.maxDeltaResponseBytes` (default 30 KB);
+  `CoordinatorConfig.maxMessageBytes` (default 30 KB);
   `EventStream.append` throws `ArgumentError` above it. Large delta
   responses paginate across gossip rounds.
 
@@ -35,6 +35,8 @@ publish under the existing pub.dev `gossip` name must version above the old
 - Local-node invariant violations (`removeMember` of the local node,
   `addPeer` of self) throw typed `DomainException` instead of generic
   exceptions.
+- `Coordinator.create(timerPort:)` renamed to `timePort:`.
+- `CoordinatorConfig.maxDeltaResponseBytes` renamed to `maxMessageBytes`.
 
 ### Behavioral
 

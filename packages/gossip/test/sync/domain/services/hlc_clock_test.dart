@@ -12,12 +12,12 @@ class TestTimeHelper {
   TestTimeHelper._(this.timePort, this.timeSource);
 
   factory TestTimeHelper(int initialTimeMs) {
-    final timerPort = InMemoryTimePort();
+    final timePort = InMemoryTimePort();
     // Advance to initial time
     if (initialTimeMs > 0) {
-      timerPort.advance(Duration(milliseconds: initialTimeMs));
+      timePort.advance(Duration(milliseconds: initialTimeMs));
     }
-    return TestTimeHelper._(timerPort, TimeSource(timerPort));
+    return TestTimeHelper._(timePort, TimeSource(timePort));
   }
 
   void advance(int ms) => timePort.advance(Duration(milliseconds: ms));
