@@ -381,12 +381,21 @@ class Coordinator {
   /// listeners left to reach — an error surfacing after that point (e.g.
   /// a pending async callback started before dispose) falls back to
   /// [_onLog] instead of vanishing silently (no-silent-errors rule).
-  void _handleError(SyncError error) {
+  ///
+  /// [stackTrace], when the caller has one, rides along to that same
+  /// [_onLog] fallback so a post-dispose failure is still debuggable from
+  /// its origin instead of just its message.
+  void _handleError(SyncError error, [StackTrace? stackTrace]) {
     if (!_errorsController.isClosed) {
       _errorsController.add(error);
       return;
     }
-    _onLog?.call(LogLevel.error, 'error after dispose: $error', error);
+    _onLog?.call(
+      LogLevel.error,
+      'error after dispose: $error',
+      error,
+      stackTrace,
+    );
   }
 
   /// Fans a domain event from [ChannelService] out to the app's event stream
@@ -472,7 +481,7 @@ class Coordinator {
         entries,
         containsOutOfOrderEntries: containsOutOfOrderEntries,
       );
-    } catch (e) {
+    } catch (e, st) {
       _handleError(
         StorageSyncError(
           SyncErrorType.storageFailure,
@@ -481,6 +490,7 @@ class Coordinator {
           occurredAt: DateTime.now(),
           cause: e,
         ),
+        st,
       );
     }
 
@@ -678,7 +688,7 @@ class Coordinator {
           return;
         }
       }
-    } catch (e) {
+    } catch (e, st) {
       _handleError(
         PeerSyncError(
           peerId,
@@ -687,6 +697,7 @@ class Coordinator {
           occurredAt: DateTime.now(),
           cause: e,
         ),
+        st,
       );
     }
   }

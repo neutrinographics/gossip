@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 
+import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
@@ -155,6 +156,19 @@ void main() {
         h.errors,
         isNotEmpty,
         reason: 'an undeliverable entry must surface via ErrorCallback',
+      );
+      expect(
+        h.errors.single,
+        isA<ChannelSyncError>(),
+        reason: 'the budget-fit check reports a channel-level protocol error',
+      );
+      expect(
+        (h.errors.single as ChannelSyncError).message,
+        contains('can never fit maxMessageBytes='),
+        reason:
+            'pin the emitted message beyond mere non-emptiness — it must '
+            'name the exact reason (never fits the budget) and the '
+            'configured limit',
       );
     });
   });

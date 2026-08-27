@@ -121,5 +121,101 @@ void main() {
       handle2.cancel();
       expect(timer.activeTimerCount, equals(0));
     });
+
+    group("advance() honors each periodic timer's own interval", () {
+      test(
+        'advance(n × interval) fires the callback exactly n times',
+        () async {
+          final timer = InMemoryTimePort();
+          var callCount = 0;
+
+          timer.schedulePeriodic(Duration(milliseconds: 100), () {
+            callCount++;
+          });
+
+          // n = 3: advancing by exactly three intervals must cross exactly
+          // three firing boundaries — not one (the old tick()-per-advance()
+          // behavior) and not some ticks-elapsed count unrelated to interval.
+          await timer.advance(Duration(milliseconds: 300));
+
+          expect(callCount, equals(3));
+        },
+      );
+
+      test('advance(interval / 2) fires the callback zero times', () async {
+        final timer = InMemoryTimePort();
+        var callCount = 0;
+
+        timer.schedulePeriodic(Duration(milliseconds: 100), () {
+          callCount++;
+        });
+
+        await timer.advance(Duration(milliseconds: 50));
+
+        expect(callCount, equals(0));
+      });
+
+      test(
+        'sub-interval advances accumulate toward the next boundary',
+        () async {
+          final timer = InMemoryTimePort();
+          var callCount = 0;
+
+          timer.schedulePeriodic(Duration(milliseconds: 100), () {
+            callCount++;
+          });
+
+          await timer.advance(Duration(milliseconds: 60));
+          expect(callCount, equals(0));
+
+          await timer.advance(Duration(milliseconds: 60));
+          // Total elapsed is 120ms — one 100ms boundary crossed.
+          expect(callCount, equals(1));
+        },
+      );
+
+      test(
+        'independent timers with different intervals fire independently under advance()',
+        () async {
+          final timer = InMemoryTimePort();
+          var count100 = 0;
+          var count250 = 0;
+
+          timer.schedulePeriodic(Duration(milliseconds: 100), () {
+            count100++;
+          });
+          timer.schedulePeriodic(Duration(milliseconds: 250), () {
+            count250++;
+          });
+
+          await timer.advance(Duration(milliseconds: 500));
+
+          expect(count100, equals(5));
+          expect(count250, equals(2));
+        },
+      );
+
+      test(
+        'cancelling a timer stops it from firing on later advance()',
+        () async {
+          final timer = InMemoryTimePort();
+          var callCount = 0;
+
+          final handle = timer.schedulePeriodic(
+            Duration(milliseconds: 100),
+            () {
+              callCount++;
+            },
+          );
+
+          await timer.advance(Duration(milliseconds: 100));
+          expect(callCount, equals(1));
+
+          handle.cancel();
+          await timer.advance(Duration(milliseconds: 300));
+          expect(callCount, equals(1));
+        },
+      );
+    });
   });
 }

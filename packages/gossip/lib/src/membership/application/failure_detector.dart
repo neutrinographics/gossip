@@ -134,7 +134,7 @@ class FailureDetector {
   final int failureThreshold;
   final int unreachableThreshold;
   final int unreachableProbeInterval;
-  final TimePort timePort;
+  final TimePort _timePort;
   final MessagePort messagePort;
   final ErrorCallback? onError;
   final LogCallback? onLog;
@@ -175,7 +175,7 @@ class FailureDetector {
     this.failureThreshold = 3,
     this.unreachableThreshold = 9,
     this.unreachableProbeInterval = 5,
-    required this.timePort,
+    required TimePort timePort,
     required this.messagePort,
     this.onError,
     this.onLog,
@@ -183,7 +183,8 @@ class FailureDetector {
     Duration? probeInterval,
     Random? random,
     RttTracker? rttTracker,
-  }) : _codec = codec,
+  }) : _timePort = timePort,
+       _codec = codec,
        _random = random ?? Random(),
        _rttTracker = rttTracker ?? RttTracker() {
     _timing = ProbeTimingPolicy(
@@ -244,7 +245,7 @@ class FailureDetector {
   /// Drives the periodic probe round loop: computes each tick's delay
   /// (jittered [effectiveProbeInterval]), runs [performProbeRound], and
   /// reports tick vs. scheduling failures separately. Built eagerly in the
-  /// constructor — unlike Coordinator's compaction scheduler, [timePort]
+  /// constructor — unlike Coordinator's compaction scheduler, the time port
   /// is always available here, so there is no lazy-construction case.
   late final GenerationScheduler _scheduler;
 
@@ -265,7 +266,7 @@ class FailureDetector {
   // the detector.
 
   /// Holds [peerId] out of probe selection for [duration], measured from
-  /// now on this detector's own [timePort].
+  /// now on this detector's own time port.
   ///
   /// The deadline is computed here rather than by the caller because the
   /// hold is later judged against this same clock (see
@@ -274,7 +275,7 @@ class FailureDetector {
   /// which only coincidentally agree in production and diverge under any
   /// clock double that isn't shared.
   void holdProbing(NodeId peerId, Duration duration) =>
-      setProbingHold(peerId, timePort.nowMs + duration.inMilliseconds);
+      setProbingHold(peerId, _timePort.nowMs + duration.inMilliseconds);
 
   /// Sets a probing hold for a peer until the given timestamp.
   ///
@@ -307,6 +308,9 @@ class FailureDetector {
 
   bool get isRunning => _scheduler.isRunning;
 
+  /// Exposes the RTT tracker for assertions only — production code reads
+  /// timing through [effectivePingTimeout] et al., never this directly.
+  @visibleForTesting
   RttTracker get rttTracker => _rttTracker;
 
   /// Effective ping timeout. Delegates to [_timing] — see
@@ -468,7 +472,7 @@ class FailureDetector {
         // for the target explicitly — otherwise a peer reachable only via
         // intermediaries stays suspected forever (excluded from gossip,
         // never unreachable, never recovered).
-        _recordPeerContact(peer.id, timePort.nowMs);
+        _recordPeerContact(peer.id, _timePort.nowMs);
         _timing.quietRound();
       case _ProbeOutcome.failed:
         _handleProbeFailure(peer.id);
@@ -535,7 +539,7 @@ class FailureDetector {
         // The forwarded Ack has the intermediary as sender, so handleAck()
         // only updated the intermediary's contact. Explicitly recover the
         // target peer.
-        _recordPeerContact(peer.id, timePort.nowMs);
+        _recordPeerContact(peer.id, _timePort.nowMs);
         _log('Unreachable peer ${peer.id} responded (indirect) — recovered');
       case _ProbeOutcome.failed:
         _log('Unreachable peer ${peer.id} did not respond (still unreachable)');
@@ -704,7 +708,7 @@ class FailureDetector {
     final peerTimeout = effectivePingTimeoutForPeer(target);
 
     if (intermediaries.isEmpty) {
-      await timePort.delay(peerTimeout);
+      await _timePort.delay(peerTimeout);
       return false;
     }
 
@@ -801,7 +805,7 @@ class FailureDetector {
 
   Future<void> _handleIncomingPing(Ping ping, NodeId sender) async {
     _log('Received Ping from $sender seq=${ping.sequence}');
-    _recordPeerContact(sender, timePort.nowMs);
+    _recordPeerContact(sender, _timePort.nowMs);
     final ack = handlePing(ping);
     final ackBytes = _codec.encode(ack);
     await _safeSend(sender, ackBytes, 'Ack');
@@ -811,7 +815,7 @@ class FailureDetector {
   void _handleIncomingAck(Ack ack) {
     _acksReceived++;
     _log('Received Ack from ${ack.sender} seq=${ack.sequence}');
-    handleAck(ack, timestampMs: timePort.nowMs);
+    handleAck(ack, timestampMs: _timePort.nowMs);
   }
 
   /// Intermediary role: ping target on behalf of requester, forward Ack back.
@@ -901,7 +905,7 @@ class FailureDetector {
     final pending = _PendingPing(
       target: target,
       sequence: sequence,
-      sentAtMs: timePort.nowMs,
+      sentAtMs: _timePort.nowMs,
       allowForwarded: allowForwarded,
     );
     _pendingPings[sequence] = pending;
@@ -914,7 +918,7 @@ class FailureDetector {
     // (performProbeRound and _probeUnreachablePeer via _probe;
     // probeNewPeer directly) — records that this peer was actually
     // probed, resetting its suppression-cap clock.
-    _selector.recordProbeAttempt(target, timePort.nowMs);
+    _selector.recordProbeAttempt(target, _timePort.nowMs);
     _log('Sending Ping to $target seq=$sequence (pings sent: $_pingsSent)');
     final ping = Ping(sender: localNode, sequence: sequence);
     await _safeSend(target, _codec.encode(ping), 'Ping');
@@ -928,7 +932,7 @@ class FailureDetector {
     _PendingPing pending,
     Duration timeout,
   ) async {
-    final timeoutFuture = timePort.delay(timeout).then((_) => false);
+    final timeoutFuture = _timePort.delay(timeout).then((_) => false);
     return Future.any([pending.completer.future, timeoutFuture]);
   }
 
