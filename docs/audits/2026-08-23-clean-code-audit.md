@@ -417,3 +417,42 @@ Commits `b20aac9..428eaa0` + this commit, branch `cc5-batch-h`. Six tasks (H1–
 **Suite arithmetic:** 1182 → 1188 (H1 −22, H2 +1, H3 +15, H4 +3, H5 +9, H6 +0 — `selectRandomReachablePeer` had zero test coverage to remove, verified by a monorepo-wide grep before deletion).
 
 Gates: `melos run test` (gossip 1188, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages); `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0; the `gossip_chat` example suite (193 tests) is green.
+
+---
+
+## Campaign close — comment hygiene (2026-08-28)
+
+Commits `fd9a999..9e86640` on branch `comment-hygiene`. Six tasks (I1–I6); I1–I4 each took one fix round, I5 took zero, this closing task is comment-only. Scope: strip audit-key citations and `docs/audits` pointer sentences (substance inlined or restated keyless), delete history/migration commentary, retire banner-comment dividers, and extract comment-paragraph blocks into intention-named private functions wherever a name genuinely carries the paragraph — across all of `lib/` and `test/` — plus three ride-along items (DI2/DI4 below) the backlog item named explicitly.
+
+**Measured with `git grep` at branch base `d782208` vs. head `9e86640`** (citation pattern `(CC5|COR3|WIRE4|OBS)[- ]?[0-9]` unioned with the bare-key pattern `\b[HGMCEL][0-9]+\b`, judged in context; ADR references excluded throughout and left untouched everywhere, per the backlog item's own carve-out):
+
+| Metric | Before | After |
+|---|---|---|
+| Citation lines, `lib/` | 54 | 0 |
+| Citation lines, `test/` | 113 | 0 |
+| `docs/audits` pointer lines, `lib/` (`failure_detector.dart`, `gossip_engine.dart` class docs) | 2 | 0 |
+| Banner divider lines (`// ---`, `// ===`, `────`), `lib/` | 58 | 0 |
+| Banner divider lines, `test/` | 76 | 0 |
+
+**Big-four comment-share** (`^\s*//` lines ÷ total lines, measured directly, not estimated):
+
+| File | Before | After |
+|---|---|---|
+| `sync/application/gossip_engine.dart` | 613/1556 (39.4%) | 608/1567 (38.8%) |
+| `coordinator/coordinator.dart` | 428/1119 (38.2%) | 393/1093 (36.0%) |
+| `membership/application/failure_detector.dart` | 369/1051 (35.1%) | 333/1017 (32.7%) |
+| `sync/application/channel_service.dart` | 282/738 (38.2%) | 276/732 (37.7%) |
+
+The density drop is modest by design: this pass's job was citations, banners, and history — not the wholesale collaborator extraction CC5-1/CC5-2 already did in Batches E and F before this campaign started. What remains in all four files is overwhelmingly `///` contract docs and WHY/invariant comments the rubric says to keep.
+
+**Extractions: 9 functions, 24 documented rejections — a deliberately honest ratio, not maximal fragmentation.** I1 (membership territory): 4 extractions — `_maybeProbeUnreachablePeerThisRound`, `_decodeIncomingMessage`, `_dispatchProtocolMessage` (all `failure_detector.dart`) and `_isProbeEligible` (`probe_target_selector.dart`) — against 9 rejected candidates. I2 (sync/application territory): 2 extractions — `_staleUncongestedCandidates`, `_reportableFloor` (both `gossip_engine.dart`) — against 10 rejected candidates, including the engine's decode/dispatch split, rejected specifically because — unlike I1's structurally identical detector-side extraction — it sits on the hot path for every digest/delta exchange and would add an unconditional microtask suspension point for a benefit the method's own doc comment already delivers. I3 (coordinator territory): 3 extractions — `coordinator.dart`'s `addPeer` split into `_holdProbingDuringStartupGrace`/`_bootstrapPeerRtt`/`_syncWithNewPeer` — against 5 rejected candidates, including two rejected on the same suspension-point grounds as I2's. Every accepted extraction moved its source block token-verbatim (the wrapping declaration is the only new code); every rejection is a recorded judgment call — a name that would only relabel an already-obvious one-line delegation, a WHY/invariant comment sitting over a body already at its practical minimum, or a block whose extraction would add a real timing change disproportionate to the comment it would remove.
+
+**DI1–DI4, one line each:**
+- **DI1** — batch-key suffixes (`(H4)`, `(G3)`, `(WIRE4-3)`, …) stripped from 52 test/group names across `test/`; string-literal-only edits, every assertion and callback body byte-identical.
+- **DI2** — `packages/gossip/architecture.md` deleted: wholesale pre-reorg rot (a layer-first structure the bounded-context move superseded, a facade section still marked "not yet implemented" though long shipped, pointers to two files that don't exist in the tree). Its one live inbound reference, `TODO.md:741`, was repointed to ADR-001.
+- **DI3** — the class-doc pointer paragraphs ("Comment keys like COR3-n / WIRE4-n / H-n refer to findings in `docs/audits/`") deleted from `failure_detector.dart` and `gossip_engine.dart` once both files carried zero keys to point at.
+- **DI4** — the two `Map<NodeId, int>.from(...)` wraps in `in_memory_entry_repository.dart`'s version-vector reads, and the `Map.unmodifiable(...)` wrap in `VersionVector.merge`, removed — each with a written equivalence argument (the `VersionVector` constructor's own `_normalized` step already copies and normalizes every entry; none of the three source maps ever escapes to a caller). Verified against the suite's one unmodifiability pin, which exercises the constructor path directly, not these three call sites.
+
+**Gates:** `melos run test` (gossip 1190, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages); `dart format --output=none --set-exit-if-changed` clean in `packages/gossip` and `packages/gossip_nearby`; the `gossip_chat` example suite (193 tests) green. `packages/gossip_bluey` carries pre-existing SDK-version formatter drift (26 files, tracked separately as `health-format-normalization`) — confirmed unrelated to this campaign via `git diff --stat d782208 9e86640 -- packages/gossip_bluey`, which is empty; this campaign never touched that package.
+
+This document's finding keys — `CC5-n` and the baseline predecessors it carries forward — now resolve only here. No comment in `lib/` or `test/` cites one; every citation this campaign removed had its substance either already stated adjacently or rewritten to stand on its own. The code explains itself in place, without sending a reader to an external index to find out why a line exists.
