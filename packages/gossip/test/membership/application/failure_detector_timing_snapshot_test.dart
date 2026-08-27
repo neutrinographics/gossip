@@ -6,8 +6,7 @@ import 'failure_detector_test_harness.dart';
 
 /// Behavior net for `FailureDetector.timingSnapshot` — the membership-owned
 /// read model `Coordinator.getAdaptiveTimingStatus` assembles its RTT/timing
-/// fields from. Mirrors the per-peer selection and global-tracker fallback
-/// that previously lived inline in the coordinator.
+/// fields from.
 void main() {
   group('FailureDetector.timingSnapshot', () {
     test('pairs the min-SRTT peer with that SAME peer\'s variance, not the '
