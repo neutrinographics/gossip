@@ -32,6 +32,7 @@ import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/events/sync_events.dart';
 import 'package:gossip/src/sync/application/digest_budgeter.dart';
+import 'package:gossip/src/sync/application/reactive_pusher.dart';
 
 /// Protocol service implementing gossip-based anti-entropy synchronization.
 ///
@@ -186,25 +187,17 @@ class GossipEngine {
   /// already be initialized.
   late final GenerationScheduler _scheduler;
 
-  /// Generation token for the reactive-push debounce timer only
-  /// ([notifyLocalWrite]/[_flushPendingPushes]).
-  ///
-  /// Before this class adopted [GenerationScheduler] for the round loop, a
-  /// single `_generation` counter guarded both the round loop's delay
-  /// callback AND this debounce's delay callback — [start] and [stop]
-  /// bumped it once and both mechanisms checked it; a *live* (non-stale)
-  /// round-loop scheduling failure bumped it too, staleness-gated the same
-  /// way. The round loop's half of that is now [_scheduler]'s own internal
-  /// concern, which this class cannot observe or reuse (by design — see
-  /// [GenerationScheduler]'s doc: it does not expose its generation). This
-  /// field keeps the debounce's half working exactly as before: bumped
-  /// everywhere the old shared counter was bumped relative to it —
-  /// [start], [stop], and (staleness-gated via `_scheduler.isRunning`, in
-  /// the `onSchedulingError` callback wired in the constructor) a live
-  /// round-loop scheduling failure — so a callback from a debounce
-  /// scheduled before any of those events recognizes itself as stale and
-  /// does nothing.
-  int _pushGeneration = 0;
+  /// Owns the reactive-push debounce state machine (CC5-1, task F5):
+  /// coalescing a burst of local writes into one push instead of one per
+  /// write, and recognizing a stale debounce across [start]/[stop]/a live
+  /// round-loop scheduling failure. See [ReactivePusher]'s class doc for
+  /// why this split from [_scheduler] (which owns the round loop's own,
+  /// separate generation) rather than sharing one counter — that history
+  /// predates this class's adoption of [GenerationScheduler] and is
+  /// preserved in gossip_engine.dart's history, not restated here. Built
+  /// in the constructor body, after [_scheduler], since its `isRunning`
+  /// callback reads `_scheduler.isRunning`.
+  late final ReactivePusher _pusher;
 
   /// Subscription to incoming messages (for cleanup on stop).
   StreamSubscription<IncomingMessage>? _messageSubscription;
@@ -248,18 +241,6 @@ class GossipEngine {
   int _mergedBatchCount = 0;
 
   static const Duration _metricsWindow = Duration(seconds: 10);
-
-  /// Debounce window for coalescing a burst of local writes into a single
-  /// reactive push (rumor mongering — see [notifyLocalWrite]).
-  static const Duration _pushDebounce = Duration(milliseconds: 150);
-
-  /// Locally-written entries pending a reactive push, buffered per stream so
-  /// a burst of writes within the debounce window coalesces into one push.
-  final Map<(ChannelId, StreamId), List<LogEntry>> _pendingPush = {};
-
-  /// True while a debounced push flush is scheduled (coalesces a burst into
-  /// one flush).
-  bool _pushFlushScheduled = false;
 
   /// Owns byte-budgeted digest windowing (CC5-1): fitting a digest
   /// request/response to [maxMessageBytes] by selecting a round-robin
@@ -341,30 +322,22 @@ class GossipEngine {
       ),
       onSchedulingError: (error, stackTrace) {
         // A dead round loop invalidates any reactive-push debounce still
-        // in flight too — see [_pushGeneration]'s doc for why this bump
-        // belongs here. But GenerationScheduler calls this callback for a
-        // STALE failure too (a delay from an old, already-superseded run
+        // in flight too — see [ReactivePusher.onRoundLoopDead]'s doc for
+        // why. But GenerationScheduler calls this callback for a STALE
+        // failure too (a delay from an old, already-superseded run
         // erroring out late) — its own internal stop is staleness-gated,
-        // this callback is not. Gating the bump on isRunning tells the two
-        // apart: by the time this callback runs, isRunning reads false
-        // exactly when the failure was live (the scheduler's conditional
-        // stop runs synchronously first) — a stale failure alongside a
-        // currently-live loop leaves isRunning true, so we must NOT bump,
-        // or we'd invalidate the live loop's own in-flight debounce and
-        // wedge reactive push permanently (only stop() resets the flag).
-        // A stale failure while already stopped still bumps here, which is
-        // harmless: the flag is already false and any captured generation
-        // is already stale regardless. A genuinely live failure must clear
-        // `_pushFlushScheduled` itself, not just bump the generation: the
-        // bump alone only makes an in-flight debounce recognize itself as
-        // stale when it fires — its "stale run — do nothing" early return
-        // does not reset the flag — and nothing else ever would, since the
-        // scheduler already stopped itself before this callback runs, so a
-        // caller's own [stop] (whose reset this flag would otherwise rely
-        // on) sees `isRunning` already false and short-circuits as a no-op.
+        // this callback is not. Gating on isRunning tells the two apart:
+        // by the time this callback runs, isRunning reads false exactly
+        // when the failure was live (the scheduler's conditional stop
+        // runs synchronously first) — a stale failure alongside a
+        // currently-live loop leaves isRunning true, so we must NOT
+        // invalidate, or we'd kill the live loop's own in-flight debounce
+        // and wedge reactive push permanently (only a real stop resets
+        // it). A stale failure while already stopped still reaches here,
+        // which is harmless: the pusher is already invalidated and stale
+        // regardless.
         if (!_scheduler.isRunning) {
-          _pushGeneration++;
-          _pushFlushScheduled = false;
+          _pusher.onRoundLoopDead();
         }
         _emitError(
           PeerSyncError(
@@ -374,6 +347,28 @@ class GossipEngine {
             occurredAt: DateTime.now(),
             cause: error,
           ),
+        );
+      },
+    );
+    _pusher = ReactivePusher(
+      timePort: timePort,
+      isRunning: () => _scheduler.isRunning,
+      flush: _flushPendingPushes,
+      onSchedulingFailure: (error, stackTrace) {
+        _emitError(
+          PeerSyncError(
+            localNode,
+            SyncErrorType.protocolError,
+            'Reactive push scheduling failed: $error',
+            occurredAt: DateTime.now(),
+            cause: error,
+          ),
+        );
+        _log(
+          LogLevel.error,
+          'Reactive push scheduling failed: $error',
+          error,
+          stackTrace,
         );
       },
     );
@@ -435,7 +430,7 @@ class GossipEngine {
     // A restart is news — never resume mid-backoff into a stale world.
     _newsSinceLastRound = true;
     _timing.news();
-    _pushGeneration++;
+    _pusher.invalidate();
     _scheduler.start();
   }
 
@@ -445,12 +440,10 @@ class GossipEngine {
   /// [stopListening] separately if needed.
   void stop() {
     if (!_scheduler.isRunning) return;
-    _pushGeneration++;
     _scheduler.stop();
     // Drop any buffered reactive push — the periodic anti-entropy loop is
     // also stopping, and a stale delay callback checks the generation.
-    _pendingPush.clear();
-    _pushFlushScheduled = false;
+    _pusher.invalidateAndClear();
     // Drop outstanding delta-request flags: while stopped we don't ingest
     // responses, so a resumed engine should be free to re-request
     // immediately rather than waiting out the pending-request timeout.
@@ -478,46 +471,17 @@ class GossipEngine {
   ) {
     if (!_scheduler.isRunning) return;
     _recordNews();
-    _pendingPush.putIfAbsent((channelId, streamId), () => []).add(entry);
-    if (_pushFlushScheduled) return;
-    _pushFlushScheduled = true;
-    final generation = _pushGeneration;
-    timePort
-        .delay(_pushDebounce)
-        .then((_) {
-          if (generation != _pushGeneration) return; // stale run — do nothing
-          _pushFlushScheduled = false;
-          if (_scheduler.isRunning) unawaited(_flushPendingPushes());
-        })
-        .catchError((Object error, StackTrace stackTrace) {
-          if (generation != _pushGeneration) return;
-          _pushFlushScheduled = false;
-          _pendingPush.clear();
-          _emitError(
-            PeerSyncError(
-              localNode,
-              SyncErrorType.protocolError,
-              'Reactive push scheduling failed: $error',
-              occurredAt: DateTime.now(),
-              cause: error,
-            ),
-          );
-          _log(
-            LogLevel.error,
-            'Reactive push scheduling failed: $error',
-            error,
-            stackTrace,
-          );
-        });
+    _pusher.notifyWrite(channelId, streamId, entry);
   }
 
-  /// Pushes buffered local writes to all reachable peers as unsolicited
-  /// DeltaResponses. Oversized bursts (rare — the debounce window is short)
-  /// fall back to paginated anti-entropy rather than a doomed oversized send.
-  Future<void> _flushPendingPushes() async {
-    if (_pendingPush.isEmpty) return;
-    final batches = Map.of(_pendingPush);
-    _pendingPush.clear();
+  /// Pushes buffered local writes ([batches], snapshotted and handed off by
+  /// [_pusher]) to all reachable peers as unsolicited DeltaResponses.
+  /// Oversized bursts (rare — the debounce window is short) fall back to
+  /// paginated anti-entropy rather than a doomed oversized send.
+  Future<void> _flushPendingPushes(
+    Map<(ChannelId, StreamId), List<LogEntry>> batches,
+  ) async {
+    if (batches.isEmpty) return;
 
     final partners = peerDirectory.reachablePartners();
     if (partners.isEmpty) return;
