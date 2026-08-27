@@ -72,6 +72,11 @@ publish under the existing pub.dev `gossip` name must version above the old
   substantially reworked (SWIM suppression, adaptive pacing, compaction);
   observable protocol behavior is pinned by the test suite, and audit
   records in `docs/audits/` document each change.
+- `InMemoryTimePort.advance()` now fires each periodic callback once per
+  interval boundary the elapsed time crosses (previously ignored the
+  interval and never fired periodic callbacks at all).
+  `schedulePeriodic` rejects a non-positive interval with `ArgumentError`
+  instead of registering a timer `advance()` could never reach.
 
 ### Changed
 

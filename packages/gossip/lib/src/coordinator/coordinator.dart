@@ -440,6 +440,7 @@ class Coordinator {
           occurredAt: DateTime.now(),
           cause: error,
         ),
+        stackTrace,
       ),
       onSchedulingError: (error, stackTrace) => _handleError(
         StorageSyncError(
@@ -448,6 +449,7 @@ class Coordinator {
           occurredAt: DateTime.now(),
           cause: error,
         ),
+        stackTrace,
       ),
     );
     _compactionScheduler!.start();

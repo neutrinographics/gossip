@@ -685,7 +685,11 @@ class ChannelService {
     // toPrune.isEmpty early return above: the event's contract is "a real
     // compaction happened", so the emit site verifies that from the result
     // it is about to hand out, not from a separate code path reaching this
-    // line.
+    // line. Every path currently reaching this point already guarantees
+    // entriesRemoved > 0 (the toPrune.isEmpty return above), so the false
+    // branch is presently unreachable — the guard is kept as defense
+    // against a future change to the returns above that could make it
+    // reachable again.
     if (result.entriesRemoved > 0) {
       _emitEvents([
         StreamCompacted(
