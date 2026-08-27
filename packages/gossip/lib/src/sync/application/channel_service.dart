@@ -645,6 +645,9 @@ class ChannelService {
   /// The version vector is a monotonic high-water mark, so it never regresses
   /// on compaction — pruned entries are not re-advertised (which would
   /// resurrect them via gossip).
+  ///
+  /// Emits [StreamCompacted] when entries were actually pruned; a no-op
+  /// pass (nothing survives pruning, so this returns null) emits nothing.
   Future<CompactionResult?> compactStream(
     ChannelId channelId,
     StreamId streamId, {
@@ -671,12 +674,30 @@ class ChannelService {
       await resetState(channelId, streamId);
     }
 
-    return CompactionResult(
+    final result = CompactionResult(
       entriesRemoved: toPrune.length,
       entriesRetained: survivors.length,
       bytesFreed: toPrune.fold(0, (sum, e) => sum + e.payload.length),
       baseVersion: baseVersion,
     );
+
+    // Guard on the result's own count rather than leaning on the
+    // toPrune.isEmpty early return above: the event's contract is "a real
+    // compaction happened", so the emit site verifies that from the result
+    // it is about to hand out, not from a separate code path reaching this
+    // line.
+    if (result.entriesRemoved > 0) {
+      _emitEvents([
+        StreamCompacted(
+          channelId,
+          streamId,
+          result,
+          occurredAt: DateTime.now(),
+        ),
+      ]);
+    }
+
+    return result;
   }
 
   /// Applies every stream's retention policy across all channels. Retain-all

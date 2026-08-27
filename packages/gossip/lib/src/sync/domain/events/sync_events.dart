@@ -129,8 +129,11 @@ final class EntriesMerged extends SyncEvent {
 
 /// Emitted when a stream is compacted to free storage space.
 ///
-/// Currently never emitted — the compaction pipeline does not yet fire
-/// this event; retained pending an emit-or-remove decision.
+/// Fired when: `ChannelService.compactStream` prunes at least one entry —
+/// manually via `EventStream.compact`, or from the Coordinator's periodic
+/// auto-compaction loop (`CoordinatorConfig.compactionInterval`). A pass
+/// that removes nothing (`CompactionResult.entriesRemoved == 0`) is a
+/// no-op and does not fire this event.
 final class StreamCompacted extends SyncEvent {
   final ChannelId channelId;
   final StreamId streamId;

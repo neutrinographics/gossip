@@ -60,6 +60,10 @@ publish under the existing pub.dev `gossip` name must version above the old
 
 ### Behavioral
 
+- `StreamCompacted` is now emitted, from `ChannelService.compactStream`,
+  whenever a compaction pass actually prunes entries (manual
+  `EventStream.compact()` calls and the Coordinator's periodic
+  auto-compaction loop alike). Previously declared but never fired.
 - A null peer repository is a supported in-memory-only mode (no more
   per-operation storage errors).
 - Errors surfacing after `dispose()` are routed to `onLog` instead of
