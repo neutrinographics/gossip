@@ -262,7 +262,25 @@ class FailureDetector {
   // directly) because Coordinator, the composition root, only ever sees
   // the detector.
 
+  /// Holds [peerId] out of probe selection for [duration], measured from
+  /// now on this detector's own [timePort].
+  ///
+  /// The deadline is computed here rather than by the caller because the
+  /// hold is later judged against this same clock (see
+  /// [ProbeTargetSelector.nextProbeTarget]) — a caller-computed absolute
+  /// deadline would couple the caller's notion of "now" to this detector's,
+  /// which only coincidentally agree in production and diverge under any
+  /// clock double that isn't shared.
+  void holdProbing(NodeId peerId, Duration duration) =>
+      setProbingHold(peerId, timePort.nowMs + duration.inMilliseconds);
+
   /// Sets a probing hold for a peer until the given timestamp.
+  ///
+  /// Production code holds peers via [holdProbing], which computes the
+  /// deadline from this detector's own clock. This absolute-deadline form
+  /// stays public only so tests can set an already-known deadline directly
+  /// (e.g. "already expired", or a value computed from a peer clock).
+  @visibleForTesting
   void setProbingHold(NodeId peerId, int holdUntilMs) =>
       _selector.setProbingHold(peerId, holdUntilMs);
 

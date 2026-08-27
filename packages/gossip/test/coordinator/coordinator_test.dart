@@ -555,6 +555,40 @@ void main() {
       );
     });
 
+    test('addPeer\'s startup grace hold expires on its own once '
+        'startupGracePeriod elapses, making the peer probable again', () async {
+      final bus = InMemoryMessageBus();
+      final timePort = InMemoryTimePort();
+      final coordinator = await createTestCoordinator(
+        bus: bus,
+        timePort: timePort,
+        config: const CoordinatorConfig(
+          startupGracePeriod: Duration(seconds: 5),
+        ),
+      );
+
+      final peerId = NodeId('peer1');
+      await coordinator.addPeer(peerId);
+      final detector = coordinator.failureDetectorForTesting!;
+      expect(detector.hasProbingHold(peerId), isTrue);
+      expect(
+        detector.nextProbeTarget(),
+        isNull,
+        reason: 'a peer under grace hold must not be selected for probing',
+      );
+
+      await timePort.advance(const Duration(seconds: 5, milliseconds: 1));
+
+      expect(
+        detector.hasProbingHold(peerId),
+        isFalse,
+        reason:
+            'a peer whose grace hold never expires would never be '
+            'probed for failure again',
+      );
+      expect(detector.nextProbeTarget()?.id, equals(peerId));
+    });
+
     test('removePeer removes peer from registry', () async {
       final coordinator = await createTestCoordinator();
 

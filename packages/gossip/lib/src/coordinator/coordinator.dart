@@ -627,10 +627,7 @@ class Coordinator {
     // The hold is cleared early if probeNewPeer succeeds below.
     if (_failureDetector != null &&
         _config.startupGracePeriod > Duration.zero) {
-      final holdUntilMs =
-          _failureDetector!.timePort.nowMs +
-          _config.startupGracePeriod.inMilliseconds;
-      _failureDetector!.setProbingHold(id, holdUntilMs);
+      _failureDetector!.holdProbing(id, _config.startupGracePeriod);
     }
 
     // Fire-and-forget immediate probe to bootstrap per-peer RTT estimate.
