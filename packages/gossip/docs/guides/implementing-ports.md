@@ -49,7 +49,6 @@ cached value or sorted index.
 
 - `getAll()` **must** return entries sorted by HLC timestamp
 - `entriesSince()` **must** return entries sorted by HLC timestamp
-- `entriesForAuthorAfter()` **must** return entries in sequence order
 
 Violating these causes silent data corruption in materializers that
 depend on fold order.

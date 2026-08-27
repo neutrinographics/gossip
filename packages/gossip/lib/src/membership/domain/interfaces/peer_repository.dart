@@ -1,10 +1,13 @@
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/entities/peer.dart';
 
-/// Repository for peer state.
+/// Repository for peer identity and membership.
 ///
-/// [PeerRepository] stores the state of known peers, including their
-/// reachability status and communication metrics.
+/// [PeerRepository] stores which peers are known — their identity, added
+/// and removed as devices connect and disconnect. It does not store live
+/// SWIM state: reachability status, contact times, and RTT/traffic metrics
+/// are never persisted here (see "What actually reaches this interface"
+/// below).
 ///
 /// ## Persistence is not required
 ///
