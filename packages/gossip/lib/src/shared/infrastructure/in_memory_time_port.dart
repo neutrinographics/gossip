@@ -74,8 +74,28 @@ class InMemoryTimePort implements TimePort {
   @override
   int get nowMs => _nowMs;
 
+  /// Schedules a periodic callback.
+  ///
+  /// [interval] must resolve to a positive whole millisecond count
+  /// (`interval.inMilliseconds > 0`) — [advance] reaches each firing
+  /// boundary by repeatedly adding [interval] to the timer's last fire
+  /// time, which never reaches (or regresses infinitely away from) `_nowMs`
+  /// for a zero, sub-millisecond (truncates to zero), or negative interval.
+  /// Rather than hang there silently, the invalid interval is rejected
+  /// here, at the point it's supplied.
+  ///
+  /// Throws [ArgumentError] if `interval.inMilliseconds <= 0`.
   @override
   TimerHandle schedulePeriodic(Duration interval, void Function() callback) {
+    if (interval.inMilliseconds <= 0) {
+      throw ArgumentError.value(
+        interval,
+        'interval',
+        'must be a positive duration of at least 1ms (whole milliseconds) '
+            '— advance() cannot make progress toward a non-positive '
+            'interval boundary',
+      );
+    }
     final id = _nextId++;
     // First fire is one interval from now (matches RealTimePort's
     // Timer.periodic and TimePort.schedulePeriodic's documented contract).

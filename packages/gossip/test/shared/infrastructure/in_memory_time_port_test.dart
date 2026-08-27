@@ -122,6 +122,33 @@ void main() {
       expect(timer.activeTimerCount, equals(0));
     });
 
+    group('schedulePeriodic rejects a non-positive-millisecond interval', () {
+      test('throws ArgumentError for Duration.zero', () {
+        final timer = InMemoryTimePort();
+
+        expect(
+          () => timer.schedulePeriodic(Duration.zero, () {}),
+          throwsArgumentError,
+        );
+      });
+
+      test(
+        'throws ArgumentError for a sub-millisecond duration that '
+        'truncates to zero (Duration(microseconds: 500).inMilliseconds == 0)',
+        () {
+          final timer = InMemoryTimePort();
+
+          expect(
+            () => timer.schedulePeriodic(
+              const Duration(microseconds: 500),
+              () {},
+            ),
+            throwsArgumentError,
+          );
+        },
+      );
+    });
+
     group("advance() honors each periodic timer's own interval", () {
       test(
         'advance(n × interval) fires the callback exactly n times',
