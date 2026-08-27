@@ -87,14 +87,14 @@ class EventStream {
   final ChannelId channelId;
 
   /// The channel service for persistence operations.
-  final ChannelService channelService;
+  final ChannelService _service;
 
   /// Creates an event stream.
   const EventStream({
     required this.id,
     required this.channelId,
-    required this.channelService,
-  });
+    required ChannelService service,
+  }) : _service = service;
 
   /// Appends a new entry to the stream.
   ///
@@ -108,7 +108,7 @@ class EventStream {
   ///
   /// Used when: Application writes new data to the stream.
   Future<void> append(Uint8List payload) async {
-    await channelService.appendEntry(channelId, id, payload);
+    await _service.appendEntry(channelId, id, payload);
   }
 
   /// Returns all entries in the stream, ordered by HLC timestamp.
@@ -117,7 +117,7 @@ class EventStream {
   ///
   /// Used when: Application reads all stream data.
   Future<List<dynamic>> getAll() async {
-    return await channelService.getEntries(channelId, id);
+    return await _service.getEntries(channelId, id);
   }
 
   /// Registers a materializer for computing derived state from entries.
@@ -135,7 +135,7 @@ class EventStream {
   Future<void> registerMaterializer<T>(
     StateMaterializer<T> materializer,
   ) async {
-    await channelService.registerMaterializer(channelId, id, materializer);
+    await _service.registerMaterializer(channelId, id, materializer);
   }
 
   /// Returns the materialized state for this stream.
@@ -151,7 +151,7 @@ class EventStream {
   /// final currentState = await stream.getState<MyState>();
   /// ```
   Future<T?> getState<T>() async {
-    return await channelService.getState<T>(channelId, id);
+    return await _service.getState<T>(channelId, id);
   }
 
   /// Returns a broadcast stream of materialized state updates.
@@ -167,7 +167,7 @@ class EventStream {
   /// updates?.listen((count) => print('Count: $count'));
   /// ```
   Stream<T>? stateStream<T>() {
-    return channelService.getStateStream<T>(channelId, id);
+    return _service.getStateStream<T>(channelId, id);
   }
 
   /// Forces a full rebuild of the materialized state.
@@ -176,13 +176,13 @@ class EventStream {
   /// entries from the beginning. Useful for developer tools or corruption
   /// recovery.
   Future<void> resetState() async {
-    await channelService.resetState(channelId, id);
+    await _service.resetState(channelId, id);
   }
 
   /// The retention policy for this stream, or `null` if the stream
   /// does not exist in the channel.
   Future<RetentionPolicy?> get retentionPolicy =>
-      channelService.getRetentionPolicy(channelId, id);
+      _service.getRetentionPolicy(channelId, id);
 
   /// Compacts the stream by applying the retention policy.
   ///
@@ -197,7 +197,7 @@ class EventStream {
   Future<CompactionResult?> compact({bool resetState = true}) {
     // Delegates to the application layer, which also drives the library's
     // periodic auto-compaction (`CoordinatorConfig.compactionInterval`).
-    return channelService.compactStream(
+    return _service.compactStream(
       channelId,
       id,
       resetMaterializers: resetState,

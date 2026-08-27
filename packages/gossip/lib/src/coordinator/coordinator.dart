@@ -364,7 +364,7 @@ class Coordinator {
   Future<void> _loadExistingChannels() async {
     final channelIds = await _channelRepository.listIds();
     for (final id in channelIds) {
-      _channelFacades[id] = Channel(id: id, channelService: _channelService);
+      _channelFacades[id] = Channel(id: id, service: _channelService);
     }
   }
 
@@ -529,7 +529,7 @@ class Coordinator {
     await _channelService.createChannel(channelId);
 
     // Create and cache the facade
-    final facade = Channel(id: channelId, channelService: _channelService);
+    final facade = Channel(id: channelId, service: _channelService);
     _channelFacades[channelId] = facade;
 
     // Update GossipEngine with new channel if running

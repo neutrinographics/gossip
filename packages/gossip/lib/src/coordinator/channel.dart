@@ -78,10 +78,11 @@ class Channel {
   final ChannelId id;
 
   /// The channel service for persistence operations.
-  final ChannelService channelService;
+  final ChannelService _service;
 
   /// Creates a channel.
-  const Channel({required this.id, required this.channelService});
+  const Channel({required this.id, required ChannelService service})
+    : _service = service;
 
   /// Returns the set of member node IDs in this channel.
   ///
@@ -90,14 +91,14 @@ class Channel {
   /// message and the protocol does not gate synchronization on it.
   /// Enforcement is an application concern.
   Future<Set<NodeId>> get members async {
-    return await channelService.getMembers(id);
+    return await _service.getMembers(id);
   }
 
   /// Adds a member to the channel's local metadata — this records intent
   /// for the app's own logic; it grants nothing at the protocol level
   /// (see ADR-007).
   Future<void> addMember(NodeId memberId) async {
-    await channelService.addMember(id, memberId);
+    await _service.addMember(id, memberId);
   }
 
   /// Removes a member from the channel's local metadata.
@@ -107,12 +108,12 @@ class Channel {
   /// data (see ADR-007). Do not use this as access revocation — key
   /// rotation or app-level encryption is the tool for that.
   Future<void> removeMember(NodeId memberId) async {
-    await channelService.removeMember(id, memberId);
+    await _service.removeMember(id, memberId);
   }
 
   /// Returns the list of stream IDs in this channel.
   Future<List<StreamId>> get streamIds async {
-    return await channelService.getStreamIds(id);
+    return await _service.getStreamIds(id);
   }
 
   /// Creates a stream if it doesn't exist, or returns the facade for an existing stream.
@@ -124,19 +125,15 @@ class Channel {
     StreamId streamId, {
     RetentionPolicy? retention,
   }) async {
-    final exists = await channelService.hasStream(id, streamId);
+    final exists = await _service.hasStream(id, streamId);
     if (!exists) {
-      await channelService.createStream(
+      await _service.createStream(
         id,
         streamId,
         retention ?? const KeepAllRetention(),
       );
     }
-    return EventStream(
-      id: streamId,
-      channelId: id,
-      channelService: channelService,
-    );
+    return EventStream(id: streamId, channelId: id, service: _service);
   }
 
   /// Returns the facade for a stream.
@@ -150,10 +147,6 @@ class Channel {
     // We always return a facade: reads on a missing stream are harmless
     // (empty results); only append throws. For a sync check, use
     // getStreamIds() first.
-    return EventStream(
-      id: streamId,
-      channelId: id,
-      channelService: channelService,
-    );
+    return EventStream(id: streamId, channelId: id, service: _service);
   }
 }

@@ -104,7 +104,7 @@ void main() {
       final facade = EventStream(
         id: streamId,
         channelId: channelId,
-        channelService: channelService,
+        service: channelService,
       );
 
       expect(facade.id, equals(streamId));
@@ -114,7 +114,7 @@ void main() {
       final facade = EventStream(
         id: streamId,
         channelId: channelId,
-        channelService: channelService,
+        service: channelService,
       );
 
       final payload = Uint8List.fromList([1, 2, 3]);
@@ -132,7 +132,7 @@ void main() {
       final facade = EventStream(
         id: streamId,
         channelId: channelId,
-        channelService: channelService,
+        service: channelService,
       );
 
       // Append multiple entries
@@ -154,7 +154,7 @@ void main() {
         final facade = EventStream(
           id: streamId,
           channelId: channelId,
-          channelService: channelService,
+          service: channelService,
         );
 
         // Register materializer
@@ -175,7 +175,7 @@ void main() {
       final facade = EventStream(
         id: streamId,
         channelId: channelId,
-        channelService: channelService,
+        service: channelService,
       );
 
       // Append entries without registering materializer
@@ -191,7 +191,7 @@ void main() {
       final facade = EventStream(
         id: streamId,
         channelId: channelId,
-        channelService: channelService,
+        service: channelService,
       );
 
       // Register sum materializer
@@ -211,7 +211,7 @@ void main() {
       final facade = EventStream(
         id: streamId,
         channelId: channelId,
-        channelService: channelService,
+        service: channelService,
       );
 
       // Register count materializer
@@ -237,7 +237,7 @@ void main() {
       final facade = EventStream(
         id: streamId,
         channelId: channelId,
-        channelService: channelService,
+        service: channelService,
       );
 
       await facade.registerMaterializer(CountMaterializer());
@@ -260,7 +260,7 @@ void main() {
         final facade = EventStream(
           id: nonExistentStreamId,
           channelId: channelId,
-          channelService: channelService,
+          service: channelService,
         );
 
         // Appending to a stream that was never created is caller misuse:
@@ -282,7 +282,7 @@ void main() {
         final facade = EventStream(
           id: nonExistentStreamId,
           channelId: channelId,
-          channelService: channelService,
+          service: channelService,
         );
 
         // getAll should return empty list, not throw
@@ -296,7 +296,7 @@ void main() {
         final facade = EventStream(
           id: nonExistentStreamId,
           channelId: channelId,
-          channelService: channelService,
+          service: channelService,
         );
 
         // Register materializer
@@ -315,7 +315,7 @@ void main() {
           final facade = EventStream(
             id: nonExistentStreamId,
             channelId: channelId,
-            channelService: channelService,
+            service: channelService,
           );
 
           // Should not throw
@@ -335,7 +335,7 @@ void main() {
           final facade = EventStream(
             id: nonExistentStreamId,
             channelId: channelId,
-            channelService: channelService,
+            service: channelService,
           );
 
           // A materializer can be registered against a stream id that
@@ -362,7 +362,7 @@ void main() {
         facade = EventStream(
           id: streamId,
           channelId: channelId,
-          channelService: channelService,
+          service: channelService,
         );
       });
 
@@ -381,7 +381,7 @@ void main() {
         final timedFacade = EventStream(
           id: timedStreamId,
           channelId: channelId,
-          channelService: channelService,
+          service: channelService,
         );
         expect(await timedFacade.retentionPolicy, isA<TimeBasedRetention>());
       });
@@ -400,7 +400,7 @@ void main() {
         timedFacade = EventStream(
           id: timedStreamId,
           channelId: channelId,
-          channelService: channelService,
+          service: channelService,
         );
       });
 
