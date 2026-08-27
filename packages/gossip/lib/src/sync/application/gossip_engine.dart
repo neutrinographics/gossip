@@ -7,7 +7,6 @@ import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
 import 'package:gossip/src/sync/domain/services/gossip_timing_policy.dart';
 import 'package:gossip/src/shared/domain/services/generation_scheduler.dart';
 import 'package:gossip/src/shared/domain/services/jitter.dart';
-import 'package:gossip/src/shared/domain/services/keyed_task_chain.dart';
 import 'package:gossip/src/sync/domain/services/pending_pull_tracker.dart';
 
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
@@ -31,6 +30,7 @@ import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/events/sync_events.dart';
+import 'package:gossip/src/sync/application/delta_merger.dart';
 import 'package:gossip/src/sync/application/digest_budgeter.dart';
 import 'package:gossip/src/sync/application/reactive_pusher.dart';
 
@@ -235,6 +235,16 @@ class GossipEngine {
   /// come from ping-based RTT.
   late final PendingPullTracker _pendingPullTracker;
 
+  /// Owns the delta-merge pipeline (CC5-1, task F6): filtering a
+  /// [DeltaResponse] to its per-author contiguous prefix, applying it,
+  /// advancing the HLC, and deciding on a continuation request. See
+  /// [DeltaMerger] for why it's notified of this engine's batch-count/news
+  /// bookkeeping and pull-tracker re-arming via injected callbacks rather
+  /// than reacting to its return value after [handleDeltaResponse] awaits
+  /// it — both must land at the exact point the pre-extraction code did,
+  /// inside the per-stream serialized merge body.
+  late final DeltaMerger _merger;
+
   /// Monotonic count of delta batches that merged at least one new entry.
   /// Exposed via [mergedBatchCount] as a coarse "recent sync activity"
   /// signal for applications (G5).
@@ -284,6 +294,33 @@ class GossipEngine {
     // site rather than splitting collaborators across the initializer
     // list and the body.
     _pendingPullTracker = PendingPullTracker(timePort: timePort);
+    // Built here, after `_pendingPullTracker` (its `onContinuationIssued`
+    // wiring below calls into it) and after `_hlcClock`/
+    // `_localNodeRepository` are assigned by the initializer list —
+    // mirroring the other extracted collaborators' body-construction
+    // rationale above.
+    _merger = DeltaMerger(
+      localNode: localNode,
+      entryRepository: entryRepository,
+      hlcClock: _hlcClock,
+      localNodeRepository: _localNodeRepository,
+      onEntriesMerged: onEntriesMerged,
+      onError: onError,
+      onLog: onLog,
+      // Fires at the exact point the pre-extraction `_mergeDeltaResponse`
+      // incremented `_mergedBatchCount`/called `_recordNews()` — before
+      // `onEntriesMerged` is awaited (see [DeltaMerger]'s doc).
+      onNewEntriesMerged: () {
+        _mergedBatchCount++;
+        _recordNews();
+      },
+      // Fires at the exact point the pre-extraction code re-armed the
+      // pending-pull flag — still inside the merger's chained merge body,
+      // before the continuation is returned (see [DeltaMerger]'s doc).
+      onContinuationIssued: (peer, channelId, streamId) {
+        _pendingPullTracker.markContinuation(peer, channelId, streamId);
+      },
+    );
     // Built here rather than the initializer list, mirroring
     // FailureDetector's ProbeTimingPolicy construction (E2/CC5-13): keeps
     // every extracted timing-policy collaborator constructed at the same
@@ -449,7 +486,7 @@ class GossipEngine {
     // immediately rather than waiting out the pending-request timeout.
     _pendingPullTracker.clearAll();
     // A restart is a fresh diagnosis window for persistent gaps.
-    _reportedGaps.clear();
+    _merger.clearReportedGaps();
   }
 
   /// Reactive dissemination (rumor mongering): notify the engine of a local
@@ -1080,66 +1117,6 @@ class GossipEngine {
     return _computeDeltaRequests(response.sender, response.digests);
   }
 
-  /// Selects the entries that can be applied without leaving a per-author
-  /// sequence gap: for each author, the contiguous run starting at
-  /// `ourVersion[author] + 1`. Entries beyond a gap are dropped (anti-entropy
-  /// backfills them contiguously later); entries at or below our version are
-  /// skipped as already held. Preserves the original entry order.
-  ///
-  /// This upholds the version-vector high-water-mark invariant: applying a
-  /// gapped entry would advance the vector past entries we don't actually
-  /// hold, so no peer would ever return them again — a permanent silent gap.
-  /// Matters most for unsolicited pushes (reactive dissemination), which can
-  /// deliver an arbitrary suffix; the request/response path is already
-  /// contiguous by construction, so this is also defense-in-depth there.
-  ({List<LogEntry> accepted, List<ContiguityGap> gaps})
-  _selectContiguousEntries(List<LogEntry> entries, VersionVector ourVersion) {
-    final byAuthor = <NodeId, List<LogEntry>>{};
-    for (final entry in entries) {
-      byAuthor.putIfAbsent(entry.author, () => []).add(entry);
-    }
-
-    final acceptUpTo = <NodeId, int>{};
-    final gaps = <ContiguityGap>[];
-    for (final authorEntry in byAuthor.entries) {
-      final author = authorEntry.key;
-      final authorEntries = authorEntry.value
-        ..sort((a, b) => a.sequence.compareTo(b.sequence));
-      var next = ourVersion[author] + 1;
-      int? firstBeyondGap;
-      for (final entry in authorEntries) {
-        if (entry.sequence < next) continue; // already held
-        if (entry.sequence != next) {
-          // Gap — stop accepting this author; record it so the drop is
-          // diagnosable (a silent drop here is how a peer that compacted
-          // past our position stalls sync invisibly, COR3-1).
-          firstBeyondGap = entry.sequence;
-          break;
-        }
-        next++;
-      }
-      acceptUpTo[author] = next - 1;
-      if (firstBeyondGap != null) {
-        gaps.add(
-          ContiguityGap(
-            author: author,
-            expectedNext: next,
-            firstAvailable: firstBeyondGap,
-          ),
-        );
-      }
-    }
-
-    final accepted = entries
-        .where(
-          (e) =>
-              e.sequence > ourVersion[e.author] &&
-              e.sequence <= acceptUpTo[e.author]!,
-        )
-        .toList();
-    return (accepted: accepted, gaps: gaps);
-  }
-
   /// Sends the given [requests] to [recipient], releasing the pending flag
   /// for any that fail to transmit (the peer can never answer a request it
   /// didn't receive, so holding the flag would block re-requesting for the
@@ -1426,13 +1403,15 @@ class GossipEngine {
   /// backlog at link speed instead of one page per periodic round. Returns
   /// null otherwise (no more, or no progress — the latter guards against an
   /// infinite continuation loop).
-  Future<DeltaRequest?> handleDeltaResponse(DeltaResponse response) {
+  Future<DeltaRequest?> handleDeltaResponse(DeltaResponse response) async {
     // Ingest only channels/streams this node actually has. Reactive pushes
     // fan out to every reachable peer, so receiving data for a channel we
     // never joined is routine — silently storing it would accumulate
     // unbounded phantom data (never advertised, never compacted) and leak
     // channel content across the membership boundary (COR3-2). The
-    // request path applies the same rule when computing pulls.
+    // request path applies the same rule when computing pulls. This guard
+    // reads engine-owned channel state, so it stays here rather than
+    // moving into [DeltaMerger] with the rest of the merge pipeline.
     final channel = _channels[response.channelId];
     if (channel == null || !channel.hasStream(response.streamId)) {
       _log(
@@ -1440,136 +1419,22 @@ class GossipEngine {
         'ignoring delta for ${response.channelId}/${response.streamId}: '
         'not a channel/stream of ours',
       );
-      return Future.value(null);
+      return null;
     }
 
-    // Serialize merges per (channel, stream): the merge body reads the
-    // version vector, filters, and appends across awaits, so two
-    // overlapping responses (per-peer pending keys deliberately allow
-    // concurrent same-stream pulls from two peers) would both pass the
-    // filter against the same stale vector — the second append then
-    // rejects the whole batch and its genuinely-new entries are delayed
-    // to a later round, with a spurious error blaming the peer (COR3-9).
-    // Failure isolation between chained merges is [KeyedTaskChain]'s
-    // contract, not reimplemented here.
-    final chainKey = (response.channelId, response.streamId);
-    return _mergeChain.enqueue(chainKey, () => _mergeDeltaResponse(response));
-  }
-
-  /// Per-(channel, stream) chain of in-flight merges — see
-  /// [handleDeltaResponse].
-  final KeyedTaskChain<(ChannelId, StreamId)> _mergeChain = KeyedTaskChain();
-
-  Future<DeltaRequest?> _mergeDeltaResponse(DeltaResponse response) async {
     // If this response answers a request we were tracking, [complete]
     // removes it and feeds the elapsed time to the adaptive-timeout
     // estimator as an RTT sample (dominated by page transmit time) — see
-    // [PendingPullTracker.complete].
-    final elapsedMs = _pendingPullTracker.complete(
+    // [PendingPullTracker.complete]. Whether we were tracking it is also
+    // what "solicited" means to [DeltaMerger.merge]: a peer's own claim
+    // can't be trusted for that, only our own pending-pull state can.
+    final elapsed = _pendingPullTracker.complete(
       response.sender,
       response.channelId,
       response.streamId,
     );
-
-    // A solicited response may carry the sender's compaction floor: the
-    // range below it was pruned by retention and is unobtainable, so adopt
-    // it as truncated history (raising our high-water mark and our own
-    // floor) BEFORE filtering — the surviving entries then pass the
-    // contiguity guard instead of being dropped forever (COR3-1).
-    // Unsolicited responses cannot move our floor: we never asked this
-    // sender, and honoring an unsolicited claim would let any peer make us
-    // skip history that is still obtainable elsewhere.
-    if (elapsedMs != null && response.floor.entries.isNotEmpty) {
-      await entryRepository.adoptVersionFloor(
-        response.channelId,
-        response.streamId,
-        response.floor,
-      );
-      _log(
-        LogLevel.info,
-        'adopted truncated history for '
-        '${response.channelId}/${response.streamId} from ${response.sender}: '
-        'floor ${response.floor.entries}',
-      );
-    }
-
-    if (response.entries.isEmpty) return null;
-
-    // Keep only entries we don't already have, in per-author contiguous
-    // order. Duplicate/stale DeltaResponses (a slow peer answering after the
-    // pending timeout, overlap between two peers' responses) must not be
-    // handed to the repository — whose contract rejects duplicates — nor
-    // re-reported via onEntriesMerged as if they were new.
-    final ourVersion = await _computeVersionVector(
-      response.channelId,
-      response.streamId,
-    );
-    final selection = _selectContiguousEntries(response.entries, ourVersion);
-    final newEntries = selection.accepted;
-    if (selection.gaps.isNotEmpty) {
-      _reportContiguityGaps(
-        response,
-        selection.gaps,
-        solicited: elapsedMs != null,
-      );
-    }
-    if (newEntries.isEmpty) return null;
-
-    // Only entries we actually merge drive the clock: a rejected entry
-    // (gapped, duplicate) must not be able to touch local causality state
-    // (COR3-10).
-    _updateHlcFromEntries(newEntries);
-
-    // Snapshot the current tail HLC before appending to detect out-of-order
-    final previousTailHlc = await entryRepository.getTailTimestamp(
-      response.channelId,
-      response.streamId,
-    );
-
-    await entryRepository.appendAll(
-      response.channelId,
-      response.streamId,
-      newEntries,
-    );
-
-    // Out-of-order: any merged entry sorts before the previous tail. The
-    // tail is known only by timestamp, so an entry TYING it may still sort
-    // before it on the author tiebreak — treat ties as possibly
-    // out-of-order (a rare extra rebuild beats silent fold/rebuild
-    // divergence, COR3-27).
-    final containsOutOfOrderEntries =
-        previousTailHlc != null &&
-        newEntries.any((e) => e.timestamp <= previousTailHlc);
-
-    _mergedBatchCount++;
-    _recordNews();
-
-    await onEntriesMerged?.call(
-      response.channelId,
-      response.streamId,
-      newEntries,
-      containsOutOfOrderEntries,
-    );
-
-    if (response.hasMore) {
-      // Continue draining from the same peer at our advanced version.
-      final advanced = await _computeVersionVector(
-        response.channelId,
-        response.streamId,
-      );
-      _pendingPullTracker.markContinuation(
-        response.sender,
-        response.channelId,
-        response.streamId,
-      );
-      return DeltaRequest(
-        sender: localNode,
-        channelId: response.channelId,
-        streamId: response.streamId,
-        since: advanced,
-      );
-    }
-    return null;
+    final result = await _merger.merge(response, solicited: elapsed != null);
+    return result.continuation;
   }
 
   /// Clears all pending delta requests.
@@ -1579,7 +1444,7 @@ class GossipEngine {
   /// new delta requests until they expire.
   void clearPendingRequests() {
     _pendingPullTracker.clearAll();
-    _reportedGaps.clear();
+    _merger.clearReportedGaps();
   }
 
   /// Clears pending delta requests addressed to [peer].
@@ -1590,132 +1455,6 @@ class GossipEngine {
   void clearPendingRequestsForPeer(NodeId peer) {
     _recordNews();
     _pendingPullTracker.clearForPeer(peer);
-    _reportedGaps.removeWhere((key) => key.$1 == peer);
+    _merger.clearReportedGapsForPeer(peer);
   }
-
-  /// Contiguity gaps already reported, keyed by
-  /// (peer, channel, stream, author, expectedNext).
-  ///
-  /// A persistent hole (e.g. a peer that compacted past our position)
-  /// recurs on every round — report it once per position, not per round.
-  /// Bounded structurally: one entry per (peer × stream × author × gap
-  /// position); cleared with the peer's pending state.
-  final Set<(NodeId, ChannelId, StreamId, NodeId, int)> _reportedGaps = {};
-
-  /// Reports entries dropped by the contiguity guard.
-  ///
-  /// A gapped SOLICITED response is always anomalous — the responder was
-  /// asked for everything after our version vector, so a hole means it no
-  /// longer has (or never had) entries we need; sync for that author is
-  /// stalled until the range becomes obtainable. Surface it via
-  /// [ErrorCallback] once per gap position.
-  ///
-  /// A gapped UNSOLICITED push is routine — a reactive push carries the
-  /// writer's newest entries, and we may simply not have pulled the prefix
-  /// yet; anti-entropy will catch up. Trace log only.
-  void _reportContiguityGaps(
-    DeltaResponse response,
-    List<ContiguityGap> gaps, {
-    required bool solicited,
-  }) {
-    for (final gap in gaps) {
-      if (!solicited) {
-        _log(
-          LogLevel.trace,
-          'push for ${response.channelId}/${response.streamId} dropped: '
-          'behind for ${gap.author} (next needed ${gap.expectedNext}, push '
-          'starts at ${gap.firstAvailable}); anti-entropy will catch up',
-        );
-        continue;
-      }
-      final key = (
-        response.sender,
-        response.channelId,
-        response.streamId,
-        gap.author,
-        gap.expectedNext,
-      );
-      if (!_reportedGaps.add(key)) continue;
-      _log(
-        LogLevel.warning,
-        'delta response from ${response.sender} has a sequence hole for '
-        '${gap.author} in ${response.channelId}/${response.streamId}: '
-        'expected ${gap.expectedNext}, first available ${gap.firstAvailable}',
-      );
-      _emitError(
-        ChannelSyncError(
-          response.channelId,
-          SyncErrorType.protocolError,
-          'Peer ${response.sender} answered a delta request with a sequence '
-          'hole for author ${gap.author} in '
-          '${response.channelId}/${response.streamId}: expected seq '
-          '${gap.expectedNext}, first available ${gap.firstAvailable}. The '
-          'peer has likely compacted entries we never received; sync for '
-          'this author is stalled until the missing range is obtainable.',
-          occurredAt: DateTime.now(),
-        ),
-      );
-    }
-  }
-
-  /// Updates the local HLC clock from received entries.
-  ///
-  /// Finds the maximum HLC timestamp among the entries and calls
-  /// [HlcClock.receive] to ensure causal consistency for subsequent writes.
-  void _updateHlcFromEntries(List<LogEntry> entries) {
-    if (_hlcClock == null || entries.isEmpty) return;
-
-    final maxHlc = entries
-        .map((e) => e.timestamp)
-        .reduce((a, b) => a.compareTo(b) > 0 ? a : b);
-
-    _hlcClock.receive(maxHlc);
-
-    // Persist clock state for restart recovery. Fire-and-forget for
-    // latency, but never silent: a persistent store failing (disk full)
-    // must surface via ErrorCallback instead of becoming an unhandled
-    // zone error.
-    unawaited(
-      _localNodeRepository.saveClockState(_hlcClock.current).catchError((
-        Object error,
-        StackTrace stackTrace,
-      ) {
-        _emitError(
-          StorageSyncError(
-            SyncErrorType.storageFailure,
-            'Failed to persist HLC clock state: $error',
-            occurredAt: DateTime.now(),
-            cause: error,
-          ),
-        );
-        _log(
-          LogLevel.error,
-          'Failed to persist HLC clock state: $error',
-          error,
-          stackTrace,
-        );
-      }),
-    );
-  }
-}
-
-/// A per-author sequence hole found while filtering a delta response.
-///
-/// The batch offered [firstAvailable] while we still need [expectedNext] —
-/// everything from [firstAvailable] on was dropped to preserve the
-/// version-vector high-water-mark invariant.
-class ContiguityGap {
-  final NodeId author;
-
-  /// The sequence we need next (our high-water mark + 1).
-  final int expectedNext;
-
-  /// The lowest offered sequence beyond the hole.
-  final int firstAvailable;
-
-  const ContiguityGap({
-    required this.author,
-    required this.expectedNext,
-    required this.firstAvailable,
-  });
 }
