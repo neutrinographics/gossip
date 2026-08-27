@@ -28,6 +28,7 @@ export 'domain/interfaces/peer_repository.dart';
 
 // Application (use-case orchestrators)
 export 'application/failure_detector.dart';
+export 'application/membership_timing_snapshot.dart';
 export 'application/peer_service.dart';
 
 // Infrastructure

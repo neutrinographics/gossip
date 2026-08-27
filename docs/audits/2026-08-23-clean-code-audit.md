@@ -377,3 +377,21 @@ Commits `2f6839c..af0203a` + this commit, branch `cc5-batch-f`. Eight tasks (F1�
 **Mutation checks reproduced in throwaway worktrees:** pacer-drop (F2), response-cursor freeze (F3), tryMark-after-await (F4), C6 wedge reintroduction (F5), contiguity-guard disable (F6), chain drop (F6).
 
 Gates: `melos run test` (gossip 1172, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages); `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
+
+---
+
+## Remediation — Batch G (2026-08-27)
+
+Commits `5e79044..863c3f9` + this commit, branch `cc5-batch-g`. Four tasks, zero fix rounds — all four reviewed clean on first pass.
+
+**Closed:** CC5-20 (`holdProbing(Duration)` — the detector computes deadlines on the clock that judges them, the coordinator's `timePort` reach-through is gone; `getAdaptiveTimingStatus` is now pure assembly of `FailureDetector.timingSnapshot()` + `GossipEngine.transportBacklog` — the min-SRTT/paired-variance/fallback policy moved into membership, with its first-ever pairing pin), CC5-21 (`ChannelRemoved` is now emitted by `ChannelService` via the same path as `ChannelCreated`; the coordinator's manual construction is deleted), CC5-22 (the public `channelService` field on `Channel`/`EventStream` is now private; CHANGELOG-recorded; zero external readers existed).
+
+**Deviation ledger:** `ChannelRemoved` now fires before facade-cache cleanup and engine refresh — no listener inspects that state, verified against every test referencing the event, so the earlier emission is accepted as unobservable. `timingSnapshot()` evaluates ping/probe timeouts before interval/backlog — a pure code-motion reordering, verified unobservable.
+
+**Note:** first batch under the no-audit-ID-comment rule — new/edited comments carry self-standing rationale instead of citations; the systematic sweep of prior citations remains a roadmap item.
+
+**Suite arithmetic:** 1172 → 1180 (+2, +2 incl. the first end-to-end grace-expiry pin, +4, +0, in task order), measured.
+
+**Routed to Batch H:** `FailureDetector.timePort` and `FailureDetector.rttTracker` now have zero production readers.
+
+Gates: `melos run test` (gossip 1180, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages); `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
