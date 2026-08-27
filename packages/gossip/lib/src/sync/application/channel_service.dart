@@ -172,6 +172,9 @@ class ChannelService {
   ///
   /// Used when: Local node leaves or deletes a channel.
   ///
+  /// Emits [ChannelRemoved] once the aggregate is deleted; emits nothing
+  /// for a channel that didn't exist.
+  ///
   /// Returns true if the channel was removed, false if it didn't exist.
   Future<bool> removeChannel(ChannelId channelId) async {
     if (_channelRepository == null) {
@@ -201,6 +204,8 @@ class ChannelService {
 
     // Delete the channel aggregate
     await _channelRepository.delete(channelId);
+
+    _emitEvents([ChannelRemoved(channelId, occurredAt: DateTime.now())]);
 
     return true;
   }

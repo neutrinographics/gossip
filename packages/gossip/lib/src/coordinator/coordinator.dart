@@ -549,11 +549,11 @@ class Coordinator {
   /// Removes a channel and all its associated data.
   ///
   /// This operation:
-  /// 1. Removes the channel from the facade cache
-  /// 2. Clears all entries for this channel from the entry store
-  /// 3. Deletes the channel from the repository
-  /// 4. Updates the gossip engine (if running) to stop syncing this channel
-  /// 5. Emits a [ChannelRemoved] event
+  /// 1. Clears all entries, materializer state, and the channel aggregate
+  ///    itself from persistence (via [ChannelService.removeChannel], which
+  ///    also emits [ChannelRemoved])
+  /// 2. Removes the channel from the facade cache
+  /// 3. Updates the gossip engine (if running) to stop syncing this channel
   ///
   /// Returns true if the channel was removed, false if it didn't exist.
   Future<bool> removeChannel(ChannelId channelId) async {
@@ -575,13 +575,6 @@ class Coordinator {
     if (_state == SyncState.running && _gossipEngine != null) {
       final channels = await _loadChannels();
       _gossipEngine!.setChannels(channels);
-    }
-
-    // Emit ChannelRemoved event
-    if (!_eventsController.isClosed) {
-      _eventsController.add(
-        ChannelRemoved(channelId, occurredAt: DateTime.now()),
-      );
     }
 
     return true;
