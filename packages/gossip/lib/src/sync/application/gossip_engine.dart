@@ -4,9 +4,9 @@ import 'package:gossip/src/shared/domain/value_objects/log_level.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/interfaces/local_node_repository.dart';
 import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
+import 'package:gossip/src/sync/domain/services/gossip_timing_policy.dart';
 import 'package:gossip/src/shared/domain/services/generation_scheduler.dart';
 import 'package:gossip/src/shared/domain/services/jitter.dart';
-import 'package:gossip/src/shared/domain/services/quiescence_pacer.dart';
 import 'package:gossip/src/shared/domain/services/rtt_tracker.dart';
 import 'package:gossip/src/shared/domain/services/keyed_task_chain.dart';
 
@@ -211,45 +211,23 @@ class GossipEngine {
   /// channels the local node is a member of.
   Map<ChannelId, ChannelAggregate> _channels = {};
 
-  /// Whether adaptive timing is enabled.
-  ///
-  /// When true, gossip interval is computed from per-peer RTT data via
-  /// [PeerDirectory]. When false, uses static gossip interval.
-  final bool _adaptiveTimingEnabled;
-
-  /// Static gossip interval (used when RTT tracker not provided).
-  final Duration _staticGossipInterval;
-
-  /// Whether a static gossip interval was explicitly provided.
-  final bool _staticIntervalProvided;
-
-  /// Minimum gossip interval (prevent CPU spin).
-  static const Duration _minGossipInterval = Duration(milliseconds: 100);
-
-  /// Maximum gossip interval (ensure progress).
-  static const Duration _maxGossipInterval = Duration(seconds: 5);
-
-  /// Multiplier for gossip interval relative to RTT.
-  /// Gossip interval = 2x RTT (time for request + response round trip).
-  static const int _gossipIntervalMultiplier = 2;
-
-  /// Two-tier pacing (spec 2026-08-20): stretches the adaptive interval
-  /// toward [_idleCeiling] across quiet rounds; any news snaps it back.
-  final QuiescencePacer _pacer = QuiescencePacer(ceiling: _idleCeiling);
-
-  /// The slowest the anti-entropy safety net may get (owner decision:
-  /// 30 s, not configurable).
-  static const Duration _idleCeiling = Duration(seconds: 30);
+  /// Owns the gossip-round interval policy (CC5-13): static vs. adaptive,
+  /// the median-SRTT formula, and the quiescence pacer. See
+  /// [GossipTimingPolicy] for why this is a separate object rather than
+  /// fields here.
+  late final GossipTimingPolicy _timing;
 
   /// True when anything newsworthy happened since the last round began.
-  /// Read-and-cleared by [performGossipRound]; set by [_recordNews].
+  /// Read-and-cleared by [performGossipRound]; set by [_recordNews]. A
+  /// round-scoped read-and-clear flag, not pacing state, so it stays here
+  /// rather than moving into [GossipTimingPolicy] with the pacer.
   bool _newsSinceLastRound = true;
 
   /// News: local append, merge, delta traffic either direction, or a
   /// membership change. Resets the pacer and marks the round non-quiet.
   void _recordNews() {
     _newsSinceLastRound = true;
-    _pacer.news();
+    _timing.news();
   }
 
   /// Tracks pending DeltaRequests to prevent duplicate requests.
@@ -350,11 +328,17 @@ class GossipEngine {
   }) : _codec = codec,
        _hlcClock = hlcClock,
        _localNodeRepository = localNodeRepository,
-       _random = random ?? Random(),
-       _staticGossipInterval =
-           gossipInterval ?? const Duration(milliseconds: 500),
-       _adaptiveTimingEnabled = adaptiveTimingEnabled,
-       _staticIntervalProvided = gossipInterval != null {
+       _random = random ?? Random() {
+    // Built here rather than the initializer list, mirroring
+    // FailureDetector's ProbeTimingPolicy construction (E2/CC5-13): keeps
+    // every extracted timing-policy collaborator constructed at the same
+    // site across the two engines rather than one in the initializer list
+    // and one in the body.
+    _timing = GossipTimingPolicy(
+      peerDirectory: peerDirectory,
+      staticInterval: gossipInterval,
+      adaptiveEnabled: adaptiveTimingEnabled,
+    );
     _scheduler = GenerationScheduler(
       timePort: timePort,
       // ±20% jitter decorrelates gossip loops across nodes so they don't
@@ -430,61 +414,9 @@ class GossipEngine {
   /// Whether gossip rounds are currently active.
   bool get isRunning => _scheduler.isRunning;
 
-  /// Default conservative gossip interval when no per-peer RTT data exists.
-  static const Duration _defaultConservativeInterval = Duration(
-    milliseconds: 1000,
-  );
-
-  /// Returns the effective gossip interval based on per-peer RTT measurements.
-  ///
-  /// If a static `gossipInterval` was provided at construction, uses that value.
-  /// Otherwise computes from the *median* per-peer smoothed RTT across all
-  /// reachable peers ([_adaptiveBaseInterval]: multiplied by
-  /// [_gossipIntervalMultiplier] (2x), clamped to [_minGossipInterval] and
-  /// [_maxGossipInterval] (100ms-5s active), with a
-  /// [_defaultConservativeInterval] (1000ms) fallback when no peer has an
-  /// RTT estimate yet).
-  ///
-  /// Median (not min) pacing keeps a single fast peer from pinning the loop
-  /// to a fast cadence that over-drives slower links, while a single very
-  /// slow peer can't stall the whole mesh either — each uniform-random round
-  /// is ~(n-1)/n likely to target a slower-than-fastest peer with a
-  /// potentially large payload, so the median is robust to an outlier at
-  /// either end. Latency-sensitive delivery is handled by reactive
-  /// push-on-write; this is the anti-entropy safety net, so a steadier
-  /// median cadence is the right trade-off.
-  ///
-  /// During quiet rounds this adaptive base is further stretched toward the
-  /// 30s idle ceiling by the quiescence pacer.
-  Duration get effectiveGossipInterval {
-    // Use static interval if explicitly provided (for backward compatibility)
-    if (_staticIntervalProvided || !_adaptiveTimingEnabled) {
-      return _staticGossipInterval;
-    }
-    return _pacer.apply(_adaptiveBaseInterval);
-  }
-
-  /// Latency-derived cadence input to [effectiveGossipInterval] — see there
-  /// for the interval policy (median SRTT × 2, clamping, and fallback).
-  Duration get _adaptiveBaseInterval {
-    final srtts = <Duration>[];
-    for (final partner in peerDirectory.reachablePartners()) {
-      final smoothedRtt = partner.smoothedRtt;
-      if (smoothedRtt != null) srtts.add(smoothedRtt);
-    }
-
-    // Fall back to conservative default when no peers have RTT estimates
-    if (srtts.isEmpty) {
-      return _defaultConservativeInterval;
-    }
-
-    srtts.sort();
-    final medianSrtt = srtts[srtts.length ~/ 2];
-    final computed = medianSrtt * _gossipIntervalMultiplier;
-    if (computed < _minGossipInterval) return _minGossipInterval;
-    if (computed > _maxGossipInterval) return _maxGossipInterval;
-    return computed;
-  }
+  /// Effective gossip round interval. Delegates to [_timing] — see
+  /// [GossipTimingPolicy.effectiveInterval] for the interval policy.
+  Duration get effectiveGossipInterval => _timing.effectiveInterval;
 
   /// How long a pending delta request is honoured before it is considered
   /// stale and a replacement may be issued.
@@ -536,7 +468,7 @@ class GossipEngine {
     if (_scheduler.isRunning) return;
     // A restart is news — never resume mid-backoff into a stale world.
     _newsSinceLastRound = true;
-    _pacer.news();
+    _timing.news();
     _pushGeneration++;
     _scheduler.start();
   }
@@ -714,7 +646,7 @@ class GossipEngine {
     if (_newsSinceLastRound) {
       _newsSinceLastRound = false;
     } else {
-      _pacer.quietRound();
+      _timing.quietRound();
     }
 
     final reachable = peerDirectory.reachablePartners();
