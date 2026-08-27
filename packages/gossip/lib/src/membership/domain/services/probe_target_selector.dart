@@ -15,7 +15,8 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 /// owns (the shuffled cursor, the probing-hold map, the per-peer
 /// last-probe-attempt map backing the suppression cap) has nothing to do
 /// with the detector's ping/ack/timeout orchestration. Giving the policy a
-/// class of its own gives it its true name and lets it be tested, and
+/// class of its own names the behavior precisely — round-robin selection
+/// with holds and suppression, not random — and lets it be tested, and
 /// reasoned about, independently of the protocol machinery.
 class ProbeTargetSelector {
   ProbeTargetSelector({
@@ -180,7 +181,8 @@ class ProbeTargetSelector {
     // probed) reads as 0, so on a real device (huge wall-clock nowMs) a
     // brand-new peer is immediately eligible — consistent with cold start.
     final lastAttempt = _lastProbeAttemptMs[p.id] ?? 0;
-    return nowMs - lastAttempt >= maxSuppressionMs;
+    final capExpired = nowMs - lastAttempt >= maxSuppressionMs;
+    return capExpired;
   }
 
   /// Round-robins over [PeerRegistry.unreachablePeers], returning the next

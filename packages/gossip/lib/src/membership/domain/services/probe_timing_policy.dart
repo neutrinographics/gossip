@@ -10,7 +10,8 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 /// A separate class rather than fields on `FailureDetector`: two
 /// independent knobs (ping timeout, probe interval), each independently
 /// static-or-adaptive, plus a pacer that stretches only the adaptive
-/// interval while quiet, is easier to reason about with its own home. A
+/// interval while quiet, are easier to reason about with a home of their
+/// own. A
 /// single nullable [Duration] per knob (`null` = adaptive, the only
 /// honest default) makes "was a static value supplied" the field's own
 /// nullability rather than a separate flag that could drift from it, and

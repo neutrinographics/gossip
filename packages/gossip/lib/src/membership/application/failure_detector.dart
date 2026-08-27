@@ -710,7 +710,8 @@ class FailureDetector {
     final protocolMessage = _decodeIncomingMessage(message);
     // Foreign-family frame (e.g. a sync DigestRequest/DigestResponse or
     // DeltaRequest/DeltaResponse sharing the same transport) — not ours
-    // to handle. Routine traffic, not an error.
+    // to handle. Routine traffic, not an error, or an already-reported
+    // decode failure.
     if (protocolMessage == null) return;
 
     await _dispatchProtocolMessage(protocolMessage, message.sender);
