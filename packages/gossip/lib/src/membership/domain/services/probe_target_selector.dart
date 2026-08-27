@@ -11,14 +11,12 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 /// unreachable-recovery probe, and the startup grace period that excludes
 /// a peer from probing altogether.
 ///
-/// Pulled out of `FailureDetector` (CC5-2/CC5-14): the extracted method was
-/// named `selectRandomPeer` — a fossil from before the H3 fix replaced
-/// pure-random selection with round-robin coverage — while it, and the
-/// state it closed over (the shuffled cursor, the probing-hold map, the
-/// per-peer last-probe-attempt map backing the suppression cap), had
-/// nothing to do with the detector's ping/ack/timeout orchestration. Giving
-/// the policy a class of its own gives it its true name and lets it be
-/// tested, and reasoned about, independently of the protocol machinery.
+/// A separate class rather than fields on `FailureDetector`: the state it
+/// owns (the shuffled cursor, the probing-hold map, the per-peer
+/// last-probe-attempt map backing the suppression cap) has nothing to do
+/// with the detector's ping/ack/timeout orchestration. Giving the policy a
+/// class of its own gives it its true name and lets it be tested, and
+/// reasoned about, independently of the protocol machinery.
 class ProbeTargetSelector {
   ProbeTargetSelector({
     required this.peerRegistry,
@@ -30,10 +28,6 @@ class ProbeTargetSelector {
   final TimePort timePort;
   final Random _random;
 
-  // ---------------------------------------------------------------------------
-  // Constants
-  // ---------------------------------------------------------------------------
-
   /// Hard cap on how long freshness alone may suppress a probe: 4× the
   /// 30 s ceiling, so freshness alone can never suppress a probe for more
   /// than 2 minutes. Freshness-only suppression (below) keys on INBOUND
@@ -44,10 +38,6 @@ class ProbeTargetSelector {
   /// half-open detection instead of suppressing forever. Not configurable —
   /// no new knobs.
   static const Duration _maxProbeSuppression = Duration(minutes: 2);
-
-  // ---------------------------------------------------------------------------
-  // State
-  // ---------------------------------------------------------------------------
 
   /// Shuffled round-robin order for main probe selection, with a cursor.
   ///
@@ -84,10 +74,6 @@ class ProbeTargetSelector {
   /// a never-probed peer immediately cap-expired (probe-eligible), matching
   /// cold-start expectations.
   final Map<NodeId, int> _lastProbeAttemptMs = {};
-
-  // ---------------------------------------------------------------------------
-  // Probing hold (startup grace period)
-  // ---------------------------------------------------------------------------
 
   /// Sets a probing hold for a peer until the given timestamp.
   ///
@@ -127,49 +113,28 @@ class ProbeTargetSelector {
     _lastProbeAttemptMs.remove(peerId);
   }
 
-  // ---------------------------------------------------------------------------
-  // Selection
-  // ---------------------------------------------------------------------------
-
   /// Selects the next peer to probe (reachable or suspected), round-robin
   /// over a shuffled order.
   ///
   /// Includes suspected peers so they can recover by responding to probes.
   /// Peers with an active probing hold are excluded to prevent false
   /// positives during connection startup. [freshnessWindow] suppresses
-  /// peers already proven alive by recent inbound traffic (WIRE4-3) — see
-  /// the eligibility filter below for the suppression-cap rationale.
+  /// peers already proven alive by recent inbound traffic — see
+  /// [_isProbeEligible] for the suppression-cap rationale.
   ///
   /// Selection cycles through a shuffled permutation of the probable set:
   /// every peer is probed exactly once per cycle, then the set is
   /// reshuffled. This bounds the worst-case time to probe a specific
   /// (e.g. silently-dead) peer to ~(n-1) rounds — pure-random selection
-  /// would give a geometric distribution with a long tail, the root of
-  /// H3's O(n · threshold) detection latency.
+  /// would give a geometric distribution with a long tail, driving
+  /// O(n · threshold) detection latency.
   Peer? nextProbeTarget({required Duration freshnessWindow}) {
     final nowMs = timePort.nowMs;
     final intervalMs = freshnessWindow.inMilliseconds;
     final maxSuppressionMs = _maxProbeSuppression.inMilliseconds;
-    final probable = peerRegistry.probablePeers.where((p) {
-      final holdUntil = _probingHeldUntil[p.id];
-      if (holdUntil != null && nowMs < holdUntil) return false;
-      // Suppression (WIRE4-3): any inbound message already proved this
-      // peer alive within the current interval — a probe adds nothing.
-      final isFresh = nowMs - p.lastContactMs < intervalMs;
-      if (!isFresh) return true;
-      // Cap: freshness alone keys on INBOUND evidence, which
-      // under asymmetric one-way loss can be perpetually refreshed by the
-      // peer's own traffic (e.g. it probing us) even though OUR probes to
-      // IT are the ones dying — suppressing forever and never detecting
-      // the failure. Bound it: a peer we haven't actually probed in
-      // _maxProbeSuppression is probe-eligible regardless of freshness.
-      // A missing entry (never probed) reads as 0, so on a real device
-      // (huge wall-clock nowMs) a brand-new peer is immediately eligible —
-      // consistent with cold start.
-      final lastAttempt = _lastProbeAttemptMs[p.id] ?? 0;
-      final capExpired = nowMs - lastAttempt >= maxSuppressionMs;
-      return capExpired;
-    }).toList();
+    final probable = peerRegistry.probablePeers
+        .where((p) => _isProbeEligible(p, nowMs, intervalMs, maxSuppressionMs))
+        .toList();
     if (probable.isEmpty) return null;
 
     final byId = {for (final p in probable) p.id: p};
@@ -189,6 +154,33 @@ class ProbeTargetSelector {
       ..shuffle(_random);
     _probeOrderIndex = 0;
     return byId[_probeOrder[_probeOrderIndex++]];
+  }
+
+  /// Whether [p] may be selected for probing right now: excludes an
+  /// active probing hold, then applies freshness suppression capped by
+  /// [_maxProbeSuppression].
+  bool _isProbeEligible(
+    Peer p,
+    int nowMs,
+    int intervalMs,
+    int maxSuppressionMs,
+  ) {
+    final holdUntil = _probingHeldUntil[p.id];
+    if (holdUntil != null && nowMs < holdUntil) return false;
+    // Any inbound message already proved this peer alive within the
+    // current interval — a probe adds nothing.
+    final isFresh = nowMs - p.lastContactMs < intervalMs;
+    if (!isFresh) return true;
+    // Freshness alone keys on INBOUND evidence, which under asymmetric
+    // one-way loss can be perpetually refreshed by the peer's own traffic
+    // (e.g. it probing us) even though OUR probes to IT are the ones
+    // dying — suppressing forever and never detecting the failure. Bound
+    // it: a peer we haven't actually probed in maxSuppressionMs is
+    // probe-eligible regardless of freshness. A missing entry (never
+    // probed) reads as 0, so on a real device (huge wall-clock nowMs) a
+    // brand-new peer is immediately eligible — consistent with cold start.
+    final lastAttempt = _lastProbeAttemptMs[p.id] ?? 0;
+    return nowMs - lastAttempt >= maxSuppressionMs;
   }
 
   /// Round-robins over [PeerRegistry.unreachablePeers], returning the next
@@ -224,10 +216,6 @@ class ProbeTargetSelector {
     }
     return selected;
   }
-
-  // ---------------------------------------------------------------------------
-  // Probe-attempt bookkeeping
-  // ---------------------------------------------------------------------------
 
   /// Stamps [peerId] as actually probed at [nowMs], resetting the
   /// suppression-cap clock ([_maxProbeSuppression]) that bounds how long

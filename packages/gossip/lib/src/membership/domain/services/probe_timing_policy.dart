@@ -7,19 +7,16 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 /// Owns the failure detector's probe-timing policy: how long to wait for
 /// an Ack, and how often to run a probe round.
 ///
-/// Pulled out of `FailureDetector` (CC5-13): the detector held two
+/// A separate class rather than fields on `FailureDetector`: two
 /// independent knobs (ping timeout, probe interval), each independently
 /// static-or-adaptive, plus a pacer that stretches only the adaptive
-/// interval while quiet. Each knob used to be a field-triad — a
-/// `Duration` field with a dead `?? default` fallback, plus a separate
-/// `bool ...Provided` flag tracking whether that fallback was ever live —
-/// which read as one static/adaptive switch when it was really two
-/// independent ones. Collapsing each triad to a single nullable
-/// [Duration] (`null` = adaptive, the only honest default) makes "was a
-/// static value supplied" the field's own nullability rather than a
-/// second flag that could drift from it, and gives the two knobs ×
-/// static/adaptive × pacer interaction one home instead of living
-/// scattered across the detector's construction, constants, and getters.
+/// interval while quiet, is easier to reason about with its own home. A
+/// single nullable [Duration] per knob (`null` = adaptive, the only
+/// honest default) makes "was a static value supplied" the field's own
+/// nullability rather than a separate flag that could drift from it, and
+/// gives the two knobs × static/adaptive × pacer interaction one home
+/// instead of scattering it across the detector's construction, constants,
+/// and getters.
 class ProbeTimingPolicy {
   ProbeTimingPolicy({
     required PeerRegistry peerRegistry,
