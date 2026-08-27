@@ -361,3 +361,19 @@ Commits `2102810..762924d` + this commit, branch `cc5-batch-e`. Seven tasks (E1�
 **Suite arithmetic:** 1081 → 1115 (E1 +5, E2 +13, E3 +18 — the fix round retargeted an existing test rather than adding one, E4 +0, E5 −7+5, E6 +0, E7 +0).
 
 Gates: `melos run test` (gossip 1115, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages); `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
+
+---
+
+## Remediation — Batch F (2026-08-27)
+
+Commits `2f6839c..af0203a` + this commit, branch `cc5-batch-f`. Eight tasks (F1–F8); two fix rounds (F1: monorepo rename sweep + README; F2: doc pointer, report arithmetic, slow-outlier pin) — F3–F7 reviewed clean on first pass; F8 (this task) closes with the controller's final whole-branch review.
+
+**Closed:** CC5-1 (five collaborators extracted — `GossipTimingPolicy` + `PendingPullTracker` in `sync/domain/services`, `DigestBudgeter` + `ReactivePusher` + `DeltaMerger` in `sync/application`; the engine keeps peer selection, protocol dispatch, and transport plumbing; `gossip_engine.dart` 1930 → 1533 lines), CC5-10/CC5-11 (message-dispatch and delta-evaluation method decompositions, zero test-file diffs), CC5-12 + campaign D3 (three hard renames — engine's and `CoordinatorConfig`'s `maxDeltaResponseBytes`→`maxMessageBytes`, `Coordinator.create(timerPort:)`→`timePort:` — CHANGELOG-recorded, monorepo-swept incl. `gossip_nearby`/`gossip_bluey`), CC5-13 now FULLY closed (Batch E took the detector slice; this batch's engine slice replaced the static/adaptive/default field triad with `GossipTimingPolicy`'s sealed `_IntervalMode`, deleting the dead `?? 500ms` fallback).
+
+**Deviation ledger:** the pending-pull `complete()` call moved from merge-start to response-arrival (plan-ordained) — RTT samples now measure true arrival time rather than arrival+queue-wait, and a same-key retransmit arriving behind a `hasMore` merge is now correctly classified unsolicited where the old timing misclassified it solicited and consumed the continuation's pending mark; the re-request window widened by the queue wait (duplicate class already absorbed by contiguity+chain). Also: `stop()`'s push-generation bump reordered after `scheduler.stop()` (verified unobservable — pure sync mutation); the oversized-digest diagnostics now emit after the fit loop rather than during (verified equivalent).
+
+**Suite arithmetic:** 1115 → 1172 (F1 +0, F2 +12, F3 +6, F4 +19, F5 +6, F6 +14, F7 +0, F8 +0).
+
+**Mutation checks reproduced in throwaway worktrees:** pacer-drop (F2), response-cursor freeze (F3), tryMark-after-await (F4), C6 wedge reintroduction (F5), contiguity-guard disable (F6), chain drop (F6).
+
+Gates: `melos run test` (gossip 1172, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages); `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
