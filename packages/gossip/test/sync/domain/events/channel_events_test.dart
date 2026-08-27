@@ -138,24 +138,6 @@ void main() {
       });
     });
 
-    group('BufferOverflowOccurred', () {
-      test('contains channelId, streamId, author, droppedCount', () {
-        final event = BufferOverflowOccurred(
-          channelId,
-          streamId,
-          memberId,
-          5,
-          occurredAt: now,
-        );
-
-        expect(event.channelId, equals(channelId));
-        expect(event.streamId, equals(streamId));
-        expect(event.author, equals(memberId));
-        expect(event.droppedCount, equals(5));
-        expect(event.occurredAt, equals(now));
-      });
-    });
-
     group('NonMemberEntriesRejected', () {
       test('contains channelId, streamId, rejectedCount, unknownAuthors', () {
         final unknownAuthors = {NodeId('unknown-1'), NodeId('unknown-2')};

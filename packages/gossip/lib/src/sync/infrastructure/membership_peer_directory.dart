@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/membership/domain/entities/peer.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
@@ -14,9 +12,7 @@ import 'package:gossip/src/sync/domain/value_objects/sync_partner.dart';
 /// `GossipEngine`) sees peers only through [SyncPartner] and [PeerDirectory].
 ///
 /// Every method is a pure forward/map: no new selection or mutation
-/// semantics are introduced here. In particular, [selectRandomPartner]
-/// delegates to [PeerRegistry.selectRandomReachablePeer] rather than
-/// reimplementing its selection behavior.
+/// semantics are introduced here.
 class MembershipPeerDirectory implements PeerDirectory {
   MembershipPeerDirectory(this._registry);
 
@@ -25,12 +21,6 @@ class MembershipPeerDirectory implements PeerDirectory {
   @override
   List<SyncPartner> reachablePartners() =>
       _registry.reachablePeers.map(_toPartner).toList();
-
-  @override
-  SyncPartner? selectRandomPartner(Random random) {
-    final peer = _registry.selectRandomReachablePeer(random);
-    return peer == null ? null : _toPartner(peer);
-  }
 
   @override
   void recordContact(NodeId peer, int nowMs) {

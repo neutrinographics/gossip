@@ -40,6 +40,14 @@ publish under the existing pub.dev `gossip` name must version above the old
 - The public `channelService` field on `Channel`/`EventStream` is gone; it
   existed only as a leak of an internal collaborator — use `Coordinator`
   and the facade methods instead.
+- `EntryRepository.entriesForAuthorAfter` removed (unused; implementers
+  drop the override).
+- `PeerRepository.findReachable`/`exists`/`count` removed (unused;
+  implementers drop the overrides).
+- `BufferOverflowOccurred` event removed (never emitted; no buffering
+  subsystem exists to fire it).
+- The phantom domain types `StreamConfig`, `ChannelDelta`, and
+  `MergeResult` removed (never constructed by the library).
 
 ### Behavioral
 

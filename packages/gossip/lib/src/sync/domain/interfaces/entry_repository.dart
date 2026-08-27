@@ -38,7 +38,6 @@ import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 ///   would then be ordered by arrival, which differs across peers, and
 ///   non-commutative materializers would converge to different states on
 ///   different devices.
-/// - [entriesForAuthorAfter] returns entries in sequence order.
 ///
 /// ## Critical Invariants (violating these corrupts sync)
 ///
@@ -141,19 +140,6 @@ abstract interface class EntryRepository {
     ChannelId channel,
     StreamId stream,
     VersionVector since,
-  );
-
-  /// Returns entries from a specific author after a sequence number.
-  ///
-  /// Returns entries where author matches and sequence > afterSequence.
-  /// Results are in sequence order.
-  ///
-  /// Used when: Resolving out-of-order entry gaps for a specific author.
-  Future<List<LogEntry>> entriesForAuthorAfter(
-    ChannelId channel,
-    StreamId stream,
-    NodeId author,
-    int afterSequence,
   );
 
   /// Returns the highest sequence number ever appended by an author, or 0

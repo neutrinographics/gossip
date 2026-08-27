@@ -376,14 +376,14 @@ void main() {
 
         // Verify state exists
         expect(await channelRepo.count, equals(1));
-        expect(await peerRepo.count, equals(1));
+        expect(await peerRepo.findAll(), hasLength(1));
         expect(await entryRepo.entryCount(channelId, streamId), equals(1));
 
         await coordinator.destroy();
 
         // All repos should be empty
         expect(await channelRepo.count, equals(0));
-        expect(await peerRepo.count, equals(0));
+        expect(await peerRepo.findAll(), isEmpty);
         expect(await entryRepo.entryCount(channelId, streamId), equals(0));
       });
 

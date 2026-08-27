@@ -1,5 +1,3 @@
-import 'dart:math';
-
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/sync/domain/interfaces/peer_directory.dart';
 import 'package:gossip/src/sync/domain/services/gossip_timing_policy.dart';
@@ -211,10 +209,6 @@ class _FakePeerDirectory implements PeerDirectory {
 
   @override
   List<SyncPartner> reachablePartners() => _partners;
-
-  @override
-  SyncPartner? selectRandomPartner(Random random) =>
-      _partners.isEmpty ? null : _partners.first;
 
   @override
   void recordContact(NodeId peer, int nowMs) {}

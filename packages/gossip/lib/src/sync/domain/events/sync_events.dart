@@ -144,25 +144,6 @@ final class StreamCompacted extends SyncEvent {
   });
 }
 
-/// Emitted when the out-of-order buffer overflows for an author.
-///
-/// Currently never emitted — no buffering subsystem exists to fire it;
-/// retained pending an emit-or-remove decision.
-final class BufferOverflowOccurred extends SyncEvent {
-  final ChannelId channelId;
-  final StreamId streamId;
-  final NodeId author;
-  final int droppedCount;
-
-  const BufferOverflowOccurred(
-    this.channelId,
-    this.streamId,
-    this.author,
-    this.droppedCount, {
-    required super.occurredAt,
-  });
-}
-
 /// Event for applications to emit when rejecting entries from non-members.
 ///
 /// Note: The gossip protocol does NOT filter entries by membership - this is

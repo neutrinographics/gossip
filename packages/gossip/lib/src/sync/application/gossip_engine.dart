@@ -1517,16 +1517,6 @@ class GossipEngine {
     return result.continuation;
   }
 
-  /// Clears all pending delta requests.
-  ///
-  /// Call this when a peer disconnects to allow immediate re-sync when
-  /// the peer reconnects. Without clearing, pending requests would block
-  /// new delta requests until they expire.
-  void clearPendingRequests() {
-    _pendingPullTracker.clearAll();
-    _merger.clearReportedGaps();
-  }
-
   /// Clears pending delta requests addressed to [peer].
   ///
   /// Called when a peer is removed: its in-flight pulls can never complete,

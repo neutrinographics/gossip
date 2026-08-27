@@ -26,16 +26,6 @@ class FakePeerRepository implements PeerRepository {
   Future<List<Peer>> findAll() async => _peers.values.toList();
 
   @override
-  Future<List<Peer>> findReachable() async =>
-      _peers.values.where((p) => p.status == PeerStatus.reachable).toList();
-
-  @override
-  Future<bool> exists(NodeId id) async => _peers.containsKey(id);
-
-  @override
-  Future<int> get count async => _peers.length;
-
-  @override
   Future<void> clearAll() async {
     _peers.clear();
   }
@@ -71,13 +61,13 @@ void main() {
         // Add peer first
         await service.addPeer(peerId);
         expect(registry.isKnown(peerId), isTrue);
-        expect(await repository.exists(peerId), isTrue);
+        expect(await repository.findById(peerId), isNotNull);
 
         // Now remove it
         await service.removePeer(peerId);
 
         expect(registry.isKnown(peerId), isFalse);
-        expect(await repository.exists(peerId), isFalse);
+        expect(await repository.findById(peerId), isNull);
       },
     );
 

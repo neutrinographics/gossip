@@ -12,17 +12,12 @@ import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 // Aggregates
 export 'domain/aggregates/channel_aggregate.dart';
 
-// Entities
-export 'domain/entities/stream_config.dart';
-
 // Events (the sealed SyncEvent family)
 export 'domain/events/sync_events.dart';
 
 // Value objects
-export 'domain/value_objects/channel_delta.dart';
 export 'domain/value_objects/channel_digest.dart';
 export 'domain/value_objects/compaction_result.dart';
-export 'domain/value_objects/merge_result.dart';
 export 'domain/value_objects/stream_digest.dart';
 export 'domain/value_objects/sync_partner.dart';
 
