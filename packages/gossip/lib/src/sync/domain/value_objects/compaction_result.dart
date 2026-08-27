@@ -23,13 +23,6 @@ class CompactionResult {
     required this.baseVersion,
   });
 
-  factory CompactionResult.noChange(VersionVector version) => CompactionResult(
-    entriesRemoved: 0,
-    entriesRetained: 0,
-    bytesFreed: 0,
-    baseVersion: version,
-  );
-
   @override
   bool operator ==(Object other) =>
       other is CompactionResult &&

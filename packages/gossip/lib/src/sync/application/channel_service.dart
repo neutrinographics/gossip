@@ -647,7 +647,7 @@ class ChannelService {
   /// resurrect them via gossip).
   ///
   /// Emits [StreamCompacted] when entries were actually pruned; a no-op
-  /// pass (nothing survives pruning, so this returns null) emits nothing.
+  /// pass (nothing needs pruning, so this returns null) emits nothing.
   Future<CompactionResult?> compactStream(
     ChannelId channelId,
     StreamId streamId, {

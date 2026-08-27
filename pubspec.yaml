@@ -62,5 +62,5 @@ melos:
       description: Format all packages
 
     format:check:
-      run: melos exec -- dart format --set-exit-if-changed .
+      run: melos exec -- dart format --output=none --set-exit-if-changed .
       description: Check formatting in all packages

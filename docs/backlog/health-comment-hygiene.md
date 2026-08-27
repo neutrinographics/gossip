@@ -55,3 +55,8 @@ conventions) needs an owner decision before planning.
   structure, a facade marked "not yet implemented", and types that no
   longer exist. It needs a supersede-or-delete decision as part of this
   cleanup rather than a line-by-line edit.
+- Three redundant defensive copies became dead weight once
+  `VersionVector`'s own constructor started copying its argument: the two
+  `Map<NodeId, int>.from` calls in the in-memory entry repository's
+  version-vector reads, and the `Map.unmodifiable` wrapping the merged map
+  in `VersionVector.merge`. Remove them during this pass.

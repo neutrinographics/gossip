@@ -57,6 +57,9 @@ publish under the existing pub.dev `gossip` name must version above the old
   argument (a non-negative `maxAge`, a non-empty `policies` list), and a
   value-dependent guard is incompatible with const invocation in Dart.
   Construct them without `const`.
+- `CompactionResult.noChange` removed (unused; construct a
+  `CompactionResult` directly with zero counts if a caller ever needs
+  one).
 
 ### Behavioral
 
@@ -73,10 +76,14 @@ publish under the existing pub.dev `gossip` name must version above the old
   observable protocol behavior is pinned by the test suite, and audit
   records in `docs/audits/` document each change.
 - `InMemoryTimePort.advance()` now fires each periodic callback once per
-  interval boundary the elapsed time crosses (previously ignored the
-  interval and never fired periodic callbacks at all).
+  interval boundary the elapsed time crosses (previously fired every
+  periodic callback once per `advance()` call, ignoring the interval).
   `schedulePeriodic` rejects a non-positive interval with `ArgumentError`
   instead of registering a timer `advance()` could never reach.
+- `VersionVector` now copies its constructor argument and normalizes
+  explicit zero entries away — `VersionVector({a: 0})` equals
+  `VersionVector.empty`, and later mutation of the passed map no longer
+  alters the vector.
 
 ### Changed
 

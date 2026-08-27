@@ -8,18 +8,6 @@ void main() {
     final node1 = NodeId('node-1');
     final version = VersionVector({node1: 10});
 
-    test(
-      'CompactionResult.noChange returns zero counts with given version',
-      () {
-        final result = CompactionResult.noChange(version);
-
-        expect(result.entriesRemoved, equals(0));
-        expect(result.entriesRetained, equals(0));
-        expect(result.bytesFreed, equals(0));
-        expect(result.baseVersion, equals(version));
-      },
-    );
-
     test('contains entriesRemoved, entriesRetained, bytesFreed', () {
       final result = CompactionResult(
         entriesRemoved: 10,

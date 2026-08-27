@@ -91,7 +91,7 @@ void main() {
         result,
         isNull,
         reason:
-            'nothing survives pruning to report — compactStream '
+            'nothing needs pruning to report — compactStream '
             'itself already returns null for a no-op pass',
       );
       expect(
