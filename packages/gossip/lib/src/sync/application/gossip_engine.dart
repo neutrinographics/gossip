@@ -39,10 +39,18 @@ import 'package:gossip/src/sync/application/reactive_pusher.dart';
 /// [GossipEngine] synchronizes log entries across peers through periodic
 /// digest exchange. It implements a 4-step anti-entropy protocol:
 ///
+/// Five extracted collaborators own specialized concerns this class
+/// orchestrates but no longer implements directly: [GossipTimingPolicy]
+/// (round-interval pacing), [PendingPullTracker] (pull dedup and adaptive
+/// timeout), [DigestBudgeter] (digest byte-budgeting), [ReactivePusher]
+/// (push debounce), and [DeltaMerger] (the delta-merge pipeline).
+///
 /// ## Anti-Entropy Protocol (4 Steps)
 ///
 /// **Step 1: Digest Request** (see [effectiveGossipInterval] for the interval policy)
-/// - Select random reachable peer
+/// - Select the least-recently-synced reachable peer, filtered to exclude
+///   congested peers and ones already gossiped with this interval, with a
+///   random tiebreak among equally-stale peers (see [_selectGossipPartner])
 /// - Generate digests (version vectors) for all local channels/streams
 /// - Send [DigestRequest] containing our sync state
 ///
@@ -1224,7 +1232,14 @@ class GossipEngine {
     StreamDigest streamDigest,
   ) async {
     final channel = _channels[channelId];
-    if (channel == null) return null;
+    if (channel == null) {
+      _log(
+        LogLevel.trace,
+        'ignoring digest for $channelId/${streamDigest.streamId}: '
+        'not a channel of ours',
+      );
+      return null;
+    }
 
     // Skip streams we don't have locally. Stream creation is a local
     // operation (by design — apps coordinate stream names), so a

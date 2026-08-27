@@ -238,12 +238,21 @@ void main() {
             isA<ChannelSyncError>().having(
               (e) => e.message,
               'message',
-              contains('big'),
+              allOf(
+                contains('big'),
+                contains('cannot fit maxMessageBytes='),
+                contains(
+                  'that stream has too many authors to sync (consider '
+                  'compaction or sharding the channel)',
+                ),
+              ),
             ),
           ),
           reason:
               'an un-sendable stream digest must surface an error that '
-              'identifies the oversized stream ("big"), not just any error',
+              'identifies the oversized stream ("big") and explains why '
+              '(budget exceeded, with the compaction/sharding remedy) — '
+              'not just any error',
         );
         expect(sizes, everyElement(lessThanOrEqualTo(250)));
 
