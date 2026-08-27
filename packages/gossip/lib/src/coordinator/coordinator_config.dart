@@ -115,7 +115,8 @@ class CoordinatorConfig {
   /// fallback constants instead of adaptive computation.
   final bool adaptiveTimingEnabled;
 
-  /// Maximum encoded size (bytes) of a single gossip DeltaResponse message.
+  /// The byte budget for every sync protocol message — digests, delta
+  /// pages, and pushes — sized to the 32 KB transport limit.
   ///
   /// Large entry backlogs are paginated across gossip rounds so no single
   /// message exceeds this budget. It also determines the maximum entry

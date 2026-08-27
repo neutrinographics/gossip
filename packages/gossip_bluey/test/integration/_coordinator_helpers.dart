@@ -18,7 +18,7 @@ Future<Coordinator> spawnCoordinator({
     peerRepository: InMemoryPeerRepository(),
     entryRepository: InMemoryEntryRepository(),
     messagePort: messagePort,
-    timerPort: RealTimePort(),
+    timePort: RealTimePort(),
     config: config,
   );
 }

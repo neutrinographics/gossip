@@ -26,7 +26,7 @@ void main() {
         peerRepository: InMemoryPeerRepository(),
         entryRepository: InMemoryEntryRepository(),
         messagePort: InMemoryMessagePort(localNodeId, messageBus),
-        timerPort: InMemoryTimePort(),
+        timePort: InMemoryTimePort(),
       );
 
       chatService = ChatService(

@@ -50,7 +50,7 @@ void main() async {
     peerRepository: InMemoryPeerRepository(),
     entryRepository: InMemoryEntryRepository(),
     messagePort: transport.messagePort,
-    timerPort: RealTimePort(),
+    timePort: RealTimePort(),
     config: configService.buildCoordinatorConfig(),
     onLog: _verboseLogging ? gossipLogCallback : null,
   );

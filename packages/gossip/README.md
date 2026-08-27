@@ -69,7 +69,7 @@ final coordinator = await Coordinator.create(
   peerRepository: peerRepo,
   entryRepository: entryRepo,
   messagePort: MyBluetoothPort(),  // Your transport implementation
-  timerPort: RealTimePort(),
+  timePort: RealTimePort(),
 );
 
 // Add peers discovered via your transport
