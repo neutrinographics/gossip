@@ -139,7 +139,7 @@ void main() {
 
         await facade.append(Uint8List.fromList([1]));
 
-        // MIN-9: the facade must not erase ChannelService.getEntries' typed
+        // The facade must not erase ChannelService.getEntries' typed
         // return — assigning without a cast is itself the pin: it fails to
         // compile if getAll() ever regresses to `Future<List<dynamic>>`.
         final List<LogEntry> entries = await facade.getAll();
