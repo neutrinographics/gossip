@@ -17,7 +17,7 @@ void main() {
 
       for (var i = 0; i < 4; i++) {
         expect(
-          h.detector.selectRandomPeer()!.id,
+          h.detector.nextProbeTarget()!.id,
           stale.id,
           reason: 'only the stale peer needs a probe',
         );
@@ -31,7 +31,7 @@ void main() {
       h.peerRegistry.updatePeerContact(a.id, h.timePort.nowMs);
       h.peerRegistry.updatePeerContact(b.id, h.timePort.nowMs);
 
-      expect(h.detector.selectRandomPeer(), isNull);
+      expect(h.detector.nextProbeTarget(), isNull);
 
       final sentBefore = h.sentMessageCount;
       await h.detector.performProbeRound();

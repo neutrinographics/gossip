@@ -22,29 +22,6 @@ void main() {
       expect(vector[node2], equals(10));
     });
 
-    test('increment creates new vector with node incremented by 1', () {
-      final vector = VersionVector({node1: 5});
-      final result = vector.increment(node1);
-
-      expect(result[node1], equals(6));
-      expect(vector[node1], equals(5)); // Original unchanged
-    });
-
-    test('increment on unknown node sets it to 1', () {
-      const vector = VersionVector.empty;
-      final result = vector.increment(node1);
-
-      expect(result[node1], equals(1));
-    });
-
-    test('set creates new vector with node at specified value', () {
-      final vector = VersionVector({node1: 5});
-      final result = vector.set(node1, 10);
-
-      expect(result[node1], equals(10));
-      expect(vector[node1], equals(5)); // Original unchanged
-    });
-
     test('merge takes max of each node\'s value', () {
       final vector1 = VersionVector({node1: 5, node2: 3});
       final vector2 = VersionVector({node1: 2, node2: 8});

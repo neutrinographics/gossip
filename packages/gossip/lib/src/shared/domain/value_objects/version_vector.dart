@@ -53,14 +53,6 @@ class VersionVector {
   /// Returns true if this version vector contains no entries.
   bool get isEmpty => _versions.isEmpty;
 
-  /// Returns a new version vector with the sequence for [node] incremented by 1.
-  VersionVector increment(NodeId node) =>
-      VersionVector({..._versions, node: this[node] + 1});
-
-  /// Returns a new version vector with [node] set to the given [sequence].
-  VersionVector set(NodeId node, int sequence) =>
-      VersionVector({..._versions, node: sequence});
-
   /// Merges two version vectors by taking the maximum sequence for each node.
   ///
   /// Returns a new version vector containing all nodes from both vectors,

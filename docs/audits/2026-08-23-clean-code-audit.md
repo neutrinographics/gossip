@@ -321,3 +321,43 @@ Commits `10db7b5..d9d0c7e` on branch `cc5-batch-d`. Ten tasks (D2 split into a/b
 **Suite count:** 1059 → 1076.
 
 Gates: `melos run test` (gossip 1076, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages) both pass as of `d9d0c7e`; `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
+
+---
+
+## Remediation — Batch D follow-up (2026-08-26)
+
+Commits `af60301..056c739` + this commit, branch `cc5-batch-d-followup`. Six tasks: five had zero fix rounds; Task 1 took one docs-only fix round (its builder-doc caller-grounding claim was corrected). Zero `lib/` files changed in any committed diff.
+
+Items closed, from Batch D's outcome record (`docs/superpowers/plans/2026-08-24-cc5-batch-d.md`, §Batch D — outcome record):
+- **M1 → CC5-30 now fully closed:** non-empty golden fixtures extend the envelope pins to the nested payload keys the empty-collection goldens couldn't reach — `LogEntry`'s `author`/`sequence`/`timestamp{physicalMs,logical}`/base64 `payload`, `ChannelDigest`'s `{channelId,streams}`, `StreamDigest`'s `{streamId,version}`, `DeltaRequest.since`/`DeltaResponse.floor` version-vector maps.
+- **M2:** the builder rejects `nodeId` alongside `localNodeRepository` via `ArgumentError` + message — chosen over the outcome record's assert suggestion for unconditional (release-mode) enforcement.
+- **M3:** six vacuous pins deleted with the static vacuity argument per site; two strengthened to typed pins (`PeerSyncError`/`protocolError`; `StorageSyncError`/`storageFailure` + message).
+- **M5:** cleanup registered at construction at both named sites, plus trailing `sub.cancel()`s in the tests touched along the way.
+- **M7:** the storage-usage pin is now the literal `112`, independent of `LogEntry.sizeBytes`'s formula.
+- **M8:** the fourth hand-rolled detector setup now states why it stays hand-rolled — the harness builds its own `PeerRegistry` and exposes no `onEvent` seam.
+
+**Suite count:** 1076 → 1081 (+1 builder-guard test, +4 nested-payload goldens; M3/M5/M7 left the count level). No tests deleted.
+
+**Mutation proofs run:** `protocolError`→`messageCorrupted` at the engine's stream-error emission; a message-string swap at the HLC-persist emission; `52`→`60` in `LogEntry.sizeBytes`; `'author'`→`'a'` on both codec sides — for the last two, the *old* assertions (the formula mirror; the round-trip tests) were verified to stay green under the mutant, exactly the co-drift/mirror defect class these closures remove. Reviews reproduced proofs independently (the wire-golden reviewer re-ran the codec mutant; the M3 reviewer re-verified vacuity per site).
+
+Gates: `melos run test` (gossip 1081, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages); `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.
+
+---
+
+## Remediation — Batch E (2026-08-26)
+
+Commits `2102810..762924d` + this commit, branch `cc5-batch-e`. Seven tasks (E1–E7), one fix round (E3: a while→if mutant survived the cursor-skip test; retargeted, no count change).
+
+**Closed:** CC5-2 (jobs b and d extracted to `ProbeTargetSelector`/`ProbeTimingPolicy` in `membership/domain/services`; jobs c/e deliberately remain — they are the detector's own choreography; job a's scheduling mechanism was already Batch B's `GenerationScheduler`, so the audit's `ProbeScheduler` fix direction predates that extraction — a recorded deviation, not a gap), CC5-3 (five copy-pasted probe lifecycles → `_pingExchange` + `_probe`; the late-Ack grace invariant was proven pinned by exactly 2 pre-existing tests via an early-cleanup mutant, so the extraction carries zero test-file diffs), CC5-13 detector slice (the dead field-plus-flag `?? default` pairs deleted for single nullable `Duration?` fields; Batch F owns the engine's mirrored slice), CC5-14 (detector's `selectRandomPeer` renamed `nextProbeTarget`; the engine's dead `selectRandomPeer` deleted with its 2 keeping-alive tests — `PeerDirectory.selectRandomPartner`, its 1:1 delegate, has its own stronger direct-coverage suite), CC5-42 clamp clause + CC5-43 (one `clampDuration`; `RttTracker` publishes `minSample`/`maxSample` as the single source, replacing the detector's mirrored constants; the A-routed `_recordRtt` doc-block is reattached to the method it actually describes), CC5-46 (dead `sequence` param removed; `checkPeerHealth` → `updatePeerHealth`; `registerMaterializer` returns `Future<void>`; `Coordinator`'s constructor params privatized; `VersionVector.set`/`increment` and `RttTracker.reset` deleted as dead surface; `FoldCursor`'s assert now states both failure modes; `resetState` null-checks the materializer before the async `hasStream` read, for guard-order parity with `getState`), CC5-47 (`@visibleForTesting` on the six test-only-public detector members; `PeerMetrics` gets `@immutable` + `copyWith`).
+
+**Deviation ledger:** E4's two accepted micro-deviations — one extra debug line in `_probeUnreachablePeer`'s rare late-direct-ack race (log-only, nothing reads log content); the timeout-sampling instant moved pre-send at `probeNewPeer`/`_handlePingReq` (a pure read, invisible under the suite's static timeouts). Timing-policy extraction: the `_timing` field is `late final`, assigned in the constructor body rather than the initializer list, because it must share the initializer-computed `RttTracker` instance; its only reader is a closure that runs post-construction, so no late-initialization risk.
+
+**Note:** `VersionVector.set`/`increment` were exported public API (`lib/gossip.dart`) before this batch deleted them — semver-relevant; flagged to the owner, versioning policy pending.
+
+**Routed to Batch H:** `PeerDirectory.selectRandomPartner` is now directly dead (zero production callers after the engine fossil's deletion) — dead-surface removal, not this batch's scope.
+
+**Transport-error attribution pin (D-follow-up's open question):** `GossipEngine` and `FailureDetector` both listen on the same broadcast `MessagePort.incoming`, so one stream error deterministically reaches `coordinator.errors` twice (10/10 runs). But the two `PeerSyncError`s are byte-identical in every field but `occurredAt` — same peer, same type, same message text, even the same `cause` object by identity — so neither is attributable to its listener. The existing single-emission pin stays as-is; a comment at the test names the ambiguity instead of a count pin, which would be brittle against listener-set changes.
+
+**Suite arithmetic:** 1081 → 1115 (E1 +5, E2 +13, E3 +18 — the fix round retargeted an existing test rather than adding one, E4 +0, E5 −7+5, E6 +0, E7 +0).
+
+Gates: `melos run test` (gossip 1115, gossip_nearby 189, gossip_bluey 228 — all green) and `melos run analyze` (clean, all three packages); `dart format --output=none --set-exit-if-changed lib test` in `packages/gossip` exits 0.

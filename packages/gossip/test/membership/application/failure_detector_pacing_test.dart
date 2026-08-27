@@ -26,7 +26,7 @@ void main() {
     });
 
     test('a missed probe snaps the interval back to base', () async {
-      // Seeded so the round-robin shuffle (FailureDetector.selectRandomPeer)
+      // Seeded so the round-robin shuffle (FailureDetector.nextProbeTarget)
       // is deterministic: with two probable peers, seed 0 visits peer1
       // before deadpeer in the first post-add cycle (verified empirically).
       // This replaces the brief's blind

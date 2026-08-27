@@ -316,6 +316,9 @@ void main() {
         // recovery-to-reachable transition so arranging the pre-suspected
         // peer (itself a PeerAdded + a suspecting PeerStatusChanged)
         // doesn't trip it before the message under test arrives.
+        // Stays hand-rolled: the harness constructs its own PeerRegistry
+        // and exposes no onEvent seam, so a throwing registry sink is
+        // inexpressible through it.
         final localNode = NodeId('local');
         final peerNode = NodeId('peer1');
         final peerRegistry = PeerRegistry(

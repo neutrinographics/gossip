@@ -24,7 +24,7 @@ void main() {
 
       for (var cycle = 0; cycle < 4; cycle++) {
         final block = [
-          for (var i = 0; i < n; i++) h.detector.selectRandomPeer()!.id,
+          for (var i = 0; i < n; i++) h.detector.nextProbeTarget()!.id,
         ];
         expect(
           block.toSet(),
@@ -45,7 +45,7 @@ void main() {
       for (var start = 0; start < 3; start++) {
         final window = <NodeId>[];
         for (var i = 0; i < n; i++) {
-          window.add(h.detector.selectRandomPeer()!.id);
+          window.add(h.detector.nextProbeTarget()!.id);
         }
         expect(
           window,
@@ -62,7 +62,7 @@ void main() {
 
       final selected = <NodeId>[];
       for (var i = 0; i < 12; i++) {
-        final peer = h.detector.selectRandomPeer();
+        final peer = h.detector.nextProbeTarget();
         if (peer != null) selected.add(peer.id);
       }
 
@@ -72,7 +72,7 @@ void main() {
 
     test('returns null when there are no probable peers', () {
       final h = FailureDetectorTestHarness();
-      expect(h.detector.selectRandomPeer(), isNull);
+      expect(h.detector.nextProbeTarget(), isNull);
     });
   });
 }

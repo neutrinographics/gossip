@@ -24,7 +24,14 @@ class FoldCursor {
   /// Null for legacy timestamp-only cursors.
   final int? sequence;
 
-  const FoldCursor(this.timestamp, {this.author, this.sequence});
+  const FoldCursor(this.timestamp, {this.author, this.sequence})
+    : assert(
+        (author == null) == (sequence == null),
+        'author and sequence must be provided together: author without '
+        'sequence makes isBefore throw on the null sequence; sequence '
+        'without author silently falls back to legacy (author-blind) '
+        'comparison, discarding the sequence',
+      );
 
   factory FoldCursor.fromEntry(LogEntry entry) => FoldCursor(
     entry.timestamp,

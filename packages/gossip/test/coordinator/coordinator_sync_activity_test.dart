@@ -66,7 +66,6 @@ void main() {
         () => coordinator.gossipSyncActivity.outstandingPulls == 1,
         describe: 'the engine arming a pending pull for the advertised entry',
       );
-      expect(coordinator.gossipSyncActivity.outstandingPulls, equals(1));
 
       // The peer disconnects before answering: its pull can never
       // complete and must not wedge the "syncing…" signal forever.

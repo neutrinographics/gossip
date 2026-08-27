@@ -1,3 +1,5 @@
+import 'package:meta/meta.dart';
+
 import 'package:gossip/src/shared/domain/value_objects/rtt_estimate.dart';
 
 /// Tracks communication metrics for a peer over time.
@@ -16,6 +18,7 @@ import 'package:gossip/src/shared/domain/value_objects/rtt_estimate.dart';
 /// - **RTT estimate**: Per-peer round-trip time for adaptive timeouts
 ///
 /// Value object with immutable value semantics.
+@immutable
 class PeerMetrics {
   /// Total messages received from this peer (lifetime).
   final int messagesReceived;
@@ -52,6 +55,33 @@ class PeerMetrics {
     this.rttEstimate,
   });
 
+  /// Returns a copy with the given fields replaced; omitted fields keep
+  /// their current value.
+  ///
+  /// CAUTION: a `null` argument means "keep current value," not "clear
+  /// it" — so [rttEstimate] can never be reset to null through this
+  /// method once set. None of this class's own update methods needs that
+  /// (each either preserves or replaces an estimate), so the gap is
+  /// unexercised here; a caller that genuinely needs to clear it must use
+  /// the constructor directly.
+  PeerMetrics copyWith({
+    int? messagesReceived,
+    int? messagesSent,
+    int? bytesReceived,
+    int? bytesSent,
+    int? windowStartMs,
+    int? messagesInWindow,
+    RttEstimate? rttEstimate,
+  }) => PeerMetrics(
+    messagesReceived: messagesReceived ?? this.messagesReceived,
+    messagesSent: messagesSent ?? this.messagesSent,
+    bytesReceived: bytesReceived ?? this.bytesReceived,
+    bytesSent: bytesSent ?? this.bytesSent,
+    windowStartMs: windowStartMs ?? this.windowStartMs,
+    messagesInWindow: messagesInWindow ?? this.messagesInWindow,
+    rttEstimate: rttEstimate ?? this.rttEstimate,
+  );
+
   /// Records an RTT sample and returns updated metrics.
   ///
   /// If no prior samples exist, initializes the estimate with the sample
@@ -63,15 +93,7 @@ class PeerMetrics {
       sample,
       isFirstSample: isFirst,
     );
-    return PeerMetrics(
-      messagesReceived: messagesReceived,
-      messagesSent: messagesSent,
-      bytesReceived: bytesReceived,
-      bytesSent: bytesSent,
-      windowStartMs: windowStartMs,
-      messagesInWindow: messagesInWindow,
-      rttEstimate: updatedEstimate,
-    );
+    return copyWith(rttEstimate: updatedEstimate);
   }
 
   /// Records a received message and returns updated metrics.
@@ -86,14 +108,11 @@ class PeerMetrics {
   PeerMetrics recordReceived(int bytes, int nowMs, int windowDurationMs) {
     final inNewWindow =
         windowStartMs == 0 || nowMs - windowStartMs >= windowDurationMs;
-    return PeerMetrics(
+    return copyWith(
       messagesReceived: messagesReceived + 1,
-      messagesSent: messagesSent,
       bytesReceived: bytesReceived + bytes,
-      bytesSent: bytesSent,
       windowStartMs: inNewWindow ? nowMs : windowStartMs,
       messagesInWindow: inNewWindow ? 1 : messagesInWindow + 1,
-      rttEstimate: rttEstimate,
     );
   }
 
@@ -104,15 +123,8 @@ class PeerMetrics {
   ///
   /// Parameters:
   /// - [bytes]: Size of the sent message in bytes
-  PeerMetrics recordSent(int bytes) => PeerMetrics(
-    messagesReceived: messagesReceived,
-    messagesSent: messagesSent + 1,
-    bytesReceived: bytesReceived,
-    bytesSent: bytesSent + bytes,
-    windowStartMs: windowStartMs,
-    messagesInWindow: messagesInWindow,
-    rttEstimate: rttEstimate,
-  );
+  PeerMetrics recordSent(int bytes) =>
+      copyWith(messagesSent: messagesSent + 1, bytesSent: bytesSent + bytes);
 
   @override
   bool operator ==(Object other) =>

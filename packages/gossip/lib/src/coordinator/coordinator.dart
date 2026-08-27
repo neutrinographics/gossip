@@ -176,8 +176,6 @@ class Coordinator {
     required CoordinatorConfig config,
     required HlcClock? hlcClock,
     required TimePort? timerPort,
-    required GossipEngine? gossipEngine,
-    required FailureDetector? failureDetector,
     required StreamController<DomainEvent> eventsController,
     required LogCallback? onLog,
   }) : _peerRegistry = peerRegistry,
@@ -190,8 +188,6 @@ class Coordinator {
        _config = config,
        _hlcClock = hlcClock,
        _timerPort = timerPort,
-       _gossipEngine = gossipEngine,
-       _failureDetector = failureDetector,
        _eventsController = eventsController,
        _onLog = onLog;
 
@@ -309,8 +305,6 @@ class Coordinator {
       config: cfg,
       hlcClock: hlcClock,
       timerPort: timerPort,
-      gossipEngine: null, // Set below after coordinator is created
-      failureDetector: null, // Set below after coordinator is created
       eventsController: eventsController,
       onLog: onLog,
     );

@@ -528,15 +528,12 @@ class ChannelService {
   ///
   /// Used when: Application wants to compute derived state (e.g., current
   /// document state from edit operations).
-  ///
-  /// Returns: Empty list (no domain events emitted for registration).
-  Future<List<DomainEvent>> registerMaterializer<T>(
+  Future<void> registerMaterializer<T>(
     ChannelId channelId,
     StreamId streamId,
     StateMaterializer<T> materializer,
   ) async {
     await _materializationService?.register(channelId, streamId, materializer);
-    return [];
   }
 
   /// Computes the materialized state for a stream.
@@ -575,15 +572,30 @@ class ChannelService {
   ///
   /// The stream emits materialized state after each fold batch.
   /// Returns null if no materializer is registered.
+  ///
+  /// Synchronous by design (callers subscribe without awaiting) — unlike
+  /// [getState] it cannot verify stream existence, since that check is
+  /// async. Callers get null only for unregistered materializers; a
+  /// registered materializer on a nonexistent stream still returns its
+  /// (never-emitting) stream.
   Stream<T>? getStateStream<T>(ChannelId channelId, StreamId streamId) {
     return _materializationService?.getStateStream<T>(channelId, streamId);
   }
 
   /// Forces a full rebuild of the materialized state for a stream.
   ///
-  /// Useful for developer settings or corruption recovery.
+  /// Useful for developer settings or corruption recovery. No-op if the
+  /// stream doesn't exist, mirroring [getState]'s guard — a materializer
+  /// can be registered against a stream id before the stream exists (see
+  /// [registerMaterializer]), so "nothing registered" isn't a reliable
+  /// signal that there's nothing to rebuild.
   Future<void> resetState(ChannelId channelId, StreamId streamId) async {
-    await _materializationService?.reset(channelId, streamId);
+    if (_materializationService == null) return;
+
+    final streamExists = await hasStream(channelId, streamId);
+    if (!streamExists) return;
+
+    await _materializationService.reset(channelId, streamId);
   }
 
   /// Removes specific entries from a stream during compaction.
