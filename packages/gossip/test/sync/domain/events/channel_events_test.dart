@@ -121,8 +121,7 @@ void main() {
           entriesRemoved: 10,
           entriesRetained: 5,
           bytesFreed: 500,
-          oldBaseVersion: VersionVector.empty,
-          newBaseVersion: VersionVector({memberId: 5}),
+          baseVersion: VersionVector({memberId: 5}),
         );
         final event = StreamCompacted(
           channelId,

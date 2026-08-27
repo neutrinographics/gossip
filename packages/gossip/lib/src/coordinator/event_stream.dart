@@ -116,7 +116,7 @@ class EventStream {
   /// Entries are returned in deterministic causal order.
   ///
   /// Used when: Application reads all stream data.
-  Future<List<dynamic>> getAll() async {
+  Future<List<LogEntry>> getAll() async {
     return await _service.getEntries(channelId, id);
   }
 

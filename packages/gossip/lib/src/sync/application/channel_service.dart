@@ -664,9 +664,8 @@ class ChannelService {
     final toPrune = entries.where((e) => !survivorIds.contains(e.id)).toList();
     if (toPrune.isEmpty) return null;
 
-    final oldVersion = await getVersionVector(channelId, streamId);
     await removeEntries(channelId, streamId, toPrune.map((e) => e.id).toList());
-    final newVersion = await getVersionVector(channelId, streamId);
+    final baseVersion = await getVersionVector(channelId, streamId);
 
     if (resetMaterializers) {
       await resetState(channelId, streamId);
@@ -676,8 +675,7 @@ class ChannelService {
       entriesRemoved: toPrune.length,
       entriesRetained: survivors.length,
       bytesFreed: toPrune.fold(0, (sum, e) => sum + e.payload.length),
-      oldBaseVersion: oldVersion,
-      newBaseVersion: newVersion,
+      baseVersion: baseVersion,
     );
   }
 

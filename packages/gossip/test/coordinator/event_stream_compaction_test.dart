@@ -47,14 +47,11 @@ void main() {
       expect(result!.entriesRemoved, equals(2));
       final expectedVersion = VersionVector({localNode: 3});
       expect(
-        result.oldBaseVersion,
+        result.baseVersion,
         equals(expectedVersion),
-        reason: 'callers must get real data, not fabricated empty vectors',
-      );
-      expect(
-        result.newBaseVersion,
-        equals(expectedVersion),
-        reason: 'compaction must never change the advertised version',
+        reason:
+            'callers must get real data, not a fabricated empty vector, '
+            'and compaction must never change the advertised version',
       );
 
       // End-to-end H6 guard: sequence allocation continues past pruned

@@ -48,6 +48,10 @@ publish under the existing pub.dev `gossip` name must version above the old
   subsystem exists to fire it).
 - The phantom domain types `StreamConfig`, `ChannelDelta`, and
   `MergeResult` removed (never constructed by the library).
+- `CompactionResult.oldBaseVersion`/`newBaseVersion` collapsed into a single
+  `baseVersion` field. `EntryRepository.removeEntries` must never regress
+  the version vector, so the two fields could never actually differ —
+  compaction reports the stream's (unchanged) version vector once.
 
 ### Behavioral
 
@@ -59,6 +63,14 @@ publish under the existing pub.dev `gossip` name must version above the old
   substantially reworked (SWIM suppression, adaptive pacing, compaction);
   observable protocol behavior is pinned by the test suite, and audit
   records in `docs/audits/` document each change.
+
+### Changed
+
+- `EventStream.getAll()` now returns `Future<List<LogEntry>>` instead of
+  `Future<List<dynamic>>` — the facade was erasing the type that
+  `ChannelService.getEntries` already returned. Source-compatible for the
+  common `final entries = await stream.getAll()` call site; type inference
+  simply tightens.
 
 ## 1.0.0
 
