@@ -115,20 +115,18 @@ class ReactivePusher {
   }
 
   /// Called when the round loop dies from a LIVE scheduling failure (the
-  /// caller gates this against a stale failure — see its call site's doc
-  /// for the live/stale distinction this depends on). Bumps the
-  /// generation AND clears the in-flight flag — bumping alone is not
-  /// enough to unwedge reactive push: an in-flight debounce recognizes a
-  /// bumped generation as stale only when it *fires*, and its "stale run —
-  /// do nothing" early return does not
-  /// reset [_pushFlushScheduled] — so nothing else ever would, since the
-  /// round loop already stopped itself before this runs, meaning the
-  /// caller's own eventual [invalidateAndClear] (via `stop()`), whose
-  /// reset this flag would otherwise rely on, sees the engine already
-  /// stopped and short-circuits as a no-op. Without clearing it here
-  /// directly, a write issued after a healed restart would find the flag
-  /// still (wrongly) true and silently skip scheduling its own debounce
-  /// forever.
+  /// caller gates this against a stale failure — see its call site's doc for
+  /// the live/stale distinction this depends on). Bumps the generation AND
+  /// clears the in-flight flag — bumping alone is not enough to unwedge
+  /// reactive push: an in-flight debounce recognizes a bumped generation as
+  /// stale only when it *fires*, and its "stale run — do nothing" early return
+  /// does not reset [_pushFlushScheduled] — so nothing else ever would, since
+  /// the round loop already stopped itself before this runs, meaning the
+  /// caller's own eventual [invalidateAndClear] (via `stop()`), whose reset
+  /// this flag would otherwise rely on, sees the engine already stopped and
+  /// short-circuits as a no-op. Without clearing it here directly, a write
+  /// issued after a healed restart would find the flag still (wrongly) true
+  /// and silently skip scheduling its own debounce forever.
   ///
   /// Deliberately does NOT clear the buffer (unlike [invalidateAndClear]):
   /// entries already buffered before the round loop died are not lost —

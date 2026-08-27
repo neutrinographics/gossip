@@ -710,8 +710,8 @@ class GossipEngine {
   /// among equally-stale peers.
   ///
   /// This bounds gossip coverage to ~(n-1) rounds instead of pure-random
-  /// selection's geometric distribution (the same win bounded coverage
-  /// gives SWIM probing), while the tiebreak keeps selection decorrelated
+  /// selection's geometric distribution (the same win round-robin probe
+  /// ordering gives SWIM), while the tiebreak keeps selection decorrelated
   /// across nodes — each node holds its own per-peer anti-entropy
   /// timestamps.
   SyncPartner _selectGossipPartner(List<SyncPartner> candidates) {

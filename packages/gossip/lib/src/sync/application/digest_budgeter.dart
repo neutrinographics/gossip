@@ -40,7 +40,7 @@ class OversizedDigest {
 /// [fitResponse]'s — because they rotate through unrelated cadences: this
 /// node's own request cadence vs. however often peers ask it to respond.
 /// Sharing one cursor would let one side's advance silently skew the
-/// other's coverage.
+/// other's coverage — a skew this class's tests pin as a regression guard.
 class DigestBudgeter {
   DigestBudgeter({
     required SyncMessageCodec codec,
