@@ -125,6 +125,27 @@ void main() {
       // 200ms the fast peer would have pinned it to under min-based pacing.
       expect(policy.effectiveInterval, equals(const Duration(seconds: 4)));
     });
+
+    test('a single very slow outlier does not stall the whole mesh', () {
+      final policy = GossipTimingPolicy(
+        peerDirectory: _FakePeerDirectory([
+          _partner('fast', const Duration(milliseconds: 100)),
+          _partner('mid', const Duration(milliseconds: 200)),
+          _partner('outlier', const Duration(seconds: 30)),
+        ]),
+        adaptiveEnabled: true,
+      );
+
+      // Median SRTT = 200ms -> interval = 200ms * 2 = 400ms. A max- or
+      // mean-based implementation would instead be dragged toward the 30s
+      // outlier and hit the 5s ceiling; the median formula is robust to an
+      // outlier at either end, not just the fast one (the other two tests
+      // in this group).
+      expect(
+        policy.effectiveInterval,
+        equals(const Duration(milliseconds: 400)),
+      );
+    });
   });
 
   group('GossipTimingPolicy quiescence pacing', () {
