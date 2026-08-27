@@ -24,10 +24,9 @@ import 'package:test/test.dart';
 /// [InMemoryEntryRepository] — no mocks of the repository — per the
 /// engine's own testing convention.
 ///
-/// The old engine-level tests in gossip_engine_contiguity_test.dart and
-/// gossip_engine_catchup_test.dart stay in place unmodified — they pin the
-/// same behavior end-to-end through the engine's public API, now via
-/// [DeltaMerger] underneath.
+/// The engine-level tests in gossip_engine_contiguity_test.dart and
+/// gossip_engine_catchup_test.dart pin the same behavior end-to-end through
+/// the engine's public API, now via [DeltaMerger] underneath.
 void main() {
   final channelId = ChannelId('ch1');
   final streamId = StreamId('s1');

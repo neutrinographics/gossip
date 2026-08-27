@@ -23,11 +23,11 @@ final Expando<List<SyncError>> _recordedErrors = Expando<List<SyncError>>(
   'createTestCoordinator recorded errors',
 );
 
-/// Builds a [Coordinator] wired with in-memory infrastructure, collapsing
-/// the three copy-pasted `createCoordinator()` helpers this suite had grown
-/// into one call. Only [bus] and [timePort] opt the coordinator
-/// into network sync — omitting both reproduces `Coordinator.create`'s own
-/// local-only default, which most of the suite wants.
+/// Builds a [Coordinator] wired with in-memory infrastructure, collapsing the
+/// three copy-pasted `createCoordinator()` helpers this suite had grown into
+/// one call. Only [bus] and [timePort] opt the coordinator into network sync —
+/// omitting both reproduces `Coordinator.create`'s own local-only default,
+/// which most of the suite wants.
 ///
 /// The four repository parameters exist for tests whose point is
 /// repository identity rather than coordinator behavior: hold a reference

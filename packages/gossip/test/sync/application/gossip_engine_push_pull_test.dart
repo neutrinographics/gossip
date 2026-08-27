@@ -122,8 +122,8 @@ void main() {
 
       // A DigestRequest by design carries ALL the sender's channels;
       // partial overlap between peers' channel sets is routine, not a
-      // protocol error. Before the fix this emitted a ChannelSyncError
-      // per non-shared channel on every round.
+      // protocol error, and must not emit a ChannelSyncError per
+      // non-shared channel on every round.
       await peer.port.send(
         h.localNode,
         h.codec.encode(

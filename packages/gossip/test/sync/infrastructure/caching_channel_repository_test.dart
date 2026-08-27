@@ -49,10 +49,10 @@ class _PersistentishInner implements ChannelRepository {
   Future<void> clearAll() async => _rows.clear();
 }
 
-/// The identity map must stay consistent with the inner
-/// repository and must actually be an identity map under concurrent
-/// misses — the class exists so the engine's aggregate references stay
-/// valid when the backing store deserializes fresh objects.
+/// The identity map must stay consistent with the inner repository and must
+/// actually be an identity map under concurrent misses — the class exists so
+/// the engine's aggregate references stay valid when the backing store
+/// deserializes fresh objects.
 void main() {
   final channelId = ChannelId('ch1');
   final localNode = NodeId('local');

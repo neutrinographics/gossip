@@ -5,9 +5,8 @@ import 'package:gossip/src/sync/domain/value_objects/sync_partner.dart';
 import 'package:test/test.dart';
 
 /// Transplanted from gossip_engine_interval_pacing_test.dart and
-/// gossip_engine_pacing_test.dart: these pin the
-/// same formulas/semantics `GossipEngine` relies on,
-/// now against [GossipTimingPolicy] directly.
+/// gossip_engine_pacing_test.dart: these pin the same formulas/semantics
+/// `GossipEngine` relies on, now against [GossipTimingPolicy] directly.
 void main() {
   group('GossipTimingPolicy static override', () {
     test('a static interval wins over adaptive enabled', () {
