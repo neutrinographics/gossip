@@ -738,7 +738,7 @@ expect(await network.hasConverged(channelId, streamId), isTrue);
 
 ### 29. Document Threading Model in Public API
 
-**Status:** Only documented in architecture.md  
+**Status:** Only documented in [ADR-001](docs/adr/001-single-isolate-execution.md)  
 **Files:** Public facade classes
 
 **What's needed:**

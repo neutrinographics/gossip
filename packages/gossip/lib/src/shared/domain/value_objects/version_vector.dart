@@ -77,7 +77,7 @@ class VersionVector {
     for (final entry in other._versions.entries) {
       merged[entry.key] = max(merged[entry.key] ?? 0, entry.value);
     }
-    return VersionVector(Map.unmodifiable(merged));
+    return VersionVector(merged);
   }
 
   /// Returns nodes and sequences where [other] is ahead of this vector.
