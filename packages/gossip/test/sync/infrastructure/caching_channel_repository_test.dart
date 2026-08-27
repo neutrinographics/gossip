@@ -49,7 +49,7 @@ class _PersistentishInner implements ChannelRepository {
   Future<void> clearAll() async => _rows.clear();
 }
 
-/// COR3-17: the identity map must stay consistent with the inner
+/// The identity map must stay consistent with the inner
 /// repository and must actually be an identity map under concurrent
 /// misses — the class exists so the engine's aggregate references stay
 /// valid when the backing store deserializes fresh objects.

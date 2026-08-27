@@ -17,59 +17,56 @@ void main() {
   final peerId = NodeId('peer1');
   final codec = SyncMessageCodec();
 
-  test(
-    'a local write is reactively pushed to a connected peer (G1 wiring)',
-    () async {
-      final bus = InMemoryMessageBus();
-      final timePort = InMemoryTimePort();
-      final coordinator = await createTestCoordinator(
-        bus: bus,
-        timePort: timePort,
-        // Long periodic intervals so only the reactive push fires within
-        // the debounce window under test.
-        config: const CoordinatorConfig(
-          gossipInterval: Duration(seconds: 100),
-          probeInterval: Duration(seconds: 100),
-          pingTimeout: Duration(seconds: 100),
-          startupGracePeriod: Duration.zero,
-        ),
-      );
+  test('a local write is reactively pushed to a connected peer', () async {
+    final bus = InMemoryMessageBus();
+    final timePort = InMemoryTimePort();
+    final coordinator = await createTestCoordinator(
+      bus: bus,
+      timePort: timePort,
+      // Long periodic intervals so only the reactive push fires within
+      // the debounce window under test.
+      config: const CoordinatorConfig(
+        gossipInterval: Duration(seconds: 100),
+        probeInterval: Duration(seconds: 100),
+        pingTimeout: Duration(seconds: 100),
+        startupGracePeriod: Duration.zero,
+      ),
+    );
 
-      final peerPort = InMemoryMessagePort(peerId, bus);
-      final pushes = <DeltaResponse>[];
-      final sub = peerPort.incoming.listen((msg) {
-        final decoded = codec.decode(msg.bytes);
-        if (decoded is DeltaResponse) pushes.add(decoded);
-      });
+    final peerPort = InMemoryMessagePort(peerId, bus);
+    final pushes = <DeltaResponse>[];
+    final sub = peerPort.incoming.listen((msg) {
+      final decoded = codec.decode(msg.bytes);
+      if (decoded is DeltaResponse) pushes.add(decoded);
+    });
 
-      await coordinator.start();
-      await coordinator.addPeer(peerId);
-      final channel = await coordinator.createChannel(ChannelId('ch1'));
-      final stream = await channel.getOrCreateStream(StreamId('s1'));
+    await coordinator.start();
+    await coordinator.addPeer(peerId);
+    final channel = await coordinator.createChannel(ChannelId('ch1'));
+    final stream = await channel.getOrCreateStream(StreamId('s1'));
 
-      await stream.append(Uint8List.fromList([42]));
+    await stream.append(Uint8List.fromList([42]));
 
-      // Advance past the reactive-push debounce window.
-      await timePort.advance(const Duration(milliseconds: 150));
-      await pumpUntil(
-        () => pushes.isNotEmpty,
-        describe: 'the reactive push reaching the peer',
-      );
+    // Advance past the reactive-push debounce window.
+    await timePort.advance(const Duration(milliseconds: 150));
+    await pumpUntil(
+      () => pushes.isNotEmpty,
+      describe: 'the reactive push reaching the peer',
+    );
 
-      expect(
-        pushes.length,
-        equals(1),
-        reason:
-            'a local write should be pushed to the peer reactively, not wait '
-            'for the next periodic round',
-      );
-      expect(
-        pushes.single.entries.single.payload,
-        equals(Uint8List.fromList([42])),
-      );
+    expect(
+      pushes.length,
+      equals(1),
+      reason:
+          'a local write should be pushed to the peer reactively, not wait '
+          'for the next periodic round',
+    );
+    expect(
+      pushes.single.entries.single.payload,
+      equals(Uint8List.fromList([42])),
+    );
 
-      await sub.cancel();
-      await peerPort.close();
-    },
-  );
+    await sub.cancel();
+    await peerPort.close();
+  });
 }

@@ -179,7 +179,7 @@ void main() {
     });
 
     test('DeltaResponse without a floor field decodes to an empty floor '
-        '(legacy senders, COR3-1)', () {
+        '(legacy senders)', () {
       // A legacy sender's message: same wire format minus the floor key.
       final legacyJson = utf8.encode(
         jsonEncode({
@@ -402,7 +402,7 @@ void main() {
       );
     });
 
-    group('encode-side wire pinning (CC5-30)', () {
+    group('encode-side wire pinning', () {
       // Every literal type byte and key set below is copied by hand from
       // the codec, not read from WireTypes or the codec's own encoder. A
       // round-trip test (decode(encode(x))) stays green even if the

@@ -2,12 +2,12 @@ import 'package:test/test.dart';
 
 import 'gossip_engine_test_harness.dart';
 
-/// M4: the gossip round interval must not be paced off the single fastest
+/// The gossip round interval must not be paced off the single fastest
 /// peer's SRTT. Using the min let one fast peer pin the whole loop to a fast
 /// cadence, over-driving slower links (each uniform-random round is ~(n-1)/n
 /// likely to target a slower peer carrying a potentially large payload).
 void main() {
-  group('GossipEngine interval pacing (M4)', () {
+  group('GossipEngine interval pacing', () {
     test('paces off the median peer SRTT, not the global minimum', () {
       final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
       final fast = h.addPeer('fast');

@@ -18,7 +18,7 @@ void main() {
   final channelId = ChannelId('ch1');
   final streamId = StreamId('s1');
 
-  group('Coordinator auto-compaction (G3)', () {
+  group('Coordinator auto-compaction', () {
     test(
       'streams are compacted per their retention policy on the interval',
       () async {
@@ -60,55 +60,57 @@ void main() {
       },
     );
 
-    test('auto-compaction publishes StreamCompacted on coordinator.events '
-        '(H4)', () async {
-      final timePort = InMemoryTimePort();
-      final coordinator = await createTestCoordinator(
-        bus: InMemoryMessageBus(),
-        timePort: timePort,
-        config: const CoordinatorConfig(
-          gossipInterval: Duration(seconds: 100),
-          probeInterval: Duration(seconds: 100),
-          pingTimeout: Duration(seconds: 100),
-          startupGracePeriod: Duration.zero,
-          compactionInterval: Duration(minutes: 1),
-        ),
-      );
-      await coordinator.start();
-      final channel = await coordinator.createChannel(channelId);
-      final stream = await channel.getOrCreateStream(
-        streamId,
-        retention: const CountBasedRetention(1),
-      );
+    test(
+      'auto-compaction publishes StreamCompacted on coordinator.events',
+      () async {
+        final timePort = InMemoryTimePort();
+        final coordinator = await createTestCoordinator(
+          bus: InMemoryMessageBus(),
+          timePort: timePort,
+          config: const CoordinatorConfig(
+            gossipInterval: Duration(seconds: 100),
+            probeInterval: Duration(seconds: 100),
+            pingTimeout: Duration(seconds: 100),
+            startupGracePeriod: Duration.zero,
+            compactionInterval: Duration(minutes: 1),
+          ),
+        );
+        await coordinator.start();
+        final channel = await coordinator.createChannel(channelId);
+        final stream = await channel.getOrCreateStream(
+          streamId,
+          retention: const CountBasedRetention(1),
+        );
 
-      for (var i = 0; i < 5; i++) {
-        await stream.append(Uint8List.fromList([i]));
-      }
+        for (var i = 0; i < 5; i++) {
+          await stream.append(Uint8List.fromList([i]));
+        }
 
-      final events = <DomainEvent>[];
-      final subscription = coordinator.events.listen(events.add);
-      addTearDown(subscription.cancel);
+        final events = <DomainEvent>[];
+        final subscription = coordinator.events.listen(events.add);
+        addTearDown(subscription.cancel);
 
-      await timePort.advance(const Duration(minutes: 1));
-      await pumpEventQueue();
+        await timePort.advance(const Duration(minutes: 1));
+        await pumpEventQueue();
 
-      final compactionEvents = events.whereType<StreamCompacted>().toList();
-      expect(
-        compactionEvents,
-        hasLength(1),
-        reason:
-            'the periodic auto-compaction pass must surface on the '
-            "app-facing event stream, not just mutate storage silently",
-      );
-      final event = compactionEvents.single;
-      expect(event.channelId, equals(channelId));
-      expect(event.streamId, equals(streamId));
-      expect(
-        event.result.entriesRemoved,
-        equals(4),
-        reason: 'CountBasedRetention(1) pruned 4 of the 5 appended entries',
-      );
-    });
+        final compactionEvents = events.whereType<StreamCompacted>().toList();
+        expect(
+          compactionEvents,
+          hasLength(1),
+          reason:
+              'the periodic auto-compaction pass must surface on the '
+              "app-facing event stream, not just mutate storage silently",
+        );
+        final event = compactionEvents.single;
+        expect(event.channelId, equals(channelId));
+        expect(event.streamId, equals(streamId));
+        expect(
+          event.result.entriesRemoved,
+          equals(4),
+          reason: 'CountBasedRetention(1) pruned 4 of the 5 appended entries',
+        );
+      },
+    );
 
     test(
       'auto-compaction is disabled when compactionInterval is null',

@@ -84,8 +84,8 @@ void main() {
       );
 
       // Assert: the failed save must not have mutated or published state.
-      // A failed save also marks the materializer uninitialized (CC5-8
-      // final-review fix), so — while the save is still broken — a
+      // A failed save also marks the materializer uninitialized, so —
+      // while the save is still broken — a
       // getState call re-attempts initialization and surfaces that same
       // brokenness rather than silently returning a stale cached value.
       await expectLater(
@@ -228,8 +228,8 @@ void main() {
     );
 
     // Assert: the failed save must not have published the rebuilt state.
-    // A failed save also marks the materializer uninitialized (CC5-8
-    // final-review fix), so — while the save is still broken — a
+    // A failed save also marks the materializer uninitialized, so —
+    // while the save is still broken — a
     // getState call re-attempts initialization and surfaces that same
     // brokenness rather than silently returning a stale cached value.
     await expectLater(

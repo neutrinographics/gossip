@@ -31,10 +31,6 @@ import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 
 import '../../support/pump.dart';
 
-// ---------------------------------------------------------------------------
-// Test peer
-// ---------------------------------------------------------------------------
-
 /// A peer node managed by the gossip engine test harness.
 class GossipTestPeer {
   final NodeId id;
@@ -42,10 +38,6 @@ class GossipTestPeer {
 
   GossipTestPeer(this.id, this.port);
 }
-
-// ---------------------------------------------------------------------------
-// Merged entries record
-// ---------------------------------------------------------------------------
 
 /// Records a single onEntriesMerged callback invocation.
 class MergedEntriesRecord {
@@ -61,10 +53,6 @@ class MergedEntriesRecord {
     this.containsOutOfOrderEntries,
   );
 }
-
-// ---------------------------------------------------------------------------
-// Harness
-// ---------------------------------------------------------------------------
 
 /// Test harness encapsulating GossipEngine infrastructure.
 ///
@@ -188,9 +176,7 @@ class GossipEngineTestHarness {
     );
   }
 
-  // -------------------------------------------------------------------------
   // Standalone builders (for tests needing custom dependencies)
-  // -------------------------------------------------------------------------
 
   /// Builds a bare [GossipEngine] with injectable dependencies, for tests
   /// that need a custom repository or callbacks the harness doesn't expose.
@@ -240,9 +226,7 @@ class GossipEngineTestHarness {
     engine.setChannels({channelId: channel});
   }
 
-  // -------------------------------------------------------------------------
   // Peer management
-  // -------------------------------------------------------------------------
 
   /// Adds a peer to the registry and creates its message port.
   GossipTestPeer addPeer(String name) {
@@ -254,9 +238,7 @@ class GossipEngineTestHarness {
     return peer;
   }
 
-  // -------------------------------------------------------------------------
   // Channel management
-  // -------------------------------------------------------------------------
 
   /// Creates a channel with the given streams and registers it with the engine.
   ChannelAggregate createChannel(
@@ -295,9 +277,7 @@ class GossipEngineTestHarness {
     return channel;
   }
 
-  // -------------------------------------------------------------------------
   // Entry management
-  // -------------------------------------------------------------------------
 
   /// Appends a log entry to the entry repository.
   Future<void> appendEntry(
@@ -332,9 +312,7 @@ class GossipEngineTestHarness {
     );
   }
 
-  // -------------------------------------------------------------------------
   // Message helpers
-  // -------------------------------------------------------------------------
 
   /// Starts capturing all decoded messages arriving at [peer].
   ///
@@ -436,9 +414,7 @@ class GossipEngineTestHarness {
     await flush(3);
   }
 
-  // -------------------------------------------------------------------------
   // Time helpers
-  // -------------------------------------------------------------------------
 
   /// Yields the microtask queue [count] times.
   ///
@@ -454,9 +430,7 @@ class GossipEngineTestHarness {
     }
   }
 
-  // -------------------------------------------------------------------------
   // Lifecycle
-  // -------------------------------------------------------------------------
 
   void startListening() => engine.startListening(Map.of(_channels));
 

@@ -284,7 +284,7 @@ void main() {
 
         // Appending to a stream that was never created is caller misuse:
         // silently dropping the payload would be permanent, invisible data
-        // loss (audit COR3-3).
+        // loss.
         await expectLater(
           facade.append(Uint8List.fromList([1, 2, 3])),
           throwsStateError,

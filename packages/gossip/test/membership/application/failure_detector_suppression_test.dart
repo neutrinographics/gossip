@@ -2,10 +2,10 @@ import 'package:test/test.dart';
 
 import 'failure_detector_test_harness.dart';
 
-/// WIRE4-3: gossip traffic is liveness evidence. lastContactMs — updated
-/// by every inbound message, previously write-only — finally gets a
-/// reader: peers heard from within the current probe interval are not
-/// probed, and an all-fresh round sends nothing.
+/// Gossip traffic is liveness evidence: lastContactMs, updated by every
+/// inbound message, determines whether a peer needs a probe — peers heard
+/// from within the current probe interval are not probed, and an all-fresh
+/// round sends nothing.
 void main() {
   group('FailureDetector probe suppression', () {
     test('a peer heard from within the interval is not selected', () {
@@ -54,13 +54,13 @@ void main() {
       expect(h.peerRegistry.getPeer(a.id)!.failedProbeCount, 0);
     });
 
-    // Final-review fix: freshness-only suppression keys on INBOUND evidence.
-    // Under asymmetric one-way loss (our probes to a peer die, but the
-    // peer's own traffic to us — e.g. its own unreachable-probing pings —
-    // keeps arriving), lastContactMs is perpetually refreshed and we would
-    // NEVER probe that peer, so a genuine failure is never detected. The
-    // fix bounds suppression: every peer must be actually probed at least
-    // once per 2-minute cap window regardless of freshness.
+    // Freshness-only suppression keys on INBOUND evidence. Under asymmetric
+    // one-way loss (our probes to a peer die, but the peer's own traffic to
+    // us — e.g. its own unreachable-probing pings — keeps arriving),
+    // lastContactMs is perpetually refreshed and we would NEVER probe that
+    // peer, so a genuine failure is never detected. This cap bounds
+    // suppression: every peer must be actually probed at least once per
+    // 2-minute cap window regardless of freshness.
     test('a continuously fresh peer is still probed once the suppression '
         'cap elapses', () async {
       final h = FailureDetectorTestHarness();
@@ -70,8 +70,7 @@ void main() {
       // A never-probed peer's cap anchors at epoch 0 while the harness
       // clock starts at t=60s, so the cap expires at absolute t=120s.
       // These two rounds run at t=60s and t=90s — inside the window, where
-      // continuous freshness alone suppresses the probe, exactly as
-      // WIRE4-3 intends.
+      // continuous freshness alone suppresses the probe.
       for (var i = 0; i < 2; i++) {
         h.peerRegistry.updatePeerContact(peer.id, h.timePort.nowMs);
         await h.detector.performProbeRound();

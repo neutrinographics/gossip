@@ -7,8 +7,8 @@ import 'failing_delay_time_port.dart';
 /// A [TimePort] whose [delay] fails on specific, pre-scripted call indices.
 ///
 /// [FailingDelayTimePort] can only fail "the next call" — good enough for a
-/// single scheduling failure, but the reactive-push wedge (CC5-7 residual)
-/// needs a specific delay call, chosen from among several concurrently
+/// single scheduling failure, but the reactive-push wedge needs a specific
+/// delay call, chosen from among several concurrently
 /// in-flight ones (the round loop's and the debounce's), to fail while an
 /// *earlier* call is still pending. That requires addressing calls by
 /// position, not by a one-shot flag. [failDelayCalls] names the 1-indexed

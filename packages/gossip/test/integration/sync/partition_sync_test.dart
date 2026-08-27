@@ -44,7 +44,7 @@ void main() {
 
         // Heal the partition
         network.heal('node2');
-        // 40 rounds (not 10): with two-tier pacing (WIRE4-1/3/4) active on
+        // 40 rounds (not 10): with two-tier pacing active on
         // both the gossip and SWIM loops, a peer that looked "fresh" right
         // up until the partition can take up to the documented 30s ceiling
         // to be retried after healing — this is bounded, not a stall (see

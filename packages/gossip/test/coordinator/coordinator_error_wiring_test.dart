@@ -7,8 +7,8 @@ import 'package:test/test.dart';
 import '../support/coordinator_builder.dart';
 import '../support/pump.dart';
 
-/// Regression tests for audit COR3-3: the Coordinator must wire `onError`
-/// into the application services it constructs, so errors they emit reach
+/// Regression tests: the Coordinator must wire `onError` into the
+/// application services it constructs, so errors they emit reach
 /// `coordinator.errors` instead of vanishing (the project's no-silent-errors
 /// rule).
 void main() {
@@ -23,8 +23,8 @@ void main() {
       final sub = coordinator.errors.listen(errors.add);
 
       // Remove the channel behind the held facade, then use the stale
-      // facade. The service emits a ChannelSyncError; before the fix it
-      // went to a null callback and vanished.
+      // facade. The service emits a ChannelSyncError that must surface via
+      // coordinator.errors, not vanish silently.
       await coordinator.removeChannel(channelId);
       await channel.addMember(NodeId('peer-1'));
 

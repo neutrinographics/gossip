@@ -13,9 +13,7 @@ import 'package:test/test.dart';
 
 import '../../../support/pump.dart';
 
-// ---------------------------------------------------------------------------
 // Test materializers
-// ---------------------------------------------------------------------------
 
 /// Counts the number of entries folded.
 class CountMaterializer extends StateMaterializer<int> {
@@ -75,9 +73,7 @@ class CursorAwareMaterializer extends StateMaterializer<int> {
   }
 }
 
-// ---------------------------------------------------------------------------
 // Helpers
-// ---------------------------------------------------------------------------
 
 LogEntry _entry(int physicalMs, {int logical = 0, int payloadByte = 0}) {
   return LogEntry(
@@ -87,10 +83,6 @@ LogEntry _entry(int physicalMs, {int logical = 0, int payloadByte = 0}) {
     payload: Uint8List.fromList([payloadByte]),
   );
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 void main() {
   late InMemoryEntryRepository entryRepo;
@@ -272,7 +264,7 @@ void main() {
         await service.getState<int>(channelId, streamId);
 
         expect(mat.savedCursors, hasLength(1));
-        // Full fold position: timestamp|author|sequence (COR3-27 — the
+        // Full fold position: timestamp|author|sequence (the
         // timestamp alone cannot disambiguate HLC ties across authors).
         expect(mat.savedCursors.first, equals('Hlc(200:0)|node|200'));
       });

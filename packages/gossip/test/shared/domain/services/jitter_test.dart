@@ -3,7 +3,7 @@ import 'dart:math';
 import 'package:gossip/src/shared/domain/services/jitter.dart';
 import 'package:test/test.dart';
 
-/// L2: scheduler intervals get ±fraction uniform jitter so self-scheduling
+/// Scheduler intervals get ±fraction uniform jitter so self-scheduling
 /// timer loops don't phase-lock across nodes.
 void main() {
   group('applyJitter', () {

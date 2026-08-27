@@ -5,10 +5,10 @@ import 'package:test/test.dart';
 
 import '../support/coordinator_builder.dart';
 
-/// COR3-16: createChannel on an existing ID must be get-or-create — the
-/// old behavior silently replaced the aggregate, wiping membership and
-/// stream registrations (and the shipped example uses createChannel as
-/// "join", entrenching the reset).
+/// createChannel on an existing ID must be get-or-create: replacing the
+/// aggregate would silently wipe membership and stream registrations
+/// (and the shipped example uses createChannel as "join", entrenching
+/// the reset).
 void main() {
   test(
     'createChannel on an existing ID preserves the existing channel',
@@ -51,7 +51,7 @@ void main() {
     },
   );
 
-  test('a disposed coordinator rejects appends (COR3-18)', () async {
+  test('a disposed coordinator rejects appends', () async {
     final coordinator = await createTestCoordinator();
     final channel = await coordinator.createChannel(ChannelId('ch1'));
     final stream = await channel.getOrCreateStream(StreamId('s1'));

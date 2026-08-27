@@ -6,9 +6,9 @@ import 'package:gossip/src/shared/domain/value_objects/rtt_estimate.dart';
 import 'package:test/test.dart';
 
 /// Transplanted from failure_detector_adaptive_timeout_test.dart and
-/// failure_detector_pacing_test.dart (CC5-13 detector slice): these pin
-/// the same formulas/semantics the detector relied on before the
-/// extraction, now against [ProbeTimingPolicy] directly.
+/// failure_detector_pacing_test.dart: these pin
+/// the same formulas/semantics the detector relies on,
+/// now against [ProbeTimingPolicy] directly.
 void main() {
   late NodeId localNode;
   late PeerRegistry peerRegistry;

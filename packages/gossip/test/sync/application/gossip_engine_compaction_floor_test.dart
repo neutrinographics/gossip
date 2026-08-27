@@ -15,7 +15,7 @@ import 'package:test/test.dart';
 
 import 'gossip_engine_test_harness.dart';
 
-/// COR3-1: compaction-aware sync. A responder that compacted entries below
+/// Compaction-aware sync: a responder that compacted entries below
 /// a requester's position reports its per-author floor in the
 /// DeltaResponse; the requester adopts the floor as truncated history so
 /// the surviving entries merge contiguously — instead of being dropped by
@@ -215,7 +215,7 @@ void main() {
     });
   });
 
-  group('stale self-authorship (COR3-4)', () {
+  group('stale self-authorship', () {
     test('a peer claiming sequences under OUR authorship beyond our own '
         'high-water mark raises our sequence floor', () async {
       final h = GossipEngineTestHarness();
@@ -499,8 +499,8 @@ void main() {
   });
 
   group('end to end', () {
-    test('late joiner converges with a compacted responder (the COR3-1 '
-        'lockout scenario)', () async {
+    test('late joiner converges with a compacted responder (the lockout '
+        'scenario)', () async {
       // Responder: holds 4..5 after compacting 1..3.
       final responder = await compactedHarness(upTo: 5, pruned: 3);
       responder.addPeer('joiner');

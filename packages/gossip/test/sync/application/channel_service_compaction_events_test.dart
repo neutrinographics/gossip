@@ -13,7 +13,7 @@ import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:test/test.dart';
 
 void main() {
-  group('ChannelService compaction observability (H4)', () {
+  group('ChannelService compaction observability', () {
     test('compacting a stream that removes entries emits exactly one '
         'StreamCompacted carrying the real result', () async {
       final localNode = NodeId('local');

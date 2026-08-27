@@ -6,7 +6,7 @@ import 'package:test/test.dart';
 /// .zero)` loops with unexplained magic counts (2/3/5/8/12…) — those pin
 /// tests to the engine's current await depth and, worse, let an assertion
 /// like `isEmpty` pass vacuously when the count runs out before the awaited
-/// work has actually happened (CC5-25). A bounded poll instead fails loudly
+/// work has actually happened. A bounded poll instead fails loudly
 /// — via [describe] — when the condition never becomes true, rather than
 /// silently declaring victory.
 ///

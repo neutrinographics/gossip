@@ -7,7 +7,7 @@ import 'package:test/test.dart';
 import 'gossip_engine_test_harness.dart';
 
 void main() {
-  group('GossipEngine feeds SWIM liveness (M2)', () {
+  group('GossipEngine feeds SWIM liveness', () {
     test('receiving a gossip message from a suspected peer recovers it and '
         'resets its failed-probe count', () async {
       final h = GossipEngineTestHarness();

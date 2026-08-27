@@ -8,12 +8,11 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 import 'package:test/test.dart';
 
-/// Transplanted from failure_detector_probe_selection_test.dart (H3),
-/// failure_detector_suppression_test.dart (WIRE4-3), and the probing-hold
-/// group of failure_detector_test.dart (CC5-2/CC5-14 detector slice):
-/// these pin the same round-robin/suppression/hold semantics the detector
-/// relied on before the extraction, now against [ProbeTargetSelector]
-/// directly.
+/// Transplanted from failure_detector_probe_selection_test.dart,
+/// failure_detector_suppression_test.dart, and the probing-hold
+/// group of failure_detector_test.dart: these pin the same
+/// round-robin/suppression/hold semantics the detector relies on,
+/// now against [ProbeTargetSelector] directly.
 void main() {
   late NodeId localNode;
   late PeerRegistry peerRegistry;
@@ -53,7 +52,7 @@ void main() {
     timePort.advance(const Duration(minutes: 1));
   });
 
-  group('ProbeTargetSelector.nextProbeTarget round-robin (H3)', () {
+  group('ProbeTargetSelector.nextProbeTarget round-robin', () {
     test('every block of n selections covers all probable peers exactly '
         'once, then reshuffles', () {
       final selector = ProbeTargetSelector(
@@ -225,8 +224,7 @@ void main() {
     });
   });
 
-  group('ProbeTargetSelector.nextProbeTarget freshness suppression '
-      '(WIRE4-3)', () {
+  group('ProbeTargetSelector.nextProbeTarget freshness suppression', () {
     test('a peer heard from within the interval is not selected', () {
       final selector = ProbeTargetSelector(
         peerRegistry: peerRegistry,

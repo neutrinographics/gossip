@@ -14,7 +14,7 @@ void main() {
   final channelId = ChannelId('ch1');
   final streamId = StreamId('s1');
 
-  group('GossipEngine push-pull reciprocation (M1)', () {
+  group('GossipEngine push-pull reciprocation', () {
     test('a DigestRequest from a peer that is ahead triggers a reciprocal '
         'DeltaRequest — each exchange is push-pull', () async {
       final h = GossipEngineTestHarness();
@@ -110,70 +110,67 @@ void main() {
       h.stopListening();
     });
 
-    test(
-      'a DigestRequest carrying channels we do not share produces no error '
-      'spam and still reciprocates for the shared channel (COR3-11)',
-      () async {
-        final h = GossipEngineTestHarness();
-        final peer = h.addPeer('peer1');
-        h.createChannel('ch1', streamIds: ['s1']);
-        h.startListening();
-        h.engine.start();
+    test('a DigestRequest carrying channels we do not share produces no error '
+        'spam and still reciprocates for the shared channel', () async {
+      final h = GossipEngineTestHarness();
+      final peer = h.addPeer('peer1');
+      h.createChannel('ch1', streamIds: ['s1']);
+      h.startListening();
+      h.engine.start();
 
-        final (messages, sub) = h.captureMessages(peer);
+      final (messages, sub) = h.captureMessages(peer);
 
-        // A DigestRequest by design carries ALL the sender's channels;
-        // partial overlap between peers' channel sets is routine, not a
-        // protocol error. Before the fix this emitted a ChannelSyncError
-        // per non-shared channel on every round.
-        await peer.port.send(
-          h.localNode,
-          h.codec.encode(
-            DigestRequest(
-              sender: peer.id,
-              digests: [
-                ChannelDigest(
-                  channelId: ChannelId('not-ours'),
-                  streams: [
-                    StreamDigest(
-                      streamId: streamId,
-                      version: VersionVector({peer.id: 3}),
-                    ),
-                  ],
-                ),
-                ChannelDigest(
-                  channelId: channelId,
-                  streams: [
-                    StreamDigest(
-                      streamId: streamId,
-                      version: VersionVector({peer.id: 5}),
-                    ),
-                  ],
-                ),
-              ],
-            ),
+      // A DigestRequest by design carries ALL the sender's channels;
+      // partial overlap between peers' channel sets is routine, not a
+      // protocol error. Before the fix this emitted a ChannelSyncError
+      // per non-shared channel on every round.
+      await peer.port.send(
+        h.localNode,
+        h.codec.encode(
+          DigestRequest(
+            sender: peer.id,
+            digests: [
+              ChannelDigest(
+                channelId: ChannelId('not-ours'),
+                streams: [
+                  StreamDigest(
+                    streamId: streamId,
+                    version: VersionVector({peer.id: 3}),
+                  ),
+                ],
+              ),
+              ChannelDigest(
+                channelId: channelId,
+                streams: [
+                  StreamDigest(
+                    streamId: streamId,
+                    version: VersionVector({peer.id: 5}),
+                  ),
+                ],
+              ),
+            ],
           ),
-        );
-        await h.flush();
+        ),
+      );
+      await h.flush();
 
-        expect(
-          h.errors,
-          isEmpty,
-          reason: 'a non-shared channel in an incoming digest is routine',
-        );
-        final deltaRequests = messages.whereType<DeltaRequest>().toList();
-        expect(
-          deltaRequests.length,
-          equals(1),
-          reason: 'reciprocation for the shared channel must still happen',
-        );
-        expect(deltaRequests.single.channelId, equals(channelId));
+      expect(
+        h.errors,
+        isEmpty,
+        reason: 'a non-shared channel in an incoming digest is routine',
+      );
+      final deltaRequests = messages.whereType<DeltaRequest>().toList();
+      expect(
+        deltaRequests.length,
+        equals(1),
+        reason: 'reciprocation for the shared channel must still happen',
+      );
+      expect(deltaRequests.single.channelId, equals(channelId));
 
-        await sub.cancel();
-        h.engine.stop();
-        h.stopListening();
-      },
-    );
+      await sub.cancel();
+      h.engine.stop();
+      h.stopListening();
+    });
 
     test('a listen-only (not running) engine serves the digest but does NOT '
         'reciprocate — a paused node must not pull', () async {

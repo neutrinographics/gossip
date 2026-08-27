@@ -54,7 +54,7 @@ void main() {
             'and compaction must never change the advertised version',
       );
 
-      // End-to-end H6 guard: sequence allocation continues past pruned
+      // End-to-end guard: sequence allocation continues past pruned
       // entries.
       await service.appendEntry(channelId, streamId, Uint8List.fromList([9]));
       final entries = await entryRepository.getAll(channelId, streamId);

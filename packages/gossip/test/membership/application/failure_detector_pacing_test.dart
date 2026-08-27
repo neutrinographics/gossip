@@ -45,7 +45,7 @@ void main() {
 
       h.addSilentPeer('deadpeer'); // never acks
 
-      // Age peer1's contact past the current interval (WIRE4-3): the loop
+      // Age peer1's contact past the current interval: the loop
       // above never advanced simulated time, so peer1's lastContactMs sits
       // exactly at nowMs and would otherwise be suppressed as "still
       // fresh" — dropping it from the probable set entirely and breaking

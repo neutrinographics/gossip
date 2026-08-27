@@ -6,7 +6,7 @@ import 'package:gossip/src/sync/domain/interfaces/retention_policy.dart';
 import '../../support/test_network.dart';
 
 /// End-to-end (real Coordinator, real transport-shaped message bus) pins for
-/// COR3-1 compaction-aware sync: a responder that pruned history below a
+/// compaction-aware sync: a responder that pruned history below a
 /// peer's position must report a floor the peer can adopt as truncated
 /// history, instead of the peer dropping the survivors forever and
 /// re-requesting an unobtainable range every round.
@@ -52,7 +52,7 @@ void main() {
   }
 
   test('late joiner vs compacted responder: floor adoption, content-checked, '
-      'and traffic quiesces after convergence (COR3-1)', () async {
+      'and traffic quiesces after convergence', () async {
     final network = await TestNetwork.create(['a', 'b']);
     addTearDown(network.dispose);
     // Only A has the channel at first — B joins later, after A has
@@ -113,9 +113,9 @@ void main() {
       ]),
     );
 
-    // Breaking floor adoption reintroduces the audit's futile-resend
-    // loop: the requester keeps re-asking for a range the responder can
-    // never serve again, so idle traffic never decays. Tap the link and
+    // Breaking floor adoption reintroduces a futile-resend loop: the
+    // requester keeps re-asking for a range the responder can never
+    // serve again, so idle traffic never decays. Tap the link and
     // confirm a later window is strictly quieter than an earlier one.
     final counter = [0];
     tapBoth(network, 'a', 'b', counter);

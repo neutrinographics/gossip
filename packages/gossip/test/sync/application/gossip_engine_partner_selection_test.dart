@@ -5,12 +5,12 @@ import 'package:test/test.dart';
 
 import 'gossip_engine_test_harness.dart';
 
-/// L1: gossip partner selection must prefer the least-recently-synced peer
-/// (the previously-dead lastAntiEntropyMs field), so coverage is bounded to
+/// Gossip partner selection must prefer the least-recently-synced peer
+/// (the lastAntiEntropyMs field), so coverage is bounded to
 /// ~(n-1) rounds instead of pure-random's geometric distribution — the same
-/// win H3 gave SWIM probing. A never-gossiped peer counts as most stale.
+/// win SWIM probing already gets. A never-gossiped peer counts as most stale.
 void main() {
-  group('GossipEngine partner selection (L1)', () {
+  group('GossipEngine partner selection', () {
     test(
       'rotates through peers (least-recently-synced): every peer is gossiped '
       'exactly once within n rounds',

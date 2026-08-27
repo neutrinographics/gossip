@@ -86,7 +86,7 @@ void main() {
     });
 
     test('a gapped SOLICITED response emits a diagnosable error — once per '
-        'gap, not per round (COR3-1 stopgap)', () async {
+        'gap, not per round', () async {
       final h = await harnessAt({authorA: 5});
       final peer = h.addPeer('peer1');
 
@@ -110,8 +110,9 @@ void main() {
 
       await solicit();
       // The responder answers with a hole where we need data (it
-      // compacted 6-10): everything is dropped. Before the fix this was
-      // fully silent — the defining symptom of the COR3-1 lockout.
+      // compacted 6-10): everything is dropped, and the gap must be
+      // reported — a silent drop here is the lockout symptom this guards
+      // against.
       await h.engine.handleDeltaResponse(
         deltaOf([entryOf(authorA, 11, 2011), entryOf(authorA, 12, 2012)]),
       );
@@ -143,72 +144,64 @@ void main() {
       expect(h.errors, isEmpty);
     });
 
-    test(
-      'overlapping delta responses for one stream merge cleanly — no '
-      'partial batches, no spurious errors, no double-reporting (COR3-9)',
-      () async {
-        final h = GossipEngineTestHarness();
-        final peerA = h.addPeer('peerA');
-        final peerB = h.addPeer('peerB');
-        h.createChannel('ch1', streamIds: ['s1']);
+    test('overlapping delta responses for one stream merge cleanly — no '
+        'partial batches, no spurious errors, no double-reporting', () async {
+      final h = GossipEngineTestHarness();
+      final peerA = h.addPeer('peerA');
+      final peerB = h.addPeer('peerB');
+      h.createChannel('ch1', streamIds: ['s1']);
 
-        DeltaResponse from(NodeId sender, List<int> seqs) => DeltaResponse(
-          sender: sender,
-          channelId: channelId,
-          streamId: streamId,
-          entries: [for (final s in seqs) entryOf(authorA, s, 2000 + s)],
-        );
+      DeltaResponse from(NodeId sender, List<int> seqs) => DeltaResponse(
+        sender: sender,
+        channelId: channelId,
+        streamId: streamId,
+        entries: [for (final s in seqs) entryOf(authorA, s, 2000 + s)],
+      );
 
-        // Two peers answer with overlapping batches concurrently — routine
-        // after a reconnect (sync-on-connect + periodic round coincide).
-        await Future.wait([
-          h.engine.handleDeltaResponse(from(peerA.id, [1, 2, 3])),
-          h.engine.handleDeltaResponse(from(peerB.id, [1, 2, 3, 4])),
-        ]);
+      // Two peers answer with overlapping batches concurrently — routine
+      // after a reconnect (sync-on-connect + periodic round coincide).
+      await Future.wait([
+        h.engine.handleDeltaResponse(from(peerA.id, [1, 2, 3])),
+        h.engine.handleDeltaResponse(from(peerB.id, [1, 2, 3, 4])),
+      ]);
 
-        expect(h.errors, isEmpty);
-        final stored = await h.entryRepository.getAll(channelId, streamId);
-        expect(stored.map((e) => e.sequence), equals([1, 2, 3, 4]));
-        // Every entry reported exactly once across the merge callbacks.
-        final reported =
-            h.mergedEntries
-                .expand((m) => m.entries)
-                .map((e) => e.sequence)
-                .toList()
-              ..sort();
-        expect(reported, equals([1, 2, 3, 4]));
-      },
-    );
+      expect(h.errors, isEmpty);
+      final stored = await h.entryRepository.getAll(channelId, streamId);
+      expect(stored.map((e) => e.sequence), equals([1, 2, 3, 4]));
+      // Every entry reported exactly once across the merge callbacks.
+      final reported =
+          h.mergedEntries
+              .expand((m) => m.entries)
+              .map((e) => e.sequence)
+              .toList()
+            ..sort();
+      expect(reported, equals([1, 2, 3, 4]));
+    });
 
-    test(
-      'an entry tying the tail timestamp flags out-of-order (COR3-27)',
-      () async {
-        final h = GossipEngineTestHarness();
-        h.addPeer('peer1');
-        h.createChannel('ch1', streamIds: ['s1']);
+    test('an entry tying the tail timestamp flags out-of-order', () async {
+      final h = GossipEngineTestHarness();
+      h.addPeer('peer1');
+      h.createChannel('ch1', streamIds: ['s1']);
 
-        // Tail: author-b @ ts 2000.
-        await h.entryRepository.append(
-          channelId,
-          streamId,
-          entryOf(authorB, 1, 2000),
-        );
+      // Tail: author-b @ ts 2000.
+      await h.entryRepository.append(
+        channelId,
+        streamId,
+        entryOf(authorB, 1, 2000),
+      );
 
-        // author-a @ ts 2000 sorts BEFORE the tail (author tiebreak): the
-        // repository inserts it before the tail, so an incremental fold in
-        // arrival order would diverge from a rebuild. The tail is known
-        // only by timestamp, so a timestamp tie must be treated as
-        // possibly-out-of-order.
-        await h.engine.handleDeltaResponse(
-          deltaOf([entryOf(authorA, 1, 2000)]),
-        );
+      // author-a @ ts 2000 sorts BEFORE the tail (author tiebreak): the
+      // repository inserts it before the tail, so an incremental fold in
+      // arrival order would diverge from a rebuild. The tail is known
+      // only by timestamp, so a timestamp tie must be treated as
+      // possibly-out-of-order.
+      await h.engine.handleDeltaResponse(deltaOf([entryOf(authorA, 1, 2000)]));
 
-        expect(h.mergedEntries.single.containsOutOfOrderEntries, isTrue);
-      },
-    );
+      expect(h.mergedEntries.single.containsOutOfOrderEntries, isTrue);
+    });
 
     test(
-      'entries rejected by the guard do not advance the HLC clock (COR3-10)',
+      'entries rejected by the guard do not advance the HLC clock',
       () async {
         final h = GossipEngineTestHarness(withHlcClock: true);
         h.addPeer('peer1');

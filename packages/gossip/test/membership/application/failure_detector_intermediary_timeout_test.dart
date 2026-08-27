@@ -4,12 +4,12 @@ import 'package:test/test.dart';
 
 import 'failure_detector_test_harness.dart';
 
-/// M6: an intermediary probing a target on a requester's behalf must use an
+/// An intermediary probing a target on a requester's behalf must use an
 /// adaptive per-target timeout, not a fixed 500ms. On BLE a target's RTT can
 /// exceed 500ms, so the fixed timeout made the intermediary abandon the relay
 /// before the target answered — wasting the whole indirect phase.
 void main() {
-  group('FailureDetector intermediary probe timeout (M6)', () {
+  group('FailureDetector intermediary probe timeout', () {
     test('a slow target that answers after 500ms is still relayed (adaptive '
         'intermediary timeout, not a fixed 500ms)', () async {
       // Adaptive timing (no static pingTimeout).

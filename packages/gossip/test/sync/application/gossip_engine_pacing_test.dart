@@ -188,9 +188,7 @@ void main() {
       expect(
         recorded,
         isNotNull,
-        reason:
-            'a reciprocated exchange must count as coverage '
-            '(missing half of WIRE4-1)',
+        reason: 'a reciprocated exchange must count as coverage',
       );
     });
 

@@ -286,14 +286,12 @@ class TestNetwork {
   /// Returns true if the node is currently partitioned.
   bool isPartitioned(String nodeName) => _partitionedNodes.contains(nodeName);
 
-  // ---------------------------------------------------------------------
   // Link conditions (adverse network simulation)
   //
   // All methods below act on a single direction (from → to) of a link,
   // delegating to the shared [InMemoryMessageBus]. Apply them to both
   // directions for symmetric conditions. See [InMemoryMessageBus] for the
   // order in which conditions are evaluated.
-  // ---------------------------------------------------------------------
 
   /// Blocks messages sent [from] → [to] (asymmetric partition).
   ///
