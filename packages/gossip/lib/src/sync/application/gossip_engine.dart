@@ -7,8 +7,8 @@ import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
 import 'package:gossip/src/sync/domain/services/gossip_timing_policy.dart';
 import 'package:gossip/src/shared/domain/services/generation_scheduler.dart';
 import 'package:gossip/src/shared/domain/services/jitter.dart';
-import 'package:gossip/src/shared/domain/services/rtt_tracker.dart';
 import 'package:gossip/src/shared/domain/services/keyed_task_chain.dart';
+import 'package:gossip/src/sync/domain/services/pending_pull_tracker.dart';
 
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
@@ -234,39 +234,18 @@ class GossipEngine {
     _timing.news();
   }
 
-  /// Tracks pending DeltaRequests to prevent duplicate requests.
-  ///
-  /// Keyed per-(peer, channel, stream): the timestamp (in ms) when the
-  /// request was sent. When the corresponding DeltaResponse is received, the
-  /// entry is removed. Entries older than [effectivePendingRequestTimeout]
-  /// are considered expired and can be replaced with new requests.
-  ///
-  /// Keying by peer (not just stream) does two things: it keeps deduping
-  /// duplicate DigestResponses from the *same* peer (the original sync-loop
-  /// bug), while no longer letting a stalled *slow* peer block requesting
-  /// the same stream from a *faster* peer — safe because duplicate/overlapping
-  /// entries are filtered by the contiguity guard before merge.
-  final Map<(NodeId, ChannelId, StreamId), int> _pendingDeltaRequests = {};
-
-  /// EWMA of observed delta round-trip times (request sent → response
-  /// received), used to derive [effectivePendingRequestTimeout]. This
-  /// directly measures page-transmit time on the deployment's transport —
-  /// a signal ping-based RTT can't provide (a 30KB page over BLE takes
-  /// ~1-2 orders of magnitude longer than a 66-byte ping).
-  final RttTracker _deltaRttTracker = RttTracker();
+  /// Owns pull-request dedup (at most one outstanding DeltaRequest per
+  /// (peer, channel, stream) at a time) and the adaptive per-request
+  /// timeout derived from observed delta round-trip time (CC5-1). See
+  /// [PendingPullTracker] for the per-peer keying rationale, the
+  /// RFC-6298 timeout formula, and why a BLE page-transmit signal can't
+  /// come from ping-based RTT.
+  late final PendingPullTracker _pendingPullTracker;
 
   /// Monotonic count of delta batches that merged at least one new entry.
   /// Exposed via [mergedBatchCount] as a coarse "recent sync activity"
   /// signal for applications (G5).
   int _mergedBatchCount = 0;
-
-  /// Default pending-delta timeout used before any delta round-trip has been
-  /// observed. Sized to comfortably exceed one ~30KB page over a slow BLE
-  /// link (~7.5s at a few KB/s) so a request is never deemed stale
-  /// mid-transmission on a cold start.
-  static const Duration _defaultPendingTimeout = Duration(seconds: 8);
-  static const Duration _minPendingTimeout = Duration(seconds: 2);
-  static const Duration _maxPendingTimeout = Duration(seconds: 30);
 
   static const Duration _metricsWindow = Duration(seconds: 10);
 
@@ -317,6 +296,13 @@ class GossipEngine {
        _hlcClock = hlcClock,
        _localNodeRepository = localNodeRepository,
        _random = random ?? Random() {
+    // Needs nothing but the `timePort` parameter, so it could live in the
+    // initializer list — built here instead, grouped with this
+    // constructor's other extracted domain-service collaborators
+    // ([_timing], [_digestBudgeter]) for one discoverable construction
+    // site rather than splitting collaborators across the initializer
+    // list and the body.
+    _pendingPullTracker = PendingPullTracker(timePort: timePort);
     // Built here rather than the initializer list, mirroring
     // FailureDetector's ProbeTimingPolicy construction (E2/CC5-13): keeps
     // every extracted timing-policy collaborator constructed at the same
@@ -416,36 +402,19 @@ class GossipEngine {
   Duration get effectiveGossipInterval => _timing.effectiveInterval;
 
   /// How long a pending delta request is honoured before it is considered
-  /// stale and a replacement may be issued.
-  ///
-  /// Adaptive: derived (RFC-6298 style, SRTT + 4·RTTVAR) from observed delta
-  /// round-trips so it always exceeds one page's transmit time on the actual
-  /// transport, then clamped to [[_minPendingTimeout], [_maxPendingTimeout]].
-  /// Before any round-trip is observed it is [_defaultPendingTimeout]. This
-  /// stops a large page still in flight from being re-requested (duplicate
-  /// requests are pure congestion amplification on a slow link).
-  Duration get effectivePendingRequestTimeout {
-    if (!_deltaRttTracker.hasReceivedSamples) return _defaultPendingTimeout;
-    return _deltaRttTracker.suggestedTimeout(
-      minTimeout: _minPendingTimeout,
-      maxTimeout: _maxPendingTimeout,
-    );
-  }
+  /// stale and a replacement may be issued. Delegates to
+  /// [_pendingPullTracker] — see [PendingPullTracker.effectiveTimeout] for
+  /// the adaptive RFC-6298 formula, its clamping, and the cold-start
+  /// default.
+  Duration get effectivePendingRequestTimeout =>
+      _pendingPullTracker.effectiveTimeout;
 
   /// Number of delta requests currently in flight (pulls we are awaiting a
   /// response for). A coarse "am I mid-sync?" signal for applications (G5):
-  /// non-zero means we are actively pulling data from a peer.
-  ///
-  /// Excludes expired entries: a pull whose peer never answered is dead,
-  /// not "syncing…" — counting it would wedge the quiescence signal until
-  /// the same (peer, stream) key happens to be re-evaluated.
-  int get outstandingPullCount {
-    final timeoutMs = effectivePendingRequestTimeout.inMilliseconds;
-    final nowMs = timePort.nowMs;
-    return _pendingDeltaRequests.values
-        .where((since) => nowMs - since < timeoutMs)
-        .length;
-  }
+  /// non-zero means we are actively pulling data from a peer. Delegates to
+  /// [_pendingPullTracker] — see [PendingPullTracker.outstandingCount] for
+  /// the expiry-exclusion rationale.
+  int get outstandingPullCount => _pendingPullTracker.outstandingCount;
 
   /// Monotonic count of delta batches that merged at least one new entry
   /// since construction. Poll it to detect recent sync activity: a value
@@ -485,7 +454,7 @@ class GossipEngine {
     // Drop outstanding delta-request flags: while stopped we don't ingest
     // responses, so a resumed engine should be free to re-request
     // immediately rather than waiting out the pending-request timeout.
-    _pendingDeltaRequests.clear();
+    _pendingPullTracker.clearAll();
     // A restart is a fresh diagnosis window for persistent gaps.
     _reportedGaps.clear();
   }
@@ -1221,11 +1190,11 @@ class GossipEngine {
     for (final request in requests) {
       final sent = await _sendMessage(recipient, request);
       if (!sent) {
-        _pendingDeltaRequests.remove((
+        _pendingPullTracker.release(
           recipient,
           request.channelId,
           request.streamId,
-        ));
+        );
       }
     }
   }
@@ -1272,26 +1241,17 @@ class GossipEngine {
           continue;
         }
 
-        final key = (peer, channelDigest.channelId, streamDigest.streamId);
-
-        // Skip if we already have a non-expired pending request to THIS peer
-        // for this stream.
-        final pendingTimestamp = _pendingDeltaRequests[key];
-        if (pendingTimestamp != null) {
-          final elapsed = timePort.nowMs - pendingTimestamp;
-          if (elapsed < effectivePendingRequestTimeout.inMilliseconds) {
-            continue;
-          }
-          // Request has expired, remove it and allow a new one
-          _pendingDeltaRequests.remove(key);
+        // Dedup gate: skip if a non-expired pull to THIS peer for this
+        // stream is already pending. A single synchronous call — see
+        // [PendingPullTracker.tryMark] for why the check and the mark
+        // must happen together, with no `await` between them.
+        if (!_pendingPullTracker.tryMark(
+          peer,
+          channelDigest.channelId,
+          streamDigest.streamId,
+        )) {
+          continue;
         }
-
-        // Mark pending BEFORE the await below. The incoming-message
-        // listener doesn't await handlers, so two queued DigestResponses
-        // interleave here; setting the flag synchronously after the check
-        // is what makes the dedup effective (otherwise both pass the
-        // check above and emit duplicate DeltaRequests).
-        _pendingDeltaRequests[key] = timePort.nowMs;
 
         var ourVersion = await _computeVersionVector(
           channelDigest.channelId,
@@ -1340,7 +1300,11 @@ class GossipEngine {
           );
         } else {
           // Nothing to request after all — release the flag.
-          _pendingDeltaRequests.remove(key);
+          _pendingPullTracker.release(
+            peer,
+            channelDigest.channelId,
+            streamDigest.streamId,
+          );
         }
       }
     }
@@ -1533,20 +1497,15 @@ class GossipEngine {
   final KeyedTaskChain<(ChannelId, StreamId)> _mergeChain = KeyedTaskChain();
 
   Future<DeltaRequest?> _mergeDeltaResponse(DeltaResponse response) async {
-    final key = (response.sender, response.channelId, response.streamId);
-    // If this response answers a request we were tracking, the elapsed time
-    // is a sample of the real delta round-trip (dominated by page transmit
-    // time) — feed it to the adaptive-timeout estimator before clearing.
-    final pendingSince = _pendingDeltaRequests.remove(key);
-    if (pendingSince != null) {
-      final elapsedMs = timePort.nowMs - pendingSince;
-      if (elapsedMs > 0) {
-        var sample = Duration(milliseconds: elapsedMs);
-        if (sample < _minPendingTimeout) sample = _minPendingTimeout;
-        if (sample > _maxPendingTimeout) sample = _maxPendingTimeout;
-        _deltaRttTracker.recordSample(sample);
-      }
-    }
+    // If this response answers a request we were tracking, [complete]
+    // removes it and feeds the elapsed time to the adaptive-timeout
+    // estimator as an RTT sample (dominated by page transmit time) — see
+    // [PendingPullTracker.complete].
+    final elapsedMs = _pendingPullTracker.complete(
+      response.sender,
+      response.channelId,
+      response.streamId,
+    );
 
     // A solicited response may carry the sender's compaction floor: the
     // range below it was pruned by retention and is unobtainable, so adopt
@@ -1556,7 +1515,7 @@ class GossipEngine {
     // Unsolicited responses cannot move our floor: we never asked this
     // sender, and honoring an unsolicited claim would let any peer make us
     // skip history that is still obtainable elsewhere.
-    if (pendingSince != null && response.floor.entries.isNotEmpty) {
+    if (elapsedMs != null && response.floor.entries.isNotEmpty) {
       await entryRepository.adoptVersionFloor(
         response.channelId,
         response.streamId,
@@ -1587,7 +1546,7 @@ class GossipEngine {
       _reportContiguityGaps(
         response,
         selection.gaps,
-        solicited: pendingSince != null,
+        solicited: elapsedMs != null,
       );
     }
     if (newEntries.isEmpty) return null;
@@ -1634,7 +1593,11 @@ class GossipEngine {
         response.channelId,
         response.streamId,
       );
-      _pendingDeltaRequests[key] = timePort.nowMs;
+      _pendingPullTracker.markContinuation(
+        response.sender,
+        response.channelId,
+        response.streamId,
+      );
       return DeltaRequest(
         sender: localNode,
         channelId: response.channelId,
@@ -1651,7 +1614,7 @@ class GossipEngine {
   /// the peer reconnects. Without clearing, pending requests would block
   /// new delta requests until they expire.
   void clearPendingRequests() {
-    _pendingDeltaRequests.clear();
+    _pendingPullTracker.clearAll();
     _reportedGaps.clear();
   }
 
@@ -1662,7 +1625,7 @@ class GossipEngine {
   /// hold [outstandingPullCount] above zero until expiry.
   void clearPendingRequestsForPeer(NodeId peer) {
     _recordNews();
-    _pendingDeltaRequests.removeWhere((key, _) => key.$1 == peer);
+    _pendingPullTracker.clearForPeer(peer);
     _reportedGaps.removeWhere((key) => key.$1 == peer);
   }
 
