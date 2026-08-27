@@ -41,8 +41,11 @@ functions; remove banner dividers by regrouping or splitting. Behavior-preservin
 throughout — the full test suite is the net, and the strong invariant comments (the ones
 stating things the code genuinely cannot express) are kept and sharpened.
 
-The exact scope of "file organization" (banners only, or also file splits and barrel
-conventions) needs an owner decision before planning.
+Scope, settled by the owner (2026-08-27): "file organization" means organizing code
+*within* a file into functions as appropriate — the comment-paragraph-to-named-function
+work above, applied wherever a block does more than one thing or mixes abstraction
+levels. File splits, barrel conventions, and test-tree layout are *not* in scope
+(banner dividers still go, since well-factored functions make them redundant).
 
 ## Related
 
