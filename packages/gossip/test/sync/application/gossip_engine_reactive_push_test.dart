@@ -1,9 +1,14 @@
 import 'dart:typed_data';
 
+import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
+import 'package:gossip/src/shared/domain/value_objects/log_level.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:test/test.dart';
 
@@ -112,6 +117,120 @@ void main() {
 
       h.engine.stop();
       h.stopListening();
+    });
+  });
+
+  group('GossipEngine _flushPendingPushes silent-skip logging', () {
+    // These two paths build the engine via [GossipEngineTestHarness.
+    // buildEngine] directly (rather than the friendly instance factory)
+    // because only buildEngine exposes onLog for observation.
+
+    Future<void> flush([int count = 3]) async {
+      for (var i = 0; i < count; i++) {
+        await Future.delayed(Duration.zero);
+      }
+    }
+
+    test('an oversized batch is skipped with a trace log naming '
+        'channel/stream/encoded size', () async {
+      final localNode = NodeId('local');
+      final registry = PeerRegistry(localNode: localNode);
+      registry.addPeer(NodeId('peer1'), occurredAt: DateTime.now());
+      final timePort = InMemoryTimePort();
+      final logs = <String>[];
+
+      final engine = GossipEngineTestHarness.buildEngine(
+        localNode: localNode,
+        peerRegistry: registry,
+        timePort: timePort,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+        onLog: (level, message, [error, stackTrace]) {
+          if (level == LogLevel.trace) logs.add(message);
+        },
+        // Small enough that any non-empty push exceeds it.
+        maxMessageBytes: 10,
+      );
+      GossipEngineTestHarness.registerChannel(engine, channelId, [streamId]);
+      engine.start();
+
+      engine.notifyLocalWrite(
+        channelId,
+        streamId,
+        LogEntry(
+          author: localNode,
+          sequence: 1,
+          timestamp: Hlc(1000, 0),
+          payload: Uint8List.fromList([1]),
+        ),
+      );
+      await timePort.advance(const Duration(milliseconds: 150));
+      await flush();
+
+      expect(
+        logs.any(
+          (m) =>
+              m.contains(channelId.value) &&
+              m.contains(streamId.value) &&
+              m.contains('10'),
+        ),
+        isTrue,
+        reason:
+            'the oversized-batch skip must name the channel, stream, '
+            'and encoded size it silently dropped — otherwise a stuck '
+            'stream is undiagnosable in the field',
+      );
+
+      engine.stop();
+    });
+
+    test('a drained batch with no reachable partners is logged, not '
+        'silently discarded', () async {
+      final localNode = NodeId('local');
+      final registry = PeerRegistry(localNode: localNode);
+      final timePort = InMemoryTimePort();
+      final logs = <String>[];
+
+      final engine = GossipEngineTestHarness.buildEngine(
+        localNode: localNode,
+        peerRegistry: registry,
+        timePort: timePort,
+        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+        onLog: (level, message, [error, stackTrace]) {
+          if (level == LogLevel.trace) logs.add(message);
+        },
+      );
+      GossipEngineTestHarness.registerChannel(engine, channelId, [streamId]);
+      engine.start();
+
+      // No peers added: the batch is drained by the pusher but has
+      // nowhere reachable to go.
+      engine.notifyLocalWrite(
+        channelId,
+        streamId,
+        LogEntry(
+          author: localNode,
+          sequence: 1,
+          timestamp: Hlc(1000, 0),
+          payload: Uint8List.fromList([1]),
+        ),
+      );
+      await timePort.advance(const Duration(milliseconds: 150));
+      await flush();
+
+      expect(
+        logs.any(
+          (m) =>
+              m.contains('reachable') &&
+              (m.contains('anti-entropy') || m.contains('repository')),
+        ),
+        isTrue,
+        reason:
+            'a drained-but-undelivered batch must say so — entries stay '
+            'repository-safe and anti-entropy re-delivers, but silently '
+            'is undiagnosable',
+      );
+
+      engine.stop();
     });
   });
 }

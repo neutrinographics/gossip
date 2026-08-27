@@ -536,7 +536,15 @@ class GossipEngine {
     if (batches.isEmpty) return;
 
     final partners = peerDirectory.reachablePartners();
-    if (partners.isEmpty) return;
+    if (partners.isEmpty) {
+      _log(
+        LogLevel.trace,
+        'Reactive push flush found no reachable partners for '
+        '${batches.length} drained batch(es); entries remain in the '
+        'repository and anti-entropy will re-deliver them',
+      );
+      return;
+    }
 
     for (final batch in batches.entries) {
       final (channelId, streamId) = batch.key;
@@ -546,7 +554,16 @@ class GossipEngine {
         streamId: streamId,
         entries: batch.value,
       );
-      if (_codec.encode(push).length > maxMessageBytes) continue;
+      final encodedLength = _codec.encode(push).length;
+      if (encodedLength > maxMessageBytes) {
+        _log(
+          LogLevel.trace,
+          'Reactive push for channel=${channelId.value} '
+          'stream=${streamId.value} skipped: encoded size '
+          '${encodedLength}B exceeds maxMessageBytes=$maxMessageBytes',
+        );
+        continue;
+      }
       for (final partner in partners) {
         await _sendMessage(partner.nodeId, push);
       }

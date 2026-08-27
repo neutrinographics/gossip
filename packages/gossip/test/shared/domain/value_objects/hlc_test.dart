@@ -116,6 +116,30 @@ void main() {
       test('tryParse returns null on empty string', () {
         expect(Hlc.tryParse(''), isNull);
       });
+
+      test('tryParse returns null when logical is regex-valid but exceeds '
+          'the 16-bit constructor limit', () {
+        // The regex only checks shape (\d+:\d+), not range — the
+        // constructor's ArgumentError for an out-of-range logical must
+        // not leak past tryParse's contract of "null on failure."
+        expect(Hlc.tryParse('Hlc(1000:99999)'), isNull);
+      });
+
+      test('tryParse returns null when physicalMs is regex-valid but exceeds '
+          'the 48-bit constructor limit', () {
+        final tooLarge = (1 << 48).toString();
+        expect(Hlc.tryParse('Hlc($tooLarge:0)'), isNull);
+      });
+
+      test('tryParse returns null for a negative physicalMs (regex already '
+          'rejects the leading "-", so this stays a FormatException path)', () {
+        expect(Hlc.tryParse('Hlc(-1:0)'), isNull);
+      });
+
+      test('tryParse returns null for a negative logical (regex already '
+          'rejects the leading "-", so this stays a FormatException path)', () {
+        expect(Hlc.tryParse('Hlc(1000:-1)'), isNull);
+      });
     });
 
     group('invariant validation', () {

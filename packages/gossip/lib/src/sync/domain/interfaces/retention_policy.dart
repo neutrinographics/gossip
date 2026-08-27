@@ -70,7 +70,22 @@ class TimeBasedRetention implements RetentionPolicy {
   /// Maximum age of entries to retain.
   final Duration maxAge;
 
-  const TimeBasedRetention(this.maxAge);
+  // Not `const`: a const constructor's assert clause must be a
+  // "potentially constant expression" per the Dart language spec, and
+  // that grammar excludes arbitrary instance-getter access (verified:
+  // `Duration.isNegative`/`inMicroseconds` are both rejected at
+  // declaration time, unconditionally, the moment the constructor is
+  // marked const — unlike `List.length`, which the grammar special-cases
+  // and which is what keeps [CompositeRetention] below const-compatible).
+  // No caller in this codebase constructs this with the `const` keyword,
+  // so dropping it costs nothing but gains a real guard.
+  TimeBasedRetention(this.maxAge)
+    : assert(
+        !maxAge.isNegative,
+        'maxAge must not be negative — compact subtracts it from the '
+        'current HLC, and Hlc.subtract throws on the resulting negative '
+        'time',
+      );
 
   @override
   List<LogEntry> compact(List<LogEntry> entries, Hlc now) {
@@ -100,7 +115,13 @@ class CountBasedRetention implements RetentionPolicy {
   /// Maximum entries to retain per author.
   final int maxEntriesPerAuthor;
 
-  const CountBasedRetention(this.maxEntriesPerAuthor);
+  const CountBasedRetention(this.maxEntriesPerAuthor)
+    : assert(
+        maxEntriesPerAuthor >= 0,
+        'maxEntriesPerAuthor must not be negative — zero is legal and '
+        'deliberately prunes every entry; a negative count has no meaning '
+        'for `take(n)` below',
+      );
 
   @override
   List<LogEntry> compact(List<LogEntry> entries, Hlc now) {
@@ -144,7 +165,18 @@ class CompositeRetention implements RetentionPolicy {
   /// The policies to combine (union semantics).
   final List<RetentionPolicy> policies;
 
-  const CompositeRetention(this.policies);
+  const CompositeRetention(this.policies)
+    : assert(
+        // `.length`, not `.isNotEmpty`: the const-expression grammar
+        // special-cases List.length but rejects derived getters like
+        // isNotEmpty outright, even at declaration time (see
+        // [TimeBasedRetention]'s constructor for the same limitation
+        // hitting Duration, which has no such carve-out).
+        policies.length > 0,
+        'policies must not be empty — a composite with no sub-policies '
+        'would retain nothing, silently discarding every entry on the '
+        'next compaction',
+      );
 
   @override
   List<LogEntry> compact(List<LogEntry> entries, Hlc now) {

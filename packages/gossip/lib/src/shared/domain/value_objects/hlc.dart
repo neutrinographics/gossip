@@ -145,10 +145,17 @@ class Hlc implements Comparable<Hlc> {
   }
 
   /// Tries to parse an HLC string, returning null on failure.
+  ///
+  /// The `Hlc(\d+:\d+)` shape [Hlc.parse] matches admits digit strings the
+  /// [Hlc] constructor itself rejects (e.g. a logical counter over 16
+  /// bits) — those surface as [ArgumentError], not [FormatException], so
+  /// both are caught here to keep this a total function.
   static Hlc? tryParse(String s) {
     try {
       return Hlc.parse(s);
     } on FormatException {
+      return null;
+    } on ArgumentError {
       return null;
     }
   }

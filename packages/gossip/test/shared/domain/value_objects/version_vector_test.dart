@@ -133,5 +133,47 @@ void main() {
         expect(vector[node2], equals(100));
       });
     });
+
+    group('value semantics', () {
+      test('mutating the caller\'s map after construction does not change '
+          'the vector', () {
+        final source = {node1: 5};
+        final vector = VersionVector(source);
+
+        source[node1] = 999;
+        source[node2] = 42;
+
+        expect(vector[node1], equals(5));
+        expect(vector[node2], equals(0));
+        expect(vector.entries, equals({node1: 5}));
+      });
+
+      test('an explicit zero entry normalizes away: equal to VersionVector.'
+          'empty', () {
+        expect(VersionVector({node1: 0}), equals(VersionVector.empty));
+      });
+
+      test('an explicit zero entry normalizes away: same hashCode as '
+          'VersionVector.empty', () {
+        expect(
+          VersionVector({node1: 0}).hashCode,
+          equals(VersionVector.empty.hashCode),
+        );
+      });
+
+      test('an explicit zero entry normalizes away: entries is empty, not '
+          'a zero-valued map', () {
+        expect(VersionVector({node1: 0}).entries, isEmpty);
+        expect(VersionVector({node1: 0}).isEmpty, isTrue);
+      });
+
+      test(
+        'a mix of zero and non-zero entries keeps only the non-zero ones',
+        () {
+          final vector = VersionVector({node1: 0, node2: 5});
+          expect(vector.entries, equals({node2: 5}));
+        },
+      );
+    });
   });
 }
