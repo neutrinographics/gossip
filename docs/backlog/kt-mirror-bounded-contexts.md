@@ -29,8 +29,14 @@ test equivalent to the Dart one.
 
 ## Related
 
+- **Done** (2026-08-29) — shipped in gossip-kt `26dcc13..bd50285` on
+  `feature/compaction`: the four divergences ported back and a Kotlin
+  edge-table boundary test that now enforces the structure (including a
+  recorded row for the one accepted piece of debt).
 - The evaluation and divergences:
   [adr/010](../../packages/gossip/docs/adr/010-ddd-layered-architecture.md) and
   [the bounded-contexts spec](../superpowers/specs/2026-08-21-bounded-contexts-restructure-design.md).
 - Siblings: [Port the wire-efficiency behaviors to the Kotlin library](kt-port-wire-efficiency.md),
-  [Audit the Kotlin library for the bug classes fixed in Dart](kt-audit-legacy-bug-classes.md).
+  [Audit the Kotlin library for the bug classes fixed in Dart](kt-audit-legacy-bug-classes.md),
+  [Teach both libraries to speak versioned wire formats](kt-wire-versioning-campaign.md)
+  — which carries the one piece of boundary debt this restructure left behind.

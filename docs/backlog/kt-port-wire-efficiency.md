@@ -1,6 +1,6 @@
 # Port the wire-efficiency behaviors to the Kotlin library
 
-**Track:** Kotlin port   **Depends on:** nothing
+**Track:** Kotlin port   **Depends on:** Teach both libraries to speak versioned wire formats
 
 ## What this is
 
@@ -32,5 +32,10 @@ and ADR-013's amendment are the authority.
 - Dart implementation trail: recommendations R3/R4 of
   [audits/2026-08-20-wire-scheduling-audit.md](../audits/2026-08-20-wire-scheduling-audit.md),
   spec [2026-08-20-two-tier-pacing-design.md](../superpowers/specs/2026-08-20-two-tier-pacing-design.md).
+- The dependency: message-size decisions can only be ported once the message
+  format itself has settled, which is
+  [Teach both libraries to speak versioned wire formats](kt-wire-versioning-campaign.md).
+  That campaign also carries the Kotlin side's paging and summary-rotation
+  work, which sits on the same surface as this item.
 - Siblings: [Mirror the bounded-context structure in the Kotlin library](kt-mirror-bounded-contexts.md),
   [Audit the Kotlin library for the bug classes fixed in Dart](kt-audit-legacy-bug-classes.md).
