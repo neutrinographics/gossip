@@ -44,9 +44,12 @@ abstract final class WireTypes {
   /// Owning this here keeps marker-range knowledge in the same shared
   /// envelope agreement that owns the type-byte partition: the codec
   /// facades never read marker semantics themselves. Throws
-  /// [ArgumentError] for anything undecodable by every codec — empty
-  /// frames, reserved bytes, unassigned markers, the escape byte, or a
-  /// marker with no type byte after it.
+  /// [ArgumentError] for anything undecodable by every codec, with a
+  /// message distinguishing *why* per the marker table (spec §3.3): a
+  /// reserved/unassigned type byte, an illegal (permanently-unassigned)
+  /// marker, an unregistered version marker — the signal that a newer
+  /// peer may be sending a version this build doesn't know — or the
+  /// reserved escape byte.
   static int frameTypeOffset(Uint8List bytes) {
     if (bytes.isEmpty) {
       throw ArgumentError('Cannot decode empty bytes');
@@ -58,6 +61,27 @@ abstract final class WireTypes {
         throw ArgumentError('Version marker with no type byte');
       }
       return 1;
+    }
+    if (first == 0xF0 || first == 0xF1) {
+      throw ArgumentError(
+        'Illegal version marker: $first (0xF0/0xF1 are permanently '
+        'unassigned — version 0 does not exist and version 1 is the '
+        'unprefixed form)',
+      );
+    }
+    if (first > markerV2 && first <= 0xFE) {
+      final version = first - 0xF0;
+      throw ArgumentError(
+        'Unregistered wire version $version: this build does not know '
+        'marker $first — a newer peer may be sending a version ahead '
+        'of this one',
+      );
+    }
+    if (first == 0xFF) {
+      throw ArgumentError(
+        'Reserved escape byte: 0xFF is undefined (reserved for a future '
+        'extended-version form)',
+      );
     }
     throw ArgumentError('Unknown message type: $first');
   }

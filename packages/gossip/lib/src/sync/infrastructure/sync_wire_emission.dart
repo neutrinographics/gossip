@@ -35,10 +35,20 @@ abstract interface class SyncWireEmission {
   int encodedEntrySize(LogEntry entry);
 }
 
+/// Shared sizing strategy for both versions: encode this version's own
+/// entry JSON shape and measure the resulting UTF-8 bytes. Only the shape
+/// ([_entryJson]) differs between versions; how it gets measured doesn't.
+mixin _JsonEncodedEntrySize {
+  Map<String, dynamic> _entryJson(LogEntry entry);
+
+  int encodedEntrySize(LogEntry entry) =>
+      utf8.encode(jsonEncode(_entryJson(entry))).length;
+}
+
 /// Legacy unprefixed emission: `[type][JSON]`, int-array payloads, no
 /// `hasMore` (continuation degrades to later gossip rounds), additive
 /// `floor`.
-class SyncEmissionV1 implements SyncWireEmission {
+class SyncEmissionV1 with _JsonEncodedEntrySize implements SyncWireEmission {
   const SyncEmissionV1();
 
   @override
@@ -61,19 +71,16 @@ class SyncEmissionV1 implements SyncWireEmission {
       'floor': versionVectorJson(message.floor),
   };
 
+  @override
   Map<String, dynamic> _entryJson(LogEntry entry) => {
     ...entryEnvelopeJson(entry),
     'payload': entry.payload.toList(),
   };
-
-  @override
-  int encodedEntrySize(LogEntry entry) =>
-      utf8.encode(jsonEncode(_entryJson(entry))).length;
 }
 
 /// Prefixed emission: `[0xF2][type][JSON]`, base64 payloads, `hasMore`
 /// always present, `floor` when non-empty.
-class SyncEmissionV2 implements SyncWireEmission {
+class SyncEmissionV2 with _JsonEncodedEntrySize implements SyncWireEmission {
   const SyncEmissionV2();
 
   @override
@@ -96,6 +103,7 @@ class SyncEmissionV2 implements SyncWireEmission {
       'floor': versionVectorJson(message.floor),
   };
 
+  @override
   Map<String, dynamic> _entryJson(LogEntry entry) => {
     ...entryEnvelopeJson(entry),
     // base64 (~1.33 chars/byte) instead of a JSON int list (~3.6
@@ -103,8 +111,4 @@ class SyncEmissionV2 implements SyncWireEmission {
     // fit the transport size limit.
     'payload': base64Encode(entry.payload),
   };
-
-  @override
-  int encodedEntrySize(LogEntry entry) =>
-      utf8.encode(jsonEncode(_entryJson(entry))).length;
 }

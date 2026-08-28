@@ -121,9 +121,12 @@ class CoordinatorConfig {
   ///
   /// Large entry backlogs are paginated across gossip rounds so no single
   /// message exceeds this budget. It also determines the maximum entry
-  /// payload accepted by `EventStream.append` (roughly 3/4 of the budget
-  /// after envelope overhead — ~22KB at the default): a payload that
-  /// can't fit one delta message can never be synced.
+  /// payload accepted by `EventStream.append` — a payload that can't fit
+  /// one delta message can never be synced. That cap depends on
+  /// [wireVersion]'s payload encoding: at the default budget it's
+  /// ~7.4KB under the default `WireVersion.v1` (JSON int-array
+  /// payloads) and ~22KB under `WireVersion.v2` (roughly 3/4 of the
+  /// budget after envelope overhead, base64 payloads).
   ///
   /// **Default: 30KB**, leaving envelope headroom under the 32KB message
   /// limit shared by Android Nearby Connections and the BLE frame codec.

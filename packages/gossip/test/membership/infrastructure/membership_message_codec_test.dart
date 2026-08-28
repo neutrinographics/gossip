@@ -137,7 +137,8 @@ void main() {
           isA<ArgumentError>().having(
             (e) => e.message,
             'message',
-            'Unknown message type: 255',
+            'Reserved escape byte: 0xFF is undefined (reserved for a '
+                'future extended-version form)',
           ),
         ),
       );

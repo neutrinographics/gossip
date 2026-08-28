@@ -340,7 +340,8 @@ void main() {
           isA<ArgumentError>().having(
             (e) => e.message,
             'message',
-            'Unknown message type: 255',
+            'Reserved escape byte: 0xFF is undefined (reserved for a '
+                'future extended-version form)',
           ),
         ),
       );
@@ -498,11 +499,8 @@ void main() {
               author: NodeId('a' * 64), // longer than a UUID
               sequence: 1 << 40,
               timestamp: Hlc(281474976710655, 65535), // max HLC fields
-              payload: Uint8List(payloadLength)..fillRange(
-                0,
-                payloadLength,
-                0xFF,
-              ),
+              payload: Uint8List(payloadLength)
+                ..fillRange(0, payloadLength, 0xFF),
             ),
           ]),
         );
