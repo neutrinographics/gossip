@@ -1,5 +1,6 @@
 import 'package:gossip/src/membership/membership.dart';
 import 'package:gossip/src/sync/sync.dart';
+import 'package:gossip/src/shared/shared.dart';
 
 /// Configuration options for the Coordinator.
 ///
@@ -162,6 +163,14 @@ class CoordinatorConfig {
   /// **Default: 1 hour.**
   final Duration hlcMaxDrift;
 
+  /// The wire dialect this node EMITS ([WireVersion.v1] by default).
+  /// Receive always accepts every registered version regardless of this
+  /// setting, so upgrading the library changes nothing on the wire until
+  /// the deployment explicitly flips this to [WireVersion.v2] — which is
+  /// only safe once every peer that can hear this node has upgraded to a
+  /// receive-both build.
+  final WireVersion wireVersion;
+
   /// Creates a [CoordinatorConfig] with the specified options.
   const CoordinatorConfig({
     this.suspicionThreshold = 5,
@@ -175,6 +184,7 @@ class CoordinatorConfig {
     this.maxMessageBytes = 30 * 1024,
     this.compactionInterval = const Duration(minutes: 5),
     this.hlcMaxDrift = const Duration(hours: 1),
+    this.wireVersion = WireVersion.v1,
   });
 
   /// Default configuration with standard values.

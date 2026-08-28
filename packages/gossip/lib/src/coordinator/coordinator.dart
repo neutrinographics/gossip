@@ -276,13 +276,9 @@ class Coordinator {
       channelRepository: cachedChannelRepo,
       entryRepository: entryRepository,
       localNodeRepository: localNodeRepository,
-      // Hardcoded until wire version becomes a coordinator config option.
-      // v1: the membership codec doesn't parse the v2 marker yet, so the
-      // active send codec must stay v1 until that receiver-side work
-      // lands too.
       maxPayloadBytes: SyncMessageCodec.maxEntryPayloadForBudget(
         cfg.maxMessageBytes,
-        WireVersion.v1,
+        cfg.wireVersion,
       ),
       materializationService: materializationService,
       onEvent: (event) => coordinator._onChannelServiceEvent(event),
@@ -318,11 +314,7 @@ class Coordinator {
       final failureDetectorRttTracker = RttTracker();
 
       coordinator._gossipEngine = GossipEngine(
-        // Hardcoded until wire version becomes a coordinator config
-        // option. v1: the membership codec doesn't parse the v2 marker
-        // yet, so the active send codec must stay v1 until that
-        // receiver-side work lands too.
-        codec: SyncMessageCodec(wireVersion: WireVersion.v1),
+        codec: SyncMessageCodec(wireVersion: cfg.wireVersion),
         localNode: localNode,
         peerDirectory: MembershipPeerDirectory(peerRegistry),
         entryRepository: entryRepository,
@@ -340,11 +332,7 @@ class Coordinator {
       );
 
       coordinator._failureDetector = FailureDetector(
-        // Hardcoded until wire version becomes a coordinator config
-        // option. Safe ahead of that: membership's v1/v2 JSON schemas are
-        // identical, so a v2-framed Ping/Ack/PingReq is a routine "not
-        // mine" miss for the sync codec, never a decode error.
-        codec: MembershipMessageCodec(wireVersion: WireVersion.v2),
+        codec: MembershipMessageCodec(wireVersion: cfg.wireVersion),
         localNode: localNode,
         peerRegistry: peerRegistry,
         timePort: timePort,

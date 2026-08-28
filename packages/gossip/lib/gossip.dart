@@ -111,6 +111,7 @@ export 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 export 'package:gossip/src/shared/domain/value_objects/log_entry_id.dart';
 export 'package:gossip/src/shared/domain/value_objects/hlc.dart';
 export 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
+export 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 
 // Domain aggregates
 export 'package:gossip/src/sync/domain/aggregates/channel_aggregate.dart';
