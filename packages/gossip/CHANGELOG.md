@@ -6,13 +6,37 @@ publish under the existing pub.dev `gossip` name must version above the old
 
 ### Breaking — wire and limits
 
-- Entry payloads are base64-encoded on the wire (~1.33× size). New nodes
-  still decode the legacy JSON int-list form, but old nodes cannot decode
-  new messages — mixed-version fleets cannot gossip with each other.
-- Maximum entry payload is ≈22 KB, derived from
-  `CoordinatorConfig.maxMessageBytes` (default 30 KB);
-  `EventStream.append` throws `ArgumentError` above it. Large delta
-  responses paginate across gossip rounds.
+- The wire protocol is now versioned. `CoordinatorConfig` gains
+  `wireVersion` (`WireVersion.v1` / `WireVersion.v2`), which selects the
+  send dialect on both the sync and membership wires; **receive always
+  understands both versions**, regardless of the configured send version.
+  **Default is `WireVersion.v1`** in every coordinator — the legacy wire:
+  unprefixed frames, entry payloads as plain int-array JSON (no base64),
+  no `hasMore` key, additive `floor` handling. The previously-documented
+  unprefixed-base64 wire (see the old bullet this replaces) no longer
+  exists as its own dialect — that encoding is now the explicit v2 wire,
+  selected only via `wireVersion: WireVersion.v2`, whose frames carry a
+  single-byte `0xF2` version marker that v1-only peers cannot parse.
+  Mixed-fleet gossip works only because every node in this release decodes
+  both versions; a fleet only changes what it *sends* by flipping every
+  node's config to `.v2` together.
+- The append-time entry payload cap is now version-dependent, derived from
+  `CoordinatorConfig.maxMessageBytes` (default 30 KB budget):
+  - **v1 (the default): ~7.4 KB (7552 bytes)** — the legacy int-array
+    payload encoding costs ~4 characters per byte, so the same byte
+    budget fits far less payload than base64 does.
+  - **v2: ~22.1 KB (22656 bytes)** — base64 (~1.33× size) restores the
+    larger ceiling.
+  `EventStream.append` throws `ArgumentError` above the active cap at
+  write time; large delta responses still paginate across gossip rounds
+  either way. Practical effect for existing consumers on the default
+  config: the append-time payload cap drops to ~7.4 KB until a fleet
+  opts into `wireVersion: v2` (which restores ~22 KB). For the Nearby
+  transport this is a net improvement — appends over its ~8 KB effective
+  send ceiling now fail loudly with `ArgumentError` at `append()` instead
+  of silently failing to send. For a WebSocket-backed transport (no such
+  ceiling) this is a new constraint: payloads in the ~7.4–22 KB band that
+  previously fit no longer do, until the fleet flips to v2.
 
 ### Breaking — contracts for repository implementers
 
@@ -98,6 +122,12 @@ publish under the existing pub.dev `gossip` name must version above the old
   explicit zero entries away — `VersionVector({a: 0})` equals
   `VersionVector.empty`, and later mutation of the passed map no longer
   alters the vector.
+
+### Added
+
+- Canonical wire conformance vectors under `test/wire_vectors/` — byte-exact
+  frames for both wire versions (plus edge cases), the cross-repo source of
+  truth that gossip-kt vendors for parity testing.
 
 ### Changed
 
