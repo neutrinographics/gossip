@@ -1,0 +1,1 @@
+{"sender":"node-a","digests":[{"channelId":"ch-1","streams":[{"streamId":"st-1","version":{"node-a":3,"node-b":1}}]}]}
