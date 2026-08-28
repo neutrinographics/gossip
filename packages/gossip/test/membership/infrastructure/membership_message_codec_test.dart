@@ -7,6 +7,7 @@ import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 
 void main() {
@@ -91,7 +92,12 @@ void main() {
 
     test('decode returns null for a frame from the sync family', () {
       final digestRequest = DigestRequest(sender: NodeId('peer1'), digests: []);
-      final bytes = SyncMessageCodec().encode(digestRequest);
+      // v1 (unprefixed): MembershipMessageCodec's own marker-awareness is
+      // out of this task's scope, so this probes its existing
+      // sibling-family detection with the frame shape it already handles.
+      final bytes = SyncMessageCodec(
+        wireVersion: WireVersion.v1,
+      ).encode(digestRequest);
 
       expect(codec.decode(bytes), isNull);
     });

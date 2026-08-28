@@ -16,6 +16,7 @@ import 'package:gossip/src/sync/application/gossip_engine.dart';
 import 'package:gossip/src/membership/application/failure_detector.dart';
 import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:gossip/src/sync/application/channel_service.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
@@ -90,7 +91,7 @@ void main() {
 
       final errors = <SyncError>[];
       final engine = GossipEngine(
-        codec: SyncMessageCodec(),
+        codec: SyncMessageCodec(wireVersion: WireVersion.v2),
         localNode: localNode,
         peerDirectory: MembershipPeerDirectory(peerRegistry),
         entryRepository: entryRepo,
@@ -121,7 +122,7 @@ void main() {
 
       final errors = <SyncError>[];
       final engine = GossipEngine(
-        codec: SyncMessageCodec(),
+        codec: SyncMessageCodec(wireVersion: WireVersion.v2),
         localNode: localNode,
         peerDirectory: MembershipPeerDirectory(peerRegistry),
         entryRepository: entryRepo,

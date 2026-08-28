@@ -16,6 +16,7 @@ import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/sync/application/gossip_engine.dart';
 import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/sync/domain/messages/delta_request.dart';
@@ -35,7 +36,7 @@ void main() {
     final bus = InMemoryMessageBus();
     final messagePort = InMemoryMessagePort(localNode, bus);
     return GossipEngine(
-      codec: SyncMessageCodec(),
+      codec: SyncMessageCodec(wireVersion: WireVersion.v2),
       localNode: localNode,
       peerDirectory: MembershipPeerDirectory(registry),
       entryRepository: entryRepo,
@@ -664,7 +665,7 @@ void main() {
         final bus = InMemoryMessageBus();
         final messagePort = InMemoryMessagePort(localNode, bus);
         final engine = GossipEngine(
-          codec: SyncMessageCodec(),
+          codec: SyncMessageCodec(wireVersion: WireVersion.v2),
           localNode: localNode,
           peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,
@@ -736,7 +737,7 @@ void main() {
         final bus = InMemoryMessageBus();
         final messagePort = InMemoryMessagePort(localNode, bus);
         final engine = GossipEngine(
-          codec: SyncMessageCodec(),
+          codec: SyncMessageCodec(wireVersion: WireVersion.v2),
           localNode: localNode,
           peerDirectory: MembershipPeerDirectory(registry),
           entryRepository: entryRepo,

@@ -3,6 +3,7 @@ import 'dart:typed_data';
 import 'package:gossip/gossip.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:test/test.dart';
 
 import '../support/coordinator_builder.dart';
@@ -54,7 +55,7 @@ void main() {
     // the materializer's fold then throws.
     await peerPort.send(
       localNode,
-      SyncMessageCodec().encode(
+      SyncMessageCodec(wireVersion: WireVersion.v2).encode(
         DeltaResponse(
           sender: peerId,
           channelId: channelId,

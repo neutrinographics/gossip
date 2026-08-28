@@ -12,6 +12,7 @@ import 'package:gossip/src/membership/infrastructure/membership_message_codec.da
 import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:test/test.dart';
 
 import '../../membership/application/failure_detector_test_harness.dart';
@@ -59,7 +60,13 @@ void main() {
       final (messages, sub) = h.captureMessages(peer);
 
       final digestRequest = DigestRequest(sender: peer.id, digests: const []);
-      final bytes = SyncMessageCodec().encode(digestRequest);
+      // v1 (unprefixed): FailureDetector's codec (MembershipMessageCodec)
+      // doesn't parse the v2 marker yet — that's separate receiver-side
+      // work — so this probes its existing sibling-family detection with
+      // the frame shape it already handles.
+      final bytes = SyncMessageCodec(
+        wireVersion: WireVersion.v1,
+      ).encode(digestRequest);
       await peer.port.send(h.localNode, bytes);
       await h.flush(3);
 

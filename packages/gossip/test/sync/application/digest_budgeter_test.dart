@@ -7,13 +7,14 @@ import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:test/test.dart';
 
 /// Transplanted from gossip_engine_digest_budget_test.dart: these pin the
 /// same byte-budgeting/rotation semantics `GossipEngine` relies on, now
 /// against [DigestBudgeter] directly.
 void main() {
-  final codec = SyncMessageCodec();
+  final codec = SyncMessageCodec(wireVersion: WireVersion.v2);
   final localNode = NodeId('local');
   final channelId = ChannelId('ch1');
 

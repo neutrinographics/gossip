@@ -276,8 +276,13 @@ class Coordinator {
       channelRepository: cachedChannelRepo,
       entryRepository: entryRepository,
       localNodeRepository: localNodeRepository,
+      // Hardcoded until wire version becomes a coordinator config option.
+      // v1: the membership codec doesn't parse the v2 marker yet, so the
+      // active send codec must stay v1 until that receiver-side work
+      // lands too.
       maxPayloadBytes: SyncMessageCodec.maxEntryPayloadForBudget(
         cfg.maxMessageBytes,
+        WireVersion.v1,
       ),
       materializationService: materializationService,
       onEvent: (event) => coordinator._onChannelServiceEvent(event),
@@ -313,7 +318,11 @@ class Coordinator {
       final failureDetectorRttTracker = RttTracker();
 
       coordinator._gossipEngine = GossipEngine(
-        codec: SyncMessageCodec(),
+        // Hardcoded until wire version becomes a coordinator config
+        // option. v1: the membership codec doesn't parse the v2 marker
+        // yet, so the active send codec must stay v1 until that
+        // receiver-side work lands too.
+        codec: SyncMessageCodec(wireVersion: WireVersion.v1),
         localNode: localNode,
         peerDirectory: MembershipPeerDirectory(peerRegistry),
         entryRepository: entryRepository,

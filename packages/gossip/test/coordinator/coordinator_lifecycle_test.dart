@@ -20,6 +20,7 @@ import 'package:gossip/src/membership/infrastructure/in_memory_peer_repository.d
 import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:test/test.dart';
 
 import '../support/coordinator_builder.dart';
@@ -116,7 +117,7 @@ void main() {
 
       final peerId = NodeId('peer1');
       final peerPort = InMemoryMessagePort(peerId, bus);
-      final codec = SyncMessageCodec();
+      final codec = SyncMessageCodec(wireVersion: WireVersion.v2);
       final digests = <DigestRequest>[];
       final sub = peerPort.incoming.listen((msg) {
         final decoded = codec.decode(msg.bytes);

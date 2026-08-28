@@ -16,6 +16,7 @@ import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:gossip/src/sync/application/gossip_engine.dart';
 import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:test/test.dart';
@@ -226,7 +227,7 @@ void main() {
         PeerRegistry registry,
         InMemoryEntryRepository repo,
       ) => GossipEngine(
-        codec: SyncMessageCodec(),
+        codec: SyncMessageCodec(wireVersion: WireVersion.v2),
         localNode: node,
         peerDirectory: MembershipPeerDirectory(registry),
         entryRepository: repo,
