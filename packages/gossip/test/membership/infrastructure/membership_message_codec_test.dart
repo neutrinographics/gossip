@@ -12,7 +12,9 @@ import 'package:gossip/src/membership/infrastructure/membership_message_codec.da
 
 void main() {
   group('MembershipMessageCodec', () {
-    final codec = MembershipMessageCodec();
+    // v1 (unprefixed) so the wire-pinning byte-0 checks below hold: a v2
+    // codec would carry the 0xF2 marker before the type byte.
+    final codec = MembershipMessageCodec(wireVersion: WireVersion.v1);
 
     Map<String, dynamic> jsonOf(Uint8List encoded) =>
         jsonDecode(utf8.decode(encoded.sublist(1))) as Map<String, dynamic>;
@@ -92,9 +94,8 @@ void main() {
 
     test('decode returns null for a frame from the sync family', () {
       final digestRequest = DigestRequest(sender: NodeId('peer1'), digests: []);
-      // v1 (unprefixed): MembershipMessageCodec's own marker-awareness is
-      // out of this task's scope, so this probes its existing
-      // sibling-family detection with the frame shape it already handles.
+      // v1 (unprefixed): probes the sibling-family detection with the
+      // frame shape this codec's own v1 emission also uses.
       final bytes = SyncMessageCodec(
         wireVersion: WireVersion.v1,
       ).encode(digestRequest);
@@ -139,6 +140,48 @@ void main() {
             'Unknown message type: 255',
           ),
         ),
+      );
+    });
+
+    group('version dispatch', () {
+      final v1 = MembershipMessageCodec(wireVersion: WireVersion.v1);
+      final v2 = MembershipMessageCodec(wireVersion: WireVersion.v2);
+
+      test('v2 frames carry the marker then the identical v1 JSON payload', () {
+        final ping = Ping(sender: NodeId('peer1'), sequence: 7);
+        final v1Frame = v1.encode(ping);
+        final v2Frame = v2.encode(ping);
+        expect(v2Frame[0], equals(0xF2));
+        expect(v2Frame.sublist(1), equals(v1Frame));
+      });
+
+      test('both versions decode both framings', () {
+        final ping = Ping(sender: NodeId('peer1'), sequence: 7);
+        for (final codec in [v1, v2]) {
+          for (final frame in [v1.encode(ping), v2.encode(ping)]) {
+            expect((codec.decode(frame)! as Ping).sequence, equals(7));
+          }
+        }
+      });
+
+      test(
+        'a v2-prefixed sync frame decodes to null; reserved bytes throw',
+        () {
+          final syncFrame = Uint8List.fromList([
+            0xF2,
+            3,
+            ...utf8.encode('{"sender":"p","digests":[]}'),
+          ]);
+          expect(v1.decode(syncFrame), isNull);
+          expect(
+            () => v1.decode(Uint8List.fromList([0xF3, 0, 1])),
+            throwsArgumentError,
+          );
+          expect(
+            () => v1.decode(Uint8List.fromList([0xF2, 0x50, 1])),
+            throwsArgumentError,
+          );
+        },
       );
     });
   });

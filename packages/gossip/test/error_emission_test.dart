@@ -166,7 +166,7 @@ void main() {
 
       final errors = <SyncError>[];
       final detector = FailureDetector(
-        codec: MembershipMessageCodec(),
+        codec: MembershipMessageCodec(wireVersion: WireVersion.v2),
         localNode: localNode,
         peerRegistry: peerRegistry,
         timePort: timePort,

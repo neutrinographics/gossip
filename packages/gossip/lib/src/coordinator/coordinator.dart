@@ -340,7 +340,11 @@ class Coordinator {
       );
 
       coordinator._failureDetector = FailureDetector(
-        codec: MembershipMessageCodec(),
+        // Hardcoded until wire version becomes a coordinator config
+        // option. Safe ahead of that: membership's v1/v2 JSON schemas are
+        // identical, so a v2-framed Ping/Ack/PingReq is a routine "not
+        // mine" miss for the sync codec, never a decode error.
+        codec: MembershipMessageCodec(wireVersion: WireVersion.v2),
         localNode: localNode,
         peerRegistry: peerRegistry,
         timePort: timePort,

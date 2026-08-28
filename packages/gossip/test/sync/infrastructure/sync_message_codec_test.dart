@@ -299,7 +299,9 @@ void main() {
 
     test('decode returns null for a frame from the membership family', () {
       final ping = Ping(sender: NodeId('peer1'), sequence: 1);
-      final bytes = MembershipMessageCodec().encode(ping);
+      final bytes = MembershipMessageCodec(
+        wireVersion: WireVersion.v2,
+      ).encode(ping);
 
       expect(codec.decode(bytes), isNull);
     });

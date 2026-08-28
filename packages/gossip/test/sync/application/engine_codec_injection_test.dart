@@ -29,7 +29,9 @@ void main() {
         final (messages, sub) = h.captureMessages(peer);
 
         final ping = Ping(sender: peer.id, sequence: 1);
-        final bytes = MembershipMessageCodec().encode(ping);
+        final bytes = MembershipMessageCodec(
+          wireVersion: WireVersion.v2,
+        ).encode(ping);
         await peer.port.send(h.localNode, bytes);
         await h.flush(3);
 
