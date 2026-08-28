@@ -1,8 +1,8 @@
 import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 
-/// A delay-based periodic loop, generalized out of the identical
-/// hand-rolled `_generation`/`_scheduleNext...` idiom that used to live
-/// separately inside the gossip round loop and the SWIM probe loop.
+/// A delay-based periodic loop implementing the generation-guarded
+/// `_generation`/`_scheduleNext...` idiom shared by the gossip round loop,
+/// the SWIM probe loop, and the coordinator's auto-compaction loop.
 ///
 /// Uses [TimePort.delay] rather than [TimePort.schedulePeriodic] so the
 /// interval between ticks can change every cycle (see [nextDelay]) —
@@ -14,8 +14,7 @@ import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 /// A naive `delay().then(tick).then(scheduleNext)` loop forks into two
 /// concurrent loops if [stop] and [start] happen within one interval: the
 /// pre-stop delay is still pending, so when it eventually fires it ticks
-/// and reschedules right alongside the freshly started loop — this is the
-/// H2 scheduler-forking hazard from the 2026-07-06 correctness audit.
+/// and reschedules right alongside the freshly started loop.
 /// [_generation] closes it: every [start] and [stop] bumps it, and a
 /// scheduled callback checks it against the current value before doing
 /// anything. A callback from a run that has since stopped or restarted

@@ -27,7 +27,7 @@ class _ThrowingRetention implements RetentionPolicy {
 
 void main() {
   test('compactAll isolates a throwing stream: later streams still compact '
-      'and the failure is reported (COR3-15)', () async {
+      'and the failure is reported', () async {
     final localNode = NodeId('local');
     final channelId = ChannelId('ch1');
     final poison = StreamId('poison');

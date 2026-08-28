@@ -219,7 +219,7 @@ void main() {
 
       // Simulate several fast RTT samples
       for (var i = 0; i < 10; i++) {
-        // Age the clock past the current interval first (WIRE4-3): the
+        // Age the clock past the current interval first: the
         // previous round's Ack just proved liveness, so without this the
         // very next round would see a "fresh" peer, suppress the probe,
         // and probeWithAck's expectPing would wait forever for a Ping
@@ -243,7 +243,7 @@ void main() {
     });
   });
 
-  group('FailureDetector per-knob static timing (H2)', () {
+  group('FailureDetector per-knob static timing', () {
     test('a static probeInterval does NOT disable adaptive ping timeout', () {
       // The chat config passes a static probeInterval but leaves
       // pingTimeout null — ping timeout must stay adaptive, not snap to

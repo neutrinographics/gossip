@@ -71,8 +71,8 @@ void main() {
     payload: Uint8List.fromList([seq]),
   );
 
-  test('one throwing materializer does not starve its siblings of the batch '
-      '(COR3-13)', () async {
+  test('one throwing materializer does not starve its siblings of the '
+      'batch', () async {
     final repo = InMemoryEntryRepository();
     final service = MaterializationService(entryRepository: repo);
     // The thrower registers FIRST so it is folded first.
@@ -106,7 +106,7 @@ void main() {
   });
 
   test('an equal-timestamp entry landing after a restart is not skipped by '
-      'the persisted cursor (COR3-27)', () async {
+      'the persisted cursor', () async {
     final repo = InMemoryEntryRepository();
     final authorB = NodeId('author-b');
 

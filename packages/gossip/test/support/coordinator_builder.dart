@@ -23,11 +23,11 @@ final Expando<List<SyncError>> _recordedErrors = Expando<List<SyncError>>(
   'createTestCoordinator recorded errors',
 );
 
-/// Builds a [Coordinator] wired with in-memory infrastructure, collapsing
-/// the three copy-pasted `createCoordinator()` helpers this suite had grown
-/// (CC5-5) into one call. Only [bus] and [timePort] opt the coordinator
-/// into network sync — omitting both reproduces `Coordinator.create`'s own
-/// local-only default, which most of the suite wants.
+/// Builds a [Coordinator] wired with in-memory infrastructure, collapsing the
+/// three copy-pasted `createCoordinator()` helpers this suite had grown into
+/// one call. Only [bus] and [timePort] opt the coordinator into network sync —
+/// omitting both reproduces `Coordinator.create`'s own local-only default,
+/// which most of the suite wants.
 ///
 /// The four repository parameters exist for tests whose point is
 /// repository identity rather than coordinator behavior: hold a reference
@@ -64,7 +64,7 @@ final Expando<List<SyncError>> _recordedErrors = Expando<List<SyncError>>(
 /// Registers `addTearDown(coordinator.dispose)` before returning, so
 /// cleanup still runs when an assertion later in the test throws — a
 /// trailing `await coordinator.dispose()` at the end of the test body does
-/// not (CC5-26). Because [addTearDown] is `package:test`'s, this must be
+/// not. Because [addTearDown] is `package:test`'s, this must be
 /// called from inside a `test()` body or `setUp` — calling it elsewhere
 /// throws.
 ///

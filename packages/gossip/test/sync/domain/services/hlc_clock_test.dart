@@ -135,7 +135,7 @@ void main() {
       expect(result.logical, equals(0));
     });
 
-    group('drift bound (COR3-10)', () {
+    group('drift bound', () {
       test('defaults maxDrift to one hour', () {
         final helper = TestTimeHelper(1000);
         final clock = HlcClock(helper.timeSource);

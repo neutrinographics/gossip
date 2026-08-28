@@ -5,19 +5,19 @@ import 'package:test/test.dart';
 
 import 'failure_detector_test_harness.dart';
 
-/// H3: the main probe selection must round-robin over a shuffled order so
+/// The main probe selection must round-robin over a shuffled order so
 /// every probable peer is probed once per cycle. Pure-random selection
 /// gives geometric coverage (E[rounds to probe a specific dead peer] =
 /// n-1, with a heavy tail), which makes SWIM detection latency scale
 /// O(n · threshold) — minutes at n=8. Round-robin bounds it to ~(n-1)
 /// rounds per peer.
 void main() {
-  group('FailureDetector probe selection (H3)', () {
+  group('FailureDetector probe selection', () {
     test('round-robins: every block of n selections covers all probable '
         'peers exactly once', () {
-      // Seeded so the pre-fix random selection is deterministically a
-      // non-permutation (red), while round-robin is a permutation for
-      // any seed (green).
+      // Seeded so a pure-random selection would deterministically produce
+      // a non-permutation, while round-robin is a permutation for any
+      // seed.
       final h = FailureDetectorTestHarness(random: Random(1234));
       const n = 5;
       final ids = {for (var i = 0; i < n; i++) h.addPeer('peer$i').id};

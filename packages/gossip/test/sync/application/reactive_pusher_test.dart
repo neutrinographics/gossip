@@ -13,11 +13,11 @@ import '../../support/scripted_delay_time_port.dart';
 
 /// Transplanted from gossip_engine_scheduling_test.dart / the
 /// gossip_engine.dart `notifyLocalWrite`/`_flushPendingPushes` debounce
-/// machinery (CC5-1, task F5), now pinned directly against
-/// [ReactivePusher] instead of only through `GossipEngine`. The engine's
-/// own reactive-push tests (gossip_engine_reactive_push_test.dart,
-/// gossip_engine_scheduling_test.dart) stay in place unmodified — they
-/// pin the same behavior end-to-end through the engine's public API.
+/// machinery, now pinned directly against [ReactivePusher] instead of only
+/// through `GossipEngine`. The engine's own reactive-push tests
+/// (gossip_engine_reactive_push_test.dart, gossip_engine_scheduling_test.dart)
+/// stay in place unmodified — they pin the same behavior end-to-end through
+/// the engine's public API.
 void main() {
   final channelId = ChannelId('ch1');
   final streamId = StreamId('s1');
@@ -204,7 +204,7 @@ void main() {
         expect(flushes, isEmpty);
 
         // Once running again, a fresh write must schedule its own
-        // debounce. With the C6 wedge (bump but no flag reset), this
+        // debounce. With the wedge (bump but no flag reset), this
         // write would find `_pushFlushScheduled` still true and silently
         // do nothing.
         running = true;

@@ -71,8 +71,6 @@ class MembershipMessageCodec implements MessageCodec {
     return Uint8List.fromList(utf8.encode(jsonEncode(json)));
   }
 
-  // --- SWIM message encoders ---
-
   Map<String, dynamic> _encodePing(Ping message) {
     return {'sender': message.sender.value, 'sequence': message.sequence};
   }
@@ -103,8 +101,6 @@ class MembershipMessageCodec implements MessageCodec {
         throw ArgumentError('Unknown message type: $messageType');
     }
   }
-
-  // --- SWIM message decoders ---
 
   Ping _decodePing(Map<String, dynamic> json) {
     return Ping(

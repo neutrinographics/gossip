@@ -141,12 +141,10 @@ class Channel {
   /// Always returns a facade even if the stream doesn't exist yet, since
   /// reads on a missing stream are harmless — they return empty results.
   /// Only append throws (a [StateError]), because silently dropping a
-  /// write would be invisible data loss.
-  /// Use [getOrCreateStream] if you want to create the stream automatically.
+  /// write would be invisible data loss. To check existence without
+  /// creating the stream, use [streamIds] first. Use [getOrCreateStream]
+  /// if you want to create the stream automatically.
   EventStream getStream(StreamId streamId) {
-    // We always return a facade: reads on a missing stream are harmless
-    // (empty results); only append throws. For a sync check, use
-    // getStreamIds() first.
     return EventStream(id: streamId, channelId: id, service: _service);
   }
 }

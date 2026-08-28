@@ -869,10 +869,6 @@ void main() {
       });
     });
 
-    // -------------------------------------------------------------------------
-    // Full protocol integration
-    // -------------------------------------------------------------------------
-
     group('Full protocol integration', () {
       test('4-step sync delivers entries from peer to initiator', () async {
         // Set up two nodes sharing a channel
@@ -972,10 +968,6 @@ void main() {
         engineB.stopListening();
       });
     });
-
-    // -------------------------------------------------------------------------
-    // Edge cases
-    // -------------------------------------------------------------------------
 
     group('Edge cases', () {
       test('performGossipRound with no peers returns immediately', () async {

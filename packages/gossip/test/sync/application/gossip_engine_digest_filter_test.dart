@@ -14,9 +14,9 @@ import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 
 import 'gossip_engine_test_harness.dart';
 
-/// WIRE4-5: a converged DigestResponse used to echo back version vectors
-/// the requester provably already had — the single largest pure-redundancy
-/// item on the idle wire. Pairs the requester dominates are now omitted.
+/// An unfiltered DigestResponse echoes back version vectors the requester
+/// provably already had — the single largest pure-redundancy item on the
+/// idle wire. This filter omits pairs the requester dominates.
 void main() {
   group('DigestResponse dominance filter', () {
     test('omits streams the requester already dominates', () async {

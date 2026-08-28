@@ -261,7 +261,7 @@ class InMemoryEntryRepository implements EntryRepository {
     if (streamCache == null || streamCache.isEmpty) {
       return VersionVector.empty;
     }
-    return VersionVector(Map<NodeId, int>.from(streamCache));
+    return VersionVector(streamCache);
   }
 
   @override
@@ -280,7 +280,7 @@ class InMemoryEntryRepository implements EntryRepository {
     if (streamFloor == null || streamFloor.isEmpty) {
       return VersionVector.empty;
     }
-    return VersionVector(Map<NodeId, int>.from(streamFloor));
+    return VersionVector(streamFloor);
   }
 
   @override

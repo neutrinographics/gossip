@@ -64,7 +64,7 @@ void main() {
 
       // A local entry so our version is genuinely ahead of the peer's
       // empty vector: empty-vs-empty is vacuously "dominated" by the
-      // WIRE4-5 dominance filter, which would otherwise swallow the very
+      // dominance filter, which would otherwise swallow the very
       // digest this test checks the shape of.
       await entryRepo.append(
         channelId,

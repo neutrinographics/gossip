@@ -16,18 +16,17 @@ import 'package:gossip/src/shared/domain/services/time_source.dart';
 import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:test/test.dart';
 
-/// Unit tests for [DeltaMerger], extracted from `GossipEngine` (CC5-1,
-/// task F6): `_mergeChain`, `_selectContiguousEntries`/`ContiguityGap`,
+/// Unit tests for [DeltaMerger], extracted from `GossipEngine`:
+/// `_mergeChain`, `_selectContiguousEntries`/`ContiguityGap`,
 /// `_reportedGaps`/`_reportContiguityGaps`, the merge body of
-/// `_mergeDeltaResponse` from its floor-adoption block onward, and
+/// `_mergeInner` from its floor-adoption block onward, and
 /// `_updateHlcFromEntries`. Driven against a real
 /// [InMemoryEntryRepository] — no mocks of the repository — per the
 /// engine's own testing convention.
 ///
-/// The old engine-level tests in gossip_engine_contiguity_test.dart and
-/// gossip_engine_catchup_test.dart stay in place unmodified — they pin the
-/// same behavior end-to-end through the engine's public API, now via
-/// [DeltaMerger] underneath.
+/// The engine-level tests in gossip_engine_contiguity_test.dart and
+/// gossip_engine_catchup_test.dart pin the same behavior end-to-end through
+/// the engine's public API, now via [DeltaMerger] underneath.
 void main() {
   final channelId = ChannelId('ch1');
   final streamId = StreamId('s1');
@@ -421,14 +420,14 @@ void main() {
           'onContinuationIssued',
         ]),
         reason:
-            'preserves the pre-extraction statement order: count+news '
+            'preserves the exact callback order: count+news '
             'before onEntriesMerged, pending re-mark right before the '
-            'chained merge returns (see task-6-report.md)',
+            'chained merge returns',
       );
     });
   });
 
-  group('DeltaMerger — chain serialization (COR3-9)', () {
+  group('DeltaMerger — chain serialization', () {
     test('two concurrent same-stream merges serialize — no partial batches, '
         'no spurious errors', () async {
       final h = build();

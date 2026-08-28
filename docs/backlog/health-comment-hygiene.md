@@ -49,6 +49,9 @@ levels. File splits, barrel conventions, and test-tree layout are *not* in scope
 
 ## Related
 
+- **Done** (2026-08-28) — the pass shipped; see the campaign-close section at the
+  end of [the clean-code audit record](../audits/2026-08-23-clean-code-audit.md#campaign-close--comment-hygiene-2026-08-28)
+  for the before/after numbers and what was decided.
 - [Sweep the remaining minor audit findings](health-minor-findings-sweep.md) — the
   natural neighbor; this item should run after it so the sweep's edits land first.
 - The audit records under `docs/audits/` remain the permanent home of the finding

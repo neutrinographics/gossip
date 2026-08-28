@@ -5,11 +5,11 @@ import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 import 'package:gossip/src/sync/domain/services/pending_pull_tracker.dart';
 import 'package:test/test.dart';
 
-/// Transplanted from gossip_engine_delta_budget_test.dart (M3 pending-delta
+/// Transplanted from gossip_engine_delta_budget_test.dart (pending-delta
 /// dedup group) and gossip_engine_pending_delta_test.dart/
 /// gossip_engine_sync_activity_test.dart (adaptive timeout, outstanding
-/// count), now pinned directly against [PendingPullTracker] (CC5-1, task
-/// F4) instead of only through `GossipEngine`.
+/// count), now pinned directly against [PendingPullTracker] instead of
+/// only through `GossipEngine`.
 void main() {
   final channelId = ChannelId('ch1');
   final streamId = StreamId('s1');

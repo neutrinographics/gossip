@@ -17,10 +17,10 @@ class _ThrowingMaterializer extends StateMaterializer<int> {
   int fold(int state, LogEntry entry) => throw StateError('app bug');
 }
 
-/// COR3-14: an app materializer throwing during the merge fold must not be
-/// blamed on the peer as message corruption, must not suppress the
-/// EntriesMerged event (the entries ARE merged and durable), and must
-/// surface as a storage/application error.
+/// An app materializer throwing during the merge fold must not be blamed
+/// on the peer as message corruption, must not suppress the EntriesMerged
+/// event (the entries ARE merged and durable), and must surface as a
+/// storage/application error.
 void main() {
   test('a throwing materializer in the merge path is reported as a storage '
       'error and EntriesMerged still fires', () async {

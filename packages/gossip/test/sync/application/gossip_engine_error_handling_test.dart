@@ -19,10 +19,6 @@ import '../../membership/application/failure_detector_test_harness.dart'
 import 'gossip_engine_test_harness.dart';
 
 void main() {
-  // ---------------------------------------------------------------------------
-  // Error handling
-  // ---------------------------------------------------------------------------
-
   group('Error handling', () {
     test('emits messageCorrupted error for malformed message bytes', () async {
       final h = GossipEngineTestHarness();
@@ -70,9 +66,9 @@ void main() {
         // Cheapest real downstream throw: onEntriesMerged is a real
         // constructor-provided callback (an application-supplied
         // collaborator, same as onError/onLog), invoked from
-        // _mergeDeltaResponse only after a genuinely valid DeltaResponse
-        // has decoded, been routed, and merged — so making it throw
-        // exercises the actual handler-failure path through
+        // DeltaMerger's merge path only after a genuinely valid
+        // DeltaResponse has decoded, been routed, and merged — so making
+        // it throw exercises the actual handler-failure path through
         // _handleIncomingMessage rather than mocking any engine internal.
         final h = GossipEngineTestHarness(
           onEntriesMerged: (_, _, _, _) async {
@@ -161,10 +157,6 @@ void main() {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // HLC updates
-  // ---------------------------------------------------------------------------
-
   group('HLC updates', () {
     test('handleDeltaResponse updates HLC from received entries', () async {
       final h = GossipEngineTestHarness(withHlcClock: true);
@@ -192,7 +184,7 @@ void main() {
 
       // The clock advances (causal ordering attempt) but a remote clock
       // ~11 days ahead of local time is beyond any plausible skew: it must
-      // be clamped to now + maxDrift, not adopted (COR3-10) — adoption is
+      // be clamped to now + maxDrift, not adopted — adoption is
       // permanent and would invert time-based retention mesh-wide.
       final clockAfter = h.hlcClock!.current;
       expect(
@@ -235,10 +227,6 @@ void main() {
       );
     });
   });
-
-  // ---------------------------------------------------------------------------
-  // Message metrics
-  // ---------------------------------------------------------------------------
 
   group('Message metrics', () {
     test(

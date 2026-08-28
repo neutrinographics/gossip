@@ -15,52 +15,49 @@ void main() {
   final peerId = NodeId('peer1');
   final codec = SyncMessageCodec();
 
-  test(
-    'adding a peer triggers an immediate gossip round with it (G2 wiring)',
-    () async {
-      final bus = InMemoryMessageBus();
-      final timePort = InMemoryTimePort();
-      final coordinator = await createTestCoordinator(
-        bus: bus,
-        timePort: timePort,
-        // Long periodic intervals: only sync-on-connect can produce a
-        // DigestRequest within the test window.
-        config: const CoordinatorConfig(
-          gossipInterval: Duration(seconds: 100),
-          probeInterval: Duration(seconds: 100),
-          pingTimeout: Duration(seconds: 100),
-          startupGracePeriod: Duration.zero,
-        ),
-      );
+  test('adding a peer triggers an immediate gossip round with it', () async {
+    final bus = InMemoryMessageBus();
+    final timePort = InMemoryTimePort();
+    final coordinator = await createTestCoordinator(
+      bus: bus,
+      timePort: timePort,
+      // Long periodic intervals: only sync-on-connect can produce a
+      // DigestRequest within the test window.
+      config: const CoordinatorConfig(
+        gossipInterval: Duration(seconds: 100),
+        probeInterval: Duration(seconds: 100),
+        pingTimeout: Duration(seconds: 100),
+        startupGracePeriod: Duration.zero,
+      ),
+    );
 
-      final peerPort = InMemoryMessagePort(peerId, bus);
-      final digestRequests = <DigestRequest>[];
-      final sub = peerPort.incoming.listen((msg) {
-        final decoded = codec.decode(msg.bytes);
-        if (decoded is DigestRequest) digestRequests.add(decoded);
-      });
+    final peerPort = InMemoryMessagePort(peerId, bus);
+    final digestRequests = <DigestRequest>[];
+    final sub = peerPort.incoming.listen((msg) {
+      final decoded = codec.decode(msg.bytes);
+      if (decoded is DigestRequest) digestRequests.add(decoded);
+    });
 
-      await coordinator.start();
-      final channel = await coordinator.createChannel(ChannelId('ch1'));
-      await channel.getOrCreateStream(StreamId('s1'));
+    await coordinator.start();
+    final channel = await coordinator.createChannel(ChannelId('ch1'));
+    await channel.getOrCreateStream(StreamId('s1'));
 
-      // No periodic round has fired yet (interval is 100s).
-      await coordinator.addPeer(peerId);
-      await pumpUntil(
-        () => digestRequests.isNotEmpty,
-        describe: 'addPeer triggering an immediate sync-on-connect round',
-      );
+    // No periodic round has fired yet (interval is 100s).
+    await coordinator.addPeer(peerId);
+    await pumpUntil(
+      () => digestRequests.isNotEmpty,
+      describe: 'addPeer triggering an immediate sync-on-connect round',
+    );
 
-      expect(
-        digestRequests.length,
-        equals(1),
-        reason:
-            'addPeer should kick off anti-entropy immediately rather than '
-            'waiting for the random periodic round to select the new peer',
-      );
+    expect(
+      digestRequests.length,
+      equals(1),
+      reason:
+          'addPeer should kick off anti-entropy immediately rather than '
+          'waiting for the random periodic round to select the new peer',
+    );
 
-      await sub.cancel();
-      await peerPort.close();
-    },
-  );
+    await sub.cancel();
+    await peerPort.close();
+  });
 }

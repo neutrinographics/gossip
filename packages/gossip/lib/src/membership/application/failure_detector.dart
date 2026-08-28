@@ -121,14 +121,7 @@ enum _ProbeOutcome {
 /// Call [start] to begin probe rounds and [startListening] to handle
 /// incoming messages. Both are independent; typically both are started
 /// together.
-///
-/// Comment keys like COR3-n / WIRE4-n / H-n refer to findings in
-/// `docs/audits/`.
 class FailureDetector {
-  // ---------------------------------------------------------------------------
-  // Construction & configuration
-  // ---------------------------------------------------------------------------
-
   final NodeId localNode;
   final PeerRegistry peerRegistry;
   final int failureThreshold;
@@ -141,17 +134,16 @@ class FailureDetector {
 
   final RttTracker _rttTracker;
 
-  /// Owns the ping-timeout / probe-interval policy (CC5-13): static vs.
-  /// adaptive per knob, the 3x-timeout interval formula, and the
-  /// quiescence pacer. See [ProbeTimingPolicy] for why this is a
-  /// separate object rather than fields here.
+  /// Owns the ping-timeout / probe-interval policy: static vs. adaptive
+  /// per knob, the 3x-timeout interval formula, and the quiescence
+  /// pacer. See [ProbeTimingPolicy] for why this is a separate object
+  /// rather than fields here.
   late final ProbeTimingPolicy _timing;
 
-  /// Owns probe-target selection policy (CC5-2/CC5-14): round-robin peer
-  /// selection, indirect-ping intermediary picks, the unreachable-peer
-  /// recovery cursor, and the probing-hold grace period. See
-  /// [ProbeTargetSelector] for why this is a separate object rather than
-  /// fields here.
+  /// Owns probe-target selection policy: round-robin peer selection,
+  /// indirect-ping intermediary picks, the unreachable-peer recovery
+  /// cursor, and the probing-hold grace period. See [ProbeTargetSelector]
+  /// for why this is a separate object rather than fields here.
   late final ProbeTargetSelector _selector;
   final Random _random;
 
@@ -229,18 +221,10 @@ class FailureDetector {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Constants
-  // ---------------------------------------------------------------------------
-
   /// SWIM's k: number of intermediaries asked to relay a ping when a
   /// direct probe times out, before falling back to (or alongside) waiting
   /// out the grace period for a late direct Ack.
   static const int _indirectProbeFanout = 3;
-
-  // ---------------------------------------------------------------------------
-  // State
-  // ---------------------------------------------------------------------------
 
   /// Drives the periodic probe round loop: computes each tick's delay
   /// (jittered [effectiveProbeInterval]), runs [performProbeRound], and
@@ -256,14 +240,10 @@ class FailureDetector {
   int _acksReceived = 0;
   int _pingsSent = 0;
 
-  // ---------------------------------------------------------------------------
-  // Public API: probing hold (startup grace period)
-  // ---------------------------------------------------------------------------
-  //
-  // Delegates to _selector — see ProbeTargetSelector for the semantics.
-  // Kept public here (rather than routing callers through _selector
-  // directly) because Coordinator, the composition root, only ever sees
-  // the detector.
+  // The next five members delegate to _selector — see ProbeTargetSelector
+  // for the semantics. Kept public here (rather than routing callers
+  // through _selector directly) because Coordinator, the composition
+  // root, only ever sees the detector.
 
   /// Holds [peerId] out of probe selection for [duration], measured from
   /// now on this detector's own time port.
@@ -301,10 +281,6 @@ class FailureDetector {
   /// Drops all per-peer bookkeeping for a peer that has been removed from
   /// the system entirely.
   void forgetPeer(NodeId peerId) => _selector.forgetPeer(peerId);
-
-  // ---------------------------------------------------------------------------
-  // Public API: adaptive timing
-  // ---------------------------------------------------------------------------
 
   bool get isRunning => _scheduler.isRunning;
 
@@ -371,10 +347,6 @@ class FailureDetector {
     );
   }
 
-  // ---------------------------------------------------------------------------
-  // Public API: lifecycle
-  // ---------------------------------------------------------------------------
-
   /// Starts periodic probe rounds at adaptive intervals.
   void start() {
     if (_scheduler.isRunning) return;
@@ -418,10 +390,6 @@ class FailureDetector {
     _messageSubscription = null;
   }
 
-  // ---------------------------------------------------------------------------
-  // Public API: probing
-  // ---------------------------------------------------------------------------
-
   /// Performs a single probe round.
   ///
   /// 1. Select the next probe target (round-robin over probable peers — see ProbeTargetSelector)
@@ -435,14 +403,7 @@ class FailureDetector {
   /// synchronously instead of waiting on the timer.
   @visibleForTesting
   Future<void> performProbeRound() async {
-    // Periodically probe one unreachable peer for recovery.
-    if (unreachableProbeInterval > 0) {
-      _unreachableProbeCounter++;
-      if (_unreachableProbeCounter >= unreachableProbeInterval) {
-        _unreachableProbeCounter = 0;
-        await _probeUnreachablePeer();
-      }
-    }
+    await _maybeProbeUnreachablePeerThisRound();
 
     // Regular probe round: select reachable or suspected peer.
     final peer = _selector.nextProbeTarget(
@@ -476,6 +437,18 @@ class FailureDetector {
         _timing.quietRound();
       case _ProbeOutcome.failed:
         _handleProbeFailure(peer.id);
+    }
+  }
+
+  /// Probes one unreachable peer for recovery, every [unreachableProbeInterval]
+  /// probe rounds.
+  Future<void> _maybeProbeUnreachablePeerThisRound() async {
+    if (unreachableProbeInterval > 0) {
+      _unreachableProbeCounter++;
+      if (_unreachableProbeCounter >= unreachableProbeInterval) {
+        _unreachableProbeCounter = 0;
+        await _probeUnreachablePeer();
+      }
     }
   }
 
@@ -553,14 +526,9 @@ class FailureDetector {
   Peer? nextProbeTarget() =>
       _selector.nextProbeTarget(freshnessWindow: effectiveProbeInterval);
 
-  // ---------------------------------------------------------------------------
-  // Public API: message handlers
-  // ---------------------------------------------------------------------------
-  //
-  // Production traffic reaches these only through _handleIncomingMessage;
-  // each is public solely so tests can drive it directly. The
-  // @visibleForTesting annotation on each now enforces (via the analyzer)
-  // what this banner used to only ask of callers.
+  // Production traffic reaches the next four members only through
+  // _handleIncomingMessage; each is public solely so tests can drive it
+  // directly.
 
   /// Handles incoming Ping by returning Ack with matching sequence.
   @visibleForTesting
@@ -734,18 +702,28 @@ class FailureDetector {
     updatePeerHealth(target, occurredAt: DateTime.now());
   }
 
-  // ---------------------------------------------------------------------------
-  // Private: message handling
-  // ---------------------------------------------------------------------------
-
   Future<void> _handleIncomingMessage(IncomingMessage message) async {
     // Deliberately NOT recording receive metrics here: GossipEngine
     // subscribes to the same incoming stream and is the single
     // designated recording point — both engines recording would double
     // every rate/byte metric applications throttle on.
-    final ProtocolMessage? protocolMessage;
+    final protocolMessage = _decodeIncomingMessage(message);
+    // Foreign-family frame (e.g. a sync DigestRequest/DigestResponse or
+    // DeltaRequest/DeltaResponse sharing the same transport) — not ours
+    // to handle. Routine traffic, not an error, or an already-reported
+    // decode failure.
+    if (protocolMessage == null) return;
+
+    await _dispatchProtocolMessage(protocolMessage, message.sender);
+  }
+
+  /// Decodes [message] into a [ProtocolMessage], or null if it is either
+  /// a foreign-family frame (see [_handleIncomingMessage]) or malformed —
+  /// a decode failure is reported here (emitted and logged) rather than
+  /// left for the caller.
+  ProtocolMessage? _decodeIncomingMessage(IncomingMessage message) {
     try {
-      protocolMessage = _codec.decode(message.bytes);
+      return _codec.decode(message.bytes);
     } catch (e, st) {
       _emitError(
         PeerSyncError(
@@ -762,40 +740,40 @@ class FailureDetector {
         error: e,
         stackTrace: st,
       );
-      return;
+      return null;
     }
-    // Foreign-family frame (e.g. a sync DigestRequest/DigestResponse or
-    // DeltaRequest/DeltaResponse sharing the same transport) — not ours
-    // to handle. Routine traffic, not an error: mirrors the
-    // pre-injection behavior where the type-dispatch below simply had no
-    // matching branch for it.
-    if (protocolMessage == null) return;
+  }
 
+  /// Routes [protocolMessage] to its type-specific handler.
+  ///
+  /// A handler failure here is distinct from a decode failure: the
+  /// message was well-formed, so this is a protocol/application-level
+  /// fault (e.g. a downstream callback throwing) rather than corrupted
+  /// bytes.
+  Future<void> _dispatchProtocolMessage(
+    ProtocolMessage protocolMessage,
+    NodeId sender,
+  ) async {
     try {
       if (protocolMessage is Ping) {
-        await _handleIncomingPing(protocolMessage, message.sender);
+        await _handleIncomingPing(protocolMessage, sender);
       } else if (protocolMessage is Ack) {
         _handleIncomingAck(protocolMessage);
       } else if (protocolMessage is PingReq) {
-        await _handlePingReq(protocolMessage, message.sender);
+        await _handlePingReq(protocolMessage, sender);
       }
     } catch (e, st) {
-      // A handler failure is distinct from a decode failure: the message
-      // was well-formed, so this is a protocol/application-level fault
-      // (e.g. a downstream callback throwing) rather than corrupted bytes.
       _emitError(
         PeerSyncError(
-          message.sender,
+          sender,
           SyncErrorType.protocolError,
-          'Failed handling ${protocolMessage.runtimeType} from '
-          '${message.sender}: $e',
+          'Failed handling ${protocolMessage.runtimeType} from $sender: $e',
           occurredAt: DateTime.now(),
           cause: e,
         ),
       );
       _log(
-        'Failed handling ${protocolMessage.runtimeType} from '
-        '${message.sender}: $e',
+        'Failed handling ${protocolMessage.runtimeType} from $sender: $e',
         level: LogLevel.error,
         error: e,
         stackTrace: st,
@@ -853,10 +831,6 @@ class FailureDetector {
     }
   }
 
-  // ---------------------------------------------------------------------------
-  // Private: RTT recording
-  // ---------------------------------------------------------------------------
-
   /// Records an RTT sample from a matched Ack.
   ///
   /// RTT is attributed to pending.target (the peer being probed), not
@@ -892,10 +866,6 @@ class FailureDetector {
       '(RTT: ${rttMs}ms)',
     );
   }
-
-  // ---------------------------------------------------------------------------
-  // Private: ping infrastructure
-  // ---------------------------------------------------------------------------
 
   _PendingPing _trackPendingPing(
     NodeId target,
@@ -988,10 +958,6 @@ class FailureDetector {
       await _safeSend(intermediary.id, bytes, 'PingReq');
     }
   }
-
-  // ---------------------------------------------------------------------------
-  // Private: infrastructure
-  // ---------------------------------------------------------------------------
 
   Future<void> _safeSend(
     NodeId recipient,

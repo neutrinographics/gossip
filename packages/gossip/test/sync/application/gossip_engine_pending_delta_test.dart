@@ -9,7 +9,7 @@ import 'package:test/test.dart';
 
 import 'gossip_engine_test_harness.dart';
 
-/// M3: pending-delta tracking must be keyed per-(peer, channel, stream) and
+/// Pending-delta tracking must be keyed per-(peer, channel, stream) and
 /// use an adaptive timeout, so a stalled slow peer neither blocks requesting
 /// the same stream from a faster peer nor gets a duplicate request issued
 /// mid-transmission of a large page.
@@ -32,7 +32,7 @@ void main() {
     ],
   );
 
-  group('GossipEngine pending-delta keying (M3)', () {
+  group('GossipEngine pending-delta keying', () {
     test('a pending delta request to one peer does not block requesting the '
         'same stream from another peer', () async {
       final h = GossipEngineTestHarness();
@@ -75,7 +75,7 @@ void main() {
     });
   });
 
-  group('GossipEngine adaptive pending-delta timeout (M3)', () {
+  group('GossipEngine adaptive pending-delta timeout', () {
     test(
       'defaults to a BLE-safe value before any delta round-trips are observed',
       () {

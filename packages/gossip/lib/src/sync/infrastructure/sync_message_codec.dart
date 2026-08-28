@@ -84,8 +84,6 @@ class SyncMessageCodec implements MessageCodec {
     return Uint8List.fromList(utf8.encode(jsonEncode(json)));
   }
 
-  // --- Gossip message encoders ---
-
   Map<String, dynamic> _encodeDigestRequest(DigestRequest message) {
     return {
       'sender': message.sender.value,
@@ -122,8 +120,6 @@ class SyncMessageCodec implements MessageCodec {
         'floor': _encodeVersionVector(message.floor),
     };
   }
-
-  // --- Shared value encoders ---
 
   List<Map<String, dynamic>> _encodeChannelDigests(
     List<ChannelDigest> digests,
@@ -233,8 +229,6 @@ class SyncMessageCodec implements MessageCodec {
     }
   }
 
-  // --- Gossip message decoders ---
-
   DigestRequest _decodeDigestRequest(Map<String, dynamic> json) {
     return DigestRequest(
       sender: NodeId(json['sender'] as String),
@@ -273,8 +267,6 @@ class SyncMessageCodec implements MessageCodec {
           : _decodeVersionVector(floorJson),
     );
   }
-
-  // --- Shared value decoders ---
 
   List<ChannelDigest> _decodeChannelDigests(List<dynamic> jsonList) {
     return jsonList.map((cdJson) {

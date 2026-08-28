@@ -13,10 +13,6 @@ sealed class MembershipEvent extends DomainEvent {
   const MembershipEvent({required super.occurredAt});
 }
 
-// ─────────────────────────────────────────────────────────────
-// Peer Events
-// ─────────────────────────────────────────────────────────────
-
 /// Emitted when a new peer is added to the peer registry.
 ///
 /// Fired when: PeerRegistry.addPeer successfully adds a new peer.

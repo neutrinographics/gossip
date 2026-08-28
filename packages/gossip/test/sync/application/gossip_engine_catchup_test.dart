@@ -34,7 +34,7 @@ void main() {
     payload: Uint8List.fromList(List.filled(payloadBytes, 0x42)),
   );
 
-  group('DeltaResponse hasMore — sender (G4)', () {
+  group('DeltaResponse hasMore — sender', () {
     test('a budget-truncated response sets hasMore=true', () async {
       final h = GossipEngineTestHarness(maxMessageBytes: 30 * 1024);
       h.createChannel('ch1', streamIds: ['s1']);
@@ -78,7 +78,7 @@ void main() {
     });
   });
 
-  group('DeltaResponse continuation — receiver (G4)', () {
+  group('DeltaResponse continuation — receiver', () {
     test('a truncated response returns a continuation DeltaRequest with the '
         'advanced version vector', () async {
       final h = GossipEngineTestHarness();
@@ -144,7 +144,7 @@ void main() {
     );
   });
 
-  group('DeltaResponse continuation dispatch (G4)', () {
+  group('DeltaResponse continuation dispatch', () {
     test('receiving a truncated DeltaResponse immediately sends a continuation '
         'DeltaRequest to the same peer', () async {
       final h = GossipEngineTestHarness(
@@ -186,7 +186,7 @@ void main() {
     });
   });
 
-  group('DeltaResponse continuation end-to-end (G4)', () {
+  group('DeltaResponse continuation end-to-end', () {
     test('a multi-page backlog fully drains via continuation from a single '
         'round, with no periodic-round advance and no infinite loop', () async {
       final nodeA = NodeId('nodeA');

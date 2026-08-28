@@ -14,10 +14,6 @@ import 'package:test/test.dart';
 import 'failure_detector_test_harness.dart';
 
 void main() {
-  // ---------------------------------------------------------------------------
-  // Construction & peer selection
-  // ---------------------------------------------------------------------------
-
   group('Construction & peer selection', () {
     test('can be constructed with required dependencies', () {
       final h = FailureDetectorTestHarness();
@@ -38,10 +34,6 @@ void main() {
       expect(selected!.id, equals(peer.id));
     });
   });
-
-  // ---------------------------------------------------------------------------
-  // Probing hold
-  // ---------------------------------------------------------------------------
 
   group('Probing hold', () {
     test('setProbingHold prevents peer from being selected', () {
@@ -164,10 +156,6 @@ void main() {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // Message handling
-  // ---------------------------------------------------------------------------
-
   group('Message handling', () {
     test('handlePing returns an Ack with matching sequence', () {
       final h = FailureDetectorTestHarness();
@@ -233,10 +221,6 @@ void main() {
       hCap.stopListening();
     });
   });
-
-  // ---------------------------------------------------------------------------
-  // Probe round
-  // ---------------------------------------------------------------------------
 
   group('Probe round', () {
     test('sends Ping to random peer', () async {
@@ -460,10 +444,6 @@ void main() {
       expect(h.peerRegistry.getPeer(peer.id), isNull);
     });
   });
-
-  // ---------------------------------------------------------------------------
-  // Health checking
-  // ---------------------------------------------------------------------------
 
   group('Health checking', () {
     test('handleAck updates peer last contact time', () {
@@ -755,10 +735,6 @@ void main() {
       h.stopListening();
     });
   });
-
-  // ---------------------------------------------------------------------------
-  // Unreachable peer probing
-  // ---------------------------------------------------------------------------
 
   group('Unreachable peer probing', () {
     /// Helper: drives a single peer to unreachable status.
@@ -1073,10 +1049,6 @@ void main() {
       },
     );
   });
-
-  // ---------------------------------------------------------------------------
-  // Lifecycle
-  // ---------------------------------------------------------------------------
 
   group('Lifecycle', () {
     final codec = MembershipMessageCodec();

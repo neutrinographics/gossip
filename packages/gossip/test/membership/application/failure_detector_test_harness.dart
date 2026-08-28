@@ -17,10 +17,6 @@ import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 
 import '../../support/pump.dart';
 
-// ---------------------------------------------------------------------------
-// Reusable test doubles
-// ---------------------------------------------------------------------------
-
 /// A MessagePort that throws on send, simulating transport failure.
 class FailingSendMessagePort implements MessagePort {
   final MessagePort _delegate;
@@ -56,7 +52,7 @@ class FailingSendMessagePort implements MessagePort {
 /// A MessagePort that counts every send, delegating the actual work.
 ///
 /// Wraps whatever port the harness would otherwise hand the detector so
-/// suppression tests (WIRE4-3) can assert "no message went out this round"
+/// suppression tests can assert "no message went out this round"
 /// without caring which protocol message it would have been.
 class _CountingMessagePort implements MessagePort {
   final MessagePort _delegate;
@@ -117,10 +113,6 @@ class PriorityCapturingMessagePort implements MessagePort {
   int get totalPendingSendCount => _delegate.totalPendingSendCount;
 }
 
-// ---------------------------------------------------------------------------
-// Test peer
-// ---------------------------------------------------------------------------
-
 /// A peer node managed by the test harness.
 class TestPeer {
   final NodeId id;
@@ -160,10 +152,6 @@ class TestPeer {
     );
   }
 }
-
-// ---------------------------------------------------------------------------
-// Harness
-// ---------------------------------------------------------------------------
 
 /// Test harness encapsulating FailureDetector infrastructure.
 ///
@@ -218,7 +206,7 @@ class FailureDetectorTestHarness {
   /// Number of messages the local detector has sent (Ping/Ack/PingReq),
   /// across whichever [MessagePort] the harness is using.
   ///
-  /// Used by suppression tests (WIRE4-3) to assert an all-fresh probe
+  /// Used by suppression tests to assert an all-fresh probe
   /// round is radio silence.
   int get sentMessageCount => _sendCounter.sentCount;
 
@@ -246,7 +234,7 @@ class FailureDetectorTestHarness {
     final localNode = NodeId(localName);
     final peerRegistry = PeerRegistry(localNode: localNode);
     final timePort = InMemoryTimePort();
-    // Start the fake clock well past zero (WIRE4-3): a peer's lastContactMs
+    // Start the fake clock well past zero: a peer's lastContactMs
     // defaults to 0 ("never heard from"), and suppression compares it
     // against timePort.nowMs. On a real device nowMs is a wall-clock epoch
     // reading — always enormous — so a never-contacted peer is naturally
@@ -295,9 +283,7 @@ class FailureDetectorTestHarness {
     );
   }
 
-  // -------------------------------------------------------------------------
   // Peer management
-  // -------------------------------------------------------------------------
 
   /// Adds a peer to the registry and creates its message port.
   TestPeer addPeer(String name) {
@@ -332,9 +318,7 @@ class FailureDetectorTestHarness {
   /// sites that pair it with [addAnsweringPeer].
   TestPeer addSilentPeer(String name) => addPeer(name);
 
-  // -------------------------------------------------------------------------
   // Probe helpers
-  // -------------------------------------------------------------------------
 
   /// Returns a future that resolves to the next [Ping] arriving at [peer].
   ///
@@ -380,9 +364,7 @@ class FailureDetectorTestHarness {
     await probeFuture;
   }
 
-  // -------------------------------------------------------------------------
   // Message helpers
-  // -------------------------------------------------------------------------
 
   /// Sends an [Ack] from [peer] back to the local detector.
   ///
@@ -438,9 +420,7 @@ class FailureDetectorTestHarness {
     return (messages, sub);
   }
 
-  // -------------------------------------------------------------------------
   // Time helpers
-  // -------------------------------------------------------------------------
 
   /// Yields the microtask queue [count] times to allow async message
   /// processing.
@@ -470,9 +450,7 @@ class FailureDetectorTestHarness {
     await timePort.advance(step);
   }
 
-  // -------------------------------------------------------------------------
   // Lifecycle
-  // -------------------------------------------------------------------------
 
   void startListening() => detector.startListening();
 

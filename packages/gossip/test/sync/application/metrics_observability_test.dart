@@ -40,7 +40,7 @@ class _FailingClockRepository extends InMemoryLocalNodeRepository {
 void main() {
   final codec = MembershipMessageCodec();
 
-  group('M4: single metrics recording point', () {
+  group('single metrics recording point', () {
     test(
       'an incoming message is counted once, not once per listener',
       () async {
@@ -80,7 +80,7 @@ void main() {
     );
   });
 
-  group('L5: clock persistence failures surface', () {
+  group('clock persistence failures surface', () {
     test('a failing saveClockState is emitted via ErrorCallback, not '
         'dropped as an unhandled future', () async {
       final localNode = NodeId('local');
@@ -133,7 +133,7 @@ void main() {
     });
   });
 
-  group('L8: locally-missing streams are logged, not silently skipped', () {
+  group('locally-missing streams are logged, not silently skipped', () {
     test('a digest for an unknown stream produces a log line', () async {
       final localNode = NodeId('local');
       final registry = PeerRegistry(localNode: localNode);

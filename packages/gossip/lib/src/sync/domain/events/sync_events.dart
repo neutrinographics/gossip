@@ -17,10 +17,6 @@ sealed class SyncEvent extends DomainEvent {
   const SyncEvent({required super.occurredAt});
 }
 
-// ─────────────────────────────────────────────────────────────
-// Channel Events
-// ─────────────────────────────────────────────────────────────
-
 /// Emitted when a new channel is created.
 ///
 /// Fired when: `Channel` aggregate is instantiated and persisted.

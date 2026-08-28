@@ -14,7 +14,7 @@ import 'package:test/test.dart';
 
 import 'gossip_engine_test_harness.dart';
 
-/// G5: expose a coarse in-sync signal so apps can show "syncing…" vs "up to
+/// Expose a coarse in-sync signal so apps can show "syncing…" vs "up to
 /// date". outstandingPullCount = delta requests in flight; mergedBatchCount =
 /// monotonic activity counter.
 void main() {
@@ -36,7 +36,7 @@ void main() {
     ],
   );
 
-  group('GossipEngine sync-activity signal (G5)', () {
+  group('GossipEngine sync-activity signal', () {
     test('outstandingPullCount tracks in-flight delta requests', () async {
       final h = GossipEngineTestHarness();
       final peer = h.addPeer('peerA');
@@ -69,7 +69,7 @@ void main() {
       expect(h.engine.outstandingPullCount, equals(1));
 
       // The peer never answers. Once the pending timeout elapses the pull
-      // is dead — it must not report "syncing…" forever (COR3-12).
+      // is dead — it must not report "syncing…" forever.
       await h.timePort.advance(
         h.engine.effectivePendingRequestTimeout + const Duration(seconds: 1),
       );

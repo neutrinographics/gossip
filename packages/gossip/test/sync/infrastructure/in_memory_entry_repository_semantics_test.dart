@@ -134,7 +134,7 @@ void main() {
     });
   });
 
-  group('InMemoryEntryRepository appendAll atomicity (COR3-9)', () {
+  group('InMemoryEntryRepository appendAll atomicity', () {
     test(
       'concurrent overlapping appendAll calls cannot partially apply',
       () async {
@@ -182,7 +182,7 @@ void main() {
     );
   });
 
-  group('InMemoryEntryRepository compaction floor (COR3-1)', () {
+  group('InMemoryEntryRepository compaction floor', () {
     Future<InMemoryEntryRepository> repoWith(String author, int upTo) async {
       final repo = InMemoryEntryRepository();
       for (var i = 1; i <= upTo; i++) {

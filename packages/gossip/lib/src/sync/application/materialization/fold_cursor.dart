@@ -46,9 +46,8 @@ class FoldCursor {
     if (byTimestamp != 0) return byTimestamp < 0;
     final cursorAuthor = author;
     if (cursorAuthor == null) {
-      // Legacy cursor: no tiebreak information — treat ties as folded
-      // (the pre-COR3-27 behavior; correct going forward once a
-      // full-position cursor is persisted).
+      // Legacy cursor: no tiebreak information — treat ties as folded;
+      // correct going forward once a full-position cursor is persisted.
       return false;
     }
     final byAuthor = cursorAuthor.value.compareTo(entry.author.value);

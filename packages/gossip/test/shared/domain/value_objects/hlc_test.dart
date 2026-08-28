@@ -180,7 +180,7 @@ void main() {
         () {
           // The documented wire/storage format packs physical time into 48
           // bits; an unbounded value would silently corrupt any packing
-          // implementation (COR3-10).
+          // implementation.
           expect(() => Hlc(1 << 48, 0), throwsA(isA<ArgumentError>()));
         },
       );

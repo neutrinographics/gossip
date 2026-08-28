@@ -6,9 +6,9 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 
 /// Owns `GossipEngine`'s pull-request dedup and adaptive per-request
-/// timeout (CC5-1 engine slice): at most one outstanding DeltaRequest per
-/// (peer, channel, stream) at a time, and how long that request is honoured
-/// before it is considered stale.
+/// timeout: at most one outstanding DeltaRequest per (peer, channel,
+/// stream) at a time, and how long that request is honoured before it is
+/// considered stale.
 ///
 /// Pulled out of `GossipEngine`, which interleaved this bookkeeping with
 /// digest/delta message handling — the dedup gate ([tryMark]) is a single

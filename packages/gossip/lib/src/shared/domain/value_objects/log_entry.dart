@@ -18,13 +18,10 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 /// applications define their own serialization and semantics.
 ///
 /// ## Ordering
-/// Entries implement [Comparable] for deterministic ordering:
-/// 1. Primary: HLC timestamp (physicalMs, then logical)
-/// 2. Secondary: Author NodeId (for entries with identical HLCs)
-/// 3. Tertiary: Sequence number (for same author, same HLC)
-///
-/// This ensures all nodes sort entries identically even when concurrent
-/// writes produce identical HLCs.
+/// Entries implement [Comparable]: primarily by HLC timestamp, falling
+/// back to author then sequence number as deterministic tiebreakers, so
+/// all nodes sort entries identically even when concurrent writes produce
+/// identical HLCs.
 ///
 /// ## Invariants
 /// - sequence must be positive (> 0) - sequences start at 1
@@ -73,25 +70,18 @@ class LogEntry implements Comparable<LogEntry> {
   /// SyncMessageCodec.encodedEntrySize.
   int get sizeBytes => 52 + payload.length;
 
-  /// Compares entries for deterministic ordering.
-  ///
-  /// Comparison order:
-  /// 1. HLC timestamp (primary - preserves causality)
-  /// 2. Author NodeId (secondary - deterministic tiebreaker for identical HLCs)
-  /// 3. Sequence number (tertiary - for same author with same HLC)
-  ///
-  /// This ensures all nodes produce identical sort orders for the same entries.
+  /// Compares entries for deterministic ordering: primarily by HLC
+  /// timestamp (preserving causality), falling back to author then
+  /// sequence number as tiebreakers so entries with identical HLCs still
+  /// sort identically across all nodes.
   @override
   int compareTo(LogEntry other) {
-    // Primary: HLC timestamp
     final timestampCmp = timestamp.compareTo(other.timestamp);
     if (timestampCmp != 0) return timestampCmp;
 
-    // Secondary: Author NodeId (deterministic tiebreaker)
     final authorCmp = author.value.compareTo(other.author.value);
     if (authorCmp != 0) return authorCmp;
 
-    // Tertiary: Sequence number (same author, same HLC)
     return sequence.compareTo(other.sequence);
   }
 

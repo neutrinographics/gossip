@@ -140,7 +140,7 @@ class ChannelService {
   /// Establishes the channel with no members and no streams. If a channel
   /// with this ID already exists it is left untouched and no events are
   /// emitted — silently replacing it would wipe membership and every
-  /// stream registration (COR3-16).
+  /// stream registration.
   ///
   /// Used when: Local node discovers or creates a new channel.
   ///
@@ -188,21 +188,17 @@ class ChannelService {
       return false;
     }
 
-    // Check if channel exists
     final channel = await _channelRepository.findById(channelId);
     if (channel == null) {
       return false;
     }
 
-    // Clear all entries for this channel
     if (_entryRepository != null) {
       await _entryRepository.clearChannel(channelId);
     }
 
-    // Clean up materializer state
     await _materializationService?.disposeChannel(channelId);
 
-    // Delete the channel aggregate
     await _channelRepository.delete(channelId);
 
     _emitEvents([ChannelRemoved(channelId, occurredAt: DateTime.now())]);
@@ -421,7 +417,6 @@ class ChannelService {
 
     await _entryRepository.append(channelId, streamId, entry);
 
-    // Emit EntryAppended event
     final appendEvent = EntryAppended(
       channelId,
       streamId,
@@ -430,7 +425,6 @@ class ChannelService {
     );
     _emitEvents([appendEvent]);
 
-    // Trigger incremental fold for registered materializers
     await _materializationService?.foldEntries(channelId, streamId, [entry]);
   }
 

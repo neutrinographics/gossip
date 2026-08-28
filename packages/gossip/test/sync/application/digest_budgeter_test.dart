@@ -9,9 +9,9 @@ import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:test/test.dart';
 
-/// Transplanted from gossip_engine_digest_budget_test.dart (CC5-1): these
-/// pin the same byte-budgeting/rotation semantics `GossipEngine` relied on
-/// before the extraction, now against [DigestBudgeter] directly.
+/// Transplanted from gossip_engine_digest_budget_test.dart: these pin the
+/// same byte-budgeting/rotation semantics `GossipEngine` relies on, now
+/// against [DigestBudgeter] directly.
 void main() {
   final codec = SyncMessageCodec();
   final localNode = NodeId('local');
@@ -118,7 +118,7 @@ void main() {
     });
   });
 
-  group('DigestBudgeter cursor independence (OBS-3 regression)', () {
+  group('DigestBudgeter cursor independence', () {
     test('a fitted request does not advance the response cursor, and a '
         'fitted response does not advance the request cursor', () {
       final streams = [for (var i = 0; i < 5; i++) streamDigest('s$i', 3)];
@@ -158,9 +158,7 @@ void main() {
       expect(
         streamIdsOf(req2),
         equals(['s3', 's4', 's0']),
-        reason:
-            'a response fit must not advance the request cursor '
-            '(OBS-3 regression)',
+        reason: 'a response fit must not advance the request cursor',
       );
 
       // Symmetric check: a request fit (req2 above) must not have touched
@@ -170,9 +168,7 @@ void main() {
       expect(
         streamIdsOf(resp2),
         equals(['s3', 's4', 's0']),
-        reason:
-            'a request fit must not advance the response cursor '
-            '(OBS-3 regression)',
+        reason: 'a request fit must not advance the response cursor',
       );
     });
   });

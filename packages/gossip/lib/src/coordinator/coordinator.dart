@@ -227,7 +227,6 @@ class Coordinator {
     peerRepository ??= InMemoryPeerRepository();
     final cfg = config ?? CoordinatorConfig.defaults;
 
-    // Resolve localNode from repository — single source of truth
     final localNode = await localNodeRepository.resolveNodeId();
 
     // Create event controller before the registry so peer lifecycle
@@ -244,13 +243,11 @@ class Coordinator {
       },
     );
 
-    // Create HlcClock if TimePort is provided for proper timestamp generation
     HlcClock? hlcClock;
     if (timePort != null) {
       final timeSource = TimeSource(timePort);
       hlcClock = HlcClock(timeSource, maxDrift: cfg.hlcMaxDrift);
 
-      // Restore clock state from LocalNodeRepository
       final clockState = await localNodeRepository.getClockState();
       if (clockState != Hlc.zero) {
         hlcClock.restore(clockState);
@@ -285,7 +282,7 @@ class Coordinator {
       materializationService: materializationService,
       onEvent: (event) => coordinator._onChannelServiceEvent(event),
       // Without this the services' emitted errors go to a null callback
-      // and vanish, violating the no-silent-errors rule (audit COR3-3).
+      // and vanish, violating the no-silent-errors rule.
       onError: (error) => coordinator._handleError(error),
     );
     final peerService = PeerService(
@@ -309,7 +306,6 @@ class Coordinator {
       onLog: onLog,
     );
 
-    // Create GossipEngine and FailureDetector if ports are provided, wiring error callbacks
     if (messagePort != null && timePort != null) {
       // GossipEngine computes its interval from per-peer RTT data in PeerRegistry.
       // FailureDetector gets its own RttTracker as a conservative fallback
@@ -352,7 +348,6 @@ class Coordinator {
       );
     }
 
-    // Load existing channels from repository into facade cache
     await coordinator._loadExistingChannels();
 
     return coordinator;
@@ -475,7 +470,7 @@ class Coordinator {
     // (suppressing the EntriesMerged event for entries that ARE durably
     // merged, and stalling the engine's catch-up continuation) and land in
     // the engine's dispatcher catch-all blaming the PEER for message
-    // corruption (COR3-14).
+    // corruption.
     try {
       await _channelService.foldMergedEntries(
         channelId,
@@ -496,7 +491,6 @@ class Coordinator {
       );
     }
 
-    // Compute the new version vector for the stream
     final newVersion = await _entryRepository.getVersionVector(
       channelId,
       streamId,
@@ -537,14 +531,11 @@ class Coordinator {
   ///
   /// The channel starts with the local node as the only member.
   Future<Channel> createChannel(ChannelId channelId) async {
-    // Create the channel via the service (events are emitted via onEvent callback)
     await _channelService.createChannel(channelId);
 
-    // Create and cache the facade
     final facade = Channel(id: channelId, service: _channelService);
     _channelFacades[channelId] = facade;
 
-    // Update GossipEngine with new channel if running
     if (_state == SyncState.running && _gossipEngine != null) {
       final channels = await _loadChannels();
       _gossipEngine!.setChannels(channels);
@@ -558,32 +549,25 @@ class Coordinator {
     return _channelFacades[channelId];
   }
 
-  /// Removes a channel and all its associated data.
-  ///
-  /// This operation:
-  /// 1. Clears all entries, materializer state, and the channel aggregate
-  ///    itself from persistence (via [ChannelService.removeChannel], which
-  ///    also emits [ChannelRemoved])
-  /// 2. Removes the channel from the facade cache
-  /// 3. Updates the gossip engine (if running) to stop syncing this channel
+  /// Removes a channel and all its associated data — entries, materializer
+  /// state, and the channel aggregate itself — from persistence, emitting
+  /// [ChannelRemoved]. If the gossip engine is running, it stops syncing
+  /// this channel immediately rather than only after the next stop/start
+  /// or pause/resume cycle.
   ///
   /// Returns true if the channel was removed, false if it didn't exist.
   Future<bool> removeChannel(ChannelId channelId) async {
-    // Check if channel exists in our cache
     if (!_channelFacades.containsKey(channelId)) {
       return false;
     }
 
-    // Remove via service (clears entries and deletes from repository)
     final removed = await _channelService.removeChannel(channelId);
     if (!removed) {
       return false;
     }
 
-    // Remove from facade cache
     _channelFacades.remove(channelId);
 
-    // Update GossipEngine with removed channel if running
     if (_state == SyncState.running && _gossipEngine != null) {
       final channels = await _loadChannels();
       _gossipEngine!.setChannels(channels);
@@ -634,32 +618,37 @@ class Coordinator {
   /// Throws [DomainException] if attempting to add the local node as a peer.
   Future<void> addPeer(NodeId id, {String? displayName}) async {
     await _peerService.addPeer(id, displayName: displayName);
+    _holdProbingDuringStartupGrace(id);
+    _bootstrapPeerRtt(id);
+    _syncWithNewPeer(id);
+  }
 
-    // Set probing hold to prevent false positives during connection startup.
-    // The hold is cleared early if probeNewPeer succeeds below.
+  /// Prevents false-positive failure detection while the transport is still
+  /// establishing bidirectional connectivity. [_probeNewPeerWithRetry]
+  /// clears the hold early on its first successful probe.
+  void _holdProbingDuringStartupGrace(NodeId id) {
     if (_failureDetector != null &&
         _config.startupGracePeriod > Duration.zero) {
       _failureDetector!.holdProbing(id, _config.startupGracePeriod);
     }
+  }
 
-    // Fire-and-forget immediate probe to bootstrap per-peer RTT estimate.
-    // Gets first RTT sample within ~200ms instead of waiting for random
-    // probe selection (which could take ~45s with 5 peers and 9s interval).
-    //
-    // Retries up to 3 times on timeout because the transport layer may
-    // not be fully bidirectional yet when addPeer is called — the remote
-    // peer's receive path may still be initializing.
-    //
-    // On success, clears the probing hold early since connectivity is confirmed.
+  /// Fire-and-forget: bootstraps a per-peer RTT estimate within ~200ms
+  /// instead of waiting for random probe selection (up to ~45s with 5
+  /// peers and a 9s interval). [_probeNewPeerWithRetry] retries because the
+  /// remote peer's receive path may not be bidirectional yet.
+  void _bootstrapPeerRtt(NodeId id) {
     if (_failureDetector != null && _state == SyncState.running) {
       final detector = _failureDetector!;
       unawaited(_probeNewPeerWithRetry(detector, id));
     }
+  }
 
-    // Kick off anti-entropy with the new peer immediately (sync-on-connect)
-    // rather than waiting for the random periodic round to select it — the
-    // gossip analogue of the immediate probe above. Fast reconciliation on
-    // a fresh join or a healed partition.
+  /// Fire-and-forget: starts anti-entropy with the new peer immediately
+  /// (sync-on-connect) rather than waiting for the random periodic round to
+  /// select it — the gossip analogue of [_bootstrapPeerRtt]. Speeds
+  /// reconciliation on a fresh join or a healed partition.
+  void _syncWithNewPeer(NodeId id) {
     if (_gossipEngine != null && _state == SyncState.running) {
       unawaited(_gossipEngine!.syncWithPeer(id));
     }
@@ -715,7 +704,7 @@ class Coordinator {
     _failureDetector?.forgetPeer(id);
     // Drop in-flight pulls to this peer: they can never complete, and a
     // stale flag would both block re-requesting after a fast reconnect and
-    // wedge gossipSyncActivity.isQuiescent (COR3-12).
+    // wedge gossipSyncActivity.isQuiescent.
     _gossipEngine?.clearPendingRequestsForPeer(id);
     await _peerService.removePeer(id);
   }
@@ -925,13 +914,11 @@ class Coordinator {
 
     _transitionTo(SyncState.running);
 
-    // Start GossipEngine if available
     if (_gossipEngine != null) {
       _gossipEngine!.startListening(channels);
       _gossipEngine!.start();
     }
 
-    // Start FailureDetector if available
     if (_failureDetector != null) {
       _failureDetector!.startListening();
       _failureDetector!.start();
@@ -957,13 +944,11 @@ class Coordinator {
       throw StateError('Cannot stop a disposed coordinator');
     }
 
-    // Stop GossipEngine if available
     if (_gossipEngine != null) {
       _gossipEngine!.stop();
       _gossipEngine!.stopListening();
     }
 
-    // Stop FailureDetector if available
     if (_failureDetector != null) {
       _failureDetector!.stop();
       _failureDetector!.stopListening();
@@ -985,13 +970,11 @@ class Coordinator {
       throw StateError('Can only pause a running coordinator');
     }
 
-    // Pause GossipEngine if available
     if (_gossipEngine != null) {
       _gossipEngine!.stop();
       // Keep listening to handle incoming messages
     }
 
-    // Pause FailureDetector if available
     if (_failureDetector != null) {
       _failureDetector!.stop();
       // Keep listening to handle incoming messages
@@ -1022,12 +1005,10 @@ class Coordinator {
 
     _transitionTo(SyncState.running);
 
-    // Resume GossipEngine if available
     if (_gossipEngine != null) {
       _gossipEngine!.start();
     }
 
-    // Resume FailureDetector if available
     if (_failureDetector != null) {
       _failureDetector!.start();
     }
@@ -1048,18 +1029,15 @@ class Coordinator {
 
     // Reject further facade writes immediately: a payload accepted after
     // dispose would be durable-but-orphaned — no engine to sync it, its
-    // events dropped at closed controllers (COR3-18).
+    // events dropped at closed controllers.
     _channelService.markDisposed();
 
-    // Stop if currently running or paused
     if (_state == SyncState.running || _state == SyncState.paused) {
-      // Stop GossipEngine if available
       if (_gossipEngine != null) {
         _gossipEngine!.stop();
         _gossipEngine!.stopListening();
       }
 
-      // Stop FailureDetector if available
       if (_failureDetector != null) {
         _failureDetector!.stop();
         _failureDetector!.stopListening();
@@ -1072,18 +1050,14 @@ class Coordinator {
     // Close materializer state streams so their listeners get onDone.
     await _channelService.disposeAllMaterializers();
 
-    // Close stream controllers
     await _eventsController.close();
     await _errorsController.close();
     await _stateController.close();
   }
 
-  /// Destroys the coordinator and wipes all persisted sync state.
-  ///
-  /// This method:
-  /// 1. Disposes the coordinator (stops protocols, closes streams)
-  /// 2. Clears all channels, entries, and peers from their repositories
-  /// 3. Resets the local node identity (node ID, clock)
+  /// Destroys the coordinator: disposes it (stopping protocols and closing
+  /// streams), wipes all channels, entries, and peers from their
+  /// repositories, and resets the local node identity (node ID, clock).
   ///
   /// After destruction, the coordinator cannot be reused. Call
   /// [Coordinator.create] with the same repositories to start fresh

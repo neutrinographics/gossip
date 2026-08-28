@@ -7,7 +7,7 @@ void main() {
   GossipEngineTestHarness makeHarness() =>
       GossipEngineTestHarness(gossipInterval: const Duration(seconds: 100));
 
-  group('GossipEngine.syncWithPeer (G2)', () {
+  group('GossipEngine.syncWithPeer', () {
     test('sends a DigestRequest to the target immediately', () async {
       final h = makeHarness();
       final peer = h.addPeer('peer1');

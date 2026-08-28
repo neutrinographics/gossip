@@ -30,17 +30,17 @@ class OversizedDigest {
   });
 }
 
-/// Owns `GossipEngine`'s byte-budgeted digest windowing (CC5-1): fitting a
+/// Owns `GossipEngine`'s byte-budgeted digest windowing: fitting a
 /// digest request or response to the transport's `maxMessageBytes` limit by
 /// selecting a round-robin-rotated subset of (channel, stream) digests when
 /// the full set doesn't fit — instead of one oversized message the
-/// transport can never send (H4).
+/// transport can never send.
 ///
 /// Two independent cursors, one per call site — [fitRequest]'s and
 /// [fitResponse]'s — because they rotate through unrelated cadences: this
 /// node's own request cadence vs. however often peers ask it to respond.
 /// Sharing one cursor would let one side's advance silently skew the
-/// other's coverage (the OBS-3 regression this class's tests pin).
+/// other's coverage — a skew this class's tests pin as a regression guard.
 class DigestBudgeter {
   DigestBudgeter({
     required SyncMessageCodec codec,
@@ -67,8 +67,8 @@ class DigestBudgeter {
   /// Without its own cursor, an over-budget response always fits starting
   /// at the same index, so it truncates the same tail every exchange — some
   /// streams are never advertised by this node as a responder, no matter how
-  /// many times a peer asks (OBS-3). Advanced by [_fit]'s items-consumed
-  /// return, same as the requester side.
+  /// many times a peer asks. Advanced by [_fit]'s items-consumed return,
+  /// same as the requester side.
   int _responseCursor = 0;
 
   /// Conservative per-item overhead budgeted for a channel's envelope

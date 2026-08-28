@@ -12,7 +12,7 @@ import 'package:test/test.dart';
 
 import 'gossip_engine_test_harness.dart';
 
-/// COR3-2: the protocol layer must not ingest or serve data for channels
+/// The protocol layer must not ingest or serve data for channels
 /// and streams this node does not have. Without the guard, a reactive push
 /// for a channel we never joined is silently stored (unbounded phantom
 /// storage, never advertised, never compacted) and served back to anyone

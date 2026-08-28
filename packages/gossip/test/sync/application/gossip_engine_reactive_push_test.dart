@@ -30,7 +30,7 @@ void main() {
     payload: Uint8List.fromList([seq]),
   );
 
-  group('GossipEngine reactive push-on-write (G1)', () {
+  group('GossipEngine reactive push-on-write', () {
     test(
       'a local write is pushed to reachable peers after the debounce',
       () async {

@@ -14,39 +14,35 @@ import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
 
-/// Owns `GossipEngine`'s delta-merge pipeline (CC5-1): filtering a
-/// [DeltaResponse] down to the per-author contiguous prefix it can safely
-/// apply, appending it, advancing the local HLC, and deciding whether a
-/// continuation [DeltaRequest] is owed — the whole body of what used to be
-/// `_mergeDeltaResponse`, plus the contiguity guard and gap-reporting state
-/// it depended on.
+/// Owns `GossipEngine`'s delta-merge pipeline: filtering a [DeltaResponse]
+/// down to the per-author contiguous prefix it can safely apply, appending
+/// it, advancing the local HLC, and deciding whether a continuation
+/// [DeltaRequest] is owed, plus the contiguity guard and gap-reporting
+/// state that pipeline depends on.
 ///
 /// Pulled out of `GossipEngine`, which interleaved this filtering/merge
 /// logic with digest/delta message dispatch and pull-request bookkeeping —
 /// this class's contiguity guard and per-(channel, stream) serialization
 /// have correctness invariants worth stating on their own (see [merge]'s
-/// doc for the COR3-9 interleaving hazard), so they read better as one
+/// doc for the interleaving hazard they close), so they read better as one
 /// small collaborator than as private methods scattered across the engine.
 ///
 /// `GossipEngine` still owns the ingestion guard (whether a response's
 /// channel/stream is one we actually have — it reads engine-owned channel
-/// state) and pull-request dedup (`PendingPullTracker`). This class is
-/// notified of two engine-owned side effects at the exact point the
-/// pre-extraction code triggered them, via the `onNewEntriesMerged` and
-/// `onContinuationIssued` constructor callbacks — not by exposing them as
-/// return-value fields the engine reacts to after [merge] returns —
-/// because both must fire at a specific point *inside* the per-stream
-/// serialized merge body to preserve pre-extraction ordering/timing
-/// exactly:
-/// - `onNewEntriesMerged` must fire before `onEntriesMerged` is awaited
-///   (the pre-extraction code incremented the batch counter and recorded
-///   news before calling the merged-entries callback).
+/// state) and pull-request dedup (`PendingPullTracker`). This class
+/// notifies the engine of two engine-owned side effects via the
+/// `onNewEntriesMerged` and `onContinuationIssued` constructor callbacks —
+/// not by exposing them as return-value fields the engine reacts to after
+/// [merge] returns — because both must fire at a specific point *inside*
+/// the per-stream serialized merge body:
+/// - `onNewEntriesMerged` must fire before `onEntriesMerged` is awaited, so
+///   the batch counter and news flag reflect a merge before any downstream
+///   listener is notified of it.
 /// - `onContinuationIssued` must fire synchronously, still inside the
 ///   chained merge task, before the continuation is returned — re-arming
 ///   the pull tracker's pending flag from outside the chain would add a
 ///   Future-chaining hop that a concurrently in-flight message for the
-///   same (peer, channel, stream) could interleave into, which the
-///   pre-extraction code's single synchronous span never allowed.
+///   same (peer, channel, stream) could interleave into.
 class DeltaMerger {
   DeltaMerger({
     required NodeId localNode,
@@ -107,7 +103,7 @@ class DeltaMerger {
   /// allow concurrent same-stream pulls from two peers) would both pass
   /// the filter against the same stale vector — the second append then
   /// rejects the whole batch and its genuinely-new entries are delayed to
-  /// a later round, with a spurious error blaming the peer (COR3-9).
+  /// a later round, with a spurious error blaming the peer.
   /// Failure isolation between chained merges is [KeyedTaskChain]'s
   /// contract, not reimplemented here.
   ///
@@ -135,7 +131,7 @@ class DeltaMerger {
     // range below it was pruned by retention and is unobtainable, so adopt
     // it as truncated history (raising our high-water mark and our own
     // floor) BEFORE filtering — the surviving entries then pass the
-    // contiguity guard instead of being dropped forever (COR3-1).
+    // contiguity guard instead of being dropped forever.
     // Unsolicited responses cannot move our floor: we never asked this
     // sender, and honoring an unsolicited claim would let any peer make us
     // skip history that is still obtainable elsewhere.
@@ -176,8 +172,7 @@ class DeltaMerger {
     }
 
     // Only entries we actually merge drive the clock: a rejected entry
-    // (gapped, duplicate) must not be able to touch local causality state
-    // (COR3-10).
+    // (gapped, duplicate) must not be able to touch local causality state.
     _updateHlcFromEntries(newEntries);
 
     // Snapshot the current tail HLC before appending to detect out-of-order
@@ -196,15 +191,15 @@ class DeltaMerger {
     // tail is known only by timestamp, so an entry TYING it may still sort
     // before it on the author tiebreak — treat ties as possibly
     // out-of-order (a rare extra rebuild beats silent fold/rebuild
-    // divergence, COR3-27).
+    // divergence).
     final containsOutOfOrderEntries =
         previousTailHlc != null &&
         newEntries.any((e) => e.timestamp <= previousTailHlc);
 
-    // Fires the engine's batch-count/news bookkeeping at the exact point
-    // the pre-extraction code incremented it — BEFORE onEntriesMerged is
-    // awaited (see this class's doc for why this must be a callback fired
-    // here, not the engine reacting after [merge] returns).
+    // Fires the engine's batch-count/news bookkeeping BEFORE
+    // onEntriesMerged is awaited (see this class's doc for why this must
+    // be a callback fired here, not the engine reacting after [merge]
+    // returns).
     _onNewEntriesMerged();
 
     await _onEntriesMerged?.call(
@@ -220,9 +215,9 @@ class DeltaMerger {
         response.channelId,
         response.streamId,
       );
-      // Re-arms the pull tracker's pending flag at the exact point the
-      // pre-extraction code did — still inside this chained merge, right
-      // before returning the continuation (see this class's doc).
+      // Re-arms the pull tracker's pending flag synchronously, still
+      // inside this chained merge, right before returning the
+      // continuation (see this class's doc for why the timing matters).
       _onContinuationIssued(
         response.sender,
         response.channelId,
@@ -273,7 +268,7 @@ class DeltaMerger {
         if (entry.sequence != next) {
           // Gap — stop accepting this author; record it so the drop is
           // diagnosable (a silent drop here is how a peer that compacted
-          // past our position stalls sync invisibly, COR3-1).
+          // past our position stalls sync invisibly).
           firstBeyondGap = entry.sequence;
           break;
         }

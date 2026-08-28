@@ -2,11 +2,10 @@ import 'package:gossip/src/shared/domain/services/duration_clamp.dart';
 import 'package:gossip/src/shared/domain/services/quiescence_pacer.dart';
 import 'package:gossip/src/sync/domain/interfaces/peer_directory.dart';
 
-/// Owns `GossipEngine`'s gossip-round interval policy (CC5-13 engine
-/// slice, CC5-1 scheduling/pacing job): whether the interval is a
-/// caller-supplied static value or derived from peer RTT, the median-SRTT
-/// adaptive formula, and the quiescence pacer that stretches the adaptive
-/// interval while quiet.
+/// Owns `GossipEngine`'s gossip-round interval policy: whether the
+/// interval is a caller-supplied static value or derived from peer RTT,
+/// the median-SRTT adaptive formula, and the quiescence pacer that
+/// stretches the adaptive interval while quiet.
 ///
 /// Pulled out of `GossipEngine`, which held a field triad
 /// (`_adaptiveTimingEnabled` / `_staticGossipInterval` /

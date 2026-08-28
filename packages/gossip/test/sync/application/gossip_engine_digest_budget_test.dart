@@ -69,7 +69,7 @@ void main() {
   int streamCountOf(DigestRequest req) =>
       req.digests.fold<int>(0, (s, cd) => s + cd.streams.length);
 
-  group('DigestRequest budgeting (H4)', () {
+  group('DigestRequest budgeting', () {
     test(
       'a within-budget digest is sent in full (common case unchanged)',
       () async {
@@ -171,7 +171,7 @@ void main() {
         reqs.clear();
         // Real exchanges take real time; this test drives many rounds
         // back-to-back against a frozen clock, so age the exchange after
-        // each round — otherwise recency suppression (WIRE4-1) would stop
+        // each round — otherwise recency suppression would stop
         // rotation dead after round 1, since the same peer would look
         // freshly-synced forever.
         h.peerRegistry.updatePeerAntiEntropy(peer.id, -1000000000);
@@ -263,7 +263,7 @@ void main() {
     );
   });
 
-  group('DigestResponse budgeting (H4)', () {
+  group('DigestResponse budgeting', () {
     test(
       'handleDigestRequest budgets its response to the transport limit',
       () async {
@@ -325,7 +325,7 @@ void main() {
     );
   });
 
-  group('DigestResponse rotation (OBS-3)', () {
+  group('DigestResponse rotation', () {
     test('successive over-budget responses rotate the fitted window instead of '
         'truncating the same tail every exchange', () async {
       final h = GossipEngineTestHarness(
@@ -401,8 +401,7 @@ void main() {
         reason:
             'the responder must rotate its fitted window across '
             'successive exchanges — a fixed start offset truncates the '
-            'same tail every time, so those streams are never advertised '
-            '(OBS-3)',
+            'same tail every time, so those streams are never advertised',
       );
 
       h.engine.stop();
@@ -410,7 +409,7 @@ void main() {
     });
   });
 
-  group('Oversized-digest convergence end-to-end (H4)', () {
+  group('Oversized-digest convergence end-to-end', () {
     test('two nodes converge across every stream over rounds despite a digest '
         'too large to send in one message', () async {
       final nodeA = NodeId('nodeA');
@@ -490,7 +489,7 @@ void main() {
         await pumpEventQueue();
         // Real exchanges take real time; this test drives many rounds
         // back-to-back against a frozen clock, so age the exchange after
-        // each round — otherwise recency suppression (WIRE4-1) would stop
+        // each round — otherwise recency suppression would stop
         // A from re-gossiping with B after round 1.
         registryA.updatePeerAntiEntropy(nodeB, -1000000000);
       }

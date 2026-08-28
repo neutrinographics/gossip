@@ -5,9 +5,9 @@ import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 
-/// Owns `GossipEngine`'s reactive-push debounce state machine (CC5-1):
-/// coalescing a burst of local writes within [_pushDebounce]
-/// into a single push, instead of one push per write.
+/// Owns `GossipEngine`'s reactive-push debounce state machine: coalescing a
+/// burst of local writes within [_pushDebounce] into a single push, instead
+/// of one push per write.
 ///
 /// Pulled out of `GossipEngine`, which interleaved this bookkeeping with
 /// the round-loop scheduler and message handling — this class's
@@ -59,9 +59,7 @@ class ReactivePusher {
   /// Generation token for the debounce: bumped by [invalidate],
   /// [invalidateAndClear], and [onRoundLoopDead] so a debounce callback
   /// scheduled by a run any of those has since superseded recognizes
-  /// itself as stale and does nothing. (For the pre-GenerationScheduler
-  /// shared-counter design this descends from, see gossip_engine.dart's
-  /// history prior to the CC5-1 extraction.)
+  /// itself as stale and does nothing.
   int _pushGeneration = 0;
 
   /// Reactive dissemination (rumor mongering): buffers [entry] for a
@@ -117,20 +115,18 @@ class ReactivePusher {
   }
 
   /// Called when the round loop dies from a LIVE scheduling failure (the
-  /// caller gates this against a stale failure — see its call site's doc
-  /// for the live/stale distinction this depends on). Bumps the
-  /// generation AND clears the in-flight flag — bumping alone is not
-  /// enough to unwedge reactive push (the C6 wedge): an in-flight
-  /// debounce recognizes a bumped generation as stale only when it
-  /// *fires*, and its "stale run — do nothing" early return does not
-  /// reset [_pushFlushScheduled] — so nothing else ever would, since the
-  /// round loop already stopped itself before this runs, meaning the
-  /// caller's own eventual [invalidateAndClear] (via `stop()`), whose
-  /// reset this flag would otherwise rely on, sees the engine already
-  /// stopped and short-circuits as a no-op. Without clearing it here
-  /// directly, a write issued after a healed restart would find the flag
-  /// still (wrongly) true and silently skip scheduling its own debounce
-  /// forever.
+  /// caller gates this against a stale failure — see its call site's doc for
+  /// the live/stale distinction this depends on). Bumps the generation AND
+  /// clears the in-flight flag — bumping alone is not enough to unwedge
+  /// reactive push: an in-flight debounce recognizes a bumped generation as
+  /// stale only when it *fires*, and its "stale run — do nothing" early return
+  /// does not reset [_pushFlushScheduled] — so nothing else ever would, since
+  /// the round loop already stopped itself before this runs, meaning the
+  /// caller's own eventual [invalidateAndClear] (via `stop()`), whose reset
+  /// this flag would otherwise rely on, sees the engine already stopped and
+  /// short-circuits as a no-op. Without clearing it here directly, a write
+  /// issued after a healed restart would find the flag still (wrongly) true
+  /// and silently skip scheduling its own debounce forever.
   ///
   /// Deliberately does NOT clear the buffer (unlike [invalidateAndClear]):
   /// entries already buffered before the round loop died are not lost —

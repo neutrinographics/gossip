@@ -20,10 +20,6 @@ import 'failure_detector_test_harness.dart';
 void main() {
   final codec = MembershipMessageCodec();
 
-  // ---------------------------------------------------------------------------
-  // Intermediary role (_handlePingReq)
-  // ---------------------------------------------------------------------------
-
   group('Intermediary role', () {
     late FailureDetectorTestHarness h;
     late TestPeer prober;
@@ -246,10 +242,6 @@ void main() {
     );
   });
 
-  // ---------------------------------------------------------------------------
-  // Error handling
-  // ---------------------------------------------------------------------------
-
   group('Error handling', () {
     late FailureDetectorTestHarness h;
     late TestPeer peer;
@@ -438,10 +430,6 @@ void main() {
     });
   });
 
-  // ---------------------------------------------------------------------------
-  // handleAck edge cases
-  // ---------------------------------------------------------------------------
-
   group('handleAck edge cases', () {
     late FailureDetectorTestHarness h;
     late TestPeer peer;
@@ -513,10 +501,6 @@ void main() {
       h.stopListening();
     });
   });
-
-  // ---------------------------------------------------------------------------
-  // Message metrics
-  // ---------------------------------------------------------------------------
 
   group('Message metrics', () {
     late FailureDetectorTestHarness h;

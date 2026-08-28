@@ -221,7 +221,7 @@ void main() {
 
       // Assert: only the live generation's loop may tick. If the first
       // start()'s callback weren't stale, it would tick too — forking a
-      // second concurrent loop (the H2 scheduler-forking hazard the
+      // second concurrent loop (the scheduler-forking hazard the
       // generation token exists to foreclose).
       expect(
         tickCount,
@@ -229,7 +229,7 @@ void main() {
         reason:
             'a restart-while-running must bump the generation so only one '
             'loop survives — the earlier start()\'s delay must be stale, '
-            'not fork a second concurrent loop (H2 scheduler-forking hazard)',
+            'not fork a second concurrent loop',
       );
 
       scheduler.stop();
