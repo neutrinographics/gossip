@@ -54,7 +54,7 @@ void main() {
     // the materializer's fold then throws.
     await peerPort.send(
       localNode,
-      SyncMessageCodec().encode(
+      SyncMessageCodec(wireVersion: WireVersion.v2).encode(
         DeltaResponse(
           sender: peerId,
           channelId: channelId,

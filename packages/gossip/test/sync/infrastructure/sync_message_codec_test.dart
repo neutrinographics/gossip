@@ -7,6 +7,8 @@ import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_types.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:gossip/src/sync/domain/messages/digest_request.dart';
@@ -17,9 +19,34 @@ import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 
+/// Builds a v2-marker-prefixed DeltaResponse frame whose single entry's
+/// `payload` field is the given raw JSON int list, unmodified — used to
+/// probe the tolerant decoder's legacy int-list path directly, since no
+/// codec's own encoder ever emits values outside 0-255.
+Uint8List deltaResponseFrameWithPayload(List<int> payload) {
+  final json = {
+    'sender': 'peer2',
+    'channelId': 'ch1',
+    'streamId': 's1',
+    'entries': [
+      {
+        'author': 'peer1',
+        'sequence': 1,
+        'timestamp': {'physicalMs': 1000, 'logical': 2},
+        'payload': payload,
+      },
+    ],
+  };
+  return Uint8List.fromList([
+    WireTypes.markerV2,
+    WireTypes.deltaResponse,
+    ...utf8.encode(jsonEncode(json)),
+  ]);
+}
+
 void main() {
   group('SyncMessageCodec', () {
-    final codec = SyncMessageCodec();
+    final codec = SyncMessageCodec(wireVersion: WireVersion.v2);
 
     DeltaResponse responseWith(List<LogEntry> entries) => DeltaResponse(
       sender: NodeId('sender'),
@@ -29,7 +56,79 @@ void main() {
     );
 
     Map<String, dynamic> jsonOf(Uint8List encoded) =>
-        jsonDecode(utf8.decode(encoded.sublist(1))) as Map<String, dynamic>;
+        jsonDecode(
+              utf8.decode(
+                encoded.sublist(WireTypes.frameTypeOffset(encoded) + 1),
+              ),
+            )
+            as Map<String, dynamic>;
+
+    group('version dispatch', () {
+      final v1 = SyncMessageCodec(wireVersion: WireVersion.v1);
+      final v2 = SyncMessageCodec(wireVersion: WireVersion.v2);
+
+      test('v2 frames decode identically to v1 frames of the same message', () {
+        final request = DeltaRequest(
+          sender: NodeId('peer1'),
+          channelId: ChannelId('ch1'),
+          streamId: StreamId('s1'),
+          since: VersionVector({NodeId('peer1'): 3}),
+        );
+        final fromV1 = v1.decode(v1.encode(request)) as DeltaRequest;
+        final fromV2 =
+            v1.decode(v2.encode(request))
+                as DeltaRequest; // decode is version-agnostic
+        expect(
+          fromV2.since[NodeId('peer1')],
+          equals(fromV1.since[NodeId('peer1')]),
+        );
+        expect(fromV2.channelId, equals(request.channelId));
+      });
+
+      test(
+        'a v2-prefixed membership frame decodes to null (sibling family)',
+        () {
+          // [0xF2][ping type byte][json] — the marker must not turn routine
+          // sibling traffic into an error in either engine's codec.
+          final frame = Uint8List.fromList([
+            0xF2,
+            0,
+            ...utf8.encode('{"sender":"p","sequence":1}'),
+          ]);
+          expect(v1.decode(frame), isNull);
+          expect(v2.decode(frame), isNull);
+        },
+      );
+
+      test('reserved and unassigned first bytes throw in every version', () {
+        for (final first in [0x07, 0x80, 0xF0, 0xF1, 0xF3, 0xFF]) {
+          final frame = Uint8List.fromList([first, 1, 2]);
+          expect(() => v1.decode(frame), throwsArgumentError, reason: '$first');
+          expect(() => v2.decode(frame), throwsArgumentError, reason: '$first');
+        }
+      });
+
+      test('a v2 frame with an unknown type byte throws', () {
+        expect(
+          () => v1.decode(Uint8List.fromList([0xF2, 0x50, 1])),
+          throwsArgumentError,
+        );
+      });
+
+      test('a signed int-array payload decodes to the unsigned bytes', () {
+        // The deployed Kotlin server emits payload bytes sign-extended
+        // (-128..-1 for 0x80..0xFF), so the legacy reader must accept and
+        // normalize them; only values outside -128..255 are corruption.
+        final decoded =
+            v2.decode(deltaResponseFrameWithPayload([0, -1, -128, 255]))
+                as DeltaResponse;
+        expect(decoded.entries.single.payload, equals([0, 255, 128, 255]));
+        expect(
+          () => v2.decode(deltaResponseFrameWithPayload([300])),
+          throwsArgumentError,
+        );
+      });
+    });
 
     test('round-trips DigestRequest', () {
       final sender = NodeId('peer1');
@@ -200,7 +299,9 @@ void main() {
 
     test('decode returns null for a frame from the membership family', () {
       final ping = Ping(sender: NodeId('peer1'), sequence: 1);
-      final bytes = MembershipMessageCodec().encode(ping);
+      final bytes = MembershipMessageCodec(
+        wireVersion: WireVersion.v2,
+      ).encode(ping);
 
       expect(codec.decode(bytes), isNull);
     });
@@ -239,7 +340,8 @@ void main() {
           isA<ArgumentError>().having(
             (e) => e.message,
             'message',
-            'Unknown message type: 255',
+            'Reserved escape byte: 0xFF is undefined (reserved for a '
+                'future extended-version form)',
           ),
         ),
       );
@@ -347,9 +449,12 @@ void main() {
         );
       });
 
-      test('maxEntryPayloadForBudget-sized payload fits the budget', () {
+      test('maxEntryPayloadForBudget-sized payload fits the budget (v2)', () {
         const budget = 30 * 1024;
-        final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(budget);
+        final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(
+          budget,
+          WireVersion.v2,
+        );
 
         // Sanity: base64 + envelope means roughly 3/4 of the budget.
         expect(maxPayload, greaterThan(20 * 1024));
@@ -370,6 +475,51 @@ void main() {
           ]),
         );
         expect(encoded.length, lessThanOrEqualTo(budget));
+      });
+
+      test('maxEntryPayloadForBudget-sized payload fits the budget (v1)', () {
+        // v1 is CoordinatorConfig's default dialect
+        // (coordinator_wire_version_test.dart pins the resulting cap's
+        // arithmetic — 7552 bytes at the default 30KB budget — but nothing
+        // proves an entry at that cap actually FITS the budget once
+        // encoded: v1's worst-case int-array payload spends 4 chars per
+        // byte (`"255,"`), not the 3/4 base64 ratio v2 uses).
+        const budget = 30 * 1024;
+        final v1Codec = SyncMessageCodec(wireVersion: WireVersion.v1);
+        final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(
+          budget,
+          WireVersion.v1,
+        );
+
+        // All-0xFF payload bytes: every int-list element is "255," (4
+        // chars), the worst case for v1's int-array encoding.
+        Uint8List encodeAt(int payloadLength) => v1Codec.encode(
+          responseWith([
+            LogEntry(
+              author: NodeId('a' * 64), // longer than a UUID
+              sequence: 1 << 40,
+              timestamp: Hlc(281474976710655, 65535), // max HLC fields
+              payload: Uint8List(payloadLength)
+                ..fillRange(0, payloadLength, 0xFF),
+            ),
+          ]),
+        );
+
+        // A single-entry DeltaResponse at exactly the derived max must
+        // encode within the budget (worst-case author/id lengths, all-0xFF
+        // payload bytes so every int-list element is "255," — 4 chars).
+        final atMax = encodeAt(maxPayload);
+        expect(atMax.length, lessThanOrEqualTo(budget));
+
+        // One byte over the cap does NOT push the encoded size past the
+        // budget here: [_entryEnvelopeOverhead] (512 bytes) is a
+        // conservative constant sized for worst-case author/HLC fields,
+        // and this fixture's actual envelope is smaller than that
+        // reservation, leaving slack. The cap is therefore a safe (not
+        // exact-to-the-byte) bound — assert only the guarantee the
+        // function actually promises: fits at the cap.
+        final overMax = encodeAt(maxPayload + 1);
+        expect(overMax.length, lessThanOrEqualTo(budget));
       });
 
       test(
@@ -402,15 +552,77 @@ void main() {
       );
     });
 
-    group('encode-side wire pinning', () {
-      // Every literal type byte and key set below is copied by hand from
-      // the codec, not read from WireTypes or the codec's own encoder. A
-      // round-trip test (decode(encode(x))) stays green even if the
-      // encoder and decoder drift together — e.g. both sides rename a
+    group('v1 emission wire pinning', () {
+      // Literals are hand-copied from the wire format, not read from the
+      // codec. A round-trip test (decode(encode(x))) stays green even if
+      // the encoder and decoder drift together — e.g. both sides rename a
       // JSON key, or both sides get the same (wrong) type-byte edit. An
       // independently-sourced literal is the only thing that can catch
       // that: it fails when THIS codec's output differs from what a
       // previously-deployed peer's codec would still expect.
+      final codec = SyncMessageCodec(wireVersion: WireVersion.v1);
+
+      test('DeltaResponse encodes type byte 6, no marker, no hasMore, '
+          'int-array payload, and an additive floor when non-empty', () {
+        final encoded = codec.encode(
+          DeltaResponse(
+            sender: NodeId('peer2'),
+            channelId: ChannelId('ch1'),
+            streamId: StreamId('s1'),
+            entries: [
+              LogEntry(
+                author: NodeId('peer1'),
+                sequence: 1,
+                timestamp: Hlc(1000, 2),
+                payload: Uint8List.fromList([1, 2, 3]),
+              ),
+            ],
+            hasMore: true, // domain flag set — must NOT reach the v1 wire
+            floor: VersionVector({NodeId('peer1'): 3}),
+          ),
+        );
+
+        expect(encoded[0], equals(6));
+        final json = jsonOf(encoded);
+        expect(
+          json.keys.toSet(),
+          equals({'sender', 'channelId', 'streamId', 'entries', 'floor'}),
+          reason: 'hasMore stays v2-only; floor is the ruled additive field',
+        );
+        final entry = (json['entries'] as List).single as Map<String, dynamic>;
+        expect(entry['payload'], equals([1, 2, 3]));
+        expect(json['floor'], equals({'peer1': 3}));
+      });
+
+      test('DeltaResponse with an empty floor omits the floor key', () {
+        final encoded = codec.encode(responseWith(const []));
+        expect(
+          jsonOf(encoded).keys.toSet(),
+          equals({'sender', 'channelId', 'streamId', 'entries'}),
+        );
+      });
+
+      test('types 3-5 emit unprefixed with the same key sets as v2', () {
+        final request = DigestRequest(
+          sender: NodeId('peer1'),
+          digests: const [],
+        );
+        final encoded = codec.encode(request);
+        expect(encoded[0], equals(3));
+        expect(jsonOf(encoded).keys.toSet(), equals({'sender', 'digests'}));
+      });
+    });
+
+    group('v2 emission wire pinning', () {
+      // Literals are hand-copied from the wire format, not read from the
+      // codec. A round-trip test (decode(encode(x))) stays green even if
+      // the encoder and decoder drift together — e.g. both sides rename a
+      // JSON key, or both sides get the same (wrong) type-byte edit. An
+      // independently-sourced literal is the only thing that can catch
+      // that: it fails when THIS codec's output differs from what a
+      // previously-deployed peer's codec would still expect.
+      final codec = SyncMessageCodec(wireVersion: WireVersion.v2);
+
       test('DigestRequest encodes with wire type byte 3 and the '
           'sender/digests key set', () {
         final request = DigestRequest(
@@ -419,7 +631,8 @@ void main() {
         );
         final encoded = codec.encode(request);
 
-        expect(encoded[0], equals(3));
+        expect(encoded[0], equals(0xF2));
+        expect(encoded[1], equals(3));
         expect(jsonOf(encoded).keys.toSet(), equals({'sender', 'digests'}));
       });
 
@@ -431,7 +644,8 @@ void main() {
         );
         final encoded = codec.encode(response);
 
-        expect(encoded[0], equals(4));
+        expect(encoded[0], equals(0xF2));
+        expect(encoded[1], equals(4));
         expect(jsonOf(encoded).keys.toSet(), equals({'sender', 'digests'}));
       });
 
@@ -445,7 +659,8 @@ void main() {
         );
         final encoded = codec.encode(request);
 
-        expect(encoded[0], equals(5));
+        expect(encoded[0], equals(0xF2));
+        expect(encoded[1], equals(5));
         expect(
           jsonOf(encoded).keys.toSet(),
           equals({'sender', 'channelId', 'streamId', 'since'}),
@@ -456,7 +671,8 @@ void main() {
           'sender/channelId/streamId/entries/hasMore key set (no floor)', () {
         final encoded = codec.encode(responseWith(const []));
 
-        expect(encoded[0], equals(6));
+        expect(encoded[0], equals(0xF2));
+        expect(encoded[1], equals(6));
         expect(
           jsonOf(encoded).keys.toSet(),
           equals({'sender', 'channelId', 'streamId', 'entries', 'hasMore'}),

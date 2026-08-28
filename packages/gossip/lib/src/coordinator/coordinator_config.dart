@@ -1,5 +1,6 @@
 import 'package:gossip/src/membership/membership.dart';
 import 'package:gossip/src/sync/sync.dart';
+import 'package:gossip/src/shared/shared.dart';
 
 /// Configuration options for the Coordinator.
 ///
@@ -120,9 +121,12 @@ class CoordinatorConfig {
   ///
   /// Large entry backlogs are paginated across gossip rounds so no single
   /// message exceeds this budget. It also determines the maximum entry
-  /// payload accepted by `EventStream.append` (roughly 3/4 of the budget
-  /// after envelope overhead — ~22KB at the default): a payload that
-  /// can't fit one delta message can never be synced.
+  /// payload accepted by `EventStream.append` — a payload that can't fit
+  /// one delta message can never be synced. That cap depends on
+  /// [wireVersion]'s payload encoding: at the default budget it's
+  /// ~7.4KB under the default `WireVersion.v1` (JSON int-array
+  /// payloads) and ~22KB under `WireVersion.v2` (roughly 3/4 of the
+  /// budget after envelope overhead, base64 payloads).
   ///
   /// **Default: 30KB**, leaving envelope headroom under the 32KB message
   /// limit shared by Android Nearby Connections and the BLE frame codec.
@@ -162,6 +166,14 @@ class CoordinatorConfig {
   /// **Default: 1 hour.**
   final Duration hlcMaxDrift;
 
+  /// The wire dialect this node EMITS ([WireVersion.v1] by default).
+  /// Receive always accepts every registered version regardless of this
+  /// setting, so upgrading the library changes nothing on the wire until
+  /// the deployment explicitly flips this to [WireVersion.v2] — which is
+  /// only safe once every peer that can hear this node has upgraded to a
+  /// receive-both build.
+  final WireVersion wireVersion;
+
   /// Creates a [CoordinatorConfig] with the specified options.
   const CoordinatorConfig({
     this.suspicionThreshold = 5,
@@ -175,6 +187,7 @@ class CoordinatorConfig {
     this.maxMessageBytes = 30 * 1024,
     this.compactionInterval = const Duration(minutes: 5),
     this.hlcMaxDrift = const Duration(hours: 1),
+    this.wireVersion = WireVersion.v1,
   });
 
   /// Default configuration with standard values.

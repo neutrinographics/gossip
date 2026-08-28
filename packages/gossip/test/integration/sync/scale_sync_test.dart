@@ -5,6 +5,7 @@ import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/coordinator/coordinator_config.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 
 import '../../support/test_network.dart';
 
@@ -73,6 +74,7 @@ void main() {
         // entry that fits one delta message under the default budget.
         final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(
           CoordinatorConfig.defaults.maxMessageBytes,
+          WireVersion.v1,
         );
         final largePayload = Uint8List(maxPayload);
         for (var i = 0; i < largePayload.length; i++) {
@@ -167,6 +169,7 @@ void main() {
           // instead of storing an entry that livelocks the stream.
           final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(
             CoordinatorConfig.defaults.maxMessageBytes,
+            WireVersion.v1,
           );
           final oversized = List.generate(maxPayload + 1, (i) => i % 256);
 

@@ -9,6 +9,7 @@ import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:test/test.dart';
 
 import 'failure_detector_test_harness.dart';
@@ -757,7 +758,7 @@ void main() {
           pingTimeout: const Duration(milliseconds: 500),
         );
         final peer = h.addPeer('peer1');
-        final codec = MembershipMessageCodec();
+        final codec = MembershipMessageCodec(wireVersion: WireVersion.v2);
 
         h.startListening();
 
@@ -899,7 +900,7 @@ void main() {
       );
       final peer1 = h.addPeer('peer1');
       final peer2 = h.addPeer('peer2');
-      final codec = MembershipMessageCodec();
+      final codec = MembershipMessageCodec(wireVersion: WireVersion.v2);
 
       h.startListening();
 
@@ -972,7 +973,7 @@ void main() {
         );
         final target = h.addPeer('target');
         final intermediary = h.addPeer('intermediary');
-        final codec = MembershipMessageCodec();
+        final codec = MembershipMessageCodec(wireVersion: WireVersion.v2);
 
         h.startListening();
 
@@ -1051,7 +1052,7 @@ void main() {
   });
 
   group('Lifecycle', () {
-    final codec = MembershipMessageCodec();
+    final codec = MembershipMessageCodec(wireVersion: WireVersion.v2);
 
     test('start begins periodic probes', () {
       final h = FailureDetectorTestHarness();

@@ -7,32 +7,42 @@ import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
 import 'package:gossip/src/shared/domain/value_objects/wire_types.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 
 /// Wire codec for the membership context's SWIM messages: [Ping], [Ack],
 /// [PingReq] — [WireTypes.membership] type bytes 0-2.
 ///
-/// Wire format: `[Type Byte][JSON Payload]`. [decode] returns null when the
-/// type byte belongs to the sync family, so callers can fall through to
-/// `SyncMessageCodec`.
+/// Wire format: `[Type Byte][JSON Payload]` (v1) or
+/// `[0xF2][Type Byte][JSON Payload]` (v2, [WireVersion.v2]). The JSON
+/// payload schema is identical in both versions, so unlike the sync
+/// codec there are no per-version emission modules — [wireVersion] only
+/// selects whether [encode] emits the marker; [decode] always accepts
+/// both framings and returns null when the type byte belongs to the sync
+/// family, so callers can fall through to `SyncMessageCodec`.
 class MembershipMessageCodec implements MessageCodec {
+  MembershipMessageCodec({required this.wireVersion});
+
+  /// The dialect this codec EMITS; decode always accepts both.
+  final WireVersion wireVersion;
+
   @override
   Uint8List encode(ProtocolMessage message) {
     final messageType = _getMessageType(message);
     final data = _encodeMessageData(message);
 
-    final result = Uint8List(1 + data.length);
-    result[0] = messageType;
-    result.setRange(1, result.length, data);
+    final prefix = wireVersion == WireVersion.v2
+        ? [WireTypes.markerV2, messageType]
+        : [messageType];
+    final result = Uint8List(prefix.length + data.length);
+    result.setRange(0, prefix.length, prefix);
+    result.setRange(prefix.length, result.length, data);
     return result;
   }
 
   @override
   ProtocolMessage? decode(Uint8List bytes) {
-    if (bytes.isEmpty) {
-      throw ArgumentError('Cannot decode empty bytes');
-    }
-
-    final messageType = bytes[0];
+    final offset = WireTypes.frameTypeOffset(bytes);
+    final messageType = bytes[offset];
     if (!WireTypes.membership.contains(messageType)) {
       // A byte owned by a sibling context (sync) is routine "not mine"
       // traffic sharing the transport; a byte owned by NO known context is
@@ -43,9 +53,7 @@ class MembershipMessageCodec implements MessageCodec {
       }
       return null;
     }
-    final data = bytes.sublist(1);
-
-    return _decodeMessageData(messageType, data);
+    return _decodeMessageData(messageType, bytes.sublist(offset + 1));
   }
 
   int _getMessageType(ProtocolMessage message) {

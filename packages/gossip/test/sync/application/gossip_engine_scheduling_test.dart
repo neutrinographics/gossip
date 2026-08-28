@@ -13,6 +13,7 @@ import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:gossip/src/sync/application/gossip_engine.dart';
 import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/domain/messages/digest_response.dart';
@@ -175,7 +176,7 @@ void main() {
       final localNode = NodeId('local');
       final errors = <SyncError>[];
       final engine = GossipEngine(
-        codec: SyncMessageCodec(),
+        codec: SyncMessageCodec(wireVersion: WireVersion.v2),
         localNode: localNode,
         peerDirectory: MembershipPeerDirectory(
           PeerRegistry(localNode: localNode),
@@ -231,7 +232,7 @@ void main() {
           ..addPeer(peerId, occurredAt: DateTime.now());
         final bus = InMemoryMessageBus();
         final peerPort = InMemoryMessagePort(peerId, bus);
-        final codec = SyncMessageCodec();
+        final codec = SyncMessageCodec(wireVersion: WireVersion.v2);
         final errors = <SyncError>[];
         final channelId = ChannelId('ch1');
         final streamId = StreamId('s1');
@@ -372,7 +373,7 @@ void main() {
         ..addPeer(peerId, occurredAt: DateTime.now());
       final bus = InMemoryMessageBus();
       final peerPort = InMemoryMessagePort(peerId, bus);
-      final codec = SyncMessageCodec();
+      final codec = SyncMessageCodec(wireVersion: WireVersion.v2);
       final errors = <SyncError>[];
       final channelId = ChannelId('ch1');
       final streamId = StreamId('s1');

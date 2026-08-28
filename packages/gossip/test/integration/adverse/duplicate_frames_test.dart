@@ -10,6 +10,7 @@ import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 
 import '../../support/test_network.dart';
 
@@ -27,7 +28,7 @@ void main() {
     late List<StreamSubscription<SyncError>> errorSubscriptions;
     final channelId = ChannelId('duplicate-frames-channel');
     final streamId = StreamId('data');
-    final codec = SyncMessageCodec();
+    final codec = SyncMessageCodec(wireVersion: WireVersion.v2);
 
     setUp(() async {
       network = await TestNetwork.create(['node1', 'node2']);

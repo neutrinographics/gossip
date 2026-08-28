@@ -68,12 +68,16 @@ import 'package:gossip/src/sync/sync.dart';
 /// ## Payload Size Limit
 ///
 /// [append] rejects payloads that cannot fit a single gossip delta
-/// message (~22KB at the default 30KB delta budget, configurable via
-/// `CoordinatorConfig.maxMessageBytes`). The wire encoding adds
-/// ~1.33x base64 overhead plus a JSON envelope, and the resulting
-/// message must stay under the 32KB transport limit shared by Android
-/// Nearby Connections and the BLE frame codec. Larger payloads should
-/// be chunked at the application level.
+/// message under `CoordinatorConfig.maxMessageBytes` (default 30KB). The
+/// cap is wire-version dependent, since the two dialects encode entry
+/// payloads differently: at the default budget it's ~7.4KB under the
+/// default `WireVersion.v1` dialect (JSON int-array payloads, worst case
+/// 4 chars/byte) and ~22KB under `WireVersion.v2` (base64 payloads,
+/// ~1.33 chars/byte) — flipping `CoordinatorConfig.wireVersion` to v2
+/// restores the larger cap. Either way the resulting message must stay
+/// under the 32KB transport limit shared by Android Nearby Connections
+/// and the BLE frame codec. Larger payloads should be chunked at the
+/// application level.
 ///
 /// See also:
 /// - Channel for stream creation

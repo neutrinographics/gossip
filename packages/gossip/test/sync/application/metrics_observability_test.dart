@@ -19,6 +19,7 @@ import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:test/test.dart';
@@ -38,7 +39,7 @@ class _FailingClockRepository extends InMemoryLocalNodeRepository {
 }
 
 void main() {
-  final codec = MembershipMessageCodec();
+  final codec = MembershipMessageCodec(wireVersion: WireVersion.v2);
 
   group('single metrics recording point', () {
     test(

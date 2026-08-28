@@ -1,0 +1,1 @@
+ò{"sender":"node-b","channelId":"ch-1","streamId":"st-1","entries":[{"author":"node-a","sequence":1,"timestamp":{"physicalMs":1700000000001,"logical":1},"payload":"AAF/gP8="},{"author":"node-a","sequence":2,"timestamp":{"physicalMs":1700000000002,"logical":2},"payload":"AAF/gP8="}],"hasMore":true,"floor":{"node-a":2}}

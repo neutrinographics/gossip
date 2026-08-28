@@ -1,0 +1,1 @@
+{"sender":"node-b","channelId":"ch-1","streamId":"st-1","entries":[{"author":"node-a","sequence":1,"timestamp":{"physicalMs":1700000000001,"logical":1},"payload":[300]}]}

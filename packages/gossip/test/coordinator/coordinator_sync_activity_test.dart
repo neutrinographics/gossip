@@ -46,7 +46,7 @@ void main() {
         // pull and sends it a DeltaRequest (which the peer never answers).
         await peerPort.send(
           localNode,
-          SyncMessageCodec().encode(
+          SyncMessageCodec(wireVersion: WireVersion.v2).encode(
             DigestResponse(
               sender: peerId,
               digests: [

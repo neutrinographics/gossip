@@ -16,6 +16,7 @@ export 'domain/value_objects/rtt_estimate.dart';
 export 'domain/value_objects/stream_id.dart';
 export 'domain/value_objects/version_vector.dart';
 export 'domain/value_objects/wire_types.dart';
+export 'domain/value_objects/wire_version.dart';
 
 // Events (per-context event families extend DomainEvent from here)
 export 'domain/events/domain_event.dart';

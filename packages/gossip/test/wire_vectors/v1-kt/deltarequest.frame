@@ -1,0 +1,1 @@
+{"sender":"node-a","channelDeltas":{"ch-1":{"st-1":{"node-a":2,"node-b":0},"st-2":{"node-a":1}},"ch-2":{"st-1":{"node-b":3}}}}

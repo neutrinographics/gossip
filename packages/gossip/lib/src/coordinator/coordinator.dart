@@ -278,6 +278,7 @@ class Coordinator {
       localNodeRepository: localNodeRepository,
       maxPayloadBytes: SyncMessageCodec.maxEntryPayloadForBudget(
         cfg.maxMessageBytes,
+        cfg.wireVersion,
       ),
       materializationService: materializationService,
       onEvent: (event) => coordinator._onChannelServiceEvent(event),
@@ -313,7 +314,7 @@ class Coordinator {
       final failureDetectorRttTracker = RttTracker();
 
       coordinator._gossipEngine = GossipEngine(
-        codec: SyncMessageCodec(),
+        codec: SyncMessageCodec(wireVersion: cfg.wireVersion),
         localNode: localNode,
         peerDirectory: MembershipPeerDirectory(peerRegistry),
         entryRepository: entryRepository,
@@ -331,7 +332,7 @@ class Coordinator {
       );
 
       coordinator._failureDetector = FailureDetector(
-        codec: MembershipMessageCodec(),
+        codec: MembershipMessageCodec(wireVersion: cfg.wireVersion),
         localNode: localNode,
         peerRegistry: peerRegistry,
         timePort: timePort,

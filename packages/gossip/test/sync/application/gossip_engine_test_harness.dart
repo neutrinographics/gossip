@@ -28,6 +28,7 @@ import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 
 import '../../support/pump.dart';
 
@@ -82,7 +83,7 @@ class GossipEngineTestHarness {
   final InMemoryMessageBus bus;
   final InMemoryMessagePort localPort;
   final GossipEngine engine;
-  final SyncMessageCodec codec = SyncMessageCodec();
+  final SyncMessageCodec codec;
   final HlcClock? hlcClock;
   final List<SyncError> errors;
   final List<MergedEntriesRecord> mergedEntries;
@@ -98,6 +99,7 @@ class GossipEngineTestHarness {
     required this.bus,
     required this.localPort,
     required this.engine,
+    required this.codec,
     required this.hlcClock,
     required this.errors,
     required this.mergedEntries,
@@ -119,6 +121,11 @@ class GossipEngineTestHarness {
     int? maxMessageBytes,
     Random? random,
     EntriesMergedCallback? onEntriesMerged,
+    // The harness defaults to v2 (not the production default) so engine
+    // tests exercise the richer v2 path — continuation (hasMore) and
+    // base64 payloads — by default; CoordinatorConfig.defaults.wireVersion
+    // is v1.
+    WireVersion wireVersion = WireVersion.v2,
   }) {
     final localNode = NodeId(localName);
     final peerRegistry = PeerRegistry(localNode: localNode);
@@ -128,6 +135,7 @@ class GossipEngineTestHarness {
     final entryRepository = InMemoryEntryRepository();
     final errors = <SyncError>[];
     final mergedEntries = <MergedEntriesRecord>[];
+    final codec = SyncMessageCodec(wireVersion: wireVersion);
 
     HlcClock? hlcClock;
     if (withHlcClock) {
@@ -135,7 +143,7 @@ class GossipEngineTestHarness {
     }
 
     final engine = GossipEngine(
-      codec: SyncMessageCodec(),
+      codec: codec,
       localNode: localNode,
       peerDirectory: MembershipPeerDirectory(peerRegistry),
       entryRepository: entryRepository,
@@ -170,6 +178,7 @@ class GossipEngineTestHarness {
       bus: bus,
       localPort: localPort,
       engine: engine,
+      codec: codec,
       hlcClock: hlcClock,
       errors: errors,
       mergedEntries: mergedEntries,
@@ -189,10 +198,15 @@ class GossipEngineTestHarness {
     LogCallback? onLog,
     bool withHlcClock = false,
     int? maxMessageBytes,
+    // The harness defaults to v2 (not the production default) so engine
+    // tests exercise the richer v2 path — continuation (hasMore) and
+    // base64 payloads — by default; CoordinatorConfig.defaults.wireVersion
+    // is v1.
+    WireVersion wireVersion = WireVersion.v2,
   }) {
     final bus = InMemoryMessageBus();
     return GossipEngine(
-      codec: SyncMessageCodec(),
+      codec: SyncMessageCodec(wireVersion: wireVersion),
       localNode: localNode,
       peerDirectory: MembershipPeerDirectory(peerRegistry),
       entryRepository: InMemoryEntryRepository(),

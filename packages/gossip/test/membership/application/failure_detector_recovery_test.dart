@@ -5,12 +5,13 @@ import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:test/test.dart';
 
 import 'failure_detector_test_harness.dart';
 
 void main() {
-  final codec = MembershipMessageCodec();
+  final codec = MembershipMessageCodec(wireVersion: WireVersion.v2);
 
   group('Suspected peer recovery via indirect probes (SWIM)', () {
     test('a suspected peer reachable only through an intermediary recovers '

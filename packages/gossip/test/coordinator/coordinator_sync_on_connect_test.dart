@@ -6,6 +6,7 @@ import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:test/test.dart';
 
 import '../support/coordinator_builder.dart';
@@ -13,7 +14,7 @@ import '../support/pump.dart';
 
 void main() {
   final peerId = NodeId('peer1');
-  final codec = SyncMessageCodec();
+  final codec = SyncMessageCodec(wireVersion: WireVersion.v2);
 
   test('adding a peer triggers an immediate gossip round with it', () async {
     final bus = InMemoryMessageBus();

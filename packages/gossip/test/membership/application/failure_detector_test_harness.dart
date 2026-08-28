@@ -11,6 +11,7 @@ import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_port.dart';
 import 'package:gossip/src/membership/application/failure_detector.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/membership/domain/messages/ping_req.dart';
@@ -184,7 +185,9 @@ class FailureDetectorTestHarness {
   final InMemoryMessageBus bus;
   final InMemoryMessagePort localPort;
   final FailureDetector detector;
-  final MembershipMessageCodec codec = MembershipMessageCodec();
+  final MembershipMessageCodec codec = MembershipMessageCodec(
+    wireVersion: WireVersion.v2,
+  );
   final RttTracker rttTracker;
   final List<SyncError> errors;
   final _CountingMessagePort _sendCounter;
@@ -255,7 +258,7 @@ class FailureDetectorTestHarness {
     final sendCounter = _CountingMessagePort(effectiveLocalPort);
 
     final detector = FailureDetector(
-      codec: MembershipMessageCodec(),
+      codec: MembershipMessageCodec(wireVersion: WireVersion.v2),
       localNode: localNode,
       peerRegistry: peerRegistry,
       timePort: timePort,

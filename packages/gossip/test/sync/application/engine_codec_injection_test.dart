@@ -12,6 +12,7 @@ import 'package:gossip/src/membership/infrastructure/membership_message_codec.da
 import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:test/test.dart';
 
 import '../../membership/application/failure_detector_test_harness.dart';
@@ -28,7 +29,9 @@ void main() {
         final (messages, sub) = h.captureMessages(peer);
 
         final ping = Ping(sender: peer.id, sequence: 1);
-        final bytes = MembershipMessageCodec().encode(ping);
+        final bytes = MembershipMessageCodec(
+          wireVersion: WireVersion.v2,
+        ).encode(ping);
         await peer.port.send(h.localNode, bytes);
         await h.flush(3);
 
@@ -51,31 +54,39 @@ void main() {
   });
 
   group('FailureDetector ignores foreign-family (sync) frames', () {
-    test('a DigestRequest frame delivered to the detector is ignored without '
-        'error or reply', () async {
-      final h = FailureDetectorTestHarness();
-      final peer = h.addSilentPeer('someone');
-      h.startListening();
-      final (messages, sub) = h.captureMessages(peer);
+    for (final wireVersion in WireVersion.values) {
+      test('a $wireVersion DigestRequest frame delivered to the detector is '
+          'ignored without error or reply', () async {
+        final h = FailureDetectorTestHarness();
+        final peer = h.addSilentPeer('someone');
+        h.startListening();
+        final (messages, sub) = h.captureMessages(peer);
 
-      final digestRequest = DigestRequest(sender: peer.id, digests: const []);
-      final bytes = SyncMessageCodec().encode(digestRequest);
-      await peer.port.send(h.localNode, bytes);
-      await h.flush(3);
+        final digestRequest = DigestRequest(sender: peer.id, digests: const []);
+        // MembershipMessageCodec.decode parses the v2 marker via
+        // WireTypes.frameTypeOffset regardless of which version it
+        // emits, so both an unprefixed (v1) and a 0xF2-prefixed (v2)
+        // sync frame must land on its sibling-family "not mine" path.
+        final bytes = SyncMessageCodec(
+          wireVersion: wireVersion,
+        ).encode(digestRequest);
+        await peer.port.send(h.localNode, bytes);
+        await h.flush(3);
 
-      expect(
-        h.errors,
-        isEmpty,
-        reason: 'a foreign-family frame is routine traffic, not an error',
-      );
-      expect(
-        messages,
-        isEmpty,
-        reason: 'the detector must not reply to a message it does not own',
-      );
+        expect(
+          h.errors,
+          isEmpty,
+          reason: 'a foreign-family frame is routine traffic, not an error',
+        );
+        expect(
+          messages,
+          isEmpty,
+          reason: 'the detector must not reply to a message it does not own',
+        );
 
-      await sub.cancel();
-      await h.dispose();
-    });
+        await sub.cancel();
+        await h.dispose();
+      });
+    }
   });
 }
