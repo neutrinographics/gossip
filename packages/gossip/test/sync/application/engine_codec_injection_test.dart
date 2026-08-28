@@ -54,37 +54,45 @@ void main() {
   });
 
   group('FailureDetector ignores foreign-family (sync) frames', () {
-    test('a DigestRequest frame delivered to the detector is ignored without '
-        'error or reply', () async {
-      final h = FailureDetectorTestHarness();
-      final peer = h.addSilentPeer('someone');
-      h.startListening();
-      final (messages, sub) = h.captureMessages(peer);
+    for (final wireVersion in WireVersion.values) {
+      test(
+        'a $wireVersion DigestRequest frame delivered to the detector is '
+        'ignored without error or reply',
+        () async {
+          final h = FailureDetectorTestHarness();
+          final peer = h.addSilentPeer('someone');
+          h.startListening();
+          final (messages, sub) = h.captureMessages(peer);
 
-      final digestRequest = DigestRequest(sender: peer.id, digests: const []);
-      // v1 (unprefixed): FailureDetector's codec (MembershipMessageCodec)
-      // doesn't parse the v2 marker yet — that's separate receiver-side
-      // work — so this probes its existing sibling-family detection with
-      // the frame shape it already handles.
-      final bytes = SyncMessageCodec(
-        wireVersion: WireVersion.v1,
-      ).encode(digestRequest);
-      await peer.port.send(h.localNode, bytes);
-      await h.flush(3);
+          final digestRequest = DigestRequest(
+            sender: peer.id,
+            digests: const [],
+          );
+          // MembershipMessageCodec.decode parses the v2 marker via
+          // WireTypes.frameTypeOffset regardless of which version it
+          // emits, so both an unprefixed (v1) and a 0xF2-prefixed (v2)
+          // sync frame must land on its sibling-family "not mine" path.
+          final bytes = SyncMessageCodec(
+            wireVersion: wireVersion,
+          ).encode(digestRequest);
+          await peer.port.send(h.localNode, bytes);
+          await h.flush(3);
 
-      expect(
-        h.errors,
-        isEmpty,
-        reason: 'a foreign-family frame is routine traffic, not an error',
+          expect(
+            h.errors,
+            isEmpty,
+            reason: 'a foreign-family frame is routine traffic, not an error',
+          );
+          expect(
+            messages,
+            isEmpty,
+            reason: 'the detector must not reply to a message it does not own',
+          );
+
+          await sub.cancel();
+          await h.dispose();
+        },
       );
-      expect(
-        messages,
-        isEmpty,
-        reason: 'the detector must not reply to a message it does not own',
-      );
-
-      await sub.cancel();
-      await h.dispose();
-    });
+    }
   });
 }

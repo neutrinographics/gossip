@@ -448,7 +448,7 @@ void main() {
         );
       });
 
-      test('maxEntryPayloadForBudget-sized payload fits the budget', () {
+      test('maxEntryPayloadForBudget-sized payload fits the budget (v2)', () {
         const budget = 30 * 1024;
         final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(
           budget,
@@ -474,6 +474,54 @@ void main() {
           ]),
         );
         expect(encoded.length, lessThanOrEqualTo(budget));
+      });
+
+      test('maxEntryPayloadForBudget-sized payload fits the budget (v1)', () {
+        // v1 is CoordinatorConfig's default dialect
+        // (coordinator_wire_version_test.dart pins the resulting cap's
+        // arithmetic — 7552 bytes at the default 30KB budget — but nothing
+        // proves an entry at that cap actually FITS the budget once
+        // encoded: v1's worst-case int-array payload spends 4 chars per
+        // byte (`"255,"`), not the 3/4 base64 ratio v2 uses).
+        const budget = 30 * 1024;
+        final v1Codec = SyncMessageCodec(wireVersion: WireVersion.v1);
+        final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(
+          budget,
+          WireVersion.v1,
+        );
+
+        // All-0xFF payload bytes: every int-list element is "255," (4
+        // chars), the worst case for v1's int-array encoding.
+        Uint8List encodeAt(int payloadLength) => v1Codec.encode(
+          responseWith([
+            LogEntry(
+              author: NodeId('a' * 64), // longer than a UUID
+              sequence: 1 << 40,
+              timestamp: Hlc(281474976710655, 65535), // max HLC fields
+              payload: Uint8List(payloadLength)..fillRange(
+                0,
+                payloadLength,
+                0xFF,
+              ),
+            ),
+          ]),
+        );
+
+        // A single-entry DeltaResponse at exactly the derived max must
+        // encode within the budget (worst-case author/id lengths, all-0xFF
+        // payload bytes so every int-list element is "255," — 4 chars).
+        final atMax = encodeAt(maxPayload);
+        expect(atMax.length, lessThanOrEqualTo(budget));
+
+        // One byte over the cap does NOT push the encoded size past the
+        // budget here: [_entryEnvelopeOverhead] (512 bytes) is a
+        // conservative constant sized for worst-case author/HLC fields,
+        // and this fixture's actual envelope is smaller than that
+        // reservation, leaving slack. The cap is therefore a safe (not
+        // exact-to-the-byte) bound — assert only the guarantee the
+        // function actually promises: fits at the cap.
+        final overMax = encodeAt(maxPayload + 1);
+        expect(overMax.length, lessThanOrEqualTo(budget));
       });
 
       test(

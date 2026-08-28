@@ -121,8 +121,10 @@ class GossipEngineTestHarness {
     int? maxMessageBytes,
     Random? random,
     EntriesMergedCallback? onEntriesMerged,
-    // Defaulting to v2 preserves what the existing suite pins; a later task wires
-    // this to the real coordinator config default (v1).
+    // The harness defaults to v2 (not the production default) so engine
+    // tests exercise the richer v2 path — continuation (hasMore) and
+    // base64 payloads — by default; CoordinatorConfig.defaults.wireVersion
+    // is v1.
     WireVersion wireVersion = WireVersion.v2,
   }) {
     final localNode = NodeId(localName);
@@ -196,8 +198,10 @@ class GossipEngineTestHarness {
     LogCallback? onLog,
     bool withHlcClock = false,
     int? maxMessageBytes,
-    // Defaulting to v2 preserves what the existing suite pins; a later task wires
-    // this to the real coordinator config default (v1).
+    // The harness defaults to v2 (not the production default) so engine
+    // tests exercise the richer v2 path — continuation (hasMore) and
+    // base64 payloads — by default; CoordinatorConfig.defaults.wireVersion
+    // is v1.
     WireVersion wireVersion = WireVersion.v2,
   }) {
     final bus = InMemoryMessageBus();
