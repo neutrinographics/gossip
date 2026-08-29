@@ -96,4 +96,8 @@ nothing depends on a conversation to survive:
   [foundation audit](../superpowers/specs/2026-08-29-foundation-audit.md).
 - Siblings: [Audit the Kotlin library for the bug classes fixed in Dart](kt-audit-legacy-bug-classes.md),
   [Port the wire-efficiency behaviors to the Kotlin library](kt-port-wire-efficiency.md),
-  [Mirror the bounded-context structure in the Kotlin library](kt-mirror-bounded-contexts.md).
+  [Mirror the bounded-context structure in the Kotlin library](kt-mirror-bounded-contexts.md),
+  [Record where the Dart library and its Kotlin twin diverge, with a verdict](kt-normalize-twin-divergences.md)
+  — several of this batch's disclosed deviations (frame dispatch, decode
+  failure contract, entry insertion order, pending-request expiry) are
+  seeded into that register.
