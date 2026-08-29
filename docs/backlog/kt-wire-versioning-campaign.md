@@ -73,13 +73,23 @@ nothing depends on a conversation to survive:
 
 | Carried item | Where it lives |
 |---|---|
-| Letting the sync side ask the membership side about peers through a proper interface, rather than reaching across the boundary (two places do this: reading reachable peers, and recording peer activity) | The Kotlin library's architecture test records it as accepted debt, and the test fails if the debt is paid without deleting the record. Scheduled inside this campaign. |
+| Letting the sync side ask the membership side about peers through a proper interface, rather than reaching across the boundary (two places do this: reading reachable peers, and recording peer activity) | **Closed** by Batch KT-B (2026-08-29): the Kotlin library now has the interface (`PeerDirectory` + `MembershipPeerDirectory`), and the architecture test's debt record was deleted in the same change, so the clean edge is machine-enforced. |
+| Adopting a peer's claim about our own authorship as a sequence floor (Kotlin side) | **Closed** by Batch KT-B (2026-08-29) — ported alongside the contiguity guard; see the Kotlin repo's `docs/plans/2026-08-29-kt-batch-b-sync-depth.md`. |
 | Splitting large answers into pages, and fitting summaries to a size budget, on the Kotlin side | This item's scope, above — after the format settles. The wire spec's out-of-scope section records the reassignment. |
 | Rotating which summaries get sent when they don't all fit | This item's scope, above. Shares a surface with [Port the wire-efficiency behaviors to the Kotlin library](kt-port-wire-efficiency.md). |
 | Remembering that a derived view needs rebuilding across a crash (Dart side) | Its own item: [Remember that a view needs rebuilding, even across a crash](engine-materializer-rebuild-marker.md). |
 | Deleting the app's translator | The wire spec's migration playbook, final step — it is the finish line, not a follow-up. |
 | Whether the Kotlin repository's commits should be signed | Open question for the owner; no technical dependency either way. |
 | The signed-versus-unsigned message-content mismatch between the spec and the deployed server | **Closed** by the 2026-08-29 documentation pass: the spec now matches what the deployed server actually emits, and every decoder is widened to accept it. |
+
+**Batch KT-B (2026-08-29) is complete.** Between the two rows above and the
+audit-inventory items it also ported (the per-author contiguity guard with
+gap reporting, and the flip from silent-skip to throwing on duplicate
+appends — inventory items 3 and 9 of the
+[Kotlin port fix inventory](../superpowers/specs/2026-08-28-kt-port-dart-fix-inventory.md)),
+this batch closes the contiguity-guard, duplicate-throw, PeerDirectory-ACL,
+and authorship-floor items entirely. What remains of the campaign's later
+batches is KT-C/D/E.
 
 ## Related
 

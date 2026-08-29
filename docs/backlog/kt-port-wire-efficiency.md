@@ -25,7 +25,13 @@ work throughout an incremental port.
 Mirror the Dart designs one-for-one: the pure pacing state machine in both
 loops, the news triggers, suppression + cap, responder recording, and the
 dominance filter — each with the Dart test suite translated. The Dart specs
-and ADR-013's amendment are the authority.
+and ADR-013's amendment are the authority. This includes translating Dart's
+quiescence test pin once the pacing mechanism it exercises exists on the
+Kotlin side — porting the pin ahead of the mechanism would have nothing to
+pin against, so it belongs in the same increment as the pacing state
+machine itself (surfaced during the Kotlin port's Batch KT-B; see the
+[twin-divergence register](kt-normalize-twin-divergences.md)'s quiescence
+row).
 
 ## Related
 

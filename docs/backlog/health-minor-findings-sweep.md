@@ -20,6 +20,15 @@ unlucky inputs):
   stored and synced — and because entry equality ignores payload bytes,
   local and remote copies can differ silently. Copy at the public API
   boundary.
+- **`appendAll` registers a phantom empty stream on a rejected batch.**
+  `getOrPut` creates the stream-map entry before the batch is validated,
+  so a batch rejected in full still leaves behind an empty stream — a
+  stream that reads as having been written when it never was. Surfaced by
+  the Kotlin port's Batch KT-B review, which found the identical shape on
+  the Dart side and fixed it on the Kotlin side (`fb0cd32`); see the
+  [twin-divergence register](kt-normalize-twin-divergences.md)'s
+  `appendAll` phantom-stream row. Validate before the `getOrPut`, same fix
+  shape.
 
 **Transport behavior minors** (each small; none has another home):
 
