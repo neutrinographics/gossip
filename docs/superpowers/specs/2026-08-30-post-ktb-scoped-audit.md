@@ -154,7 +154,9 @@ the load-bearing ones):
 Also surfaced: the old kt compaction plan's remaining out-of-scope items — digest-level
 floor advertisement, skip-below-peer-floor on serve, snapshot sync — are KT-D routing
 candidates, not KT-C prerequisites; and its "currently manual only, matching Dart" note
-is stale (Dart has had auto-compaction since CC5) — KT-C's docs task should truth it.
+is stale (Dart gained its periodic compaction loop in the 2026-07 audit remediation,
+`b483f1d`; CC5-7 later moved it onto `GenerationScheduler` — this line originally
+misattributed it to CC5, corrected at KT-C close) — KT-C's docs task should truth it.
 
 ## Findings routed
 
