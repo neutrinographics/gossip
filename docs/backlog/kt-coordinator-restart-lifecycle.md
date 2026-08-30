@@ -77,3 +77,5 @@ Translating them is the proof the fix works.
   [Sweep the remaining scenario coverage into the Kotlin library](kt-scenario-parity-sweep.md).
 - Sibling defect found in the same batch:
   [Make the Kotlin library's indirect health probing actually work](kt-swim-indirect-probing-inert.md).
+- Worth folding in while restructuring these call sites:
+  [Stop the Kotlin library from treating cancellation as a failure](kt-cancellation-swallowed.md).
