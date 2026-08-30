@@ -79,11 +79,33 @@ nothing depends on a conversation to survive:
 | Rotating which summaries get sent when they don't all fit | This item's scope, above. Shares a surface with [Port the wire-efficiency behaviors to the Kotlin library](kt-port-wire-efficiency.md). |
 | Remembering that a derived view needs rebuilding across a crash (Dart side) | Its own item: [Remember that a view needs rebuilding, even across a crash](engine-materializer-rebuild-marker.md). |
 | Deleting the app's translator | The wire spec's migration playbook, final step — it is the finish line, not a follow-up. |
-| Giving the Kotlin test harness a way to cut a link while both sides keep their state (a real partition, not a remove-and-re-add) | Future scope of this campaign, surfaced by Batch KT-B's integration review; the divergence register's "Partition primitive" row holds the full rationale. |
+| Giving the Kotlin test harness a way to cut a link while both sides keep their state (a real partition, not a remove-and-re-add) | **Closed** by Batch KT-D (2026-08-30): the Kotlin bus grew directional link blocking and node partitioning that leave both sides registered, so a healed node keeps its coordinator state. The Kotlin version ended up stronger than the Dart one it was modelled on — Dart re-registers the port on heal — and the divergence register now recommends the flow-back. |
 | Adapting the server to the restructured Kotlin library before the migration playbook's step 4 (the submodule bump) | **Owner-side precondition**, surfaced by the 2026-08-30 scoped audit: the server builds the library from source and imports the old package layout everywhere (27 imports, 17 files), so it does not compile against the restructured library; its Postgres entry repository also needs real implementations of the two new floor methods (`getCompactionFloor`, `adoptVersionFloor` — the engine reads them on live paths, so stubs silently defeat the compaction protections). |
 | Wiring the server's error and log callbacks | **Owner-side, same PR as the import fix** (2026-08-30 scoped audit): the server currently passes neither callback, so every diagnostic the new library emits (decode errors, contiguity-gap stalls, authorship-floor warnings) is invisible — a real stall would present as "sync silently stopped" with an empty log. |
 | Whether the Kotlin repository's commits should be signed | Open question for the owner; no technical dependency either way. |
 | The signed-versus-unsigned message-content mismatch between the spec and the deployed server | **Closed** by the 2026-08-29 documentation pass: the spec now matches what the deployed server actually emits, and every decoder is widened to accept it. |
+
+| Making the Kotlin library's relay-based health probing work at all | Its own item: [Make the Kotlin library's indirect health probing actually work](kt-swim-indirect-probing-inert.md). Found by Batch KT-D (2026-08-30) while translating the failure-detection scenarios, and confirmed from source in review: the relay blocks the queue its own answer must arrive through, so the indirect probe always times out. One Dart scenario stays untranslatable until it is fixed. |
+| Translating the rest of the Dart scenario suite | Its own item: [Sweep the remaining scenario coverage into the Kotlin library](kt-scenario-parity-sweep.md). Batch KT-D translated the correctness-bearing core onto the new harness; the scale, multi-channel, and remaining edge/lifecycle groups are mechanical follow-on. |
+
+**Batch KT-D (2026-08-30) is complete.** It ran on two threads. The first
+closed four correctness gaps the scoping pass found live in the Kotlin
+library — creating a channel that already existed silently wiped its
+members and stream configuration; one failing derived-view builder starved
+every sibling on the same batch; a peer with a badly wrong clock could drag
+the whole mesh's timestamps forward unbounded; and two concurrent writes to
+one stream could race for the same sequence number and fail one of them —
+and added the two regression pins the inventory still owed. The second
+built the Kotlin library its first end-to-end scenario harness (a network
+DSL, link conditions, and a simulated clock that fires timers the way the
+Dart one does) and translated roughly sixty Dart scenarios onto it,
+including the congestion group, which is the first test anywhere that pins
+the Kotlin library's shipped congestion gate against a real queue rather
+than a declared number. The suite went from 795 tests to well over 900.
+
+Two findings came out of it that outlive the batch: the relay-probing
+defect and the scenario-parity remainder, both now their own items above.
+What remains of the campaign's later batches is KT-E.
 
 **Batch KT-B (2026-08-29) is complete.** Between the two rows above and the
 audit-inventory items it also ported (the per-author contiguity guard with
