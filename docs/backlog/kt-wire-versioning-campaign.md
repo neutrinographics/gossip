@@ -86,6 +86,7 @@ nothing depends on a conversation to survive:
 | The signed-versus-unsigned message-content mismatch between the spec and the deployed server | **Closed** by the 2026-08-29 documentation pass: the spec now matches what the deployed server actually emits, and every decoder is widened to accept it. |
 
 | Making the Kotlin library's relay-based health probing work at all | Its own item: [Make the Kotlin library's indirect health probing actually work](kt-swim-indirect-probing-inert.md). Found by Batch KT-D (2026-08-30) while translating the failure-detection scenarios, and confirmed from source in review: the relay blocks the queue its own answer must arrive through, so the indirect probe always times out. One Dart scenario stays untranslatable until it is fixed. |
+| Making a stopped Kotlin coordinator actually stop | Its own item: [Make stopping a Kotlin coordinator actually stop it](kt-coordinator-restart-lifecycle.md). Found by Batch KT-D (2026-08-30) while translating the churn and lifecycle scenarios, and confirmed from source in review: stopping never cancels the message listener, and nothing gates ingestion on whether the node is running. Six Dart scenarios stay untranslated until it is fixed. |
 | Translating the rest of the Dart scenario suite | Its own item: [Sweep the remaining scenario coverage into the Kotlin library](kt-scenario-parity-sweep.md). Batch KT-D translated the correctness-bearing core onto the new harness; the scale, multi-channel, and remaining edge/lifecycle groups are mechanical follow-on. |
 
 **Batch KT-D (2026-08-30) is complete.** It ran on two threads. The first
@@ -103,8 +104,13 @@ including the congestion group, which is the first test anywhere that pins
 the Kotlin library's shipped congestion gate against a real queue rather
 than a declared number. The suite went from 795 tests to well over 900.
 
-Two findings came out of it that outlive the batch: the relay-probing
-defect and the scenario-parity remainder, both now their own items above.
+Three findings came out of it that outlive the batch: two confirmed
+production defects in the Kotlin library — relay-based probing never
+completes, and stopping a coordinator does not stop it — plus the
+scenario-parity remainder. All three are their own items above. The two
+defects are why the batch delivered fewer scenarios than its plan
+nominally listed: the blocked ones were withheld rather than written to
+pass against buggy behaviour.
 What remains of the campaign's later batches is KT-E.
 
 **Batch KT-B (2026-08-29) is complete.** Between the two rows above and the
