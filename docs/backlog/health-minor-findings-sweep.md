@@ -29,6 +29,16 @@ unlucky inputs):
   [twin-divergence register](kt-normalize-twin-divergences.md)'s
   `appendAll` phantom-stream row. Validate before the `getOrPut`, same fix
   shape.
+- **A first-cycle `nextDelay` throw escapes `GenerationScheduler.start()`
+  synchronously.** The scheduler calls `nextDelay()` as the argument to
+  `timePort.delay(...)`, so on the first cycle a throwing `nextDelay`
+  propagates out of `start()` while on every later cycle the same throw
+  reaches `onSchedulingError` — one defect, two failure surfaces. Surfaced
+  by the Kotlin port's Batch KT-C review, whose port calls `nextDelay()`
+  inside the loop's own error handling and is uniform; see the
+  [twin-divergence register](kt-normalize-twin-divergences.md)'s
+  `nextDelay` error-uniformity row. Move the call inside the scheduled
+  chain, same shape as the Kotlin side.
 
 **Transport behavior minors** (each small; none has another home):
 
