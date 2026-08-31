@@ -19,10 +19,26 @@ the pair stays connected.
 This is not hypothetical. On 2026-08-31 the opendoor server, newly syncing
 presence, entered exactly this loop against two phones whose presence logs are
 truncated (first available 149 and 1161) and which, running pre-floor builds,
-cannot say the range is gone for good. The churn drove the dyno past its
-memory quota for a full day (the R14 incident). Quiescence pacing does not
-help: the loop's own delta traffic counts as news and holds the pacer at full
-cadence (`gossip_engine.dart:237`).
+cannot say the range is gone for good. Quiescence pacing does not help: the
+loop's own delta traffic counts as news and holds the pacer at full cadence
+(`gossip_engine.dart:237`).
+
+**Correction (2026-08-31, later the same day):** an earlier draft of this spec
+blamed the loop for the server's R14 memory-quota incident. That attribution
+was wrong, and the measurements say so plainly. The dyno sat at 113.8% of quota
+*while idle* — its last client traffic was at 10:25 UTC and it still read
+586 MB at 13:17 — which no traffic-driven loop explains. The actual cause was a
+JVM with no heap cap: the app deploys as a Docker image, which bypasses
+Heroku's JVM buildpack and its container-aware `-Xmx` default. Adding
+`-Xmx256m -XX:MaxMetaspaceSize=96m` dropped it to 313.8 MB (61.3%) with zero
+swap, and R14 stopped instantly. The stalled-range loop then ran **16 more
+times** over the following 36 minutes and produced no memory pressure at all.
+
+The loop is still real and still worth fixing — it was measured on the device
+side at 2041 entries / 765 KB re-shipped 59 times in a few minutes, converging
+on nothing — but it should be prioritised as **wasted bandwidth and battery on
+constrained links**, not as the cause of a production outage. Anyone weighing
+this work against other items deserves the accurate version.
 
 The fix must be **per-author**, not per-stream or per-request. A stream with
 live traffic (presence heartbeats) merges *something* on almost every
