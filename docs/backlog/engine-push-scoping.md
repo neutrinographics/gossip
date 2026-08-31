@@ -41,3 +41,7 @@ hardening; decide and document buffer-time vs flush-time on purpose.
 - Findings WIRE4-6, WIRE4-11, WIRE4-20 (recommendation R6) in
   [audits/2026-08-20-wire-scheduling-audit.md](../audits/2026-08-20-wire-scheduling-audit.md).
 - Sibling: [Coalesce wire traffic into fewer radio wakeups](engine-message-coalescing.md).
+- Closest sibling: [Only tell a peer about the groups you both belong to](engine-scope-digests-to-shared-groups.md)
+  — the same "does this peer share the data?" question, asked of the summary
+  exchange rather than of reactive pushes. A membership notion built for
+  either one should serve both.
