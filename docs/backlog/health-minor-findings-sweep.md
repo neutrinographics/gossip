@@ -53,6 +53,11 @@ unlucky inputs):
 - The BLE send queue's remaining halves of MIN-16 (per-lane aging and
   queue metrics; the depth ceiling itself is
   [its own item](engine-send-queue-depth-cap.md)).
+- The stalled-range probe-marking clock split: Dart reads `timePort.nowMs`
+  separately when shaping a request and when marking its probes, so a probe
+  window opening during the send's latency is consumed by a request that
+  was shaped for that author (2026-09-01 kt port review; kt already fixed
+  it — capture the shaping instant once and pass it to `markProbed`).
 - Per-channel cleanup for the sync engine's per-peer bookkeeping: removing
   a channel clears neither the merger's reported-gap dedup nor the
   stalled-range registry (2026-09-01 branch review, finding 6) — both
