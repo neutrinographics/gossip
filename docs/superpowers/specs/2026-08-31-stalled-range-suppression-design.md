@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-31
 **Status:** Approved 2026-09-01 (with the owner's pure-DDD reshape); Dart
-reference implemented the same day on `feature/stalled-range-suppression`
+reference implemented the same day and merged as `7ebd076` (PR #15, incl.
+the review fix wave: probe-issue re-arm moved to the transport seam)
 **Roadmap item:** [Suppress pulling an author's range a peer has already failed to supply](../../backlog/engine-stalled-range-request-backoff.md)
 **Follow-on:** [Port stalled-range suppression to the Kotlin library](../../backlog/kt-stalled-range-suppression-port.md)
 

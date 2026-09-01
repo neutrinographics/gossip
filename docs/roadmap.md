@@ -17,7 +17,7 @@ review outcome and the parity program):
 
 1. **Stop the measured waste** —
    [stalled-range suppression](backlog/engine-stalled-range-request-backoff.md)
-   (Dart reference **landed 2026-09-01**) then
+   (Dart reference **merged 2026-09-01**, 7ebd076) then
    [its Kotlin port](backlog/kt-stalled-range-suppression-port.md): the
    server re-ships hundreds of KB to every unupgraded phone, all day.
 2. **Pace the server** — the
@@ -74,7 +74,7 @@ detection. Seeded from the deferred follow-ups of the 2026-07 audits
 - ☐ **Medium** — [Send reactive pushes only to peers that share the data](backlog/engine-push-scoping.md) · scope push fan-out by channel membership + congestion-gate pushes and request bursts (2026-08 audit R6)
 - ☐ **Medium** — [Only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md) · digests advertise every channel a node holds, including its own user channel; measured on a mixed Android/iOS pair as 19 unusable channel ids × 22 rounds (~6.4 KB/exchange) — wasted airtime, log noise, and group/account ids disclosed to unrelated peers
 - ☐ **Medium** — [Coalesce wire traffic into fewer radio wakeups](backlog/engine-message-coalescing.md) · SRTT-scaled debounce, batched deltas, push-pull completion, transport hold window (2026-08 audit R7)
-- ☑ **High** — [Suppress pulling an author's range a peer has already failed to supply](backlog/engine-stalled-range-request-backoff.md) · per-author suppression with doubling re-probe backoff, per the [approved spec](superpowers/specs/2026-08-31-stalled-range-suppression-design.md) (pure-DDD shape: `StalledRangeRegistry` aggregate, strict command/query split) — landed 2026-09-01 on `feature/stalled-range-suppression`; the Kotlin port is the remaining half. NOT the cause of the 2026-08-31 R14 incident: that was an uncapped JVM heap, and the loop ran 16 more times after that fix with no memory pressure
+- ☑ **High** — [Suppress pulling an author's range a peer has already failed to supply](backlog/engine-stalled-range-request-backoff.md) · per-author suppression with doubling re-probe backoff, per the [approved spec](superpowers/specs/2026-08-31-stalled-range-suppression-design.md) (pure-DDD shape: `StalledRangeRegistry` aggregate, strict command/query split) — merged 2026-09-01 as 7ebd076 (#15); the Kotlin port is the remaining half. NOT the cause of the 2026-08-31 R14 incident: that was an uncapped JVM heap, and the loop ran 16 more times after that fix with no memory pressure
 - ☐ **Low** — [Shrink version vectors on the wire with an author-index table](backlog/engine-author-index-wire-format.md) · wire-format change, both ends (2026-08 audit R8)
 - ☐ **Low** — [Piggyback sync summaries on liveness probes](backlog/engine-digest-on-probe-piggyback.md) · one radio wakeup serves both loops; crosses the PeerDirectory seam with an opaque payload (WIRE4-19)
 - ☐ **Low** — [Make Bluetooth advertising transmit power configurable](backlog/engine-ble-advertise-tx-power.md) · bluey hardcodes HIGH; add the knob upstream then plumb an owned enum like AdvertiseMode
