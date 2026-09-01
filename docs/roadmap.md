@@ -15,11 +15,12 @@ traffic. Work proceeds in this order (owner-set; full rationale in the
 [retirement decision record](superpowers/specs/2026-09-01-swim-slimdown-decision.md)'s
 review outcome and the parity program):
 
-1. **Stop the measured waste** —
+1. **Stop the measured waste** — DONE in both libraries:
    [stalled-range suppression](backlog/engine-stalled-range-request-backoff.md)
-   (Dart reference **merged 2026-09-01**, 7ebd076) then
-   [its Kotlin port](backlog/kt-stalled-range-suppression-port.md): the
-   server re-ships hundreds of KB to every unupgraded phone, all day.
+   (Dart 7ebd076, 2026-09-01) and
+   [its Kotlin port](backlog/kt-stalled-range-suppression-port.md)
+   (gossip-kt bbbf31f, 2026-09-02); the server-side relief lands with the
+   opendoor-api submodule bump.
 2. **Pace the server** — the
    [Kotlin wire-efficiency port](backlog/kt-port-wire-efficiency.md),
    quiescence pacing and probe suppression first: the server still talks at
@@ -125,7 +126,7 @@ register, and working conventions live in the
 - ◐ **High** — [Make stopping a Kotlin coordinator actually stop it](backlog/kt-coordinator-restart-lifecycle.md) · stop never cancels the message listener and nothing gates ingestion on running, so a stopped node keeps merging peer data and each restart stacks another listener into duplicate-write failures — same batch, same rulings page
 - ◐ **Medium** — [Stop the Kotlin library from treating cancellation as a failure](backlog/kt-cancellation-swallowed.md) · nine catch-alls (six recorded + three found at spec time) swallow the coroutine cancellation signal — folded into the coordinator-lifecycle batch, which restructures the same sites
 - ☐ **Low** — [Sweep the remaining scenario coverage into the Kotlin library](backlog/kt-scenario-parity-sweep.md) · the harness and link-condition primitives now exist and ~60 scenarios are translated; the scale, multi-channel, and remaining edge/lifecycle groups are mechanical follow-on
-- ◐ **High** — [Port stalled-range suppression to the Kotlin library](backlog/kt-stalled-range-suppression-port.md) · translated, reviewed line-for-line faithful, and PR OPEN (gossip-kt #5, suite 938 → 959) — awaiting merge, then ships via the next opendoor-api submodule bump
+- ☑ **High** — [Port stalled-range suppression to the Kotlin library](backlog/kt-stalled-range-suppression-port.md) · merged 2026-09-02 as gossip-kt bbbf31f (#5, suite 938 → 959), reviewed line-for-line faithful — reaches production with the opendoor-api submodule bump
 - ◐ **Medium** — [Record where the Dart library and its Kotlin twin diverge, with a verdict](backlog/kt-normalize-twin-divergences.md) · register active, growing a row per review; every row must end homed to a roadmap item, closed, or exempted in the parity program — the Dart-side adoptions now have a home in the flow-back sweep (Code health)
 - ☐ **High** — [Give the Kotlin library the payload size cap the Dart library enforces](backlog/kt-payload-size-cap.md) · nothing kt-side refuses an oversized write and the server's frame limit is effectively infinite, so the server can create entries the phone fleet can never carry
 - ☐ **High** — [Make stream access get-or-create in the Kotlin library](backlog/kt-get-or-create-stream.md) · the register calls this a real production issue: Dart quietly creates a missing stream on access, kt doesn't, and the kt harness works around it
