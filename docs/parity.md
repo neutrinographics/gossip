@@ -46,14 +46,18 @@ was decided. Anything not listed here is expected to reach parity.
 
 | # | Divergence | Reason | Decided |
 |---|---|---|---|
-| E1 | Sublayer name `value_objects/` (Dart) vs `values/` (kt) | Kotlin package names cannot contain underscores | Structure mirror, 2026-08-29 |
-| E2 | kt has no `DeltaMerger`/`KeyedTaskChain` | kt's single-collector receive loop structurally excludes the overlapping-merge hazard those exist to serialize | Divergence register, "Merge-path serialization" |
-| E3 | kt domain services use monitor guards; Dart uses none | ADR-001 single-isolate execution is a Dart-only guarantee; kt runs on a multi-threaded dispatcher | Divergence register, "Thread-safety posture" |
-| E4 | Version-vector explicit-zero handling differs | Tolerated asymmetry; the one real consequence was fixed consumer-side 2026-08-31 | Divergence register, "explicit-zero" row |
-| E5 | kt keeps no `resume()`; `start()` doubles as resume | Deliberate smaller lifecycle surface; behavior contract identical | Receive-loop lifecycle rulings, 2026-09-01 (pending review) |
+| E1 | Sublayer name `value_objects/` (Dart) vs `values/` (kt) | Kotlin package names cannot contain underscores. Normalizable only by Dart renaming *toward* the forced abbreviation — kept, because "value object" is the domain term and Dart is the normative side | Structure mirror, 2026-08-29; upheld on review, 2026-09-01 |
+| E2 | kt has no `DeltaMerger`/`KeyedTaskChain` | The *contract* is identical (no two merges for one channel/stream ever interleave); only the mechanism differs — kt's serial collector structurally excludes the hazard those exist to serialize, so porting them would be dead code. Reassess only if Dart ever adopts a single-dispatch receive loop | Divergence register, "Merge-path serialization"; upheld on review, 2026-09-01 |
+| E3 | kt domain services use monitor guards; Dart uses none | ADR-001 single-isolate execution is a Dart-only guarantee. The lock-free alternative (single-threaded confinement) was considered and rejected: it would serialize the server's suspending repository work and still not cover the non-suspend lifecycle facade | Divergence register, "Thread-safety posture"; upheld on review, 2026-09-01 |
 
 An exemption is falsifiable: if a later incident shows the skipped thing did
-have a purpose, delete the row and open a port item.
+have a purpose, delete the row and open a port item. The first review
+(owner, 2026-09-01) did exactly that to two drafted entries: version-vector
+explicit-zero handling is now a **normalization** (kt adopts Dart's
+construction-time zero-dropping; homed as KT-E scope in the
+[wire campaign register](backlog/kt-wire-versioning-campaign.md)), and kt
+**gains `resume()`** for API and vocabulary parity (folded into the
+receive-loop lifecycle batch's rulings).
 
 ## Open joint decisions
 

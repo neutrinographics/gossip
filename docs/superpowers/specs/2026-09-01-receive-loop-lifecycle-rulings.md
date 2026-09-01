@@ -30,8 +30,10 @@ relay-keeps-both-views-reachable), translated as the batch's proof.
    `pause()` keeps it and gates *ingestion* engine-side (a paused node
    serves digests, entries, and pings but absorbs nothing, catching up via
    anti-entropy after resume); serving a delta request stays ungated. kt
-   keeps no `resume()` — `start()` doubles as resume and must reuse the live
-   collector. (Proposed exemption E5 in the [parity program](../../parity.md).)
+   **gains `resume()`** (owner ruling, 2026-09-01, reversing a drafted
+   exemption): it delegates to the start path, so the pause/resume
+   vocabulary matches Dart's; `start()` from paused keeps working and must
+   reuse the live collector either way.
 4. **One kt improvement over Dart:** `start()` waits out a still-unwinding
    cancelled collector before relaunching (free, since kt's `start()`
    suspends); Dart's cancel is fire-and-forget. Goes to the divergence
@@ -57,3 +59,7 @@ Estimated suite growth: 938 → ~953, on a branch off gossip-kt `main` @ 33772f7
 
 _Pending owner review. Record rulings changes here; the plan follows the
 record, not the other way around._
+
+- 2026-09-01: ruling 3 amended by the owner's review of the parity
+  exemption register — kt gains `resume()` rather than exempting its
+  absence. Remaining rulings still pending.
