@@ -63,3 +63,9 @@ record, not the other way around._
 - 2026-09-01: ruling 3 amended by the owner's review of the parity
   exemption register — kt gains `resume()` rather than exempting its
   absence. Remaining rulings still pending.
+- 2026-09-01: rulings 1 and (partly) 2 are now contingent on the
+  [indirect-probing retirement decision](2026-09-01-swim-slimdown-decision.md):
+  if it is ruled for retirement, ruling 1 is mooted (nothing needs to leave
+  the collector), the detector's monitor guard in ruling 2 stays (its races
+  predate relaying), and this batch absorbs the Kotlin-side removal.
+  Review that decision first.
