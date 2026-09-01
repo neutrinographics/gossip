@@ -80,14 +80,25 @@ nothing depends on a conversation to survive:
 | Remembering that a derived view needs rebuilding across a crash (Dart side) | Its own item: [Remember that a view needs rebuilding, even across a crash](engine-materializer-rebuild-marker.md). |
 | Deleting the app's translator | The wire spec's migration playbook, final step — it is the finish line, not a follow-up. |
 | Giving the Kotlin test harness a way to cut a link while both sides keep their state (a real partition, not a remove-and-re-add) | **Closed** by Batch KT-D (2026-08-30): the Kotlin bus grew directional link blocking and node partitioning that leave both sides registered, so a healed node keeps its coordinator state. The Kotlin version ended up stronger than the Dart one it was modelled on — Dart re-registers the port on heal — and the divergence register now recommends the flow-back. |
-| Adapting the server to the restructured Kotlin library before the migration playbook's step 4 (the submodule bump) | **Owner-side precondition**, surfaced by the 2026-08-30 scoped audit: the server builds the library from source and imports the old package layout everywhere (27 imports, 17 files), so it does not compile against the restructured library; its Postgres entry repository also needs real implementations of the two new floor methods (`getCompactionFloor`, `adoptVersionFloor` — the engine reads them on live paths, so stubs silently defeat the compaction protections). |
-| Wiring the server's error and log callbacks | **Owner-side, same PR as the import fix** (2026-08-30 scoped audit): the server currently passes neither callback, so every diagnostic the new library emits (decode errors, contiguity-gap stalls, authorship-floor warnings) is invisible — a real stall would present as "sync silently stopped" with an empty log. |
+| Adapting the server to the restructured Kotlin library before the migration playbook's step 4 (the submodule bump) | **Closed** by the compaction rollout (2026-08-31): the server was rebuilt against the restructured library, its Postgres entry repository implements both floor methods for real, and the submodule now pins the Kotlin library's current mainline (33772f7). Deployed to production and verified live. |
+| Wiring the server's error and log callbacks | **Closed** in the same rollout (2026-08-31): both callbacks are wired, so the library's diagnostics reach the server log. |
 | Whether the Kotlin repository's commits should be signed | Open question for the owner; no technical dependency either way. |
 | The signed-versus-unsigned message-content mismatch between the spec and the deployed server | **Closed** by the 2026-08-29 documentation pass: the spec now matches what the deployed server actually emits, and every decoder is widened to accept it. |
 
 | Making the Kotlin library's relay-based health probing work at all | Its own item: [Make the Kotlin library's indirect health probing actually work](kt-swim-indirect-probing-inert.md). Found by Batch KT-D (2026-08-30) while translating the failure-detection scenarios, and confirmed from source in review: the relay blocks the queue its own answer must arrive through, so the indirect probe always times out. One Dart scenario stays untranslatable until it is fixed. |
 | Making a stopped Kotlin coordinator actually stop | Its own item: [Make stopping a Kotlin coordinator actually stop it](kt-coordinator-restart-lifecycle.md). Found by Batch KT-D (2026-08-30) while translating the churn and lifecycle scenarios, and confirmed from source in review: stopping never cancels the message listener, and nothing gates ingestion on whether the node is running. Six Dart scenarios stay untranslated until it is fixed. |
 | Translating the rest of the Dart scenario suite | Its own item: [Sweep the remaining scenario coverage into the Kotlin library](kt-scenario-parity-sweep.md). Batch KT-D translated the correctness-bearing core onto the new harness; the scale, multi-channel, and remaining edge/lifecycle groups are mechanical follow-on. |
+
+**Deployment status (2026-08-31): the playbook's receive-both half has
+shipped.** Steps 1–3 (the code, gated green 2026-08-29) and steps 4–5 are
+done: the server was rebuilt against the current Kotlin library and deployed,
+and the app shipped its wire-floor translation (its PR merged 2026-08-31) —
+the initial mobile and server releases carrying compaction support are live
+end-to-end. What remains of the playbook is the ordered send-side flips:
+step 6 (the app fleet flips to the new dialect, gated on the whole fleet
+running the upgraded receiver), step 7 (the server flips), and step 8
+(deleting the app's translator and retiring the Kotlin legacy codec — the
+finish line).
 
 **Batch KT-D (2026-08-30) is complete.** It ran on two threads. The first
 closed four correctness gaps the scoping pass found live in the Kotlin

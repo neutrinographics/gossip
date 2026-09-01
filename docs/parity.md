@@ -29,7 +29,7 @@ conventions.
 | Tests & scenarios | The scenario suites prove the same contracts; translations cite their source | [Scenario parity sweep](backlog/kt-scenario-parity-sweep.md); the test-citation convention below |
 | Wire | Byte-identical dialects, proven against one canonical vector set | [Wire versioning spec](superpowers/specs/2026-08-28-wire-versioning.md); conformance vectors vendored in both repos with drift tests |
 | Improvement adoption | Anything one side does better flows to the other — both directions | [Divergence register](backlog/kt-normalize-twin-divergences.md) (the record); [Dart flow-back item](backlog/health-adopt-kt-flow-backs.md) and the kt-track port items (the closure) |
-| Deployment | The mixed fleet never breaks while the twins converge | Wire campaign §5.3 flip playbook (owner-only steps 4–8) |
+| Deployment | The mixed fleet never breaks while the twins converge | Wire campaign §5.3 flip playbook (steps 1–5 shipped 2026-08-31; the send-side flips 6–8 remain, gated on fleet coverage) |
 
 **How to read current status:** the roadmap's *Kotlin port* track is the
 worklist; the divergence register is the debt ledger (every row must be
