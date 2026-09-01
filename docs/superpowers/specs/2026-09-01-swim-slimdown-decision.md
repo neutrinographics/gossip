@@ -107,7 +107,7 @@ usefully exchange data with this peer directly" is what the status gates.
 
 | Item | Effect under B |
 |---|---|
-| [Make the Kotlin library's indirect health probing actually work](../../backlog/kt-swim-indirect-probing-inert.md) (High) | **Closed by removal** — the defect is deleted, not fixed |
+| The relay defect item (High) | **Closed by removal** — the defect is deleted, not fixed; the item was repurposed into [Retire indirect health probing from both libraries](../../backlog/kt-retire-indirect-probing.md) |
 | Receive-loop lifecycle batch ([rulings](2026-09-01-receive-loop-lifecycle-rulings.md)) | Ruling 1 (launch the relay off the collector) is **mooted**; the detector's monitor guard **stays** (its races predate and outlive relaying); the batch shrinks to lifecycle + cancellation + guard, and absorbs the Kotlin-side removal (same files, same review) |
 | [Scenario parity sweep](../../backlog/kt-scenario-parity-sweep.md) | The one withheld relay scenario becomes obsolete rather than pending |
 | [SWIM threshold tuning](../../backlog/engine-swim-threshold-tuning.md) | Unaffected — thresholds remain |
@@ -136,4 +136,10 @@ usefully exchange data with this peer directly" is what the status gates.
 
 ## Review outcome
 
-_Pending owner review._
+**Ruled B — final (owner, 2026-09-01).** Open points settled per the
+recommendations: the receive-loop lifecycle batch absorbs the Kotlin-side
+removal, and the documentation renames away from "SWIM" when ADR-004 is
+revised alongside the Dart implementation. Timing was set the same day by
+the deployed-fleet performance push (see the roadmap's Current focus
+section): the retirement rides its batch; the traffic items (stalled-range
+suppression, the Kotlin pacing port) lead the campaign.

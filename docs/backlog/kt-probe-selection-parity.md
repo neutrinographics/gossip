@@ -41,4 +41,4 @@ with it — the extraction is what makes the behavior reviewable.
 - Distinct from (but adjacent to) the *suppression* behaviors — probing a
   recently-heard-from peer less — which belong to
   [Port the wire-efficiency behaviors to the Kotlin library](kt-port-wire-efficiency.md).
-- Sibling: [Make the Kotlin library's indirect health probing actually work](kt-swim-indirect-probing-inert.md).
+- Sibling: [Retire indirect health probing from both libraries](kt-retire-indirect-probing.md).

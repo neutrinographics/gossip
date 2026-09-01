@@ -7,6 +7,42 @@ never in a backlog file.
 - **Status:** ☐ not started · ◐ in progress · ☑ done
 - **Priority:** High · Medium · Low · Launch (gated to before public exposure)
 
+## Current focus — deployed-fleet performance and stability (set 2026-09-01)
+
+The campaign's aim right now is making the *deployed* server and phone fleet
+faster and more stable, and the historical enemy is unnecessary wire
+traffic. Work proceeds in this order (owner-set; full rationale in the
+[retirement decision record](superpowers/specs/2026-09-01-swim-slimdown-decision.md)'s
+review outcome and the parity program):
+
+1. **Stop the measured waste** —
+   [stalled-range suppression](backlog/engine-stalled-range-request-backoff.md)
+   (Dart reference, spec in review) then
+   [its Kotlin port](backlog/kt-stalled-range-suppression-port.md): the
+   server re-ships hundreds of KB to every unupgraded phone, all day.
+2. **Pace the server** — the
+   [Kotlin wire-efficiency port](backlog/kt-port-wire-efficiency.md),
+   quiescence pacing and probe suppression first: the server still talks at
+   full cadence on every converged link (~30× more rounds than Dart).
+3. **Flip the fleet to v2** when upgrade coverage allows (wire playbook
+   steps 6–7; no dev work): v1's payload encoding costs ~3× the bytes of
+   v2's on payload-heavy deltas.
+4. **Stability hardening batch (Kotlin)** —
+   [retire indirect probing](backlog/kt-retire-indirect-probing.md) (removes
+   the server's 500 ms receive-loop stalls) + the
+   [coordinator lifecycle fix](backlog/kt-coordinator-restart-lifecycle.md)
+   + [cancellation](backlog/kt-cancellation-swallowed.md), one batch; plus
+   the [payload cap](backlog/kt-payload-size-cap.md) and KT-E's
+   entry-ordering fix.
+5. **Then design the next traffic win** —
+   [digest scoping to shared groups](backlog/engine-scope-digests-to-shared-groups.md)
+   (spec first; every digest today advertises channels the peer doesn't share).
+
+Kotlin work ships via opendoor-api submodule bumps — aim items 2 and 4 at
+one bump, item 1's port plus KT-E at the next. Parity-completeness items
+(probe-selection, sync-activity API, glossary, flow-backs, scenario sweep)
+queue behind this push.
+
 ## Guardrails (design invariants)
 
 Constraints that new work must respect (see `packages/gossip/docs/adr/`):
@@ -37,7 +73,7 @@ detection. Seeded from the deferred follow-ups of the 2026-07 audits
 - ☐ **Medium** — [Send reactive pushes only to peers that share the data](backlog/engine-push-scoping.md) · scope push fan-out by channel membership + congestion-gate pushes and request bursts (2026-08 audit R6)
 - ☐ **Medium** — [Only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md) · digests advertise every channel a node holds, including its own user channel; measured on a mixed Android/iOS pair as 19 unusable channel ids × 22 rounds (~6.4 KB/exchange) — wasted airtime, log noise, and group/account ids disclosed to unrelated peers
 - ☐ **Medium** — [Coalesce wire traffic into fewer radio wakeups](backlog/engine-message-coalescing.md) · SRTT-scaled debounce, batched deltas, push-pull completion, transport hold window (2026-08 audit R7)
-- ◐ **Medium** — [Suppress pulling an author's range a peer has already failed to supply](backlog/engine-stalled-range-request-backoff.md) · a sequence-hole response is refused but the range is re-shipped on every later exchange forever (measured: 2041 entries / 765 KB re-sent 59 times in minutes); per-author suppression with re-probe backoff — [spec drafted](superpowers/specs/2026-08-31-stalled-range-suppression-design.md), awaiting review. NOT the cause of the 2026-08-31 R14 incident despite an earlier claim: that was an uncapped JVM heap on a Docker deploy, and the loop ran 16 more times after the fix with no memory pressure
+- ◐ **High** — [Suppress pulling an author's range a peer has already failed to supply](backlog/engine-stalled-range-request-backoff.md) · a sequence-hole response is refused but the range is re-shipped on every later exchange forever (measured: 2041 entries / 765 KB re-sent 59 times in minutes); per-author suppression with re-probe backoff — [spec drafted](superpowers/specs/2026-08-31-stalled-range-suppression-design.md), awaiting review. NOT the cause of the 2026-08-31 R14 incident despite an earlier claim: that was an uncapped JVM heap on a Docker deploy, and the loop ran 16 more times after the fix with no memory pressure
 - ☐ **Low** — [Shrink version vectors on the wire with an author-index table](backlog/engine-author-index-wire-format.md) · wire-format change, both ends (2026-08 audit R8)
 - ☐ **Low** — [Piggyback sync summaries on liveness probes](backlog/engine-digest-on-probe-piggyback.md) · one radio wakeup serves both loops; crosses the PeerDirectory seam with an opaque payload (WIRE4-19)
 - ☐ **Low** — [Make Bluetooth advertising transmit power configurable](backlog/engine-ble-advertise-tx-power.md) · bluey hardcodes HIGH; add the knob upstream then plumb an owned enum like AdvertiseMode
@@ -80,10 +116,10 @@ register, and working conventions live in the
 [twin parity program](parity.md); this track is its worklist.
 
 - ◐ **High** — [Teach both libraries to speak versioned wire formats](backlog/kt-wire-versioning-campaign.md) · one-byte version marker, receive-both codecs, config-gated send (default legacy), shared conformance vectors — code and the receive-both deploys shipped 2026-08-31 (server + app, compaction support live end-to-end); the ordered send-side flips and translator retirement remain, gated on fleet coverage
-- ☐ **Medium** — [Port the wire-efficiency behaviors to the Kotlin library](backlog/kt-port-wire-efficiency.md) · quiescence pacing, probe suppression + cap, dominance filter — kt still chats at full cadence forever; interop-safe to port incrementally
+- ☐ **High** — [Port the wire-efficiency behaviors to the Kotlin library](backlog/kt-port-wire-efficiency.md) · quiescence pacing and probe suppression FIRST (the server talks at full cadence on every converged link — ~30× the rounds), dominance filter and recency next; unblocked now that the wire format shipped; raised Medium → High 2026-09-01 for the deployed-fleet push
 - ☑ **Low** — [Mirror the bounded-context structure in the Kotlin library](backlog/kt-mirror-bounded-contexts.md) · four evaluated divergences ported back + a Kotlin edge-table boundary test that now enforces the structure — shipped 2026-08-29 in gossip-kt 26dcc13..bd50285 (feature/compaction)
 - ◐ **Medium** — [Audit the Kotlin library for the bug classes fixed in Dart](backlog/kt-audit-legacy-bug-classes.md) · audit done (13-item inventory); the storage-contract batch shipped in gossip-kt 1ffbf0d..3836bc7, the sync-path-depth batch (KT-B) shipped 2026-08-29 closing items 3/9/11, the remaining classes flow through the campaign's later batches
-- ◐ **High** — [Make the Kotlin library's indirect health probing actually work](backlog/kt-swim-indirect-probing-inert.md) · the relay step of failure detection is inert — but a [retirement decision is now on the table](superpowers/specs/2026-09-01-swim-slimdown-decision.md): indirect probing's classic purpose can't occur in this library (membership is local), and the recommended ruling closes this item by removal, not repair — decision spec awaiting review, ahead of the batched [lifecycle rulings](superpowers/specs/2026-09-01-receive-loop-lifecycle-rulings.md)
+- ☐ **High** — [Retire indirect health probing from both libraries](backlog/kt-retire-indirect-probing.md) · [ruled B, final](superpowers/specs/2026-09-01-swim-slimdown-decision.md) — the relay's purpose can't occur here (membership is local) and the Kotlin relay was inert in production anyway; Dart removes first, the Kotlin half rides the lifecycle batch, PingReq becomes receive-only until the next dialect revision — replaces the former "make indirect probing work" defect item, closed by removal
 - ◐ **High** — [Make stopping a Kotlin coordinator actually stop it](backlog/kt-coordinator-restart-lifecycle.md) · stop never cancels the message listener and nothing gates ingestion on running, so a stopped node keeps merging peer data and each restart stacks another listener into duplicate-write failures — same batch, same rulings page
 - ◐ **Medium** — [Stop the Kotlin library from treating cancellation as a failure](backlog/kt-cancellation-swallowed.md) · nine catch-alls (six recorded + three found at spec time) swallow the coroutine cancellation signal — folded into the coordinator-lifecycle batch, which restructures the same sites
 - ☐ **Low** — [Sweep the remaining scenario coverage into the Kotlin library](backlog/kt-scenario-parity-sweep.md) · the harness and link-condition primitives now exist and ~60 scenarios are translated; the scale, multi-channel, and remaining edge/lifecycle groups are mechanical follow-on

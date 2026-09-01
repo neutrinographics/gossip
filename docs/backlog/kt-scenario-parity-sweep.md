@@ -52,7 +52,11 @@ coordinator actually stops it.
 - The harness this builds on, and the coverage already translated, shipped
   in the correctness-and-scenarios batch of
   [Teach both libraries to speak versioned wire formats](kt-wire-versioning-campaign.md).
-- Blocked groups: [Make the Kotlin library's indirect health probing actually work](kt-swim-indirect-probing-inert.md)
-  and [Make stopping a Kotlin coordinator actually stop it](kt-coordinator-restart-lifecycle.md).
+- Formerly blocked groups: the relay-reachability scenario is **obsolete** —
+  indirect probing is being retired on both sides
+  ([Retire indirect health probing from both libraries](kt-retire-indirect-probing.md)),
+  so that Dart test pins removed behavior and will not be translated. Still
+  blocked: the six lifecycle scenarios, on
+  [Make stopping a Kotlin coordinator actually stop it](kt-coordinator-restart-lifecycle.md).
 - Test-strength differences found while translating are recorded in
   [Record where the Dart library and its Kotlin twin diverge, with a verdict](kt-normalize-twin-divergences.md).

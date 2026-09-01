@@ -75,7 +75,8 @@ Translating them is the proof the fix works.
   [Teach both libraries to speak versioned wire formats](kt-wire-versioning-campaign.md).
 - The six blocked scenarios are also noted in
   [Sweep the remaining scenario coverage into the Kotlin library](kt-scenario-parity-sweep.md).
-- Sibling defect found in the same batch:
-  [Make the Kotlin library's indirect health probing actually work](kt-swim-indirect-probing-inert.md).
+- Sibling defect found in the same batch, since ruled a retirement whose
+  Kotlin half this item's batch absorbs:
+  [Retire indirect health probing from both libraries](kt-retire-indirect-probing.md).
 - Worth folding in while restructuring these call sites:
   [Stop the Kotlin library from treating cancellation as a failure](kt-cancellation-swallowed.md).

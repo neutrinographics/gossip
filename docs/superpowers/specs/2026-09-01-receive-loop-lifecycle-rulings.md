@@ -2,30 +2,36 @@
 
 One kt batch covering three roadmap items:
 [coordinator restart lifecycle](../../backlog/kt-coordinator-restart-lifecycle.md),
-[inert indirect probing](../../backlog/kt-swim-indirect-probing-inert.md), and
+the Kotlin half of [retiring indirect probing](../../backlog/kt-retire-indirect-probing.md)
+(absorbed here per the [retirement ruling](2026-09-01-swim-slimdown-decision.md)), and
 [swallowed cancellation](../../backlog/kt-cancellation-swallowed.md) (which its
-own item says to fold in — the same call sites get restructured). Those three
+own item says to fold in — the same call sites get restructured). Those
 items carry the what/why; this page carries only the decisions that need the
 owner's eye. The implementation plan
 (`gossip-kt/docs/plans/2026-09-01-kt-receive-loop-lifecycle.md`) is execution
 material for the agents — not for review.
 
-Acceptance is fixed in advance: the **seven Dart scenarios withheld during the
-scenario batch** (three restart/recovery, three pause/resume/multi-cycle, one
-relay-keeps-both-views-reachable), translated as the batch's proof.
+Acceptance is fixed in advance: the **six Dart lifecycle scenarios withheld
+during the scenario batch** (three restart/recovery, three
+pause/resume/multi-cycle), translated as the batch's proof. The seventh
+withheld scenario (relay reachability) is obsolete under the retirement
+ruling — it pinned removed behavior.
 
 ## Rulings
 
-1. **The single-collector invariant stays.** Only `PingReq` relaying leaves
-   the collector (a child coroutine) — it is the sole handler that awaits a
-   reply which must arrive *through* the collector it would otherwise block.
-   Rejected: making all detection dispatch concurrent (Dart's effective
-   shape) — a bigger invariant change than the defect requires.
-2. **The detector's ping bookkeeping gets a monitor guard.** Required by
-   ruling 1 — and it closes confirmed *pre-existing* races: the sequence
-   counter, pending-ping map, probing-hold map, and RTT tracker are already
-   touched from both the probe timer and the receive loop today. Follows the
-   recorded "monitor-guarded kt domain services" rule.
+1. **The single-collector invariant stays — untouched.** (Amended by the
+   [retirement ruling](2026-09-01-swim-slimdown-decision.md): the original
+   ruling here launched `PingReq` relaying off the collector, the sole
+   handler that awaits a reply arriving through the collector it would
+   block. With relaying retired, nothing needs to leave the collector at
+   all — the batch instead *removes* `handlePingReq`, intermediary
+   selection, and the relay timeout, and an inbound `PingReq` is decoded
+   and ignored for mixed-fleet compatibility.)
+2. **The detector's ping bookkeeping gets a monitor guard anyway.** The
+   races it closes *pre-date and outlive* relaying: the sequence counter,
+   pending-ping map, probing-hold map, and RTT tracker are touched from
+   both the probe timer and the receive loop today. Follows the recorded
+   "monitor-guarded kt domain services" rule.
 3. **Lifecycle contract = Dart parity.** `stop()` cancels the receive loop;
    `pause()` keeps it and gates *ingestion* engine-side (a paused node
    serves digests, entries, and pings but absorbs nothing, catching up via
@@ -47,13 +53,14 @@ relay-keeps-both-views-reachable), translated as the batch's proof.
    compaction pass, whose swallow currently defeats the scheduler's correct
    rethrow one frame up) plus two codec decode catches taken along for idiom
    uniformity. Wire bytes untouched; golden vectors must stay byte-identical.
-7. **Not in this batch:** Dart's adaptive per-target relay timeout (kt keeps
-   the fixed 500 ms; register row — Dart's is better on BLE) and Dart's
-   lifecycle-epoch guard (kt's `start()` has no awaited gap that needs it).
+7. **Not in this batch:** Dart's lifecycle-epoch guard (kt's `start()` has
+   no awaited gap that needs it). *(The former first half of this ruling —
+   porting Dart's adaptive relay timeout — is void: the relay is retired.)*
 8. **This batch is not KT-E.** The legacy sweep (entry insertion total order,
    HLC ceiling naming, etc.) keeps that name and follows separately.
 
-Estimated suite growth: 938 → ~953, on a branch off gossip-kt `main` @ 33772f7.
+Estimated suite growth: 938 → ~950 (net of tests deleted with the relay),
+on a branch off gossip-kt `main` @ 33772f7.
 
 ## Review outcome
 
@@ -63,9 +70,8 @@ record, not the other way around._
 - 2026-09-01: ruling 3 amended by the owner's review of the parity
   exemption register — kt gains `resume()` rather than exempting its
   absence. Remaining rulings still pending.
-- 2026-09-01: rulings 1 and (partly) 2 are now contingent on the
-  [indirect-probing retirement decision](2026-09-01-swim-slimdown-decision.md):
-  if it is ruled for retirement, ruling 1 is mooted (nothing needs to leave
-  the collector), the detector's monitor guard in ruling 2 stays (its races
-  predate relaying), and this batch absorbs the Kotlin-side removal.
-  Review that decision first.
+- 2026-09-01 (later the same day): the
+  [indirect-probing retirement](2026-09-01-swim-slimdown-decision.md) was
+  **ruled B, final** — rulings 1, 2, and 7 above are amended in place to
+  their post-retirement form, the acceptance suite is six scenarios, and
+  this batch absorbs the Kotlin-side removal.
