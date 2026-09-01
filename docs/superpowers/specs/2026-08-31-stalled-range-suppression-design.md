@@ -1,7 +1,8 @@
 # Stalled-range suppression — design
 
 **Date:** 2026-08-31
-**Status:** Draft for review
+**Status:** Approved 2026-09-01 (with the owner's pure-DDD reshape); Dart
+reference implemented the same day on `feature/stalled-range-suppression`
 **Roadmap item:** [Suppress pulling an author's range a peer has already failed to supply](../../backlog/engine-stalled-range-request-backoff.md)
 **Follow-on:** [Port stalled-range suppression to the Kotlin library](../../backlog/kt-stalled-range-suppression-port.md)
 

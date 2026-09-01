@@ -45,6 +45,15 @@ entries, and the anti-entropy protocol that keeps them converged.
 - **Reactive push** — The eager, immediate send of a freshly-appended local
   entry to peers (rumor-mongering) ahead of the next anti-entropy round;
   anti-entropy is the safety net behind it, not the primary delivery path.
+- **Stalled range** — An author's surplus a peer advertised but failed to
+  supply contiguously (a sequence hole below its first available entry);
+  re-requesting it from that peer is waste until the world changes.
+- **Suppression** — Shaping a pull request's `since` vector so a stalled
+  range is not re-requested from the peer that cannot supply it; per-peer
+  request shaping only, never an adoption of truncation.
+- **Probe window** — The backoff-scheduled moment a suppressed range is
+  asked for again (doubling from 30 s to a 10 min cap); the probing request
+  is simply an unshaped request, and a supplied range evicts the suppression.
 
 ## membership
 

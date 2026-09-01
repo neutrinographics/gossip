@@ -26,11 +26,17 @@ class TestNode {
   final InMemoryTimePort timePort;
   final InMemoryMessagePort messagePort;
 
+  /// The node's entry store — exposed so scenarios can stage repository
+  /// states the public write path can't produce (e.g. a truncated history
+  /// with no compaction floor, the pre-floor-build shape).
+  final InMemoryEntryRepository entryRepository;
+
   TestNode._({
     required this.id,
     required this.coordinator,
     required this.timePort,
     required this.messagePort,
+    required this.entryRepository,
   });
 }
 
@@ -93,11 +99,12 @@ class TestNetwork {
       // reproducible behavior across nodes.
       final random = Random(seed + nodeIndex);
 
+      final entryRepository = InMemoryEntryRepository();
       final coordinator = await Coordinator.create(
         localNodeRepository: InMemoryLocalNodeRepository(nodeId: nodeId),
         channelRepository: InMemoryChannelRepository(),
         peerRepository: InMemoryPeerRepository(),
-        entryRepository: InMemoryEntryRepository(),
+        entryRepository: entryRepository,
         messagePort: messagePort,
         timePort: timePort,
         random: random,
@@ -109,6 +116,7 @@ class TestNetwork {
         coordinator: coordinator,
         timePort: timePort,
         messagePort: messagePort,
+        entryRepository: entryRepository,
       );
     }
 

@@ -128,6 +128,12 @@ publish under the existing pub.dev `gossip` name must version above the old
 - Canonical wire conformance vectors under `test/wire_vectors/` — byte-exact
   frames for both wire versions (plus edge cases), the cross-repo source of
   truth that gossip-kt vendors for parity testing.
+- Stalled-range suppression: an author range a peer fails to supply
+  contiguously is no longer re-requested from that peer at full cadence —
+  it is suppressed per (peer, channel, stream, author) and re-probed on a
+  doubling backoff (30 s → 10 min cap), lifting automatically the moment
+  the range becomes obtainable. No wire change; only the numbers inside
+  `DeltaRequest.since` are shaped.
 
 ### Changed
 
