@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
+import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 import 'package:gossip/src/shared/domain/interfaces/local_node_repository.dart';
 import 'package:gossip/src/shared/domain/services/keyed_task_chain.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
@@ -12,6 +13,7 @@ import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/sync/domain/interfaces/entry_repository.dart';
 import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
+import 'package:gossip/src/sync/domain/aggregates/stalled_range_registry.dart';
 import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
 
 /// Owns `GossipEngine`'s delta-merge pipeline: filtering a [DeltaResponse]
@@ -55,6 +57,8 @@ class DeltaMerger {
     required void Function() onNewEntriesMerged,
     required void Function(NodeId peer, ChannelId channelId, StreamId streamId)
     onContinuationIssued,
+    required StalledRangeRegistry stalledRanges,
+    required TimePort timePort,
   }) : _localNode = localNode,
        _entryRepository = entryRepository,
        _hlcClock = hlcClock,
@@ -63,7 +67,9 @@ class DeltaMerger {
        _onError = onError,
        _onLog = onLog,
        _onNewEntriesMerged = onNewEntriesMerged,
-       _onContinuationIssued = onContinuationIssued;
+       _onContinuationIssued = onContinuationIssued,
+       _stalledRanges = stalledRanges,
+       _timePort = timePort;
 
   final NodeId _localNode;
   final EntryRepository _entryRepository;
@@ -75,6 +81,12 @@ class DeltaMerger {
   final void Function() _onNewEntriesMerged;
   final void Function(NodeId peer, ChannelId channelId, StreamId streamId)
   _onContinuationIssued;
+
+  /// Shared with the engine: the merger records solicited gaps here and
+  /// shapes its continuation requests with it, so a multi-chunk drain
+  /// never re-ships a range the peer already failed to supply.
+  final StalledRangeRegistry _stalledRanges;
+  final TimePort _timePort;
 
   /// Emits an error through the callback if one is registered.
   void _emitError(SyncError error) {
@@ -166,6 +178,29 @@ class DeltaMerger {
     final newEntries = selection.accepted;
     if (selection.gaps.isNotEmpty) {
       _reportContiguityGaps(response, selection.gaps, solicited: solicited);
+      // Solicited only, matching the reporting rule: an unsolicited gapped
+      // response already means "anti-entropy will catch up" and must not
+      // poison the pull path.
+      if (solicited) {
+        for (final gap in selection.gaps) {
+          _stalledRanges.recordGap(
+            response.sender,
+            response.channelId,
+            response.streamId,
+            gap.author,
+            expectedNext: gap.expectedNext,
+            advertisedMax: gap.advertisedMax,
+            nowMs: _timePort.nowMs,
+          );
+          _log(
+            LogLevel.debug,
+            'suppressing pulls of ${gap.author} from ${response.sender} '
+            'for ${response.channelId}/${response.streamId}: peer cannot '
+            'supply ${gap.expectedNext}..${gap.firstAvailable - 1} '
+            '(advertised max ${gap.advertisedMax})',
+          );
+        }
+      }
     }
     if (newEntries.isEmpty) {
       return (continuation: null, mergedNewEntries: false);
@@ -228,7 +263,18 @@ class DeltaMerger {
           sender: _localNode,
           channelId: response.channelId,
           streamId: response.streamId,
-          since: advanced,
+          // No digest ceiling mid-drain; the stored advertised maximum
+          // suffices, and staleness self-corrects through the probe cycle.
+          // Any probe this leaves unshaped is marked at the engine's send
+          // seam, which every continuation passes through — never here,
+          // where transmission hasn't happened yet.
+          since: _stalledRanges.shapeSince(
+            response.sender,
+            response.channelId,
+            response.streamId,
+            advanced,
+            nowMs: _timePort.nowMs,
+          ),
         ),
         mergedNewEntries: true,
       );
@@ -281,6 +327,9 @@ class DeltaMerger {
             author: author,
             expectedNext: next,
             firstAvailable: firstBeyondGap,
+            // The list is sorted by sequence, so the last entry is the
+            // response's advertised maximum for this author.
+            advertisedMax: authorEntries.last.sequence,
           ),
         );
       }
@@ -434,9 +483,14 @@ class ContiguityGap {
   /// The lowest offered sequence beyond the hole.
   final int firstAvailable;
 
+  /// The highest sequence the response offered for this author — what a
+  /// suppression must ask "since" to silence the author.
+  final int advertisedMax;
+
   const ContiguityGap({
     required this.author,
     required this.expectedNext,
     required this.firstAvailable,
+    required this.advertisedMax,
   });
 }

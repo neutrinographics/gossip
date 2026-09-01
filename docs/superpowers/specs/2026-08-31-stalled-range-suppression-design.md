@@ -1,7 +1,8 @@
 # Stalled-range suppression — design
 
 **Date:** 2026-08-31
-**Status:** Draft for review
+**Status:** Approved 2026-09-01 (with the owner's pure-DDD reshape); Dart
+reference implemented the same day on `feature/stalled-range-suppression`
 **Roadmap item:** [Suppress pulling an author's range a peer has already failed to supply](../../backlog/engine-stalled-range-request-backoff.md)
 **Follow-on:** [Port stalled-range suppression to the Kotlin library](../../backlog/kt-stalled-range-suppression-port.md)
 
@@ -91,18 +92,27 @@ author)`; attributes:
 - `expectedNext` — our `ourVersion[author] + 1` at the moment the gap was
   observed. The staleness sentinel: if our expectation ever differs, the
   world changed and this entry no longer describes it.
-- `advertisedMax` — the highest sequence for the author seen in the gapped
-  response. The overlay value: asking "since `advertisedMax`" makes the peer
-  send nothing for this author.
+- `advertisedMax` — the highest sequence for the author the peer has *ever*
+  advertised in a gapped response. **Monotonic** (branch review, finding 1):
+  a small probe page must never lower it, or a multi-chunk drain re-walks
+  the tail. The overlay value: asking "since `advertisedMax`" makes the
+  peer send nothing for this author.
 - `retryAt` — when the next probe is allowed. First suppression lasts
-  `initialBackoff` (default 30s); each re-recorded gap doubles it up to
-  `maxBackoff` (default 10min).
-- `probeCount` — how many times this stall has been re-confirmed (drives the
-  doubling; also useful in debug logs).
+  `initialBackoff` (default 30s); **each issued probe** doubles it up to
+  `maxBackoff` (default 10min). (Branch review, findings 2 and 4: doubling
+  on *response* evidence let one multi-chunk drain saturate the cap in
+  seconds, and a lost probe response left the window permanently open —
+  doubling at probe *issue* fixes both.)
+- `probeCount` — how many probes have been issued for this stall (drives
+  the doubling; also useful in debug logs).
 
-Behavior on the entity: `isStale(ourVersion)`, `isProbeDue(nowMs)`,
-`rearmed(nowMs, advertisedMax)` (returns the doubled-backoff successor —
-transitions produce new values, never mutate in place).
+Behavior on the entity: `isStale(ourVersion)`, `isProbeDue(nowMs)`, and two
+transitions (values, never in-place mutation): `refreshed(expectedNext,
+advertisedMax)` — new gap evidence: the expectation moves with it (branch
+review, finding 5: a stale expectation permanently disarmed the record when
+the peer backfilled part of the range) and the advertised maximum only
+rises, probe schedule untouched; `probed(nowMs, ...)` — the doubled-backoff
+successor when a probing request is issued.
 
 **`StalledRangeRegistry` (aggregate root):** owns the entries and every
 invariant. **Fully deterministic and dependency-free** — no `TimePort`, no
@@ -123,8 +133,16 @@ Queries (pure — no state change, same inputs same answer):
 Commands:
 
 - `recordGap(peer, channelId, streamId, author, {expectedNext, advertisedMax, required nowMs})`
-  — creates the entry, or replaces an existing one with its `rearmed(...)`
-  successor.
+  — creates the entry (first window at `initialBackoff`), or replaces an
+  existing one with its `refreshed(...)` successor — never doubles: more
+  gapped chunks are not more probe failures.
+- `markProbed(peer, channelId, streamId, nowMs)` — every probe-due entry on
+  the stream is replaced with its `probed(...)` successor. Called at the
+  engine's send seam — which every request, continuations included, passes
+  through — after the transport accepts the frame: the transmitted request
+  IS the probe, re-arming there means a lost or empty response cannot
+  disarm the suppression, and a failed send consumes nothing (PR #15
+  review).
 - `evictSatisfied(peer, channelId, streamId, ourVersion)` — removes entries
   whose `isStale(ourVersion)` holds: our coverage moved, because the range
   arrived from another peer or a floor claim was adopted (floor adoption
@@ -142,9 +160,11 @@ recording and shaping seams below.
    `shapeSince(...)` — eviction is an explicit command at the same seam the
    lazy version would have fired, just visible.
 2. A probe is simply a request built while `isProbeDue` holds: the author is
-   unshaped, the range is asked for again. If the response gaps again,
-   `recordGap` re-arms with doubled backoff; if it supplies the range, the
-   entry goes stale and the next `evictSatisfied` removes it.
+   unshaped, the range is asked for again, and `markProbed` re-arms the
+   window (doubled) as the request is issued. If the response gaps again,
+   `recordGap` refreshes the evidence; if it supplies the range, the entry
+   goes stale and the next `evictSatisfied` removes it; if it is lost or
+   empty, the suppression simply holds until the already-armed next window.
 3. The explicit clears: `clearForPeer` where the engine already calls
    `_pendingPullTracker.clearForPeer` (peer removal), `clearAll` where
    `stop()` already clears the pull tracker and reported gaps — same
@@ -231,6 +251,22 @@ same invariant, one owner.
 - **`_adoptClaimedAuthorshipFloor` interaction:** ordering is compute →
   adopt → overlay, so the overlay applies to the freshest vector and cannot
   mask the authorship-floor adoption.
+- **Compaction-floor reports ride the probe cadence** (branch review,
+  finding 3 — accepted and documented, not fixed): the responder reports its
+  floor only where `since[author] < floor[author]`, and a shaped `since`
+  provably covers any floor the peer holds, so a truncated peer that later
+  records a real floor gets it adopted on the next *probe* rather than the
+  next round — worst case `maxBackoff` plus pacing. This is the designed
+  probe-delayed-discovery tradeoff applied to one more kind of world change;
+  the permanent cure still lands, just on the backoff clock.
+- **Records for removed channels** are cleared only by peer removal or
+  `stop()` (branch review, finding 6) — same pre-existing hole as the
+  merger's reported-gap dedup; both are queued together in the
+  minor-findings sweep rather than fixed here.
+- **Backoff knobs stay constructor-only** (branch review, finding 10 —
+  declined): no `CoordinatorConfig` plumbing until an operator actually
+  needs it; the saturation scenario that motivated tunability was fixed at
+  the root (findings 2/4).
 
 ## Testing (TDD, in implementation order)
 

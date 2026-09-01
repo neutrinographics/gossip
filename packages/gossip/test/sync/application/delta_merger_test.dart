@@ -10,6 +10,7 @@ import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 import 'package:gossip/src/sync/application/delta_merger.dart';
+import 'package:gossip/src/sync/domain/aggregates/stalled_range_registry.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
 import 'package:gossip/src/shared/domain/services/time_source.dart';
@@ -62,6 +63,8 @@ void main() {
     DeltaMerger merger,
     InMemoryEntryRepository entryRepository,
     HlcClock hlcClock,
+    StalledRangeRegistry stalledRanges,
+    InMemoryTimePort timePort,
     List<SyncError> errors,
     List<
       ({
@@ -81,6 +84,7 @@ void main() {
     final entryRepository = InMemoryEntryRepository();
     final timePort = InMemoryTimePort();
     final hlcClock = HlcClock(TimeSource(timePort));
+    final stalledRanges = StalledRangeRegistry();
     final errors = <SyncError>[];
     final mergedEntries =
         <
@@ -121,12 +125,16 @@ void main() {
         callOrder.add('onContinuationIssued');
         continuationsIssued.add((peer, channelId, streamId));
       },
+      stalledRanges: stalledRanges,
+      timePort: timePort,
     );
 
     return (
       merger: merger,
       entryRepository: entryRepository,
       hlcClock: hlcClock,
+      stalledRanges: stalledRanges,
+      timePort: timePort,
       errors: errors,
       mergedEntries: mergedEntries,
       logs: logs,
@@ -462,6 +470,100 @@ void main() {
         equals(2),
         reason: 'both batches contributed genuinely new entries',
       );
+    });
+  });
+
+  group('DeltaMerger — stalled-range recording and shaping', () {
+    test('a solicited gapped response records the stall', () async {
+      final h = build();
+      for (var i = 1; i <= 5; i++) {
+        await h.entryRepository.append(
+          channelId,
+          streamId,
+          entryOf(authorA, i, 1000 + i),
+        );
+      }
+
+      await h.merger.merge(
+        deltaOf([entryOf(authorA, 11, 2011), entryOf(authorA, 12, 2012)]),
+        solicited: true,
+      );
+
+      final shaped = h.stalledRanges.shapeSince(
+        peer1,
+        channelId,
+        streamId,
+        VersionVector({authorA: 5}),
+        nowMs: h.timePort.nowMs,
+      );
+      expect(
+        shaped[authorA],
+        12,
+        reason: 'advertisedMax is the highest sequence in the response',
+      );
+    });
+
+    test('an unsolicited gapped response records nothing', () async {
+      final h = build();
+      for (var i = 1; i <= 5; i++) {
+        await h.entryRepository.append(
+          channelId,
+          streamId,
+          entryOf(authorA, i, 1000 + i),
+        );
+      }
+
+      await h.merger.merge(deltaOf([entryOf(authorA, 11, 2011)]), solicited: false);
+
+      final base = VersionVector({authorA: 5});
+      expect(
+        h.stalledRanges.shapeSince(
+          peer1,
+          channelId,
+          streamId,
+          base,
+          nowMs: h.timePort.nowMs,
+        ),
+        base,
+      );
+    });
+
+    test('continuation requests carry the shaped vector', () async {
+      final h = build();
+      // Coverage at {authorA: 5} keeps the recorded expectation (6) live —
+      // an expectation the advanced vector has passed would be stale and
+      // rightly contribute nothing.
+      for (var i = 1; i <= 5; i++) {
+        await h.entryRepository.append(
+          channelId,
+          streamId,
+          entryOf(authorA, i, 1000 + i),
+        );
+      }
+      // Pre-recorded stall for authorA; a clean hasMore response for
+      // authorB continues the drain.
+      h.stalledRanges.recordGap(
+        peer1,
+        channelId,
+        streamId,
+        authorA,
+        expectedNext: 6,
+        advertisedMax: 208,
+        nowMs: h.timePort.nowMs,
+      );
+
+      final result = await h.merger.merge(
+        deltaOf([entryOf(authorB, 1, 3001)], hasMore: true),
+        solicited: true,
+      );
+
+      expect(result.continuation, isNotNull);
+      expect(
+        result.continuation!.since[authorA],
+        208,
+        reason: 'a multi-chunk drain must not re-ship the stalled range',
+      );
+      expect(result.continuation!.since[authorB], 1);
     });
   });
 }

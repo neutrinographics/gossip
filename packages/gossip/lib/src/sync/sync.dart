@@ -11,6 +11,10 @@ import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 
 // Aggregates
 export 'domain/aggregates/channel_aggregate.dart';
+export 'domain/aggregates/stalled_range_registry.dart';
+
+// Entities
+export 'domain/entities/stalled_range.dart';
 
 // Events (the sealed SyncEvent family)
 export 'domain/events/sync_events.dart';

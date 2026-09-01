@@ -8,6 +8,7 @@ import 'package:gossip/src/sync/domain/services/gossip_timing_policy.dart';
 import 'package:gossip/src/shared/domain/services/generation_scheduler.dart';
 import 'package:gossip/src/shared/domain/services/jitter.dart';
 import 'package:gossip/src/sync/domain/services/pending_pull_tracker.dart';
+import 'package:gossip/src/sync/domain/aggregates/stalled_range_registry.dart';
 
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
@@ -249,6 +250,12 @@ class GossipEngine {
   /// come from ping-based RTT.
   late final PendingPullTracker _pendingPullTracker;
 
+  /// Stalled author ranges per peer — shapes outgoing pull requests so a
+  /// range a peer already failed to supply is not re-requested at full
+  /// cadence. See the stalled-range suppression spec for the lifecycle
+  /// (suppress → probe on doubling backoff → evict once coverage moves).
+  late final StalledRangeRegistry _stalledRanges;
+
   /// Owns the delta-merge pipeline: filtering a [DeltaResponse] to its
   /// per-author contiguous prefix, applying it, advancing the HLC, and
   /// deciding on a continuation request. See [DeltaMerger] for why it's
@@ -296,6 +303,7 @@ class GossipEngine {
     Duration? gossipInterval,
     bool adaptiveTimingEnabled = false,
     this.maxMessageBytes = defaultMaxMessageBytes,
+    StalledRangeRegistry? stalledRanges,
   }) : _codec = codec,
        _hlcClock = hlcClock,
        _localNodeRepository = localNodeRepository,
@@ -307,6 +315,7 @@ class GossipEngine {
     // site rather than splitting collaborators across the initializer
     // list and the body.
     _pendingPullTracker = PendingPullTracker(timePort: timePort);
+    _stalledRanges = stalledRanges ?? StalledRangeRegistry();
     // Built here, after `_pendingPullTracker` (its `onContinuationIssued`
     // wiring below calls into it) and after `_hlcClock`/
     // `_localNodeRepository` are assigned by the initializer list —
@@ -333,6 +342,8 @@ class GossipEngine {
       onContinuationIssued: (peer, channelId, streamId) {
         _pendingPullTracker.markContinuation(peer, channelId, streamId);
       },
+      stalledRanges: _stalledRanges,
+      timePort: timePort,
     );
     // Built here rather than the initializer list, mirroring
     // FailureDetector's ProbeTimingPolicy construction: keeps every
@@ -505,6 +516,8 @@ class GossipEngine {
     _pendingPullTracker.clearAll();
     // A restart is a fresh diagnosis window for persistent gaps.
     _merger.clearReportedGaps();
+    // ... and for stalled ranges.
+    _stalledRanges.clearAll();
   }
 
   /// Reactive dissemination (rumor mongering): notify the engine of a local
@@ -1206,7 +1219,19 @@ class GossipEngine {
     if (requests.isNotEmpty) _recordNews();
     for (final request in requests) {
       final sent = await _sendMessage(recipient, request);
-      if (!sent) {
+      if (sent) {
+        // A transmitted request IS the probe for any stalled range whose
+        // window it left unshaped: re-arm at doubled backoff now, so a
+        // lost or empty response cannot leave the suppression disarmed.
+        // Deliberately after the send — a request that never left the
+        // node must not consume the probe window.
+        _stalledRanges.markProbed(
+          recipient,
+          request.channelId,
+          request.streamId,
+          timePort.nowMs,
+        );
+      } else {
         _pendingPullTracker.release(
           recipient,
           request.channelId,
@@ -1308,13 +1333,30 @@ class GossipEngine {
       ourVersion,
     );
 
-    // Only request delta if peer has entries we don't have
-    if (!ourVersion.dominates(streamDigest.version)) {
+    _stalledRanges.evictSatisfied(
+      peer,
+      channelId,
+      streamDigest.streamId,
+      ourVersion,
+    );
+    final since = _stalledRanges.shapeSince(
+      peer,
+      channelId,
+      streamDigest.streamId,
+      ourVersion,
+      digestCeiling: streamDigest.version,
+      nowMs: timePort.nowMs,
+    );
+
+    // Only request delta if peer has entries we don't have — judged on the
+    // shaped vector, so a peer whose only surplus is a stalled range gets
+    // no request at all.
+    if (!since.dominates(streamDigest.version)) {
       return DeltaRequest(
         sender: localNode,
         channelId: channelId,
         streamId: streamDigest.streamId,
-        since: ourVersion,
+        since: since,
       );
     } else {
       // Nothing to request after all — release the flag.
@@ -1563,5 +1605,6 @@ class GossipEngine {
     _recordNews();
     _pendingPullTracker.clearForPeer(peer);
     _merger.clearReportedGapsForPeer(peer);
+    _stalledRanges.clearForPeer(peer);
   }
 }
