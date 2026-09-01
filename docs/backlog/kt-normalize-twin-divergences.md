@@ -84,6 +84,13 @@ it's next convenient, and stops the same divergence from being
   (`docs/superpowers/specs/2026-08-28-kt-port-dart-fix-inventory.md`, item
   13).
 - Parent campaign: [Teach both libraries to speak versioned wire formats](kt-wire-versioning-campaign.md).
+- Governance: every row here must end **homed** to a roadmap item, **closed**
+  with the fixing commit, or **exempted** with a reason in the
+  [twin parity program](../parity.md). The Dart-side "kt better" rows are
+  homed in [Adopt the Kotlin twin's recorded improvements](health-adopt-kt-flow-backs.md);
+  previously unhomed kt-side rows now live at
+  [get-or-create streams](kt-get-or-create-stream.md) and
+  [the periodic-loop scheduler migration](kt-periodic-loop-scheduler.md).
 - Siblings: [Make the Kotlin library's indirect health probing actually work](kt-swim-indirect-probing-inert.md),
   [Make stopping a Kotlin coordinator actually stop it](kt-coordinator-restart-lifecycle.md),
   [Sweep the remaining scenario coverage into the Kotlin library](kt-scenario-parity-sweep.md),

@@ -45,3 +45,5 @@ hardening; decide and document buffer-time vs flush-time on purpose.
   — the same "does this peer share the data?" question, asked of the summary
   exchange rather than of reactive pushes. A membership notion built for
   either one should serve both.
+- When this lands, create its Kotlin port companion item in the same docs
+  pass — [twin parity program](../parity.md), convention 1.

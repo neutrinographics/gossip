@@ -82,3 +82,5 @@ doing on its own if the larger question stalls.
   nineteen distinct unknown group identifiers, twenty-two times each; the
   phone's own startup log confirmed the count as eighteen groups plus one
   personal channel.
+- When this lands, create its Kotlin port companion item in the same docs
+  pass — [twin parity program](../parity.md), convention 1.
