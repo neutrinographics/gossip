@@ -3,6 +3,7 @@ import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:gossip/src/sync/domain/aggregates/channel_aggregate.dart';
+import 'package:gossip/src/sync/domain/aggregates/stalled_range_registry.dart';
 import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_level.dart';
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
@@ -126,6 +127,7 @@ class GossipEngineTestHarness {
     // base64 payloads — by default; CoordinatorConfig.defaults.wireVersion
     // is v1.
     WireVersion wireVersion = WireVersion.v2,
+    StalledRangeRegistry? stalledRanges,
   }) {
     final localNode = NodeId(localName);
     final peerRegistry = PeerRegistry(localNode: localNode);
@@ -168,6 +170,7 @@ class GossipEngineTestHarness {
       adaptiveTimingEnabled: adaptiveTimingEnabled,
       maxMessageBytes: maxMessageBytes ?? GossipEngine.defaultMaxMessageBytes,
       random: random,
+      stalledRanges: stalledRanges,
     );
 
     return GossipEngineTestHarness._(
