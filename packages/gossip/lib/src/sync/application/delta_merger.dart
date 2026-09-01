@@ -258,29 +258,23 @@ class DeltaMerger {
         response.channelId,
         response.streamId,
       );
-      // No digest ceiling mid-drain; the stored advertised maximum
-      // suffices, and staleness self-corrects through the probe cycle.
-      final continuationSince = _stalledRanges.shapeSince(
-        response.sender,
-        response.channelId,
-        response.streamId,
-        advanced,
-        nowMs: _timePort.nowMs,
-      );
-      // A continuation is an issued request too — any open probe window it
-      // left unshaped is consumed by it (see the engine's request seam).
-      _stalledRanges.markProbed(
-        response.sender,
-        response.channelId,
-        response.streamId,
-        _timePort.nowMs,
-      );
       return (
         continuation: DeltaRequest(
           sender: _localNode,
           channelId: response.channelId,
           streamId: response.streamId,
-          since: continuationSince,
+          // No digest ceiling mid-drain; the stored advertised maximum
+          // suffices, and staleness self-corrects through the probe cycle.
+          // Any probe this leaves unshaped is marked at the engine's send
+          // seam, which every continuation passes through — never here,
+          // where transmission hasn't happened yet.
+          since: _stalledRanges.shapeSince(
+            response.sender,
+            response.channelId,
+            response.streamId,
+            advanced,
+            nowMs: _timePort.nowMs,
+          ),
         ),
         mergedNewEntries: true,
       );

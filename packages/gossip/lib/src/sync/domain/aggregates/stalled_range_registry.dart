@@ -95,8 +95,9 @@ class StalledRangeRegistry {
   /// Marks every probe-due record on this stream as probed: an unshaped
   /// request is leaving for [peer] right now, and it IS the probe. Re-arms
   /// each window immediately at doubled backoff, so the suppression
-  /// survives a lost or empty probe response. Call it whenever a request
-  /// built from [shapeSince]'s output is actually issued.
+  /// survives a lost or empty probe response. Call it when a request built
+  /// from [shapeSince]'s output is successfully handed to the transport —
+  /// a request that never left the node must not consume the window.
   void markProbed(
     NodeId peer,
     ChannelId channelId,

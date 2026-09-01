@@ -137,10 +137,12 @@ Commands:
   existing one with its `refreshed(...)` successor — never doubles: more
   gapped chunks are not more probe failures.
 - `markProbed(peer, channelId, streamId, nowMs)` — every probe-due entry on
-  the stream is replaced with its `probed(...)` successor. Called at both
-  request seams whenever a request built from `shapeSince` is actually
-  issued: the request IS the probe, and re-arming at issue means a lost or
-  empty response cannot disarm the suppression.
+  the stream is replaced with its `probed(...)` successor. Called at the
+  engine's send seam — which every request, continuations included, passes
+  through — after the transport accepts the frame: the transmitted request
+  IS the probe, re-arming there means a lost or empty response cannot
+  disarm the suppression, and a failed send consumes nothing (PR #15
+  review).
 - `evictSatisfied(peer, channelId, streamId, ourVersion)` — removes entries
   whose `isStale(ourVersion)` holds: our coverage moved, because the range
   arrived from another peer or a floor claim was adopted (floor adoption

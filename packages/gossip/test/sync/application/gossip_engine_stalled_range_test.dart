@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:gossip/src/shared/domain/interfaces/message_port.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
@@ -187,6 +189,43 @@ void main() {
     );
   });
 
+  test('a failed send does not consume the probe window', () async {
+    // A port whose send always fails: the probe never leaves the node.
+    final h2 = GossipEngineTestHarness(
+      stalledRanges: stalled = StalledRangeRegistry(),
+      messagePort: _FailingSendPort(),
+    );
+    h2.createChannel('ch1', streamIds: ['s1']);
+    final p = h2.addPeer('peer1');
+    for (var i = 1; i <= 5; i++) {
+      await h2.entryRepository.append(channelId, streamId, entryOf(authorA, i, 1000 + i));
+    }
+    stalled.recordGap(
+      p.id,
+      channelId,
+      streamId,
+      authorA,
+      expectedNext: 6,
+      advertisedMax: 208,
+      nowMs: h2.timePort.nowMs,
+    );
+
+    // Open the probe window, then let the engine build and (fail to) send
+    // the probing request.
+    h2.timePort.advance(const Duration(seconds: 31));
+    final windowOpenAt = h2.timePort.nowMs;
+    await h2.engine.handleDigestResponse(digestOf(p.id, {authorA: 208}));
+
+    final base = VersionVector({authorA: 5});
+    expect(
+      stalled.shapeSince(p.id, channelId, streamId, base, nowMs: windowOpenAt)[authorA],
+      5,
+      reason: 'the probe never left the node — the window must stay open, '
+          'not be re-armed for a doubled interval',
+    );
+    h2.dispose();
+  });
+
   group('end-to-end recording (merger seam)', () {
     Future<void> solicit() => h.engine.handleDigestResponse(
       digestOf(peer.id, {authorA: 208}),
@@ -218,4 +257,31 @@ void main() {
       },
     );
   });
+}
+
+/// A port whose send always fails — the shape of a dropped transport at the
+/// exact moment a probe should go out.
+class _FailingSendPort implements MessagePort {
+  final _controller = StreamController<IncomingMessage>.broadcast();
+
+  @override
+  Future<void> send(
+    NodeId destination,
+    Uint8List bytes, {
+    MessagePriority priority = MessagePriority.normal,
+  }) async {
+    throw StateError('transport down');
+  }
+
+  @override
+  Stream<IncomingMessage> get incoming => _controller.stream;
+
+  @override
+  Future<void> close() => _controller.close();
+
+  @override
+  int get totalPendingSendCount => 0;
+
+  @override
+  int pendingSendCount(NodeId peer) => 0;
 }
