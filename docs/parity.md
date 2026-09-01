@@ -67,8 +67,6 @@ once, together, or the shapes drift for no reason.
 - **Where the in-memory test doubles live** — both libraries ship them in the
   main artifact; kt's are now substantial and kt has a separate published
   testing module. (Divergence register row.)
-- **`PeerRepository`** — kt deliberately removed the interface (2026-03-27);
-  Dart still has it. Restore in kt, or remove in Dart?
 - **Local-only mode semantics** — Dart gates auto-compaction on having a time
   source; kt compacts regardless. The register recommends Dart adopt kt's
   behavior; until ruled, this is a live behavioral divergence.

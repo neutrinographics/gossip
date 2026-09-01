@@ -69,6 +69,7 @@ runtime behavior changes.
 - ☐ **Low** — [Converge the transports' MessagePort close() semantics](backlog/health-transport-port-close-semantics.md) · nearby gates its own view only, bluey's close() tears down the whole connection layer — converge on port-gates-itself, facade owns teardown
 - ☐ **Low** — [Give the sync engine its own sizing interface instead of downcasting its codec](backlog/health-sync-codec-sizing-port.md) · the injected `MessageCodec` gets cast to the concrete `SyncMessageCodec` for two byte-budget helpers; a sync-owned sizing interface would close the gap
 - ☐ **Low** — [Normalize formatter drift so diffs stop lying](backlog/health-format-normalization.md) · one pinned-SDK formatting-only commit per package, then the format gate becomes a no-op
+- ☐ **Medium** — [Drop peer persistence from the Dart library](backlog/health-drop-peer-repository.md) · the library never reads it back (no restore path; findAll is documented as never called), the app never touches it, and the server already dropped its peers table — remove the interface, its write chain, and the constructor parameter, matching the Kotlin twin (owner ruling 2026-09-01)
 - ☐ **Medium** — [Adopt the Kotlin twin's recorded improvements into the Dart library](backlog/health-adopt-kt-flow-backs.md) · the divergence register's "kt better" rows finally get a home: dispatch/decode seam, block-in-place partition healing, congestion test knob, clock escape hatch, compaction facades, test-strength idioms — adopt or exempt, row by row
 
 ## Kotlin port
