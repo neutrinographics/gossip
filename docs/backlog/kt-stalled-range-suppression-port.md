@@ -25,11 +25,12 @@ away.
 
 A translation, not a redesign: port the Dart reference implementation and its
 test suite, in the campaign's established direction (Dart tests become Kotlin
-tests). The one platform adaptation is the usual one — the tracker sits where
-the receive loop and the lifecycle methods can both reach it, so it takes the
-plain-monitor guard the register's thread-safety-posture row prescribes for
-that boundary, not a coroutine mutex. Ships to production with an
-opendoor-api submodule bump and deploy.
+tests). The Dart design is a pure, dependency-free domain aggregate (time
+passed in as data), so the platform adaptation is the Kotlin library's
+existing registry pattern: keep the aggregate pure and wrap it in a
+synchronized shell — the same shape as its peer registry — rather than
+locking internally or reaching for a coroutine mutex. Ships to production
+with an opendoor-api submodule bump and deploy.
 
 ## Related
 
