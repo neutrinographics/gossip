@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:math';
 
 import 'package:gossip/src/shared/domain/errors/sync_error.dart';
 import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
@@ -184,17 +183,13 @@ class DeltaMerger {
       // poison the pull path.
       if (solicited) {
         for (final gap in selection.gaps) {
-          final advertisedMax = response.entries
-              .where((e) => e.author == gap.author)
-              .map((e) => e.sequence)
-              .reduce(max);
           _stalledRanges.recordGap(
             response.sender,
             response.channelId,
             response.streamId,
             gap.author,
             expectedNext: gap.expectedNext,
-            advertisedMax: advertisedMax,
+            advertisedMax: gap.advertisedMax,
             nowMs: _timePort.nowMs,
           );
           _log(
@@ -202,7 +197,7 @@ class DeltaMerger {
             'suppressing pulls of ${gap.author} from ${response.sender} '
             'for ${response.channelId}/${response.streamId}: peer cannot '
             'supply ${gap.expectedNext}..${gap.firstAvailable - 1} '
-            '(advertised max $advertisedMax)',
+            '(advertised max ${gap.advertisedMax})',
           );
         }
       }
@@ -263,20 +258,29 @@ class DeltaMerger {
         response.channelId,
         response.streamId,
       );
+      // No digest ceiling mid-drain; the stored advertised maximum
+      // suffices, and staleness self-corrects through the probe cycle.
+      final continuationSince = _stalledRanges.shapeSince(
+        response.sender,
+        response.channelId,
+        response.streamId,
+        advanced,
+        nowMs: _timePort.nowMs,
+      );
+      // A continuation is an issued request too — any open probe window it
+      // left unshaped is consumed by it (see the engine's request seam).
+      _stalledRanges.markProbed(
+        response.sender,
+        response.channelId,
+        response.streamId,
+        _timePort.nowMs,
+      );
       return (
         continuation: DeltaRequest(
           sender: _localNode,
           channelId: response.channelId,
           streamId: response.streamId,
-          // No digest ceiling mid-drain; the stored advertised maximum
-          // suffices, and staleness self-corrects through the probe cycle.
-          since: _stalledRanges.shapeSince(
-            response.sender,
-            response.channelId,
-            response.streamId,
-            advanced,
-            nowMs: _timePort.nowMs,
-          ),
+          since: continuationSince,
         ),
         mergedNewEntries: true,
       );
@@ -329,6 +333,9 @@ class DeltaMerger {
             author: author,
             expectedNext: next,
             firstAvailable: firstBeyondGap,
+            // The list is sorted by sequence, so the last entry is the
+            // response's advertised maximum for this author.
+            advertisedMax: authorEntries.last.sequence,
           ),
         );
       }
@@ -482,9 +489,14 @@ class ContiguityGap {
   /// The lowest offered sequence beyond the hole.
   final int firstAvailable;
 
+  /// The highest sequence the response offered for this author — what a
+  /// suppression must ask "since" to silence the author.
+  final int advertisedMax;
+
   const ContiguityGap({
     required this.author,
     required this.expectedNext,
     required this.firstAvailable,
+    required this.advertisedMax,
   });
 }

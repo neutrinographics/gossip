@@ -1340,6 +1340,15 @@ class GossipEngine {
     // shaped vector, so a peer whose only surplus is a stalled range gets
     // no request at all.
     if (!since.dominates(streamDigest.version)) {
+      // This request IS the probe for any range whose window is open:
+      // re-arm at issue time, so a lost or empty response cannot leave the
+      // suppression disarmed.
+      _stalledRanges.markProbed(
+        peer,
+        channelId,
+        streamDigest.streamId,
+        timePort.nowMs,
+      );
       return DeltaRequest(
         sender: localNode,
         channelId: channelId,

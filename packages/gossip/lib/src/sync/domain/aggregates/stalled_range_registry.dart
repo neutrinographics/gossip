@@ -13,6 +13,12 @@ import 'package:gossip/src/sync/domain/entities/stalled_range.dart';
 /// arguments, and [shapeSince] is a pure query — a stale record contributes
 /// nothing whether or not [evictSatisfied] has pruned it yet, so request
 /// correctness never depends on eviction timing.
+///
+/// Backoff doubling happens at probe *issue* ([markProbed]), not on the
+/// response: new gap evidence ([recordGap] on an existing record) only
+/// refreshes what we know. This keeps a multi-chunk drain from saturating
+/// the backoff in one exchange, and a lost probe response from leaving the
+/// record permanently probe-due.
 class StalledRangeRegistry {
   StalledRangeRegistry({
     this.initialBackoff = const Duration(seconds: 30),
@@ -22,7 +28,11 @@ class StalledRangeRegistry {
   final Duration initialBackoff;
   final Duration maxBackoff;
 
-  final Map<(NodeId, ChannelId, StreamId, NodeId), StalledRange> _ranges = {};
+  /// Records keyed by stream identity, then author — the shape every
+  /// operation reads: [shapeSince]/[markProbed]/[evictSatisfied] touch one
+  /// stream's authors, never the whole registry.
+  final Map<(NodeId, ChannelId, StreamId), Map<NodeId, StalledRange>>
+  _ranges = {};
 
   /// The shaped `since` vector for a request to [peer] being built now.
   ///
@@ -38,13 +48,10 @@ class StalledRangeRegistry {
     VersionVector? digestCeiling,
     required int nowMs,
   }) {
+    final authors = _ranges[(peer, channelId, streamId)];
+    if (authors == null) return base;
     Map<NodeId, int>? shaped;
-    for (final range in _ranges.values) {
-      if (range.peer != peer ||
-          range.channelId != channelId ||
-          range.streamId != streamId) {
-        continue;
-      }
+    for (final range in authors.values) {
       if (range.isStale(base) || range.isProbeDue(nowMs)) continue;
       final ceiling = digestCeiling?[range.author] ?? 0;
       final value = max(base[range.author], max(range.advertisedMax, ceiling));
@@ -55,8 +62,11 @@ class StalledRangeRegistry {
     return shaped == null ? base : VersionVector(shaped);
   }
 
-  /// Records a solicited gap for [author], or re-arms an existing record
-  /// with doubled backoff and a refreshed advertised maximum.
+  /// Records a solicited gap for [author]. A new stall opens its first
+  /// probe window at [initialBackoff]; an existing record is refreshed
+  /// (expectation moves with the evidence, the advertised maximum only
+  /// rises) without touching the probe schedule — more gapped chunks are
+  /// not more probe failures.
   void recordGap(
     NodeId peer,
     ChannelId channelId,
@@ -66,25 +76,44 @@ class StalledRangeRegistry {
     required int advertisedMax,
     required int nowMs,
   }) {
-    final key = (peer, channelId, streamId, author);
-    final existing = _ranges[key];
-    _ranges[key] = existing == null
+    final authors = _ranges.putIfAbsent((peer, channelId, streamId), () => {});
+    final existing = authors[author];
+    authors[author] = existing == null
         ? StalledRange(
-            peer: peer,
-            channelId: channelId,
-            streamId: streamId,
             author: author,
             expectedNext: expectedNext,
             advertisedMax: advertisedMax,
             retryAtMs: nowMs + initialBackoff.inMilliseconds,
             probeCount: 0,
           )
-        : existing.rearmed(
-            nowMs: nowMs,
+        : existing.refreshed(
+            expectedNext: expectedNext,
             advertisedMax: advertisedMax,
-            initialBackoffMs: initialBackoff.inMilliseconds,
-            maxBackoffMs: maxBackoff.inMilliseconds,
           );
+  }
+
+  /// Marks every probe-due record on this stream as probed: an unshaped
+  /// request is leaving for [peer] right now, and it IS the probe. Re-arms
+  /// each window immediately at doubled backoff, so the suppression
+  /// survives a lost or empty probe response. Call it whenever a request
+  /// built from [shapeSince]'s output is actually issued.
+  void markProbed(
+    NodeId peer,
+    ChannelId channelId,
+    StreamId streamId,
+    int nowMs,
+  ) {
+    final authors = _ranges[(peer, channelId, streamId)];
+    if (authors == null) return;
+    authors.updateAll(
+      (author, range) => range.isProbeDue(nowMs)
+          ? range.probed(
+              nowMs: nowMs,
+              initialBackoffMs: initialBackoff.inMilliseconds,
+              maxBackoffMs: maxBackoff.inMilliseconds,
+            )
+          : range,
+    );
   }
 
   /// Removes records whose expectation [ourVersion] has passed — memory
@@ -95,19 +124,17 @@ class StalledRangeRegistry {
     StreamId streamId,
     VersionVector ourVersion,
   ) {
-    _ranges.removeWhere(
-      (key, range) =>
-          range.peer == peer &&
-          range.channelId == channelId &&
-          range.streamId == streamId &&
-          range.isStale(ourVersion),
-    );
+    final key = (peer, channelId, streamId);
+    final authors = _ranges[key];
+    if (authors == null) return;
+    authors.removeWhere((author, range) => range.isStale(ourVersion));
+    if (authors.isEmpty) _ranges.remove(key);
   }
 
   /// Drops every record for [peer] — a removed peer is a fresh diagnosis
   /// window on reconnect.
   void clearForPeer(NodeId peer) =>
-      _ranges.removeWhere((key, range) => range.peer == peer);
+      _ranges.removeWhere((key, authors) => key.$1 == peer);
 
   /// Drops everything — a restart is a fresh diagnosis window.
   void clearAll() => _ranges.clear();
