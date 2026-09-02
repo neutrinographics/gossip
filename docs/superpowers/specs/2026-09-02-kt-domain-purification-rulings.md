@@ -149,10 +149,12 @@ batch.
 - 2026-09-02: **approved by the owner as written** — all ten rulings stand,
   including the scheduler's subclass wrapper (ruling 4) and the
   non-suspend `HlcProvider` (ruling 5). The plan follows this record.
-- 2026-09-02: **built and reviewed** — gossip-kt PR #7
-  (`feature/domain-purification`, branch head a39edce), suite 999 → 1038,
-  every task reviewed, final whole-branch review + one fix wave re-reviewed
-  clean; awaiting the owner's merge. Ruling 2's strikeable task (the pusher)
+- 2026-09-02: **shipped** — gossip-kt 26e5e24 (PR #7, real merge of
+  `feature/domain-purification`), suite 999 → 1046, every task reviewed,
+  final whole-branch review + one fix wave re-reviewed clean, then three
+  Codex passes on `LockPlacementTest` (six findings, all fixed; the last
+  round restated the scan as a package-reference rule over
+  comment-scrubbed source rather than patching spellings). Ruling 2's strikeable task (the pusher)
   was **executed**. One carve-out to ruling 3 recorded in the code and in
   E3: the clock's and pull tracker's wrappers read `TimePort.nowMs` under
   their monitors — a leaf, non-reentrant port read kept so the pure classes

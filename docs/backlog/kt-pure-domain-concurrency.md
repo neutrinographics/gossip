@@ -55,6 +55,7 @@ flags and scopes stay put.
 
 ## Related
 
+- **Done:** gossip-kt 26e5e24 (PR #7, 2026-09-02).
 - **Rulings for review:**
   [Kotlin domain purification — rulings](../superpowers/specs/2026-09-02-kt-domain-purification-rulings.md)
   (2026-09-02) — the inventory of every lock outside `infrastructure/` and
