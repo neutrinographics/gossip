@@ -43,7 +43,8 @@ review outcome and the parity program):
 Kotlin work ships via opendoor-api submodule bumps — aim items 2 and 4 at
 one bump, item 1's port plus KT-E at the next. Parity-completeness items
 (probe-selection, sync-activity API, glossary, flow-backs, scenario sweep)
-queue behind this push.
+queue behind this push; first among them once the deployment train clears:
+[domain-layer purification](backlog/kt-pure-domain-concurrency.md).
 
 ## Guardrails (design invariants)
 
@@ -129,6 +130,7 @@ register, and working conventions live in the
 - ☐ **Low** — [Sweep the remaining scenario coverage into the Kotlin library](backlog/kt-scenario-parity-sweep.md) · the harness and link-condition primitives now exist and ~60 scenarios are translated; the scale, multi-channel, and remaining edge/lifecycle groups are mechanical follow-on
 - ☑ **High** — [Port stalled-range suppression to the Kotlin library](backlog/kt-stalled-range-suppression-port.md) · merged 2026-09-02 as gossip-kt bbbf31f (#5, suite 938 → 959), reviewed line-for-line faithful — reaches production with the opendoor-api submodule bump
 - ◐ **Medium** — [Record where the Dart library and its Kotlin twin diverge, with a verdict](backlog/kt-normalize-twin-divergences.md) · register active, growing a row per review; every row must end homed to a roadmap item, closed, or exempted in the parity program — the Dart-side adoptions now have a home in the flow-back sweep (Code health)
+- ☐ **High** — [Purify the Kotlin domain layer: locks move to infrastructure wrappers](backlog/kt-pure-domain-concurrency.md) · five domain services carry internal locks (and the clock's Mutex is why it suspends where Dart's doesn't); move every lock into `Synchronized*` wrappers so kt domain bodies diff line-for-line against Dart — owner-sequenced AFTER the current deployment train; the detector portion rides the lifecycle batch
 - ☐ **High** — [Give the Kotlin library the payload size cap the Dart library enforces](backlog/kt-payload-size-cap.md) · nothing kt-side refuses an oversized write and the server's frame limit is effectively infinite, so the server can create entries the phone fleet can never carry
 - ☐ **High** — [Make stream access get-or-create in the Kotlin library](backlog/kt-get-or-create-stream.md) · the register calls this a real production issue: Dart quietly creates a missing stream on access, kt doesn't, and the kt harness works around it
 - ☐ **Medium** — [Give the Kotlin library Dart's fair probe rotation and timing policies](backlog/kt-probe-selection-parity.md) · kt probes a random peer per round (an unlucky peer goes unchecked for long stretches) and inlines the timing rules Dart keeps in named policy objects
