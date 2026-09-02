@@ -33,6 +33,20 @@ machine itself (surfaced during the Kotlin port's Batch KT-B; see the
 [twin-divergence register](kt-normalize-twin-divergences.md)'s quiescence
 row).
 
+## Phase split (2026-09-02)
+
+Phase 1 shipped as one gossip-kt branch (PR #6): the quiescence pacer and
+jitter helpers, both periodic loops migrated onto the per-cycle scheduler
+(closing the frozen-interval defect and the separate scheduler-migration
+roadmap item), reactive push on local append (the latency backstop that
+makes a 30-second idle ceiling safe — without it a write could wait out
+the whole backoff), probe suppression by recent contact with the 2-minute
+cap, and the restored contact-recording seam it depends on. What remains
+for phase 2: recency suppression of gossip rounds (skip a peer exchanged
+with inside the current interval, with both-endpoint exchange recording),
+dominance-filtered and request-scoped digest responses, and the
+byte-budgeted digest rotation.
+
 ## Related
 
 - Dart implementation trail: recommendations R3/R4 of

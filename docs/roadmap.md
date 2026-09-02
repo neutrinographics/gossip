@@ -22,9 +22,10 @@ review outcome and the parity program):
    (gossip-kt bbbf31f, 2026-09-02); the server-side relief lands with the
    opendoor-api submodule bump.
 2. **Pace the server** — the
-   [Kotlin wire-efficiency port](backlog/kt-port-wire-efficiency.md),
-   quiescence pacing and probe suppression first: the server still talks at
-   full cadence on every converged link (~30× more rounds than Dart).
+   [Kotlin wire-efficiency port](backlog/kt-port-wire-efficiency.md):
+   phase 1 (pacing, push, probe suppression) is **PR-open** (gossip-kt #6);
+   merge + the submodule bump end the full-cadence chatter. Phase 2
+   (recency suppression, digest filtering) follows.
 3. **Flip the fleet to v2** when upgrade coverage allows (wire playbook
    steps 6–7; no dev work): v1's payload encoding costs ~3× the bytes of
    v2's on payload-heavy deltas.
@@ -119,7 +120,7 @@ register, and working conventions live in the
 [twin parity program](parity.md); this track is its worklist.
 
 - ◐ **High** — [Teach both libraries to speak versioned wire formats](backlog/kt-wire-versioning-campaign.md) · one-byte version marker, receive-both codecs, config-gated send (default legacy), shared conformance vectors — code and the receive-both deploys shipped 2026-08-31 (server + app, compaction support live end-to-end); the ordered send-side flips and translator retirement remain, gated on fleet coverage
-- ☐ **High** — [Port the wire-efficiency behaviors to the Kotlin library](backlog/kt-port-wire-efficiency.md) · quiescence pacing and probe suppression FIRST (the server talks at full cadence on every converged link — ~30× the rounds), dominance filter and recency next; unblocked now that the wire format shipped; raised Medium → High 2026-09-01 for the deployed-fleet push
+- ◐ **High** — [Port the wire-efficiency behaviors to the Kotlin library](backlog/kt-port-wire-efficiency.md) · PHASE 1 (quiescence pacing both loops, reactive push, probe suppression + 2-min cap, per-cycle scheduler migration, median-SRTT parity) PR OPEN — gossip-kt #6, suite 959 → 998; phase 2 remains: recency suppression, dominance-filtered + request-scoped digest responses, DigestBudgeter
 - ☑ **Low** — [Mirror the bounded-context structure in the Kotlin library](backlog/kt-mirror-bounded-contexts.md) · four evaluated divergences ported back + a Kotlin edge-table boundary test that now enforces the structure — shipped 2026-08-29 in gossip-kt 26dcc13..bd50285 (feature/compaction)
 - ◐ **Medium** — [Audit the Kotlin library for the bug classes fixed in Dart](backlog/kt-audit-legacy-bug-classes.md) · audit done (13-item inventory); the storage-contract batch shipped in gossip-kt 1ffbf0d..3836bc7, the sync-path-depth batch (KT-B) shipped 2026-08-29 closing items 3/9/11, the remaining classes flow through the campaign's later batches
 - ☐ **High** — [Retire indirect health probing from both libraries](backlog/kt-retire-indirect-probing.md) · [ruled B, final](superpowers/specs/2026-09-01-swim-slimdown-decision.md) — the relay's purpose can't occur here (membership is local) and the Kotlin relay was inert in production anyway; Dart removes first, the Kotlin half rides the lifecycle batch, PingReq becomes receive-only until the next dialect revision — replaces the former "make indirect probing work" defect item, closed by removal
@@ -132,6 +133,6 @@ register, and working conventions live in the
 - ☐ **High** — [Make stream access get-or-create in the Kotlin library](backlog/kt-get-or-create-stream.md) · the register calls this a real production issue: Dart quietly creates a missing stream on access, kt doesn't, and the kt harness works around it
 - ☐ **Medium** — [Give the Kotlin library Dart's fair probe rotation and timing policies](backlog/kt-probe-selection-parity.md) · kt probes a random peer per round (an unlucky peer goes unchecked for long stretches) and inlines the timing rules Dart keeps in named policy objects
 - ☐ **Medium** — [Port the sync-activity snapshot API to the Kotlin library](backlog/kt-sync-activity-api.md) · Dart can answer "syncing or up to date?" (outstanding pulls, quiescence, merge counters); kt has no equivalent public surface
-- ☐ **Medium** — [Move the Kotlin library's periodic loops onto the restartable scheduler](backlog/kt-periodic-loop-scheduler.md) · gossip and probe loops freeze their adaptive interval at start; only the compaction loop uses the per-cycle scheduler kt already ported
+- ☑ **Medium** — [Move the Kotlin library's periodic loops onto the restartable scheduler](backlog/kt-periodic-loop-scheduler.md) · absorbed and closed by wire-efficiency phase 1 (gossip-kt #6): both loops now run per-cycle jittered delays on GenerationScheduler
 - ☐ **Low** — [Share the ubiquitous-language glossary across the twins](backlog/kt-shared-glossary.md) · GLOSSARY.md exists only Dart-side with nothing kt-side pointing at it; single-source it and reconcile terms against the Kotlin names
 - ☐ **Low** — [Certify twin parity with a closing audit](backlog/kt-final-parity-audit.md) · the migration's finish line — a fresh feature/structure/glossary/scenario/wire diff that certifies parity and leaves the exemption register as the complete, owner-ratified list of differences
