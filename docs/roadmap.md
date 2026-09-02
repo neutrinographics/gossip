@@ -28,8 +28,9 @@ purification batch merged):
    (gossip-kt 0dafefd). Validated on live devices before the merge:
    converged-link cadence fell 112 → 2-3 digest lines per 30 s (~50×),
    floors adopted at first contact with zero stalls.
-3. **Deploy the server on the purified library** — NEXT: bump the
-   opendoor-api submodule to gossip-kt 26e5e24
+3. **Deploy the server on the purified library** — **opendoor-api PR #18
+   open** (bump-gossip-kt-purification, server 214/214): the
+   opendoor-api submodule moves to gossip-kt 26e5e24
    ([domain purification](backlog/kt-pure-domain-concurrency.md),
    behavior-preserving; no server adaptation needed) and release it on its
    own, so the refactor soaks before behavior changes land on top of it and
