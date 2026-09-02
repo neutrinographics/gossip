@@ -24,7 +24,7 @@ conventions.
 | Dimension | What parity means | Where it is tracked |
 |---|---|---|
 | Features & behavior | Every behavior in one library exists in the other, or is exempted below | Roadmap *Kotlin port* track; the [fix inventory](superpowers/specs/2026-08-28-kt-port-dart-fix-inventory.md); the [wire campaign register](backlog/kt-wire-versioning-campaign.md) |
-| Structure | Same bounded contexts (`shared`/`sync`/`membership`/`coordinator`), same sublayers, machine-checked boundaries | Both repos' `CLAUDE.md` (Dart normative) + both boundary tests; shipped via [the structure mirror](backlog/kt-mirror-bounded-contexts.md) |
+| Structure | Same bounded contexts (`shared`/`sync`/`membership`/`coordinator`), same sublayers, machine-checked boundaries; kt's locks confined to `infrastructure/`, machine-checked | Both repos' `CLAUDE.md` (Dart normative) + both boundary tests + kt's `LockPlacementTest`; shipped via [the structure mirror](backlog/kt-mirror-bounded-contexts.md) and [the purification](backlog/kt-pure-domain-concurrency.md) |
 | Ubiquitous language | One glossary, both codebases speak it | `GLOSSARY.md` (Dart repo, normative); [sharing item](backlog/kt-shared-glossary.md) |
 | Tests & scenarios | The scenario suites prove the same contracts; translations cite their source | [Scenario parity sweep](backlog/kt-scenario-parity-sweep.md); the test-citation convention below |
 | Wire | Byte-identical dialects, proven against one canonical vector set | [Wire versioning spec](superpowers/specs/2026-08-28-wire-versioning.md); conformance vectors vendored in both repos with drift tests |
@@ -48,7 +48,8 @@ was decided. Anything not listed here is expected to reach parity.
 |---|---|---|---|
 | E1 | Sublayer name `value_objects/` (Dart) vs `values/` (kt) | Kotlin package names cannot contain underscores. Normalizable only by Dart renaming *toward* the forced abbreviation — kept, because "value object" is the domain term and Dart is the normative side | Structure mirror, 2026-08-29; upheld on review, 2026-09-01 |
 | E2 | kt has no `DeltaMerger`/`KeyedTaskChain` | The *contract* is identical (no two merges for one channel/stream ever interleave); only the mechanism differs — kt's serial collector structurally excludes the hazard those exist to serialize, so porting them would be dead code. Reassess only if Dart ever adopts a single-dispatch receive loop | Divergence register, "Merge-path serialization"; upheld on review, 2026-09-01 |
-| E3 | kt needs thread safety Dart never will (ADR-001 is Dart-only; the single-threaded-confinement alternative was rejected: it would serialize the server's suspending repository work and still not cover the non-suspend lifecycle facade) — but **NARROWED 2026-09-02 (owner)**: the exemption covers only *infrastructure wrappers, coroutine-scope parameters, volatile lifecycle flags, and application mutexes whose critical sections suspend across repository IO*. Locks inside domain classes are NOT exempt — the domain stays pure, per [the purification item](backlog/kt-pure-domain-concurrency.md). **Machine-checked** since gossip-kt PR #7 (2026-09-02) by `LockPlacementTest`: the wrappers-only shape is now the whole kt lock inventory outside the two allow-listed suspending application mutexes; one recorded carve-out — the clock's and pull tracker's leaf `TimePort.nowMs` read inside their wrappers' monitors (the pure classes hold the port for Dart parity) | Divergence register, "Thread-safety posture"; upheld 2026-09-01, narrowed 2026-09-02 |
+| E3 | kt needs thread safety Dart never will (ADR-001 is Dart-only; the single-threaded-confinement alternative was rejected: it would serialize the server's suspending repository work and still not cover the non-suspend lifecycle facade) — but **NARROWED 2026-09-02 (owner)**: the exemption covers only *infrastructure wrappers, coroutine-scope parameters, and application mutexes whose critical sections suspend across repository IO* (the per-stream append mutex and the per-materializer mutex — exactly two, each allow-listed line by line). Locks inside domain or application classes are otherwise NOT exempt — the domain stays pure, per [the purification item](backlog/kt-pure-domain-concurrency.md); no volatile flag survives outside `infrastructure/` and the check rejects one. **Machine-checked** since gossip-kt 26e5e24 (2026-09-02) by `LockPlacementTest`, which scans every package reference to a concurrency library over comment-scrubbed source. One recorded carve-out to the wrappers' "call nothing while held" rule: the clock's and pull tracker's leaf `TimePort.nowMs` read inside their monitors (the pure classes hold the port for Dart parity) | Divergence register, "Thread-safety posture"; upheld 2026-09-01, narrowed 2026-09-02 |
+| E4 | kt names its pending-ping bookkeeping as a class (`PendingPingRegistry`, application layer) where Dart keeps the same map inline in its detector | The entry carries the ack signal, a coroutine deferred, so kt needs a wrapper around it and a wrapper needs a pure body to wrap; Dart's single isolate needs neither. Same state, same contract, one extra named class on the kt side — not a flow-back, because Dart would gain nothing from it | Purification batch review, 2026-09-02 |
 
 An exemption is falsifiable: if a later incident shows the skipped thing did
 have a purpose, delete the row and open a port item. The first review
@@ -72,6 +73,13 @@ once, together, or the shapes drift for no reason.
   behavior; until ruled, this is a live behavioral divergence.
 - **Whether gossip-kt commits should be signed** (owner question, carried
   from the wire campaign).
+- **Whether the two suspending application mutexes become a repository
+  guarantee** — kt's per-stream append and per-materializer mutexes exist
+  because the critical sections suspend across repository calls; moving
+  that serialization into the repository contract would let both twins drop
+  their own (kt's two mutexes; Dart's append and materialization task
+  chains), but it changes a contract the server implements. Deferred by the
+  purification item as a joint design decision, not a refactor.
 
 ## Working conventions
 
