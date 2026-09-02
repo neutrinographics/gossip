@@ -55,6 +55,10 @@ flags and scopes stay put.
 
 ## Related
 
+- **Rulings for review:**
+  [Kotlin domain purification — rulings](../superpowers/specs/2026-09-02-kt-domain-purification-rulings.md)
+  (2026-09-02) — the inventory of every lock outside `infrastructure/` and
+  the ten decisions the batch executes.
 - The template: the stalled-range registry and its wrapper (shipped in
   [the stalled-range port](kt-stalled-range-suppression-port.md)), and the
   peer registry pair that predates it.
