@@ -15,22 +15,23 @@ traffic. Work proceeds in this order (owner-set; full rationale in the
 [retirement decision record](superpowers/specs/2026-09-01-swim-slimdown-decision.md)'s
 review outcome and the parity program):
 
-1. **Stop the measured waste** — DONE in both libraries:
-   [stalled-range suppression](backlog/engine-stalled-range-request-backoff.md)
-   (Dart 7ebd076, 2026-09-01) and
-   [its Kotlin port](backlog/kt-stalled-range-suppression-port.md)
-   (gossip-kt bbbf31f, 2026-09-02); the server-side relief lands with the
-   opendoor-api submodule bump.
-2. **Pace the server** — the
-   [Kotlin wire-efficiency port](backlog/kt-port-wire-efficiency.md):
-   phase 1 MERGED (gossip-kt 0dafefd). Steps 1 and 2 now ride ONE deploy:
-   opendoor-api PR #17 bumps the submodule with both traffic fixes —
-   merge + Heroku release ends the stalled-range loop AND the
-   full-cadence chatter. Phase 2 (recency suppression, digest filtering)
-   follows.
+1. **Stop the measured waste** — DONE AND DEPLOYED: stalled-range
+   suppression in [Dart](backlog/engine-stalled-range-request-backoff.md)
+   (7ebd076) and [Kotlin](backlog/kt-stalled-range-suppression-port.md)
+   (gossip-kt bbbf31f); reached production 2026-09-02 via opendoor-api
+   #17 (d89110a).
+2. **Pace the server** — DONE AND DEPLOYED (same release):
+   [wire-efficiency](backlog/kt-port-wire-efficiency.md) phase 1
+   (gossip-kt 0dafefd). Validated on live devices before the merge:
+   converged-link cadence fell 112 → 2-3 digest lines per 30 s (~50×),
+   floors adopted at first contact with zero stalls, while the OLD prod
+   server reproduced the stall loop live against an old-build device.
+   Phase 2 (recency suppression, digest filtering) remains.
 3. **Flip the fleet to v2** when upgrade coverage allows (wire playbook
    steps 6–7; no dev work): v1's payload encoding costs ~3× the bytes of
-   v2's on payload-heavy deltas.
+   v2's on payload-heavy deltas. The coverage wave is rolling: the
+   2026-09-02 fleet app release (OpenDoorApp 00ec1682, pin 2d6c618) is
+   v2-receive-capable and floor-reporting.
 4. **Stability hardening batch (Kotlin)** —
    [retire indirect probing](backlog/kt-retire-indirect-probing.md) (removes
    the server's 500 ms receive-loop stalls) + the
@@ -42,11 +43,13 @@ review outcome and the parity program):
    [digest scoping to shared groups](backlog/engine-scope-digests-to-shared-groups.md)
    (spec first; every digest today advertises channels the peer doesn't share).
 
-Kotlin work ships via opendoor-api submodule bumps — aim items 2 and 4 at
-one bump, item 1's port plus KT-E at the next. Parity-completeness items
-(probe-selection, sync-activity API, glossary, flow-backs, scenario sweep)
-queue behind this push; first among them once the deployment train clears:
-[domain-layer purification](backlog/kt-pure-domain-concurrency.md).
+Kotlin work ships via opendoor-api submodule bumps — items 1 and 2 rode
+one bump (#17, deployed); the next bump carries item 4's batch plus KT-E.
+The deployment train has cleared, so
+[domain-layer purification](backlog/kt-pure-domain-concurrency.md) is
+next up (owner, 2026-09-02); the other parity-completeness items
+(probe-selection, sync-activity API, glossary, flow-backs, scenario
+sweep) queue behind it.
 
 ## Guardrails (design invariants)
 
@@ -79,7 +82,7 @@ detection. Seeded from the deferred follow-ups of the 2026-07 audits
 - ☐ **Medium** — [Send reactive pushes only to peers that share the data](backlog/engine-push-scoping.md) · scope push fan-out by channel membership + congestion-gate pushes and request bursts (2026-08 audit R6)
 - ☐ **Medium** — [Only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md) · digests advertise every channel a node holds, including its own user channel; measured on a mixed Android/iOS pair as 19 unusable channel ids × 22 rounds (~6.4 KB/exchange) — wasted airtime, log noise, and group/account ids disclosed to unrelated peers
 - ☐ **Medium** — [Coalesce wire traffic into fewer radio wakeups](backlog/engine-message-coalescing.md) · SRTT-scaled debounce, batched deltas, push-pull completion, transport hold window (2026-08 audit R7)
-- ☑ **High** — [Suppress pulling an author's range a peer has already failed to supply](backlog/engine-stalled-range-request-backoff.md) · per-author suppression with doubling re-probe backoff, per the [approved spec](superpowers/specs/2026-08-31-stalled-range-suppression-design.md) (pure-DDD shape: `StalledRangeRegistry` aggregate, strict command/query split) — merged 2026-09-01 as 7ebd076 (#15); the Kotlin port is the remaining half. NOT the cause of the 2026-08-31 R14 incident: that was an uncapped JVM heap, and the loop ran 16 more times after that fix with no memory pressure
+- ☑ **High** — [Suppress pulling an author's range a peer has already failed to supply](backlog/engine-stalled-range-request-backoff.md) · per-author suppression with doubling re-probe backoff, per the [approved spec](superpowers/specs/2026-08-31-stalled-range-suppression-design.md) (pure-DDD shape: `StalledRangeRegistry` aggregate, strict command/query split) — merged 2026-09-01 as 7ebd076 (#15); the Kotlin port is in production since 2026-09-02. NOT the cause of the 2026-08-31 R14 incident: that was an uncapped JVM heap, and the loop ran 16 more times after that fix with no memory pressure
 - ☐ **Low** — [Shrink version vectors on the wire with an author-index table](backlog/engine-author-index-wire-format.md) · wire-format change, both ends (2026-08 audit R8)
 - ☐ **Low** — [Piggyback sync summaries on liveness probes](backlog/engine-digest-on-probe-piggyback.md) · one radio wakeup serves both loops; crosses the PeerDirectory seam with an opaque payload (WIRE4-19)
 - ☐ **Low** — [Make Bluetooth advertising transmit power configurable](backlog/engine-ble-advertise-tx-power.md) · bluey hardcodes HIGH; add the knob upstream then plumb an owned enum like AdvertiseMode
@@ -123,16 +126,16 @@ register, and working conventions live in the
 [twin parity program](parity.md); this track is its worklist.
 
 - ◐ **High** — [Teach both libraries to speak versioned wire formats](backlog/kt-wire-versioning-campaign.md) · one-byte version marker, receive-both codecs, config-gated send (default legacy), shared conformance vectors — code and the receive-both deploys shipped 2026-08-31 (server + app, compaction support live end-to-end); the ordered send-side flips and translator retirement remain, gated on fleet coverage
-- ◐ **High** — [Port the wire-efficiency behaviors to the Kotlin library](backlog/kt-port-wire-efficiency.md) · PHASE 1 MERGED 2026-09-02 (gossip-kt 0dafefd, real merge, suite 999): pacing both loops, reactive push, probe suppression + 2-min cap, scheduler migration, median-SRTT parity, isRunning scheduler-delegation; phase 2 remains: recency suppression, dominance-filtered + request-scoped digest responses, DigestBudgeter
+- ◐ **High** — [Port the wire-efficiency behaviors to the Kotlin library](backlog/kt-port-wire-efficiency.md) · PHASE 1 MERGED 2026-09-02 (gossip-kt 0dafefd, real merge, suite 999): pacing both loops, reactive push, probe suppression + 2-min cap, scheduler migration, median-SRTT parity, isRunning scheduler-delegation — IN PRODUCTION 2026-09-02 (opendoor-api d89110a), live-device validated (~50× idle-cadence cut); phase 2 remains: recency suppression, dominance-filtered + request-scoped digest responses, DigestBudgeter
 - ☑ **Low** — [Mirror the bounded-context structure in the Kotlin library](backlog/kt-mirror-bounded-contexts.md) · four evaluated divergences ported back + a Kotlin edge-table boundary test that now enforces the structure — shipped 2026-08-29 in gossip-kt 26dcc13..bd50285 (feature/compaction)
 - ◐ **Medium** — [Audit the Kotlin library for the bug classes fixed in Dart](backlog/kt-audit-legacy-bug-classes.md) · audit done (13-item inventory); the storage-contract batch shipped in gossip-kt 1ffbf0d..3836bc7, the sync-path-depth batch (KT-B) shipped 2026-08-29 closing items 3/9/11, the remaining classes flow through the campaign's later batches
 - ☐ **High** — [Retire indirect health probing from both libraries](backlog/kt-retire-indirect-probing.md) · [ruled B, final](superpowers/specs/2026-09-01-swim-slimdown-decision.md) — the relay's purpose can't occur here (membership is local) and the Kotlin relay was inert in production anyway; Dart removes first, the Kotlin half rides the lifecycle batch, PingReq becomes receive-only until the next dialect revision — replaces the former "make indirect probing work" defect item, closed by removal
 - ◐ **High** — [Make stopping a Kotlin coordinator actually stop it](backlog/kt-coordinator-restart-lifecycle.md) · stop never cancels the message listener and nothing gates ingestion on running, so a stopped node keeps merging peer data and each restart stacks another listener into duplicate-write failures — same batch, same rulings page
 - ◐ **Medium** — [Stop the Kotlin library from treating cancellation as a failure](backlog/kt-cancellation-swallowed.md) · nine catch-alls (six recorded + three found at spec time) swallow the coroutine cancellation signal — folded into the coordinator-lifecycle batch, which restructures the same sites
 - ☐ **Low** — [Sweep the remaining scenario coverage into the Kotlin library](backlog/kt-scenario-parity-sweep.md) · the harness and link-condition primitives now exist and ~60 scenarios are translated; the scale, multi-channel, and remaining edge/lifecycle groups are mechanical follow-on
-- ☑ **High** — [Port stalled-range suppression to the Kotlin library](backlog/kt-stalled-range-suppression-port.md) · merged 2026-09-02 as gossip-kt bbbf31f (#5, suite 938 → 959), reviewed line-for-line faithful — reaches production with the opendoor-api submodule bump
+- ☑ **High** — [Port stalled-range suppression to the Kotlin library](backlog/kt-stalled-range-suppression-port.md) · merged 2026-09-02 as gossip-kt bbbf31f (#5, suite 938 → 959), reviewed line-for-line faithful — IN PRODUCTION 2026-09-02 via opendoor-api #17 (d89110a), live-device validated (floors adopted at first contact, zero stalls)
 - ◐ **Medium** — [Record where the Dart library and its Kotlin twin diverge, with a verdict](backlog/kt-normalize-twin-divergences.md) · register active, growing a row per review; every row must end homed to a roadmap item, closed, or exempted in the parity program — the Dart-side adoptions now have a home in the flow-back sweep (Code health)
-- ☐ **High** — [Purify the Kotlin domain layer: locks move to infrastructure wrappers](backlog/kt-pure-domain-concurrency.md) · five domain services carry internal locks (and the clock's Mutex is why it suspends where Dart's doesn't); move every lock into `Synchronized*` wrappers so kt domain bodies diff line-for-line against Dart — owner-sequenced AFTER the current deployment train; the detector portion rides the lifecycle batch
+- ☐ **High** — [Purify the Kotlin domain layer: locks move to infrastructure wrappers](backlog/kt-pure-domain-concurrency.md) · five domain services carry internal locks (and the clock's Mutex is why it suspends where Dart's doesn't); move every lock into `Synchronized*` wrappers so kt domain bodies diff line-for-line against Dart — the deployment train shipped 2026-09-02, so this is NEXT UP (owner); sequencing note for its plan: the detector's ping-state extraction was earmarked for the lifecycle batch, but the wire-efficiency review already guarded those maps, so purification can likely take it directly
 - ☐ **High** — [Give the Kotlin library the payload size cap the Dart library enforces](backlog/kt-payload-size-cap.md) · nothing kt-side refuses an oversized write and the server's frame limit is effectively infinite, so the server can create entries the phone fleet can never carry
 - ☐ **High** — [Make stream access get-or-create in the Kotlin library](backlog/kt-get-or-create-stream.md) · the register calls this a real production issue: Dart quietly creates a missing stream on access, kt doesn't, and the kt harness works around it
 - ☐ **Medium** — [Give the Kotlin library Dart's fair probe rotation and timing policies](backlog/kt-probe-selection-parity.md) · kt probes a random peer per round (an unlucky peer goes unchecked for long stretches) and inlines the timing rules Dart keeps in named policy objects
