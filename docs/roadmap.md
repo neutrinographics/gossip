@@ -23,9 +23,11 @@ review outcome and the parity program):
    opendoor-api submodule bump.
 2. **Pace the server** — the
    [Kotlin wire-efficiency port](backlog/kt-port-wire-efficiency.md):
-   phase 1 (pacing, push, probe suppression) is **PR-open** (gossip-kt #6);
-   merge + the submodule bump end the full-cadence chatter. Phase 2
-   (recency suppression, digest filtering) follows.
+   phase 1 MERGED (gossip-kt 0dafefd). Steps 1 and 2 now ride ONE deploy:
+   opendoor-api PR #17 bumps the submodule with both traffic fixes —
+   merge + Heroku release ends the stalled-range loop AND the
+   full-cadence chatter. Phase 2 (recency suppression, digest filtering)
+   follows.
 3. **Flip the fleet to v2** when upgrade coverage allows (wire playbook
    steps 6–7; no dev work): v1's payload encoding costs ~3× the bytes of
    v2's on payload-heavy deltas.
@@ -121,7 +123,7 @@ register, and working conventions live in the
 [twin parity program](parity.md); this track is its worklist.
 
 - ◐ **High** — [Teach both libraries to speak versioned wire formats](backlog/kt-wire-versioning-campaign.md) · one-byte version marker, receive-both codecs, config-gated send (default legacy), shared conformance vectors — code and the receive-both deploys shipped 2026-08-31 (server + app, compaction support live end-to-end); the ordered send-side flips and translator retirement remain, gated on fleet coverage
-- ◐ **High** — [Port the wire-efficiency behaviors to the Kotlin library](backlog/kt-port-wire-efficiency.md) · PHASE 1 (quiescence pacing both loops, reactive push, probe suppression + 2-min cap, per-cycle scheduler migration, median-SRTT parity) PR OPEN — gossip-kt #6, suite 959 → 998; phase 2 remains: recency suppression, dominance-filtered + request-scoped digest responses, DigestBudgeter
+- ◐ **High** — [Port the wire-efficiency behaviors to the Kotlin library](backlog/kt-port-wire-efficiency.md) · PHASE 1 MERGED 2026-09-02 (gossip-kt 0dafefd, real merge, suite 999): pacing both loops, reactive push, probe suppression + 2-min cap, scheduler migration, median-SRTT parity, isRunning scheduler-delegation; phase 2 remains: recency suppression, dominance-filtered + request-scoped digest responses, DigestBudgeter
 - ☑ **Low** — [Mirror the bounded-context structure in the Kotlin library](backlog/kt-mirror-bounded-contexts.md) · four evaluated divergences ported back + a Kotlin edge-table boundary test that now enforces the structure — shipped 2026-08-29 in gossip-kt 26dcc13..bd50285 (feature/compaction)
 - ◐ **Medium** — [Audit the Kotlin library for the bug classes fixed in Dart](backlog/kt-audit-legacy-bug-classes.md) · audit done (13-item inventory); the storage-contract batch shipped in gossip-kt 1ffbf0d..3836bc7, the sync-path-depth batch (KT-B) shipped 2026-08-29 closing items 3/9/11, the remaining classes flow through the campaign's later batches
 - ☐ **High** — [Retire indirect health probing from both libraries](backlog/kt-retire-indirect-probing.md) · [ruled B, final](superpowers/specs/2026-09-01-swim-slimdown-decision.md) — the relay's purpose can't occur here (membership is local) and the Kotlin relay was inert in production anyway; Dart removes first, the Kotlin half rides the lifecycle batch, PingReq becomes receive-only until the next dialect revision — replaces the former "make indirect probing work" defect item, closed by removal
