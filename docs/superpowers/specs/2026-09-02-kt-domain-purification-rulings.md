@@ -146,5 +146,6 @@ batch.
 
 ## Review outcome
 
-_Pending owner review. Record rulings changes here; the plan follows the
-record, not the other way around._
+- 2026-09-02: **approved by the owner as written** — all ten rulings stand,
+  including the scheduler's subclass wrapper (ruling 4) and the
+  non-suspend `HlcProvider` (ruling 5). The plan follows this record.
