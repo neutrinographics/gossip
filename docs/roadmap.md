@@ -7,13 +7,16 @@ never in a backlog file.
 - **Status:** ☐ not started · ◐ in progress · ☑ done
 - **Priority:** High · Medium · Low · Launch (gated to before public exposure)
 
-## Current focus — deployed-fleet performance and stability (set 2026-09-01)
+## Current focus — deployed-fleet performance and stability (order set 2026-09-02)
 
 The campaign's aim right now is making the *deployed* server and phone fleet
 faster and more stable, and the historical enemy is unnecessary wire
-traffic. Work proceeds in this order (owner-set; full rationale in the
-[retirement decision record](superpowers/specs/2026-09-01-swim-slimdown-decision.md)'s
-review outcome and the parity program):
+traffic. Stability work goes before performance work because the server
+side has two known defects that outweigh any remaining inefficiency. Work
+proceeds in this order (owner-set; rationale for the original ordering in
+the [retirement decision record](superpowers/specs/2026-09-01-swim-slimdown-decision.md)'s
+review outcome and the parity program; re-ordered 2026-09-02 after the
+purification batch merged):
 
 1. **Stop the measured waste** — DONE AND DEPLOYED: stalled-range
    suppression in [Dart](backlog/engine-stalled-range-request-backoff.md)
@@ -24,34 +27,53 @@ review outcome and the parity program):
    [wire-efficiency](backlog/kt-port-wire-efficiency.md) phase 1
    (gossip-kt 0dafefd). Validated on live devices before the merge:
    converged-link cadence fell 112 → 2-3 digest lines per 30 s (~50×),
-   floors adopted at first contact with zero stalls, while the OLD prod
-   server reproduced the stall loop live against an old-build device.
-   Phase 2 (recency suppression, digest filtering) remains.
-3. **Flip the fleet to v2** when upgrade coverage allows (wire playbook
-   steps 6–7; no dev work): v1's payload encoding costs ~3× the bytes of
-   v2's on payload-heavy deltas. The coverage wave is rolling: the
-   2026-09-02 fleet app release (OpenDoorApp 00ec1682, pin 2d6c618) is
-   v2-receive-capable and floor-reporting.
-4. **Stability hardening batch (Kotlin)** —
+   floors adopted at first contact with zero stalls.
+3. **Deploy the server on the purified library** — NEXT: bump the
+   opendoor-api submodule to gossip-kt 26e5e24
+   ([domain purification](backlog/kt-pure-domain-concurrency.md),
+   behavior-preserving; no server adaptation needed) and release it on its
+   own, so the refactor soaks before behavior changes land on top of it and
+   any post-deploy oddity has one suspect. Use that release to close the
+   still-open post-deploy observables check for the 2026-09-02 release
+   (idle gossip log volume, stalled-range loop gone) against the
+   live-validation numbers above.
+4. **Stability hardening batch (Kotlin)** — gated on the owner's review of
+   the [lifecycle rulings](superpowers/specs/2026-09-01-receive-loop-lifecycle-rulings.md)
+   and on Dart removing indirect probing first:
    [retire indirect probing](backlog/kt-retire-indirect-probing.md) (removes
    the server's 500 ms receive-loop stalls) + the
    [coordinator lifecycle fix](backlog/kt-coordinator-restart-lifecycle.md)
-   + [cancellation](backlog/kt-cancellation-swallowed.md), one batch; plus
-   the [payload cap](backlog/kt-payload-size-cap.md) and KT-E's
-   entry-ordering fix.
-5. **Then design the next traffic win** —
-   [digest scoping to shared groups](backlog/engine-scope-digests-to-shared-groups.md)
-   (spec first; every digest today advertises channels the peer doesn't share).
+   (a stopped node keeps merging; restarts stack listeners into
+   duplicate-write failures) + [cancellation](backlog/kt-cancellation-swallowed.md),
+   one batch. The same submodule bump carries the two small High fixes:
+   the [payload cap](backlog/kt-payload-size-cap.md) (the server can create
+   entries the fleet can never carry) and
+   [get-or-create stream access](backlog/kt-get-or-create-stream.md), plus
+   KT-E's entry-ordering fix. Its own release, with before-and-after numbers.
+5. **Design the next traffic win, in parallel with 4** —
+   [digest scoping to shared groups](backlog/engine-scope-digests-to-shared-groups.md):
+   spec first (it needs an owner ruling before code); the biggest measured
+   waste left now that pacing shipped (~6.4 KB per exchange on a mixed pair,
+   plus group and account ids disclosed to unrelated peers). Both twins.
+6. **Wire-efficiency phase 2** — recency suppression, dominance-filtered
+   and request-scoped digest responses, the digest budgeter (same
+   [item](backlog/kt-port-wire-efficiency.md) as phase 1).
+7. **Then** the [Dart minor-findings sweep](backlog/health-minor-findings-sweep.md)
+   (two correctness latents), and the smaller traffic items —
+   [push scoping](backlog/engine-push-scoping.md) and
+   [coalescing](backlog/engine-message-coalescing.md).
+8. **Flip the fleet to v2** — deliberately waiting (owner, 2026-09-02):
+   wire playbook steps 6–7, no dev work; v1's payload encoding costs ~3×
+   the bytes of v2's on payload-heavy deltas. The coverage wave is rolling
+   (the 2026-09-02 fleet app release, OpenDoorApp 00ec1682 on pin 2d6c618,
+   is v2-receive-capable and floor-reporting); the flip happens when the
+   owner judges coverage sufficient, independent of items 3–7.
 
 Kotlin work ships via opendoor-api submodule bumps — items 1 and 2 rode
-one bump (#17, deployed); the next bump carries item 4's batch plus KT-E.
-The deployment train cleared and
-[domain-layer purification](backlog/kt-pure-domain-concurrency.md)
-is **merged** (gossip-kt 26e5e24, 2026-09-02); it rides the next
-submodule bump with item 4. Next up on the Kotlin side: the owner's
-review of the lifecycle rulings (its detector step is now verify-only),
-then the other parity-completeness items (probe-selection's behavior
-half, sync-activity API, glossary, flow-backs, scenario sweep).
+one bump (#17, deployed); item 3 is the next bump; item 4 is the one after.
+Behind the list, the other parity-completeness items queue in the
+*Kotlin port* track (probe-selection's behavior half, sync-activity API,
+glossary, flow-backs, scenario sweep).
 
 ## Guardrails (design invariants)
 
