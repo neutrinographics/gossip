@@ -150,7 +150,7 @@ batch.
   including the scheduler's subclass wrapper (ruling 4) and the
   non-suspend `HlcProvider` (ruling 5). The plan follows this record.
 - 2026-09-02: **built and reviewed** — gossip-kt PR #7
-  (`feature/domain-purification`, branch head 785e814), suite 999 → 1038,
+  (`feature/domain-purification`, branch head a39edce), suite 999 → 1038,
   every task reviewed, final whole-branch review + one fix wave re-reviewed
   clean; awaiting the owner's merge. Ruling 2's strikeable task (the pusher)
   was **executed**. One carve-out to ruling 3 recorded in the code and in
