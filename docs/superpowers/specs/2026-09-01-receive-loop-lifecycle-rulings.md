@@ -27,7 +27,7 @@ ruling — it pinned removed behavior.
    all — the batch instead *removes* `handlePingReq`, intermediary
    selection, and the relay timeout, and an inbound `PingReq` is decoded
    and ignored for mixed-fleet compatibility.)
-2. **The detector's ping bookkeeping gets a monitor guard anyway.** The
+2. *(Superseded 2026-09-02 by the [purification rulings](2026-09-02-kt-domain-purification-rulings.md), ruling 6: the ping bookkeeping is now `PendingPingRegistry` + `ProbeTargetSelector` behind `Synchronized*` wrappers, and the detector carries no lock; the plan's T4 step 3 becomes verify-only.)* **The detector's ping bookkeeping gets a monitor guard anyway.** The
    races it closes *pre-date and outlive* relaying: the sequence counter,
    pending-ping map, probing-hold map, and RTT tracker are touched from
    both the probe timer and the receive loop today. Follows the recorded
@@ -75,3 +75,6 @@ record, not the other way around._
   **ruled B, final** — rulings 1, 2, and 7 above are amended in place to
   their post-retirement form, the acceptance suite is six scenarios, and
   this batch absorbs the Kotlin-side removal.
+- 2026-09-02: ruling 2 superseded by the purification batch (gossip-kt
+  PR #7) — the detector's bookkeeping is extracted and wrapped, not
+  monitor-guarded in place; the relay deletion now touches fewer sites.

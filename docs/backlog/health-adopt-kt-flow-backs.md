@@ -21,6 +21,16 @@ hatch; the stricter configuration-disable idiom; compaction facades and
 local-only compaction gating; and a set of test-strength idioms the Kotlin
 reviews demonstrated.
 
+Five more candidates came out of the Kotlin domain purification
+(2026-09-02) — Dart-side reshapes that would let the twins' domain bodies
+diff line-for-line: the round news flag moving from the gossip engine into
+the gossip timing policy (`news()` raises it, `beginRound()` consumes it or
+stretches); the scheduler's generation state as a small `LoopGeneration`
+collaborator; a `ReportedGapRegistry` (Dart keeps that set inside the
+delta merger); a `PendingPushes` buffer behind the reactive pusher; and the
+explicit never-heard-from guard in the probe target selector's freshness
+test. Each is a register row.
+
 ## Why it matters
 
 The migration's ground rule is bidirectional: the Kotlin library catching up

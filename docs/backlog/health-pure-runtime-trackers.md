@@ -44,6 +44,9 @@ structural refactor with the existing tests as the harness.
 
 ## Related
 
+- The Kotlin twin's `PendingPullTracker` keeps today's port-holding shape
+  behind its wrapper (purification batch, gossip-kt PR #7, 2026-09-02)
+  until this item reshapes the Dart original; kt follows Dart there.
 - The ruling and the pattern-setter:
   [stalled-range suppression design](../superpowers/specs/2026-08-31-stalled-range-suppression-design.md)
   (its "Decisions from the owner's review" section).

@@ -45,11 +45,12 @@ review outcome and the parity program):
 
 Kotlin work ships via opendoor-api submodule bumps — items 1 and 2 rode
 one bump (#17, deployed); the next bump carries item 4's batch plus KT-E.
-The deployment train has cleared, so
-[domain-layer purification](backlog/kt-pure-domain-concurrency.md) is
-next up (owner, 2026-09-02); the other parity-completeness items
-(probe-selection, sync-activity API, glossary, flow-backs, scenario
-sweep) queue behind it.
+The deployment train cleared and
+[domain-layer purification](backlog/kt-pure-domain-concurrency.md)
+is built and reviewed — gossip-kt PR #7 awaits the owner's merge
+(2026-09-02); it rides the next submodule bump with item 4. The other
+parity-completeness items (probe-selection, sync-activity API, glossary,
+flow-backs, scenario sweep) queue behind it.
 
 ## Guardrails (design invariants)
 
@@ -135,10 +136,11 @@ register, and working conventions live in the
 - ☐ **Low** — [Sweep the remaining scenario coverage into the Kotlin library](backlog/kt-scenario-parity-sweep.md) · the harness and link-condition primitives now exist and ~60 scenarios are translated; the scale, multi-channel, and remaining edge/lifecycle groups are mechanical follow-on
 - ☑ **High** — [Port stalled-range suppression to the Kotlin library](backlog/kt-stalled-range-suppression-port.md) · merged 2026-09-02 as gossip-kt bbbf31f (#5, suite 938 → 959), reviewed line-for-line faithful — IN PRODUCTION 2026-09-02 via opendoor-api #17 (d89110a), live-device validated (floors adopted at first contact, zero stalls)
 - ◐ **Medium** — [Record where the Dart library and its Kotlin twin diverge, with a verdict](backlog/kt-normalize-twin-divergences.md) · register active, growing a row per review; every row must end homed to a roadmap item, closed, or exempted in the parity program — the Dart-side adoptions now have a home in the flow-back sweep (Code health)
-- ☐ **High** — [Purify the Kotlin domain layer: locks move to infrastructure wrappers](backlog/kt-pure-domain-concurrency.md) · five domain services carry internal locks (and the clock's Mutex is why it suspends where Dart's doesn't); move every lock into `Synchronized*` wrappers so kt domain bodies diff line-for-line against Dart — the deployment train shipped 2026-09-02, so this is NEXT UP (owner); sequencing note for its plan: the detector's ping-state extraction was earmarked for the lifecycle batch, but the wire-efficiency review already guarded those maps, so purification can likely take it directly
+- ◐ **High** — [Purify the Kotlin domain layer: locks move to infrastructure wrappers](backlog/kt-pure-domain-concurrency.md) · every lock outside `infrastructure/` moved into `Synchronized*` wrappers (five domain services + four engine extractions + the pusher), machine-checked by `LockPlacementTest`; the clock no longer suspends; the detector's ping-state extraction rode here (lifecycle ruling 2 superseded) — **gossip-kt PR #7 open** (branch head 75b87cf, suite 999 → 1038, every task reviewed + final review clean), per the [approved rulings](superpowers/specs/2026-09-02-kt-domain-purification-rulings.md); awaiting the owner's merge
 - ☐ **High** — [Give the Kotlin library the payload size cap the Dart library enforces](backlog/kt-payload-size-cap.md) · nothing kt-side refuses an oversized write and the server's frame limit is effectively infinite, so the server can create entries the phone fleet can never carry
 - ☐ **High** — [Make stream access get-or-create in the Kotlin library](backlog/kt-get-or-create-stream.md) · the register calls this a real production issue: Dart quietly creates a missing stream on access, kt doesn't, and the kt harness works around it
-- ☐ **Medium** — [Give the Kotlin library Dart's fair probe rotation and timing policies](backlog/kt-probe-selection-parity.md) · kt probes a random peer per round (an unlucky peer goes unchecked for long stretches) and inlines the timing rules Dart keeps in named policy objects
+- ☐ **Medium** — [Give the Kotlin library Dart's fair probe rotation and timing policies](backlog/kt-probe-selection-parity.md) · kt probes a random peer per round (an unlucky peer goes unchecked for long stretches); the structural half (a named `ProbeTargetSelector`) landed with purification (PR #7), so what remains is the shuffled-cursor behavior, the intermediary selection moving onto the selector, and the small helper adoptions
+- ☐ **Low** — [Make the two timing-sensitive Kotlin tests immune to parallel load](backlog/kt-load-flaky-timing-tests.md) · a reactive-push congestion test and an HLC causality test each flaked once under full-suite load during the purification batch (green in isolation and on rerun; the batch touched neither path)
 - ☐ **Medium** — [Port the sync-activity snapshot API to the Kotlin library](backlog/kt-sync-activity-api.md) · Dart can answer "syncing or up to date?" (outstanding pulls, quiescence, merge counters); kt has no equivalent public surface
 - ☑ **Medium** — [Move the Kotlin library's periodic loops onto the restartable scheduler](backlog/kt-periodic-loop-scheduler.md) · absorbed and closed by wire-efficiency phase 1 (gossip-kt #6): both loops now run per-cycle jittered delays on GenerationScheduler
 - ☐ **Low** — [Share the ubiquitous-language glossary across the twins](backlog/kt-shared-glossary.md) · GLOSSARY.md exists only Dart-side with nothing kt-side pointing at it; single-source it and reconcile terms against the Kotlin names
