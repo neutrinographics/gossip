@@ -23,6 +23,17 @@ against sixty-three bytes when the same device had nothing to say.
 
 ## Why it matters
 
+Measured on the server with its new health line (2026-09-03, one phone in a
+lesson through a tunnel): the server sent about 660–715 KB per minute to
+that one phone while receiving 100–165 KB, with the gossip interval pinned
+at 0.6–1.0 s (twice the measured round trip) because every presence
+heartbeat counts as news and the pacer never stretches. Nearly all of it is
+an ~8 KB digest advertising all 23 channels the server holds, roughly once
+a second, for the whole lesson — about 40 MB per hour per active phone.
+Scoping the digest to the channels the peer shares is the first cut at that
+number; recency suppression (wire-efficiency phase 2) is the second.
+
+
 Three separate costs, in increasing order of seriousness.
 
 **Battery and airtime.** The summary is sent on every meeting, and these

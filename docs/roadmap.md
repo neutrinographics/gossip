@@ -57,8 +57,11 @@ purification batch merged):
 5. **Design the next traffic win, in parallel with 4** —
    [digest scoping to shared groups](backlog/engine-scope-digests-to-shared-groups.md):
    spec first (it needs an owner ruling before code); the biggest measured
-   waste left now that pacing shipped (~6.4 KB per exchange on a mixed pair,
-   plus group and account ids disclosed to unrelated peers). Both twins.
+   waste left now that pacing shipped — the server's new health line put a
+   number on it 2026-09-03: ~700 KB/min out to one phone in a lesson,
+   almost all 8 KB all-channel digests sent about once a second because
+   presence heartbeats keep the pacer at its floor (plus group and account
+   ids disclosed to unrelated peers). Both twins.
 6. **Wire-efficiency phase 2** — recency suppression, dominance-filtered
    and request-scoped digest responses, the digest budgeter (same
    [item](backlog/kt-port-wire-efficiency.md) as phase 1).
