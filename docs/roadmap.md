@@ -28,9 +28,12 @@ purification batch merged):
    (gossip-kt 0dafefd). Validated on live devices before the merge:
    converged-link cadence fell 112 → 2-3 digest lines per 30 s (~50×),
    floors adopted at first contact with zero stalls.
-3. **Deploy the server on the purified library** — **opendoor-api PR #18
-   open** (bump-gossip-kt-purification, server 214/214): the
-   opendoor-api submodule moves to gossip-kt 26e5e24
+3. **Deploy the server on the purified library** — **merged 2026-09-03 as
+   opendoor-api 7be0f76** (PR #18, server 214/214, live-device validated
+   on a Pixel 9 through the new ngrok runbook: converged link paced at
+   30 s, presence pushes persisted contiguously, no errors); the Heroku
+   release is the remaining step. The opendoor-api submodule moved to
+   gossip-kt 26e5e24
    ([domain purification](backlog/kt-pure-domain-concurrency.md),
    behavior-preserving; no server adaptation needed) and release it on its
    own, so the refactor soaks before behavior changes land on top of it and
