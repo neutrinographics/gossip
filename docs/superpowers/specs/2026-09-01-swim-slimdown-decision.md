@@ -120,11 +120,18 @@ usefully exchange data with this peer directly" is what the status gates.
 
 ## Sequencing if ruled B
 
-1. Dart first (it is the reference): remove the send side and relay
-   handler, generalize the grace wait, revise ADR-004/012, adjust the
+_Re-sequenced by the owner on 2026-09-14 (lifecycle rulings page, ruling 9):
+**Kotlin first.** The wire is safe in either order — a Kotlin node that
+ignores a relay request looks like "no intermediary" to a Dart prober — the
+server is where the relay's receive-loop stall actually hurts, and the Dart
+half had no plan of its own. The original order is kept below for the
+record._
+
+1. ~~Dart first (it is the reference)~~ **Kotlin first**, inside the
+   receive-loop lifecycle batch, which was already touching the detector.
+2. Dart follows as its own work on the same item: remove the send side and
+   relay handler, generalize the grace wait, revise ADR-004/012, adjust the
    asymmetric-partition suite.
-2. Kotlin follows inside the receive-loop lifecycle batch (amended rulings
-   page), which was already touching the detector.
 3. `PingReq` decode retirement rides the wire playbook's existing step 8.
 
 ## Open points for the owner

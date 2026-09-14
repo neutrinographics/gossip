@@ -48,19 +48,51 @@ ruling — it pinned removed behavior.
    tests gain deterministic control (and the subscribe-before-return pin the
    scenario batch had to defer) while the coordinator keeps sole ownership of
    its scope, so `dispose()` stays unambiguous.
-6. **Cancellation carve-outs at nine sites, not the recorded six** — closer
-   inspection found seven suspend-carrying catch-alls (including the
-   compaction pass, whose swallow currently defeats the scheduler's correct
-   rethrow one frame up) plus two codec decode catches taken along for idiom
-   uniformity. Wire bytes untouched; golden vectors must stay byte-identical.
-7. **Not in this batch:** Dart's lifecycle-epoch guard (kt's `start()` has
-   no awaited gap that needs it). *(The former first half of this ruling —
-   porting Dart's adaptive relay timeout — is void: the relay is retired.)*
+6. **Cancellation carve-outs at the five surviving suspend-carrying
+   catch-alls** *(amended 2026-09-14; was "nine")*: the coordinator's
+   collector, the detector's send, the engine's send and clock-persist, and
+   the compaction pass (whose swallow defeats the scheduler's correct
+   rethrow one frame up — and repeats once per remaining stream per tick).
+   The two scheduler-callback sites the original count included vanished
+   with `GenerationScheduler`; the two codec decode catches are non-suspend
+   and cannot see a cancellation, so they are left alone. Wire bytes
+   untouched; no codec file is edited.
+7. **Dart's lifecycle-epoch guard IS ported** *(reversed 2026-09-14)*. The
+   original ruling said kt's `start()` has no awaited gap that needs it;
+   ruling 4's cancel-and-join is exactly such a gap. `stop()` and
+   `dispose()` bump an epoch; a `start()` that resumes from the join to
+   find the epoch changed, the state running, or the coordinator disposed
+   stands down. *(The former first half of this ruling — porting Dart's
+   adaptive relay timeout — is void: the relay is retired.)*
 8. **This batch is not KT-E.** The legacy sweep (entry insertion total order,
    HLC ceiling naming, etc.) keeps that name and follows separately.
+9. **Kotlin goes first on the relay retirement** (owner, 2026-09-14). The
+   decision record's "Dart first" sequencing and the roadmap's gate are
+   amended; the wire is safe either way (a kt node that ignores a relay
+   request looks like "no intermediary" to a Dart prober), the server is
+   where the stall hurts, and the Dart half has no plan yet. The Dart half
+   stays tracked on the same both-sides item.
+10. **Lifecycle preconditions are Dart's, throwing** (owner, 2026-09-14):
+    `pause()` throws unless running; `resume()` throws unless paused;
+    `start()` and `stop()` throw when disposed and are otherwise
+    idempotent; `dispose()` is idempotent. Lifecycle methods are **not
+    thread-safe; the caller serializes them** — documented on the class,
+    not enforced (the server calls start once and stop once with no
+    overlap). Ruling 3's "contract = Dart parity" is thereby contract
+    parity, not only vocabulary parity.
+11. **The ack-sender guard is ported.** Dart completes a pending ping only
+    when the Ack's sender is the probed target; kt matched by sequence
+    alone. After retirement every pending ping is direct, so the guard is
+    unconditional and this batch is the moment to add it.
+12. **Two small kt-side choices, recorded as flow-back candidates:** the
+    grace window after a direct timeout *races* the late Ack instead of
+    sleeping blind (same outcome, less latency); and an inbound `PingReq`,
+    though ignored, still counts toward the sender's receive metrics (owner,
+    2026-09-14 — Dart counts every received frame, so the fleet's metrics
+    stay comparable during the mixed period).
 
-Estimated suite growth: 938 → ~950 (net of tests deleted with the relay),
-on a branch off gossip-kt `main` @ 33772f7.
+Estimated suite growth: 1046 → ~1060, on a branch off gossip-kt `main`
+@ 83ec65a *(re-baselined 2026-09-14; was 938 → ~950 off 33772f7)*.
 
 ## Review outcome
 
@@ -78,3 +110,11 @@ record, not the other way around._
 - 2026-09-02: ruling 2 superseded by the purification batch (gossip-kt
   PR #7) — the detector's bookkeeping is extracted and wrapped, not
   monitor-guarded in place; the relay deletion now touches fewer sites.
+- 2026-09-14: **plan audited before execution**
+  ([audit of record](../../audits/2026-09-14-receive-loop-lifecycle-plan-audit.md)):
+  six Majors, none Critical. The owner ruled the four open points as
+  recommended — rulings 9–12 added, 6 and 7 amended in place — and the
+  plan was rewritten against gossip-kt 83ec65a (stale anchors, a
+  monitor-guard step that would now fail `LockPlacementTest`, red tests
+  that could never turn red, and a doc-truth task contradicting rulings 1
+  and 3). All twelve rulings stand; the batch may start.
