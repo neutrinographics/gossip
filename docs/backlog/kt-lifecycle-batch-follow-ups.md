@@ -39,6 +39,14 @@ The pieces, roughly in the order they are worth doing:
   test, and drop the recovery path's duplicate contact recording (the ack
   handler already records it).
 - **Sweep the old campaign labels** out of two coordinator test comments.
+- **Make the coordinator safe against a lifecycle call from inside its
+  own error callback.** While the collector is being attached, it can
+  run the application's error callback on the calling thread before the
+  coordinator has finished recording the new state. A stop issued from
+  inside that callback is then partly overwritten when the start call
+  completes. Nobody does this today, the hazard predates the lifecycle
+  batch, and the fix is small (finish the state transition before any
+  frame can be routed, or defer the callback).
 - **Decide what a dead scheduler should do to ingestion.** Both libraries
   gate ingestion on the same flag that says the periodic gossip loop is
   alive. If that loop ever dies from a scheduling failure (a clock whose
