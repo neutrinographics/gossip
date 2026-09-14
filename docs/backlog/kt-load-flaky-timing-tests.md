@@ -1,18 +1,25 @@
-# Make the two timing-sensitive Kotlin tests immune to parallel load
+# Make the timing-sensitive Kotlin tests immune to parallel load
 
 **Track:** Kotlin port   **Depends on:** nothing
 
 ## What this is
 
-Two tests in the Kotlin library's suite occasionally fail when the whole
+Three tests in the Kotlin library's suite occasionally fail when the whole
 suite runs in parallel on a busy machine, and pass every time on their own
-or on a rerun: one checks that reactive pushes skip a congested peer, the
-other that the hybrid logical clock's physical component advances with
-simulated time. Both rely on real wall-clock timeouts, so a scheduling
-hiccup under load can make a wait expire before the thing it waits for
-happens. Neither test's subject was changed by the batch that first saw
-the flakes (the domain purification, which moved locks without touching
-timing), so these are pre-existing sensitivities, not regressions.
+or on a rerun: one checks that reactive pushes skip a congested peer, one
+that the hybrid logical clock's physical component advances with simulated
+time, and one that a local write reaches peers as an unsolicited push. All
+three rely on real wall-clock timeouts, so a scheduling hiccup under load
+can make a wait expire before the thing it waits for happens. None of the
+tests' subjects was changed by the batches that saw the flakes (the domain
+purification moved locks without touching timing; the lifecycle batch saw
+the third test fail twice and pass six isolated runs), so these are
+pre-existing sensitivities, not regressions.
+
+The third test is the most fragile of the three: it busy-waits for the
+simulated clock to hold a second parked sleeper before advancing time, and
+a loaded machine can leave that sleeper unregistered for longer than the
+wait allows.
 
 ## Why it matters
 
@@ -30,6 +37,9 @@ times under load.
 
 ## Related
 
+- Seen twice more during the receive-loop lifecycle batch (gossip-kt PR #8,
+  September 2026), whose other deferred findings live in
+  [Tidy the loose ends the lifecycle batch left in the Kotlin library](kt-lifecycle-batch-follow-ups.md).
 - Recorded during the
   [Kotlin domain purification](../superpowers/specs/2026-09-02-kt-domain-purification-rulings.md)
   batch (its ledger lists both occurrences).
