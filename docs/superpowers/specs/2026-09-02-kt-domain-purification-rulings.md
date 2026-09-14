@@ -4,7 +4,7 @@ One kt batch executing
 [Purify the Kotlin domain layer: locks move to infrastructure wrappers](../../backlog/kt-pure-domain-concurrency.md).
 The item carries the what/why; this page carries only the decisions that
 need the owner's eye, made against gossip-kt `main` @ 0dafefd. The
-implementation plan (`gossip-kt/docs/plans/2026-09-02-kt-domain-purification.md`)
+implementation plan (`gossip-kt/docs/superpowers/plans/2026-09-02-kt-domain-purification.md`)
 is execution material for the agents — not for review.
 
 Behavior-preserving throughout: no wire change, no timing change, the

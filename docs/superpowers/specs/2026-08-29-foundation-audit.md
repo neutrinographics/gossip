@@ -76,7 +76,7 @@ reproduced.
 
 ### Cosmetic gaps (no correctness impact)
 
-- **A-1** `docs/plans/2026-08-29-kt-structure-mirror.md:1334` — S9's own gate
+- **A-1** `docs/superpowers/plans/2026-08-29-kt-structure-mirror.md:1334` — S9's own gate
   criterion still says the wire fixtures should be "exactly one commit"; they
   are two (`a7cc343` + fix round `182639f`). The doc pass fixed every count
   line but missed this one.
@@ -383,9 +383,9 @@ docs/superpowers/plans/2026-08-29-wire-codec-batch.md
 Worse: **three already-committed gossip-kt plan files link two of them by
 absolute path**, so the consumer is committed while the source is not —
 
-- `gossip-kt/docs/plans/2026-08-29-kt-structure-mirror.md:41`
-- `gossip-kt/docs/plans/2026-08-29-kt-batch-a-repository-contract-v2.md:41`
-- `gossip-kt/docs/plans/2026-08-28-kt-batch-a-repository-contract.md:43`
+- `gossip-kt/docs/superpowers/plans/2026-08-29-kt-structure-mirror.md:41`
+- `gossip-kt/docs/superpowers/plans/2026-08-29-kt-batch-a-repository-contract-v2.md:41`
+- `gossip-kt/docs/superpowers/plans/2026-08-28-kt-batch-a-repository-contract.md:43`
 
 The gossip repo is otherwise clean on `working-connection`, so a `git clean
 -fd`, a worktree switch, or a fresh clone destroys the entire design record of

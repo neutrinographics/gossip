@@ -107,7 +107,7 @@ four places they didn't.
   [audits/2026-08-20-wire-scheduling-audit.md](../audits/2026-08-20-wire-scheduling-audit.md)
   motivate the explicit sync↔detection contract.
 - The Kotlin port (`gossip-kt` repository), design doc
-  `docs/plans/2026-03-09-gossip-kt-design.md`: its `sync/`, `detection/`,
+  `docs/superpowers/specs/2026-03-09-gossip-kt-design.md`: its `sync/`, `detection/`,
   `shared/` layout was evaluated against the real Dart import graph and
   diverged in four places when this part shipped (recorded in ADR-010 as
   findings to port back to `gossip-kt`).

@@ -8,7 +8,7 @@ the Kotlin half of [retiring indirect probing](../../backlog/kt-retire-indirect-
 own item says to fold in — the same call sites get restructured). Those
 items carry the what/why; this page carries only the decisions that need the
 owner's eye. The implementation plan
-(`gossip-kt/docs/plans/2026-09-01-kt-receive-loop-lifecycle.md`) is execution
+(`gossip-kt/docs/superpowers/plans/2026-09-01-kt-receive-loop-lifecycle.md`) is execution
 material for the agents — not for review.
 
 Acceptance is fixed in advance: the **six Dart lifecycle scenarios withheld
