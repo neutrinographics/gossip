@@ -39,6 +39,17 @@ The pieces, roughly in the order they are worth doing:
   test, and drop the recovery path's duplicate contact recording (the ack
   handler already records it).
 - **Sweep the old campaign labels** out of two coordinator test comments.
+- **Decide what a dead scheduler should do to ingestion.** Both libraries
+  gate ingestion on the same flag that says the periodic gossip loop is
+  alive. If that loop ever dies from a scheduling failure (a clock whose
+  sleep throws — none of the shipped clocks do), the node keeps reporting
+  itself as running but stops both pulling and merging until it is stopped
+  and started again. The failure is loud (an error is reported), the shape
+  predates the lifecycle batch, and Dart has it too. Raised by the automated
+  reviewer on the batch's pull request. Options: let a start call on a
+  running node revive dead loops, surface loop health on the status
+  snapshot, or document the restart as the recovery. Both twins, one
+  decision.
 
 ## Why it matters
 
