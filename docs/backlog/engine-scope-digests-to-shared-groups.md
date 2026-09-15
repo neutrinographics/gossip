@@ -33,6 +33,13 @@ a second, for the whole lesson — about 40 MB per hour per active phone.
 Scoping the digest to the channels the peer shares is the first cut at that
 number; recency suppression (wire-efficiency phase 2) is the second.
 
+Confirmed at scale on 2026-09-15, a real meeting with up to seven phones
+for three hours on production: 710 KB out per phone per minute while
+presence flowed (451–1328 across phones), of which about 20 KB was
+entries — roughly 97 % digest overhead — for 450 MB of server egress in
+the afternoon. It scales linearly with phones and does not depend on the
+tunnel. Report: [the 2026-09-15 meeting measurement](../audits/2026-09-15-production-meeting-measurement.md).
+
 
 Three separate costs, in increasing order of seriousness.
 

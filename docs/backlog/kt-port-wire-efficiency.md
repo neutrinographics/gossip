@@ -12,6 +12,14 @@ bounds one-way-loss detection), no responder-side exchange recording, no
 recency suppression, no dominance-filtered digest responses. This item
 ports those behaviors.
 
+Phase 2's recency suppression has a measured target: on 2026-09-15 a real
+meeting kept every phone's round at the pacer's floor for three hours
+(710 KB out per phone per minute, ~97 % digests) even though reactive
+pushes were already delivering every heartbeat — the rounds carried
+nothing new. Skipping the round with a peer exchanged with moments ago
+removes most of them outright. Report:
+[the 2026-09-15 meeting measurement](../audits/2026-09-15-production-meeting-measurement.md).
+
 ## Why it matters
 
 Any deployment on the Kotlin side pays the idle-traffic cost the Dart

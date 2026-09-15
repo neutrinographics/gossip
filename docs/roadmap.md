@@ -31,8 +31,9 @@ purification batch merged):
 3. **Deploy the server on the purified library** — **merged 2026-09-03 as
    opendoor-api 7be0f76** (PR #18, server 214/214, live-device validated
    on a Pixel 9 through the new ngrok runbook: converged link paced at
-   30 s, presence pushes persisted contiguously, no errors); the Heroku
-   release is the remaining step. The opendoor-api submodule moved to
+   30 s, presence pushes persisted contiguously, no errors); released as
+   Heroku v45 the same day, and the sync-health visibility work (opendoor-api
+   PR #20) followed as v46 on 2026-09-12. The opendoor-api submodule moved to
    gossip-kt 26e5e24
    ([domain purification](backlog/kt-pure-domain-concurrency.md),
    behavior-preserving; no server adaptation needed) and release it on its
@@ -61,50 +62,61 @@ purification batch merged):
    KT-E's entry-ordering fix move to a later bump so this release has one
    suspect. Live-device validated through the ngrok runbook before the
    Heroku release.
-6. **Measure** — a real lesson on that release, read through the server's
-   health and merge lines: bytes per minute per phone idle and in-lesson,
-   merge timing now that the relay stalls are gone, the stalled-range loop
-   absent. These numbers are the baseline items 8 and 9 are judged against,
-   and they close the still-open post-deploy observables check from the
-   2026-09-02 release.
-7. **Finish the Dart half of the relay retirement** — spec first (a rulings
+6. **Server fixes from the meeting** (owner, 2026-09-15: the meeting's
+   findings go before everything else): one opendoor-api pull request
+   carrying [session ownership](backlog/server-session-ownership.md) (267
+   sends to departed peers in one meeting) and
+   [compaction under load](backlog/server-compaction-under-load.md) (every
+   tick failed for three hours), live-device validated through the tunnel
+   runbook, its own Heroku release.
+7. **Measure** — the next real meeting on those releases, read through the
+   health and merge lines. The **baseline exists**:
+   [the 2026-09-15 meeting report](audits/2026-09-15-production-meeting-measurement.md)
+   measured release v46 under up to seven phones — 710 KB out per phone per
+   minute in a meeting, ~97 % of it digests, 450 MB out over three hours,
+   pending never above zero. The next meeting should show the same traffic
+   shape with steadier merges and no relay stalls (lifecycle bump), and
+   zero departed-peer sends and zero compaction failures (server fixes).
+8. **Finish the Dart half of the relay retirement** — spec first (a rulings
    page for the owner), then the batch: remove the indirect phase and the
    relay handler, keep the grace window (racing the late ack, the Kotlin
    flow-back), revise ADR-004/012 and rename away from "SWIM", adjust the
    asymmetric-partition suite; then the OpenDoorApp pin bump. Closes
    [retire indirect probing](backlog/kt-retire-indirect-probing.md).
-8. **Digest scoping to shared groups** — the first of the two remaining
+9. **Digest scoping to shared groups** — the first of the two remaining
    performance items:
    [only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md).
-   Spec first (it needs an owner ruling before code); the biggest measured
-   waste left now that pacing shipped — the server's health line put a
-   number on it 2026-09-03: ~700 KB/min out to one phone in a lesson,
+   Spec first (it needs an owner ruling before code) — the spec can be
+   written while item 8 is built, since it needs the owner's ruling before
+   any code. The biggest measured waste by far: the 2026-09-15 meeting
+   confirmed 710 KB out per phone per minute across up to seven phones,
+   ~97 % digests (the 2026-09-03 tunnel number was ~700 KB/min for one phone,
    almost all 8 KB all-channel digests sent about once a second because
    presence heartbeats keep the pacer at its floor (plus group and account
    ids disclosed to unrelated peers). Both twins.
-9. **Wire-efficiency phase 2** — the second: recency suppression (skip the
+10. **Wire-efficiency phase 2** — the second: recency suppression (skip the
    round with a peer exchanged with moments ago — removes most of those
    per-second digests outright), dominance-filtered and request-scoped
    digest responses, the digest budgeter (same
    [item](backlog/kt-port-wire-efficiency.md) as phase 1).
-10. **Then** the [Dart minor-findings sweep](backlog/health-minor-findings-sweep.md)
+11. **Then** the [Dart minor-findings sweep](backlog/health-minor-findings-sweep.md)
     (two correctness latents), the
     [lifecycle batch follow-ups](backlog/kt-lifecycle-batch-follow-ups.md)
     with the [flaky timing tests](backlog/kt-load-flaky-timing-tests.md)
     first, and the smaller traffic items —
     [push scoping](backlog/engine-push-scoping.md) and
     [coalescing](backlog/engine-message-coalescing.md).
-11. **Flip the fleet to v2** — deliberately waiting (owner, 2026-09-02):
+12. **Flip the fleet to v2** — deliberately waiting (owner, 2026-09-02):
     wire playbook steps 6–7, no dev work; v1's payload encoding costs ~3×
     the bytes of v2's on payload-heavy deltas. The coverage wave is rolling
     (the 2026-09-02 fleet app release, OpenDoorApp 00ec1682 on pin 2d6c618,
     is v2-receive-capable and floor-reporting); the flip happens when the
-    owner judges coverage sufficient, independent of items 3–10.
+    owner judges coverage sufficient, independent of items 3–11.
 
 Kotlin work ships via opendoor-api submodule bumps — items 1 and 2 rode
-one bump (#17, deployed); item 3 rode #18 (v45); item 5 is the next bump,
-carrying item 4 alone; the payload-cap, get-or-create, and KT-E fixes ride
-the one after.
+one bump (#17, deployed); item 3 rode #18 (v45); item 5 is the next bump
+(opendoor-api PR #21), carrying item 4 alone; item 6 is a server-only
+release; the payload-cap, get-or-create, and KT-E fixes ride the bump after.
 Behind the list, the other parity-completeness items queue in the
 *Kotlin port* track (probe-selection's behavior half, sync-activity API,
 glossary, flow-backs, scenario sweep).
@@ -175,6 +187,15 @@ runtime behavior changes.
 - ☐ **Medium** — [Reshape the runtime trackers into honest domain objects](backlog/health-pure-runtime-trackers.md) · stateful "domain services" that hold a clock and mutate inside queries are a recorded smell (owner ruling 2026-09-01); once the stalled-range aggregate sets the pure pattern, bring the pending-pull tracker and its siblings in line
 - ☐ **Medium** — [Drop peer persistence from the Dart library](backlog/health-drop-peer-repository.md) · the library never reads it back (no restore path; findAll is documented as never called), the app never touches it, and the server already dropped its peers table — remove the interface, its write chain, and the constructor parameter, matching the Kotlin twin (owner ruling 2026-09-01)
 - ☐ **Medium** — [Adopt the Kotlin twin's recorded improvements into the Dart library](backlog/health-adopt-kt-flow-backs.md) · the divergence register's "kt better" rows finally get a home: dispatch/decode seam, block-in-place partition healing, congestion test knob, clock escape hatch, compaction facades, test-strength idioms, plus the five Dart-side reshapes the Kotlin purification surfaced (news flag into the timing policy, a loop-generation collaborator, named gap/push registries, the never-heard-from freshness guard) — adopt or exempt, row by row
+
+## Server
+
+The deployed server (opendoor-api) as a node of the mesh: defects and
+capabilities that live in its own repository but are sequenced by this
+program because the fleet's health depends on them.
+
+- ☐ **High** — [Stop the server from talking to a phone's dead session after it reconnects](backlog/server-session-ownership.md) · a reconnecting phone is unregistered by the old handler's cleanup; 267 sends to departed peers in the 2026-09-15 meeting, 193 from one phone that reconnected twelve times — registration token, unregister-if-mine, one two-sessions test; ships with the compaction fix
+- ☐ **High** — [Let the server prune presence while a meeting is running](backlog/server-compaction-under-load.md) · every 5-minute compaction tick failed for three hours on 2026-09-15 (Postgres serialization collision with heartbeat inserts; 23 failures, table 2,970 → 39,989 rows, recovered in one pass after the room emptied) and each failure also escaped as an uncaught worker-thread exception — row lock or backoff on the floor update, keep the failure inside the callback
 
 ## Kotlin port
 
