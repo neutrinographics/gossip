@@ -23,11 +23,11 @@ The pieces, roughly in the order they are worth doing:
   harness starts leaves a scheduling loop parked on the simulated clock.
   Harmless today, but one shared clock advance away from a background round
   landing in the middle of an assertion.
-- **Let the simulated clock refuse late sleepers.** After the clock is
-  closed, a new sleep on it parks forever; the clock's periodic timers
-  already refuse loudly in that state, and sleeps should match. A cancelled
-  sleep also leaves its bookkeeping entry behind, so the "how many sleepers"
-  gauge overcounts.
+- **Stop the simulated clock's sleeper gauge from overcounting.** A sleep
+  that is cancelled from outside leaves its bookkeeping entry behind, so
+  the "how many sleepers are parked" count the tests wait on can read high.
+  (A sleep requested after the clock is closed is already refused, since
+  the batch's second automated-review pass.)
 - **Pin the one ingestion gate no scenario can reach.** A paused node never
   asks for a digest, so nothing exercises the rule that it ignores a digest
   answer if one arrives anyway. A ten-line engine unit test covers it.
@@ -57,7 +57,9 @@ The pieces, roughly in the order they are worth doing:
   reviewer on the batch's pull request. Options: let a start call on a
   running node revive dead loops, surface loop health on the status
   snapshot, or document the restart as the recovery. Both twins, one
-  decision.
+  decision. The same item should decide whether a loop ended by shutdown
+  (its clock closed or its scope cancelled) should still report itself
+  as running, which it does today.
 
 ## Why it matters
 
