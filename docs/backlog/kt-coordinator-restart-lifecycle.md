@@ -68,6 +68,12 @@ Translating them is the proof the fix works.
 
 ## Related
 
+- **Done:** shipped in gossip-kt ea0d51c (PR #8, 2026-09-15) under the
+  [lifecycle rulings](../superpowers/specs/2026-09-01-receive-loop-lifecycle-rulings.md),
+  after a pre-execution [audit](../audits/2026-09-14-receive-loop-lifecycle-plan-audit.md);
+  the six acceptance scenarios are green. Deferred review findings:
+  [Tidy the loose ends the lifecycle batch left in the Kotlin library](kt-lifecycle-batch-follow-ups.md).
+
 - Recorded with the full mechanism and file-level evidence in the
   twin-divergence register:
   [Record where the Dart library and its Kotlin twin diverge, with a verdict](kt-normalize-twin-divergences.md).

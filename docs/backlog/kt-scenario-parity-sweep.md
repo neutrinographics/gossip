@@ -42,10 +42,9 @@ asserting no errors were reported. Where a translation is blocked by a real
 behavioural difference rather than a harness gap, that difference gets a row
 in the divergence register instead of a weakened test.
 
-Two groups are blocked rather than merely pending: the relay-based health
-scenarios cannot pass until the indirect-probing defect is fixed, and six
-restart, pause, and multi-cycle scenarios cannot pass until stopping a
-coordinator actually stops it.
+No group is blocked any more. The six restart, pause, and multi-cycle
+scenarios landed with the receive-loop lifecycle batch, and the relay-based
+health scenario pins behaviour that has been retired.
 
 ## Related
 
@@ -53,10 +52,13 @@ coordinator actually stops it.
   in the correctness-and-scenarios batch of
   [Teach both libraries to speak versioned wire formats](kt-wire-versioning-campaign.md).
 - Formerly blocked groups: the relay-reachability scenario is **obsolete** —
-  indirect probing is being retired on both sides
+  indirect probing is retired
   ([Retire indirect health probing from both libraries](kt-retire-indirect-probing.md)),
-  so that Dart test pins removed behavior and will not be translated. Still
-  blocked: the six lifecycle scenarios, on
+  so that Dart test pins removed behavior and will not be translated. The six
+  lifecycle scenarios were translated in gossip-kt ea0d51c by
   [Make stopping a Kotlin coordinator actually stop it](kt-coordinator-restart-lifecycle.md).
+  Two churn tests remain untranslated: "node rejoins with stale data and
+  syncs missing entries" and "sync after long offline period with many
+  missed entries" (Dart `churn_sync_test.dart`).
 - Test-strength differences found while translating are recorded in
   [Record where the Dart library and its Kotlin twin diverge, with a verdict](kt-normalize-twin-divergences.md).

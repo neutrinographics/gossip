@@ -118,3 +118,14 @@ record, not the other way around._
   monitor-guard step that would now fail `LockPlacementTest`, red tests
   that could never turn red, and a doc-truth task contradicting rulings 1
   and 3). All twelve rulings stand; the batch may start.
+- 2026-09-15: **shipped** — gossip-kt ea0d51c (PR #8, real merge of
+  `feature/receive-loop-lifecycle`, nine commits), suite 1046 → 1067. All
+  twelve rulings executed as written; none bent. Two invariants were added
+  beyond the rulings by the automated review passes on the PR: the engines'
+  running flags come up before the receive collector attaches (a frame
+  routed in the gap would be dropped by ruling 4's gates), and the simulated
+  clock refuses a delay requested after it closes. One consequence recorded
+  in the register: ruling 6's non-cancellable append-and-notify pair also
+  makes the merged-entries fold uninterruptible by `stop()`. Deferred minor
+  findings live on
+  [the follow-ups item](../../backlog/kt-lifecycle-batch-follow-ups.md).

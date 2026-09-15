@@ -58,7 +58,8 @@ explicit-zero handling is now a **normalization** (kt adopts Dart's
 construction-time zero-dropping; homed as KT-E scope in the
 [wire campaign register](backlog/kt-wire-versioning-campaign.md)), and kt
 **gains `resume()`** for API and vocabulary parity (folded into the
-receive-loop lifecycle batch's rulings).
+receive-loop lifecycle batch's rulings; shipped in gossip-kt ea0d51c,
+2026-09-15, with Dart's throwing preconditions).
 
 ## Open joint decisions
 

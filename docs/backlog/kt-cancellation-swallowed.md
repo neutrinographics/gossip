@@ -51,6 +51,11 @@ that work is better than doing it in isolation.
 
 ## Related
 
+- **Done:** shipped inside the lifecycle batch, gossip-kt ea0d51c (PR #8,
+  2026-09-15): five carve-outs, the append-and-notify pair made
+  non-cancellable, and the simulated clock cancelling parked and late
+  delays on close.
+
 - Best done with, or as part of,
   [Make stopping a Kotlin coordinator actually stop it](kt-coordinator-restart-lifecycle.md),
   which restructures several of the same call sites.

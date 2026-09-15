@@ -47,6 +47,12 @@ already pin for the no-relay case.
 
 ## Related
 
+- **Kotlin half done:** gossip-kt ea0d51c (PR #8, 2026-09-15) — relay
+  handler counts and ignores, the indirect phase became a grace window that
+  races the late answer, the sender guard is ported, the message type still
+  decodes and its encoder stays for the wire fixtures. The Dart half is what
+  remains on this item.
+
 - The ruling and full rationale: [decision record](../superpowers/specs/2026-09-01-swim-slimdown-decision.md).
 - The Kotlin batch that absorbs the kt-side removal:
   [rulings page](../superpowers/specs/2026-09-01-receive-loop-lifecycle-rulings.md)
