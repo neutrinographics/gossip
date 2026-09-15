@@ -7,7 +7,7 @@ never in a backlog file.
 - **Status:** ☐ not started · ◐ in progress · ☑ done
 - **Priority:** High · Medium · Low · Launch (gated to before public exposure)
 
-## Current focus — deployed-fleet performance and stability (order set 2026-09-02)
+## Current focus — deployed-fleet performance and stability (order set 2026-09-02, re-ordered 2026-09-15)
 
 The campaign's aim right now is making the *deployed* server and phone fleet
 faster and more stable, and the historical enemy is unnecessary wire
@@ -41,45 +41,70 @@ purification batch merged):
    still-open post-deploy observables check for the 2026-09-02 release
    (idle gossip log volume, stalled-range loop gone) against the
    live-validation numbers above.
-4. **Stability hardening batch (Kotlin)** — **merged 2026-09-15 as gossip-kt ea0d51c** (PR #8, real merge, nine commits, suite 1046 → 1067, three Codex passes; next step is the opendoor-api submodule bump below). Cleared to start 2026-09-14:
-   the [lifecycle rulings](superpowers/specs/2026-09-01-receive-loop-lifecycle-rulings.md)
+4. **Stability hardening batch (Kotlin)** — **merged 2026-09-15 as
+   gossip-kt ea0d51c** (PR #8, real merge, nine commits, suite 1046 → 1067,
+   three Codex passes). Cleared to start 2026-09-14: the
+   [lifecycle rulings](superpowers/specs/2026-09-01-receive-loop-lifecycle-rulings.md)
    were audited and re-ruled (rulings 9–12), the plan re-baselined on
    gossip-kt 83ec65a, and the owner ruled Kotlin goes first on the relay
-   retirement (the Dart half follows as its own work on the same item):
+   retirement. Shipped: the Kotlin half of
    [retire indirect probing](backlog/kt-retire-indirect-probing.md) (removes
    the server's 500 ms receive-loop stalls) + the
    [coordinator lifecycle fix](backlog/kt-coordinator-restart-lifecycle.md)
    (a stopped node keeps merging; restarts stack listeners into
    duplicate-write failures) + [cancellation](backlog/kt-cancellation-swallowed.md),
-   one batch. The same submodule bump carries the two small High fixes:
-   the [payload cap](backlog/kt-payload-size-cap.md) (the server can create
-   entries the fleet can never carry) and
-   [get-or-create stream access](backlog/kt-get-or-create-stream.md), plus
-   KT-E's entry-ordering fix. Its own release, with before-and-after numbers.
-5. **Design the next traffic win, in parallel with 4** —
-   [digest scoping to shared groups](backlog/engine-scope-digests-to-shared-groups.md):
-   spec first (it needs an owner ruling before code); the biggest measured
-   waste left now that pacing shipped — the server's new health line put a
+   one batch.
+5. **Deploy the Kotlin side** — the opendoor-api submodule bump to
+   gossip-kt ea0d51c, **on its own** (owner, 2026-09-15): the
+   [payload cap](backlog/kt-payload-size-cap.md),
+   [get-or-create stream access](backlog/kt-get-or-create-stream.md), and
+   KT-E's entry-ordering fix move to a later bump so this release has one
+   suspect. Live-device validated through the ngrok runbook before the
+   Heroku release.
+6. **Measure** — a real lesson on that release, read through the server's
+   health and merge lines: bytes per minute per phone idle and in-lesson,
+   merge timing now that the relay stalls are gone, the stalled-range loop
+   absent. These numbers are the baseline items 8 and 9 are judged against,
+   and they close the still-open post-deploy observables check from the
+   2026-09-02 release.
+7. **Finish the Dart half of the relay retirement** — spec first (a rulings
+   page for the owner), then the batch: remove the indirect phase and the
+   relay handler, keep the grace window (racing the late ack, the Kotlin
+   flow-back), revise ADR-004/012 and rename away from "SWIM", adjust the
+   asymmetric-partition suite; then the OpenDoorApp pin bump. Closes
+   [retire indirect probing](backlog/kt-retire-indirect-probing.md).
+8. **Digest scoping to shared groups** — the first of the two remaining
+   performance items:
+   [only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md).
+   Spec first (it needs an owner ruling before code); the biggest measured
+   waste left now that pacing shipped — the server's health line put a
    number on it 2026-09-03: ~700 KB/min out to one phone in a lesson,
    almost all 8 KB all-channel digests sent about once a second because
    presence heartbeats keep the pacer at its floor (plus group and account
    ids disclosed to unrelated peers). Both twins.
-6. **Wire-efficiency phase 2** — recency suppression, dominance-filtered
-   and request-scoped digest responses, the digest budgeter (same
+9. **Wire-efficiency phase 2** — the second: recency suppression (skip the
+   round with a peer exchanged with moments ago — removes most of those
+   per-second digests outright), dominance-filtered and request-scoped
+   digest responses, the digest budgeter (same
    [item](backlog/kt-port-wire-efficiency.md) as phase 1).
-7. **Then** the [Dart minor-findings sweep](backlog/health-minor-findings-sweep.md)
-   (two correctness latents), and the smaller traffic items —
-   [push scoping](backlog/engine-push-scoping.md) and
-   [coalescing](backlog/engine-message-coalescing.md).
-8. **Flip the fleet to v2** — deliberately waiting (owner, 2026-09-02):
-   wire playbook steps 6–7, no dev work; v1's payload encoding costs ~3×
-   the bytes of v2's on payload-heavy deltas. The coverage wave is rolling
-   (the 2026-09-02 fleet app release, OpenDoorApp 00ec1682 on pin 2d6c618,
-   is v2-receive-capable and floor-reporting); the flip happens when the
-   owner judges coverage sufficient, independent of items 3–7.
+10. **Then** the [Dart minor-findings sweep](backlog/health-minor-findings-sweep.md)
+    (two correctness latents), the
+    [lifecycle batch follow-ups](backlog/kt-lifecycle-batch-follow-ups.md)
+    with the [flaky timing tests](backlog/kt-load-flaky-timing-tests.md)
+    first, and the smaller traffic items —
+    [push scoping](backlog/engine-push-scoping.md) and
+    [coalescing](backlog/engine-message-coalescing.md).
+11. **Flip the fleet to v2** — deliberately waiting (owner, 2026-09-02):
+    wire playbook steps 6–7, no dev work; v1's payload encoding costs ~3×
+    the bytes of v2's on payload-heavy deltas. The coverage wave is rolling
+    (the 2026-09-02 fleet app release, OpenDoorApp 00ec1682 on pin 2d6c618,
+    is v2-receive-capable and floor-reporting); the flip happens when the
+    owner judges coverage sufficient, independent of items 3–10.
 
 Kotlin work ships via opendoor-api submodule bumps — items 1 and 2 rode
-one bump (#17, deployed); item 3 is the next bump; item 4 is the one after.
+one bump (#17, deployed); item 3 rode #18 (v45); item 5 is the next bump,
+carrying item 4 alone; the payload-cap, get-or-create, and KT-E fixes ride
+the one after.
 Behind the list, the other parity-completeness items queue in the
 *Kotlin port* track (probe-selection's behavior half, sync-activity API,
 glossary, flow-backs, scenario sweep).
