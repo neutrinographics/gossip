@@ -38,6 +38,8 @@ runbook.
 
 ## Related
 
+- Design and rulings (for the owner's review): opendoor-api
+  `docs/superpowers/specs/2026-09-15-meeting-server-fixes-design.md`.
 - Measured in [the 2026-09-15 meeting report](../audits/2026-09-15-production-meeting-measurement.md), finding F2.
 - The library-side counterpart of stopping cleanly shipped in the
   receive-loop lifecycle batch:

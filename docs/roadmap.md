@@ -55,8 +55,10 @@ purification batch merged):
    (a stopped node keeps merging; restarts stack listeners into
    duplicate-write failures) + [cancellation](backlog/kt-cancellation-swallowed.md),
    one batch.
-5. **Deploy the Kotlin side** — the opendoor-api submodule bump to
-   gossip-kt ea0d51c, **on its own** (owner, 2026-09-15): the
+5. ☑ **Deploy the Kotlin side** — **done 2026-09-15**: opendoor-api PR #21
+   merged (real merge, 4b1cda7) and released as Heroku v47 at 21:59
+   local; the health line is clean since. The bump went out **on its
+   own** (owner, 2026-09-15): the
    [payload cap](backlog/kt-payload-size-cap.md),
    [get-or-create stream access](backlog/kt-get-or-create-stream.md), and
    KT-E's entry-ordering fix move to a later bump so this release has one
@@ -68,7 +70,11 @@ purification batch merged):
    sends to departed peers in one meeting) and
    [compaction under load](backlog/server-compaction-under-load.md) (every
    tick failed for three hours), live-device validated through the tunnel
-   runbook, its own Heroku release.
+   runbook, its own Heroku release. **Design and rulings written
+   2026-09-15**, awaiting the owner's review before any code:
+   opendoor-api `docs/superpowers/specs/2026-09-15-meeting-server-fixes-design.md`
+   (nine rulings; the one scope decision is whether the transaction
+   primitive is replaced server-wide or only in the entry repository).
 7. **Measure** — the next real meeting on those releases, read through the
    health and merge lines. The **baseline exists**:
    [the 2026-09-15 meeting report](audits/2026-09-15-production-meeting-measurement.md)
@@ -194,8 +200,8 @@ The deployed server (opendoor-api) as a node of the mesh: defects and
 capabilities that live in its own repository but are sequenced by this
 program because the fleet's health depends on them.
 
-- ☐ **High** — [Stop the server from talking to a phone's dead session after it reconnects](backlog/server-session-ownership.md) · a reconnecting phone is unregistered by the old handler's cleanup; 267 sends to departed peers in the 2026-09-15 meeting, 193 from one phone that reconnected twelve times — registration token, unregister-if-mine, one two-sessions test; ships with the compaction fix
-- ☐ **High** — [Let the server prune presence while a meeting is running](backlog/server-compaction-under-load.md) · every 5-minute compaction tick failed for three hours on 2026-09-15 (Postgres serialization collision with heartbeat inserts; 23 failures, table 2,970 → 39,989 rows, recovered in one pass after the room emptied) and each failure also escaped as an uncaught worker-thread exception — row lock or backoff on the floor update, keep the failure inside the callback
+- ☐ **High** — [Stop the server from talking to a phone's dead session after it reconnects](backlog/server-session-ownership.md) · a reconnecting phone is unregistered by the old handler's cleanup; 267 sends to departed peers in the 2026-09-15 meeting, 193 from one phone that reconnected twelve times — the registered session is the owner, unregister-if-mine, register displaces, one two-sessions test; ships with the compaction fix (design written 2026-09-15, awaiting review)
+- ☐ **High** — [Let the server prune presence while a meeting is running](backlog/server-compaction-under-load.md) · every 5-minute compaction tick failed for three hours on 2026-09-15 (Postgres serialization collision with heartbeat inserts; 23 failures, table 2,970 → 39,989 rows, recovered in one pass after the room emptied) and each failure also escaped as an uncaught worker-thread exception — read-committed floor update, one delete per author, a transaction primitive that cannot cancel its caller (design written 2026-09-15, awaiting review)
 
 ## Kotlin port
 

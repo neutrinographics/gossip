@@ -38,6 +38,8 @@ completes. Ship with
 
 ## Related
 
+- Design and rulings (for the owner's review): opendoor-api
+  `docs/superpowers/specs/2026-09-15-meeting-server-fixes-design.md`.
 - Measured in [the 2026-09-15 meeting report](../audits/2026-09-15-production-meeting-measurement.md), finding F1.
 - The retention window and its adaptation were introduced by the
   compaction rollout (opendoor-api PR #16, 2026-08-31); this is its first
