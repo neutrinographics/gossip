@@ -70,11 +70,15 @@ purification batch merged):
    sends to departed peers in one meeting) and
    [compaction under load](backlog/server-compaction-under-load.md) (every
    tick failed for three hours), live-device validated through the tunnel
-   runbook, its own Heroku release. **Design and rulings written
-   2026-09-15**, awaiting the owner's review before any code:
-   opendoor-api `docs/superpowers/specs/2026-09-15-meeting-server-fixes-design.md`
-   (nine rulings; the one scope decision is whether the transaction
-   primitive is replaced server-wide or only in the entry repository).
+   runbook, its own Heroku release. **Implemented and live-device
+   validated 2026-09-16** (opendoor-api branch `feature/meeting-server-fixes`,
+   pull request open; spec
+   `docs/superpowers/specs/2026-09-15-meeting-server-fixes-design.md`, nine
+   rulings approved 2026-09-15; suite 264 → 289): compaction succeeded on
+   five ticks under two heartbeating phones, and a reconnect over a
+   half-open socket left zero dead-session sends with the old handler
+   ending within a millisecond. Awaiting the owner's real merge and the
+   Heroku release.
 7. **Measure** — the next real meeting on those releases, read through the
    health and merge lines. The **baseline exists**:
    [the 2026-09-15 meeting report](audits/2026-09-15-production-meeting-measurement.md)
@@ -200,8 +204,8 @@ The deployed server (opendoor-api) as a node of the mesh: defects and
 capabilities that live in its own repository but are sequenced by this
 program because the fleet's health depends on them.
 
-- ☐ **High** — [Stop the server from talking to a phone's dead session after it reconnects](backlog/server-session-ownership.md) · a reconnecting phone is unregistered by the old handler's cleanup; 267 sends to departed peers in the 2026-09-15 meeting, 193 from one phone that reconnected twelve times — the registered session is the owner, unregister-if-mine, register displaces, one two-sessions test; ships with the compaction fix (design written 2026-09-15, awaiting review)
-- ☐ **High** — [Let the server prune presence while a meeting is running](backlog/server-compaction-under-load.md) · every 5-minute compaction tick failed for three hours on 2026-09-15 (Postgres serialization collision with heartbeat inserts; 23 failures, table 2,970 → 39,989 rows, recovered in one pass after the room emptied) and each failure also escaped as an uncaught worker-thread exception — read-committed floor update, one delete per author, a transaction primitive that cannot cancel its caller (design written 2026-09-15, awaiting review)
+- ☐ **High** — [Stop the server from talking to a phone's dead session after it reconnects](backlog/server-session-ownership.md) · a reconnecting phone is unregistered by the old handler's cleanup; 267 sends to departed peers in the 2026-09-15 meeting, 193 from one phone that reconnected twelve times — the registered session is the owner, unregister-if-mine, register displaces, one two-sessions test; ships with the compaction fix (implemented, PR open 2026-09-16)
+- ☐ **High** — [Let the server prune presence while a meeting is running](backlog/server-compaction-under-load.md) · every 5-minute compaction tick failed for three hours on 2026-09-15 (Postgres serialization collision with heartbeat inserts; 23 failures, table 2,970 → 39,989 rows, recovered in one pass after the room emptied) and each failure also escaped as an uncaught worker-thread exception — read-committed floor update, one delete per author, a transaction primitive that cannot cancel its caller (implemented, PR open 2026-09-16)
 - ☐ **Medium** — [Stop the server reading a whole stream to answer a per-author question](backlog/server-entry-repository-full-stream-reads.md) · the batch append and the entries-since query each load the entire stream and filter in memory, ~150 times a minute in a meeting; push the predicates into SQL, and bound the transaction helper's IO dispatcher while there (final review of the meeting-fixes PR, 2026-09-16)
 
 ## Kotlin port
