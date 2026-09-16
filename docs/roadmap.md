@@ -80,7 +80,15 @@ purification batch merged):
    ending within a millisecond. Awaiting the owner's real merge and the
    Heroku release.
 7. **Measure** — the next real meeting on those releases, read through the
-   health and merge lines. The **baseline exists**:
+   health and merge lines. **A second before-picture exists**: the last
+   meeting of 2026-09-16 on v47, read from the Papertrail archive after a
+   group reported the app going haywire near the end
+   ([incident report](audits/2026-09-16-last-meeting-incident.md)): one
+   phone deaf for 63 minutes, forty failed compaction ticks, a
+   reconnect storm across seven phones in the final ten minutes; both v48
+   fixes are sufficient to explain it. Watch for on v48: zero deaf-phone
+   runs, a flat stored-entry count, and the socket-lifetime distribution
+   (median 109 s on that network). The **baseline exists**:
    [the 2026-09-15 meeting report](audits/2026-09-15-production-meeting-measurement.md)
    measured release v46 under up to seven phones — 710 KB out per phone per
    minute in a meeting, ~97 % of it digests, 450 MB out over three hours,
