@@ -175,6 +175,7 @@ detection. Seeded from the deferred follow-ups of the 2026-07 audits
 - ☐ **Low** — [Piggyback sync summaries on liveness probes](backlog/engine-digest-on-probe-piggyback.md) · one radio wakeup serves both loops; crosses the PeerDirectory seam with an opaque payload (WIRE4-19)
 - ☐ **Low** — [Make Bluetooth advertising transmit power configurable](backlog/engine-ble-advertise-tx-power.md) · bluey hardcodes HIGH; add the knob upstream then plumb an owned enum like AdvertiseMode
 - ☐ **Medium** — [Let transports declare their frame ceiling instead of the core assuming one](backlog/engine-transport-frame-capability.md) · optional maxFrameBytes capability on MessagePort (null = unbounded); core keeps maxMessageBytes as the mesh-wide contract but validates it against the local port and errors loudly on conflict
+- ☐ **Medium** — [Reconnect the transport when a peer stops answering gossip while the link stays up](backlog/engine-reconnect-on-silent-peer.md) · a phone received nothing from the server for 63 minutes on 2026-09-16 while its socket answered keepalives; its own probes had gone unanswered the whole time — surface the detector's prolonged-unreachable verdict to the app so the server transport reconnects after a minute or two; defense in depth behind the v48 server fix, best taken after the Dart half of the relay retirement (owner, 2026-09-16)
 
 ## Testing
 
