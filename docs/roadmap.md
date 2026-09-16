@@ -104,41 +104,48 @@ purification batch merged):
    flow-back), revise ADR-004/012 and rename away from "SWIM", adjust the
    asymmetric-partition suite; then the OpenDoorApp pin bump. Closes
    [retire indirect probing](backlog/kt-retire-indirect-probing.md).
-9. **Digest scoping to shared groups** — the first of the two remaining
+9. **The next Kotlin bump** (owner, 2026-09-16): the
+   [payload size cap](backlog/kt-payload-size-cap.md),
+   [get-or-create stream access](backlog/kt-get-or-create-stream.md), and
+   KT-E's entry-ordering fix, held back from v47 so that release had one
+   suspect. Both twins move together once the Dart half lands, so this
+   rides right after item 8, as its own opendoor-api bump, live-device
+   validated.
+10. **Digest scoping to shared groups** — the first of the two remaining
    performance items:
    [only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md).
    Spec first (it needs an owner ruling before code) — the spec can be
-   written while item 8 is built, since it needs the owner's ruling before
-   any code. The biggest measured waste by far: the 2026-09-15 meeting
+   written while items 8 and 9 are built, since it needs the owner's ruling
+   before any code. The biggest measured waste by far: the 2026-09-15 meeting
    confirmed 710 KB out per phone per minute across up to seven phones,
    ~97 % digests (the 2026-09-03 tunnel number was ~700 KB/min for one phone,
    almost all 8 KB all-channel digests sent about once a second because
    presence heartbeats keep the pacer at its floor (plus group and account
    ids disclosed to unrelated peers). Both twins.
-10. **Wire-efficiency phase 2** — the second: recency suppression (skip the
+11. **Wire-efficiency phase 2** — the second: recency suppression (skip the
    round with a peer exchanged with moments ago — removes most of those
    per-second digests outright), dominance-filtered and request-scoped
    digest responses, the digest budgeter (same
    [item](backlog/kt-port-wire-efficiency.md) as phase 1).
-11. **Then** the [Dart minor-findings sweep](backlog/health-minor-findings-sweep.md)
+12. **Then** the [Dart minor-findings sweep](backlog/health-minor-findings-sweep.md)
     (two correctness latents), the
     [lifecycle batch follow-ups](backlog/kt-lifecycle-batch-follow-ups.md)
     with the [flaky timing tests](backlog/kt-load-flaky-timing-tests.md)
     first, and the smaller traffic items —
     [push scoping](backlog/engine-push-scoping.md) and
     [coalescing](backlog/engine-message-coalescing.md).
-12. **Flip the fleet to v2** — deliberately waiting (owner, 2026-09-02):
+13. **Flip the fleet to v2** — deliberately waiting (owner, 2026-09-02):
     wire playbook steps 6–7, no dev work; v1's payload encoding costs ~3×
     the bytes of v2's on payload-heavy deltas. The coverage wave is rolling
     (the 2026-09-02 fleet app release, OpenDoorApp 00ec1682 on pin 2d6c618,
     is v2-receive-capable and floor-reporting); the flip happens when the
-    owner judges coverage sufficient, independent of items 3–11.
+    owner judges coverage sufficient, independent of items 3–12.
 
 Kotlin work ships via opendoor-api submodule bumps — items 1 and 2 rode
 one bump (#17, deployed); item 3 rode #18 (v45); item 5 rode #21 (v47),
 carrying item 4 alone; item 6 was a server-only release (#22, v48). The
 payload-cap, get-or-create, and KT-E fixes ride the next Kotlin bump,
-which has no slot in the list above yet (see the Kotlin port track).
+item 9.
 Behind the list, the other parity-completeness items queue in the
 *Kotlin port* track (probe-selection's behavior half, sync-activity API,
 glossary, flow-backs, scenario sweep).
@@ -201,7 +208,7 @@ Internal structure, documentation honesty, and audit-hygiene work — no
 runtime behavior changes.
 
 - ☑ **Medium** — [Realign the module layout and make the architecture scream](backlog/health-architecture-alignment.md) · concept-first bounded contexts (shared/sync/membership/coordinator) with a machine-checked boundary — part 1 shipped in 202bf6d..00420fc, part 2 shipped in 4024678..544efe8
-- ☐ **High** — [Sweep the remaining minor audit findings](backlog/health-minor-findings-sweep.md) · two correctness latents (unbudgeted sync-request size, uncopied payload buffers) + transport minors + hygiene
+- ☐ **Medium** — [Sweep the remaining minor audit findings](backlog/health-minor-findings-sweep.md) · two correctness latents (unbudgeted sync-request size, uncopied payload buffers) + transport minors + hygiene — Medium since 2026-09-16: sequenced behind the digest work in the current focus (owner)
 - ☑ **High** — [Make the code read cleanly without its comment overlay](backlog/health-comment-hygiene.md) · strip audit-ID citations (substance inlined), delete history comments, extract commented paragraphs into named functions, retire banner dividers · shipped 2026-08-28, see the audit record's campaign-close section
 - ☐ **Medium** — [Carry stack traces with reported errors](backlog/health-error-stack-traces.md) · SyncError has no stackTrace field, so live-path traces evaporate at the error boundary; add the field (additive) or route live errors through onLog
 - ☐ **Low** — [Converge the transports' MessagePort close() semantics](backlog/health-transport-port-close-semantics.md) · nearby gates its own view only, bluey's close() tears down the whole connection layer — converge on port-gates-itself, facade owns teardown
