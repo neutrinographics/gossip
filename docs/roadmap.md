@@ -11,8 +11,9 @@ never in a backlog file.
 
 The campaign's aim right now is making the *deployed* server and phone fleet
 faster and more stable, and the historical enemy is unnecessary wire
-traffic. Stability work goes before performance work because the server
-side has two known defects that outweigh any remaining inefficiency. Work
+traffic. Stability work went before performance work because the server
+side had two known defects that outweighed any remaining inefficiency;
+both shipped in v48 on 2026-09-16, so performance is next. Work
 proceeds in this order (owner-set; rationale for the original ordering in
 the [retirement decision record](superpowers/specs/2026-09-01-swim-slimdown-decision.md)'s
 review outcome and the parity program; re-ordered 2026-09-02 after the
@@ -36,12 +37,10 @@ purification batch merged):
    PR #20) followed as v46 on 2026-09-12. The opendoor-api submodule moved to
    gossip-kt 26e5e24
    ([domain purification](backlog/kt-pure-domain-concurrency.md),
-   behavior-preserving; no server adaptation needed) and release it on its
-   own, so the refactor soaks before behavior changes land on top of it and
-   any post-deploy oddity has one suspect. Use that release to close the
-   still-open post-deploy observables check for the 2026-09-02 release
-   (idle gossip log volume, stalled-range loop gone) against the
-   live-validation numbers above.
+   behavior-preserving; no server adaptation needed), released on its own
+   so the refactor soaked before behavior changes landed on top of it. The
+   post-deploy observables check for the 2026-09-02 release was closed by
+   the 2026-09-15 measurement (idle gossip at 30 s, no stalled-range loop).
 4. **Stability hardening batch (Kotlin)** — **merged 2026-09-15 as
    gossip-kt ea0d51c** (PR #8, real merge, nine commits, suite 1046 → 1067,
    three Codex passes). Cleared to start 2026-09-14: the
@@ -73,8 +72,7 @@ purification batch merged):
    [compaction under load](backlog/server-compaction-under-load.md) (every
    tick failed for three hours), live-device validated through the tunnel
    runbook, its own Heroku release. **Implemented and live-device
-   validated 2026-09-16** (opendoor-api branch `feature/meeting-server-fixes`,
-   pull request open; spec
+   validated 2026-09-16** (opendoor-api PR #22; spec
    `docs/superpowers/specs/2026-09-15-meeting-server-fixes-design.md`, nine
    rulings approved 2026-09-15; suite 264 → 289): compaction succeeded on
    five ticks under two heartbeating phones, and a reconnect over a
@@ -91,7 +89,9 @@ purification batch merged):
    reconnect storm across seven phones in the final ten minutes; both v48
    fixes are sufficient to explain it. Watch for on v48: zero deaf-phone
    runs, a flat stored-entry count, and the socket-lifetime distribution
-   (median 109 s on that network). The **baseline exists**:
+   (median 109 s on that network); also whether the half-second presence
+   flicker seen through the tunnel on 2026-09-16 (the app's 6 s freshness
+   bound against two gossip hops) shows on production. The **baseline exists**:
    [the 2026-09-15 meeting report](audits/2026-09-15-production-meeting-measurement.md)
    measured release v46 under up to seven phones — 710 KB out per phone per
    minute in a meeting, ~97 % of it digests, 450 MB out over three hours,
@@ -135,9 +135,10 @@ purification batch merged):
     owner judges coverage sufficient, independent of items 3–11.
 
 Kotlin work ships via opendoor-api submodule bumps — items 1 and 2 rode
-one bump (#17, deployed); item 3 rode #18 (v45); item 5 is the next bump
-(opendoor-api PR #21), carrying item 4 alone; item 6 is a server-only
-release; the payload-cap, get-or-create, and KT-E fixes ride the bump after.
+one bump (#17, deployed); item 3 rode #18 (v45); item 5 rode #21 (v47),
+carrying item 4 alone; item 6 was a server-only release (#22, v48). The
+payload-cap, get-or-create, and KT-E fixes ride the next Kotlin bump,
+which has no slot in the list above yet (see the Kotlin port track).
 Behind the list, the other parity-completeness items queue in the
 *Kotlin port* track (probe-selection's behavior half, sync-activity API,
 glossary, flow-backs, scenario sweep).
@@ -171,7 +172,7 @@ detection. Seeded from the deferred follow-ups of the 2026-07 audits
 - ☐ **Low** — [Revisit the failure-detection sensitivity thresholds](backlog/engine-swim-threshold-tuning.md) · measure and possibly tighten the 5/15 consecutive-miss thresholds now that fair-rotation probing and adaptive timeouts are in place — and re-measure once indirect checks are retired, since the thresholds were set with them
 - ☐ **Low** — [Best-effort pre-connect identity hash in the Android advertisement](backlog/engine-preconnect-adv-hash.md) · skip initiating a losing mutual connect on Android↔Android pairs; post-connect tie-break stays the backstop
 - ☐ **Medium** — [Send reactive pushes only to peers that share the data](backlog/engine-push-scoping.md) · scope push fan-out by channel membership + congestion-gate pushes and request bursts (2026-08 audit R6)
-- ☐ **Medium** — [Only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md) · digests advertise every channel a node holds, including its own user channel; measured on a mixed Android/iOS pair as 19 unusable channel ids × 22 rounds (~6.4 KB/exchange) — wasted airtime, log noise, and group/account ids disclosed to unrelated peers
+- ☐ **Medium** — [Only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md) · digests advertise every channel a node holds, including its own user channel; measured on a mixed Android/iOS pair as 19 unusable channel ids × 22 rounds (~6.4 KB/exchange), and in the 2026-09-15 meeting as ~97 % of 710 KB out per phone per minute — wasted airtime, log noise, and group/account ids disclosed to unrelated peers
 - ☐ **Medium** — [Coalesce wire traffic into fewer radio wakeups](backlog/engine-message-coalescing.md) · SRTT-scaled debounce, batched deltas, push-pull completion, transport hold window (2026-08 audit R7)
 - ☑ **High** — [Suppress pulling an author's range a peer has already failed to supply](backlog/engine-stalled-range-request-backoff.md) · per-author suppression with doubling re-probe backoff, per the [approved spec](superpowers/specs/2026-08-31-stalled-range-suppression-design.md) (pure-DDD shape: `StalledRangeRegistry` aggregate, strict command/query split) — merged 2026-09-01 as 7ebd076 (#15); the Kotlin port is in production since 2026-09-02. NOT the cause of the 2026-08-31 R14 incident: that was an uncapped JVM heap, and the loop ran 16 more times after that fix with no memory pressure
 - ☐ **Low** — [Shrink version vectors on the wire with an author-index table](backlog/engine-author-index-wire-format.md) · wire-format change, both ends (2026-08 audit R8)
