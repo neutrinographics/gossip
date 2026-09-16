@@ -64,7 +64,9 @@ purification batch merged):
    KT-E's entry-ordering fix move to a later bump so this release has one
    suspect. Live-device validated through the ngrok runbook before the
    Heroku release.
-6. **Server fixes from the meeting** (owner, 2026-09-15: the meeting's
+6. ☑ **Server fixes from the meeting** — **done 2026-09-16**: opendoor-api
+   PR #22 merged (real merge, 94d1f8e) and released as Heroku v48 at 20:15
+   local. (Owner, 2026-09-15: the meeting's
    findings go before everything else): one opendoor-api pull request
    carrying [session ownership](backlog/server-session-ownership.md) (267
    sends to departed peers in one meeting) and
@@ -77,8 +79,9 @@ purification batch merged):
    rulings approved 2026-09-15; suite 264 → 289): compaction succeeded on
    five ticks under two heartbeating phones, and a reconnect over a
    half-open socket left zero dead-session sends with the old handler
-   ending within a millisecond. Awaiting the owner's real merge and the
-   Heroku release.
+   ending within a millisecond. The same afternoon's last meeting, read
+   after the fact, showed both defects at full strength
+   ([incident report](audits/2026-09-16-last-meeting-incident.md)).
 7. **Measure** — the next real meeting on those releases, read through the
    health and merge lines. **A second before-picture exists**: the last
    meeting of 2026-09-16 on v47, read from the Papertrail archive after a
@@ -213,8 +216,8 @@ The deployed server (opendoor-api) as a node of the mesh: defects and
 capabilities that live in its own repository but are sequenced by this
 program because the fleet's health depends on them.
 
-- ☐ **High** — [Stop the server from talking to a phone's dead session after it reconnects](backlog/server-session-ownership.md) · a reconnecting phone is unregistered by the old handler's cleanup; 267 sends to departed peers in the 2026-09-15 meeting, 193 from one phone that reconnected twelve times — the registered session is the owner, unregister-if-mine, register displaces, one two-sessions test; ships with the compaction fix (implemented, PR open 2026-09-16)
-- ☐ **High** — [Let the server prune presence while a meeting is running](backlog/server-compaction-under-load.md) · every 5-minute compaction tick failed for three hours on 2026-09-15 (Postgres serialization collision with heartbeat inserts; 23 failures, table 2,970 → 39,989 rows, recovered in one pass after the room emptied) and each failure also escaped as an uncaught worker-thread exception — read-committed floor update, one delete per author, a transaction primitive that cannot cancel its caller (implemented, PR open 2026-09-16)
+- ☑ **High** — [Stop the server from talking to a phone's dead session after it reconnects](backlog/server-session-ownership.md) · a reconnecting phone is unregistered by the old handler's cleanup; 267 sends to departed peers in the 2026-09-15 meeting, 193 from one phone that reconnected twelve times — the registered session is the owner, unregister-if-mine, register displaces, one two-sessions test; ships with the compaction fix (shipped in v48, 2026-09-16)
+- ☑ **High** — [Let the server prune presence while a meeting is running](backlog/server-compaction-under-load.md) · every 5-minute compaction tick failed for three hours on 2026-09-15 (Postgres serialization collision with heartbeat inserts; 23 failures, table 2,970 → 39,989 rows, recovered in one pass after the room emptied) and each failure also escaped as an uncaught worker-thread exception — read-committed floor update, one delete per author, a transaction primitive that cannot cancel its caller (shipped in v48, 2026-09-16)
 - ☐ **Medium** — [Stop the server reading a whole stream to answer a per-author question](backlog/server-entry-repository-full-stream-reads.md) · the batch append and the entries-since query each load the entire stream and filter in memory, ~150 times a minute in a meeting; push the predicates into SQL, and bound the transaction helper's IO dispatcher while there (final review of the meeting-fixes PR, 2026-09-16)
 
 ## Kotlin port
