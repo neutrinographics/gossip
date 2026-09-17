@@ -37,6 +37,21 @@ or two, so a slow round trip or a brief network stall never causes a
 reconnect. Do not make the library reconnect anything itself; it does not
 own transports. The Bluetooth transports may want the same hook later.
 
+## The server's side of the same question: the keepalive timeout
+
+The server closes a phone's socket when the phone has not answered a
+keepalive ping for 30 s (pinged every 15 s). In the first meeting on
+release v48 (2026-09-17) eight sockets ended that way, all on two phones
+that looked like phones with poor radio; on v47 the day before it was
+thirty. During those 30 s the server keeps gossiping into a socket nobody
+reads. A shorter timeout would notice a sleeping phone sooner but cut
+phones that merely stalled for a moment; a longer one keeps a stalled
+phone connected but sends into a void for longer. On the 2026-09-17
+evidence the timeout is not worth retuning. The better move, when this
+item lands, is the mirror of it on the server: stop choosing a peer for
+gossip once its keepalive has gone unanswered, since the server already
+knows that from the socket layer before the failure detector does.
+
 ## Related
 
 - Evidence: [the 2026-09-16 incident report](../audits/2026-09-16-last-meeting-incident.md), finding 1.
