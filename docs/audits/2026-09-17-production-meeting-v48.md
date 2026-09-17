@@ -96,17 +96,30 @@ digest-scoping item:** its number to beat is now about 300 KB per phone
 per minute, and the digest share should be re-measured through the tunnel
 against a v48 server before that spec sizes its win.
 
-## Finding 4: eleven seconds of sends to a removed peer (observation, gossip-kt)
+## Finding 4: eleven seconds of inbound backlog at peak load (observation, gossip-kt)
 
 Node `f2eb93c4` disconnected at 09:06:59 local and its peer was removed in
-the same second, yet the server tried to send to it twelve more times
-between 09:07:01 and 09:07:10, once a gossip round, each one skipped with a
-"PeerOperationSkipped" event. The phone reconnected at 09:07:41 and lost
-nothing a reconnect catch-up does not fetch. The other 25 warnings
-stopped within a second of the disconnect, so this one case shows the
-engine can keep selecting a removed peer for several rounds. It is not a
-meeting-visible problem; it is a small question for the Kotlin engine's
-peer selection after removal, recorded here so it is not forgotten.
+the same second, yet between 09:07:01 and 09:07:10 the server tried to
+send to it twelve more times, and the peer registry skipped 35 operations
+on the missing peer over the same eleven seconds. The phone reconnected at
+09:07:41 and lost nothing a reconnect catch-up does not fetch.
+
+The round loop cannot explain this: it reads the reachable list fresh each
+round and the health line shows the peer gone at 09:07. The ratio does:
+about three skipped operations per send is the shape of an inbound
+message from that phone being processed after its removal (the contact
+and received-bytes updates are skipped, then the reply finds no session).
+The server feeds every phone's messages into one shared flow with a
+256-message buffer and one collector that merges them in order, so the
+reading is that at 09:07 that queue held about eleven seconds of
+messages. It was the busiest minute of the meeting: nine to ten phones,
+285 merges a minute, 3.4 MB out. After the other 25 disconnects the same
+tail lasted under a second, so the backlog is a peak-load effect, not a
+constant. Its meeting-visible form would be presence arriving at other
+phones several seconds late at the peak, which is within reach of the
+app's 6 s freshness bound. Worth a look in the Kotlin engine's inbound
+path before the room grows further; a merge-latency figure on the health
+line would settle it.
 
 ## Finding 5: the network still drops sockets (not a server defect)
 
@@ -150,7 +163,7 @@ bigger room.
   minute, and the digest share needs re-measuring on v48 before the
   digest-scoping spec claims a saving.
 - **Two small follow-ups to consider,** neither urgent: the ping-timeout
-  policy (finding 5) and the removed-peer selection window in the Kotlin
+  policy (finding 5) and the inbound backlog at peak load in the Kotlin
   engine (finding 4).
 
 ## Raw data

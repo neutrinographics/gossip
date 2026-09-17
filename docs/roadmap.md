@@ -91,8 +91,9 @@ purification batch merged):
    per minute, not 710 KB — the drop sits between v46 and v47 and is not
    explained by any pacing change, so the digest share must be re-measured
    on v48 before item 10's spec sizes its win. Two small follow-ups
-   surfaced: the ping-timeout policy and an eleven-second window in which
-   the Kotlin engine kept selecting a removed peer. Original brief: the
+   surfaced: the ping-timeout policy and an eleven-second inbound backlog
+   at the busiest minute (nine to ten phones), read from sends to a peer
+   removed eleven seconds earlier. Original brief: the
    next real meeting on those releases, read through the
    health and merge lines. **A second before-picture exists**: the last
    meeting of 2026-09-16 on v47, read from the Papertrail archive after a
