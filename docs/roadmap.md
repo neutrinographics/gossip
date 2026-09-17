@@ -80,7 +80,20 @@ purification batch merged):
    ending within a millisecond. The same afternoon's last meeting, read
    after the fact, showed both defects at full strength
    ([incident report](audits/2026-09-16-last-meeting-incident.md)).
-7. **Measure** — the next real meeting on those releases, read through the
+7. ☑ **Measure** — **done 2026-09-17**: the first meeting on v48 (170
+   minutes, 13 phones, 9 at once) read from the Papertrail archive
+   ([measurement report](audits/2026-09-17-production-meeting-v48.md)):
+   zero deaf-phone runs, both reconnects-over-an-open-socket displaced in
+   the same second, zero failed compaction ticks with the presence log
+   saw-toothing between 4,300 and 5,800 entries, 80 sockets at a median
+   lifetime of 144 s (28 an hour against 48 on v47), eight ping timeouts on
+   two phones, pending never above zero. Traffic is ~300 KB out per phone
+   per minute, not 710 KB — the drop sits between v46 and v47 and is not
+   explained by any pacing change, so the digest share must be re-measured
+   on v48 before item 10's spec sizes its win. Two small follow-ups
+   surfaced: the ping-timeout policy and an eleven-second window in which
+   the Kotlin engine kept selecting a removed peer. Original brief: the
+   next real meeting on those releases, read through the
    health and merge lines. **A second before-picture exists**: the last
    meeting of 2026-09-16 on v47, read from the Papertrail archive after a
    group reported the app going haywire near the end
@@ -118,7 +131,10 @@ purification batch merged):
    written while items 8 and 9 are built, since it needs the owner's ruling
    before any code. The biggest measured waste by far: the 2026-09-15 meeting
    confirmed 710 KB out per phone per minute across up to seven phones,
-   ~97 % digests (the 2026-09-03 tunnel number was ~700 KB/min for one phone,
+   ~97 % digests — but the [v48 meeting](audits/2026-09-17-production-meeting-v48.md)
+   measured ~300 KB at the same phone counts, so the digest share is to be
+   re-measured through the tunnel on v48 before this spec claims a saving
+   (the 2026-09-03 tunnel number was ~700 KB/min for one phone,
    almost all 8 KB all-channel digests sent about once a second because
    presence heartbeats keep the pacer at its floor (plus group and account
    ids disclosed to unrelated peers). Both twins.
@@ -179,7 +195,7 @@ detection. Seeded from the deferred follow-ups of the 2026-07 audits
 - ☐ **Low** — [Revisit the failure-detection sensitivity thresholds](backlog/engine-swim-threshold-tuning.md) · measure and possibly tighten the 5/15 consecutive-miss thresholds now that fair-rotation probing and adaptive timeouts are in place — and re-measure once indirect checks are retired, since the thresholds were set with them
 - ☐ **Low** — [Best-effort pre-connect identity hash in the Android advertisement](backlog/engine-preconnect-adv-hash.md) · skip initiating a losing mutual connect on Android↔Android pairs; post-connect tie-break stays the backstop
 - ☐ **Medium** — [Send reactive pushes only to peers that share the data](backlog/engine-push-scoping.md) · scope push fan-out by channel membership + congestion-gate pushes and request bursts (2026-08 audit R6)
-- ☐ **Medium** — [Only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md) · digests advertise every channel a node holds, including its own user channel; measured on a mixed Android/iOS pair as 19 unusable channel ids × 22 rounds (~6.4 KB/exchange), and in the 2026-09-15 meeting as ~97 % of 710 KB out per phone per minute — wasted airtime, log noise, and group/account ids disclosed to unrelated peers
+- ☐ **Medium** — [Only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md) · digests advertise every channel a node holds, including its own user channel; measured on a mixed Android/iOS pair as 19 unusable channel ids × 22 rounds (~6.4 KB/exchange), and in the 2026-09-15 meeting as ~97 % of 710 KB out per phone per minute (the v48 meeting of 2026-09-17 measured ~300 KB per phone; digest share to be re-measured) — wasted airtime, log noise, and group/account ids disclosed to unrelated peers
 - ☐ **Medium** — [Coalesce wire traffic into fewer radio wakeups](backlog/engine-message-coalescing.md) · SRTT-scaled debounce, batched deltas, push-pull completion, transport hold window (2026-08 audit R7)
 - ☑ **High** — [Suppress pulling an author's range a peer has already failed to supply](backlog/engine-stalled-range-request-backoff.md) · per-author suppression with doubling re-probe backoff, per the [approved spec](superpowers/specs/2026-08-31-stalled-range-suppression-design.md) (pure-DDD shape: `StalledRangeRegistry` aggregate, strict command/query split) — merged 2026-09-01 as 7ebd076 (#15); the Kotlin port is in production since 2026-09-02. NOT the cause of the 2026-08-31 R14 incident: that was an uncapped JVM heap, and the loop ran 16 more times after that fix with no memory pressure
 - ☐ **Low** — [Shrink version vectors on the wire with an author-index table](backlog/engine-author-index-wire-format.md) · wire-format change, both ends (2026-08 audit R8)
