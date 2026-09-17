@@ -13,7 +13,11 @@ The campaign's aim right now is making the *deployed* server and phone fleet
 faster and more stable, and the historical enemy is unnecessary wire
 traffic. Stability work went before performance work because the server
 side had two known defects that outweighed any remaining inefficiency;
-both shipped in v48 on 2026-09-16, so performance is next. Work
+both shipped in v48 on 2026-09-16 and were confirmed fixed by the first
+meeting on it ([2026-09-17 measurement](audits/2026-09-17-production-meeting-v48.md)),
+so performance is next — with one open question riding along, whether the
+server's inbound queue backs up at the peak of a meeting, now measurable
+on every health line since v50. Work
 proceeds in this order (owner-set; rationale for the original ordering in
 the [retirement decision record](superpowers/specs/2026-09-01-swim-slimdown-decision.md)'s
 review outcome and the parity program; re-ordered 2026-09-02 after the
