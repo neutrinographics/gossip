@@ -132,7 +132,12 @@ purification batch merged):
    KT-E's entry-ordering fix, held back from v47 so that release had one
    suspect. Both twins move together once the Dart half lands, so this
    rides right after item 8, as its own opendoor-api bump, live-device
-   validated.
+   validated. It also carries the detector riders the Dart retirement's
+   review handed Kotlin, listed on
+   [the lifecycle follow-ups item](backlog/kt-lifecycle-batch-follow-ups.md):
+   the single probe path with cleanup in a `finally` (a minor pending-ping
+   leak on cancellation until then), proof-of-life credit for an ignored
+   relay request, and the rename away from SWIM.
 10. **Digest scoping to shared groups** — the first of the two remaining
    performance items:
    [only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md).
@@ -277,7 +282,7 @@ register, and working conventions live in the
 - ☐ **High** — [Make stream access get-or-create in the Kotlin library](backlog/kt-get-or-create-stream.md) · the register calls this a real production issue: Dart quietly creates a missing stream on access, kt doesn't, and the kt harness works around it
 - ☐ **Medium** — [Give the Kotlin library Dart's fair probe rotation and timing policies](backlog/kt-probe-selection-parity.md) · kt probes a random peer per round (an unlucky peer goes unchecked for long stretches); the structural half (a named `ProbeTargetSelector`) landed with purification (PR #7), so what remains is the shuffled-cursor behavior and the small helper adoptions
 - ☐ **Medium** — [Make the timing-sensitive Kotlin tests immune to parallel load](backlog/kt-load-flaky-timing-tests.md) · three tests flake under full-suite load and pass in isolation: a reactive-push congestion test and an HLC causality test (purification batch, once each) and the unsolicited-push engine test (lifecycle batch, twice; six isolated runs clean) — the owner asked for this to be followed up first (2026-09-14)
-- ☐ **Medium** — [Tidy the loose ends the lifecycle batch left in the Kotlin library](backlog/kt-lifecycle-batch-follow-ups.md) · the deferred reviewer findings from gossip-kt PR #8: compile-time guard for the restart guard's one-suspension promise (owner nod needed), engine test-harness teardown, simulated clock refusing late sleepers, the unreachable digest-answer gate pin, the mid-merge pin's ordering, stale comments and a duplicate contact record
+- ☐ **Medium** — [Tidy the loose ends the lifecycle batch left in the Kotlin library](backlog/kt-lifecycle-batch-follow-ups.md) · the deferred reviewer findings from gossip-kt PR #8: compile-time guard for the restart guard's one-suspension promise (owner nod needed), engine test-harness teardown, simulated clock refusing late sleepers, the unreachable digest-answer gate pin, the mid-merge pin's ordering, stale comments and a duplicate contact record; plus the three detector riders from the Dart relay retirement review (one probe path with `finally` — a minor leak until ported; per-frame contact credit; the SWIM rename), which ride item 9
 - ☐ **Medium** — [Port the sync-activity snapshot API to the Kotlin library](backlog/kt-sync-activity-api.md) · Dart can answer "syncing or up to date?" (outstanding pulls, quiescence, merge counters); kt has no equivalent public surface
 - ☑ **Medium** — [Move the Kotlin library's periodic loops onto the restartable scheduler](backlog/kt-periodic-loop-scheduler.md) · absorbed and closed by wire-efficiency phase 1 (gossip-kt #6): both loops now run per-cycle jittered delays on GenerationScheduler
 - ☐ **Low** — [Share the ubiquitous-language glossary across the twins](backlog/kt-shared-glossary.md) · GLOSSARY.md exists only Dart-side with nothing kt-side pointing at it; single-source it and reconcile terms against the Kotlin names
