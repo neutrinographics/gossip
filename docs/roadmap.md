@@ -116,13 +116,16 @@ purification batch merged):
    pending never above zero. The next meeting should show the same traffic
    shape with steadier merges and no relay stalls (lifecycle bump), and
    zero departed-peer sends and zero compaction failures (server fixes).
-8. **Finish the Dart half of the relay retirement** — spec first (a rulings
-   page for the owner: [drafted 2026-09-18](superpowers/specs/2026-09-18-dart-relay-retirement-rulings.md),
-   awaiting review), then the batch: remove the indirect phase and the
-   relay handler, keep the grace window (racing the late ack, the Kotlin
-   flow-back), revise ADR-004/012 and rename away from "SWIM", adjust the
-   asymmetric-partition suite; then the OpenDoorApp pin bump. Closes
-   [retire indirect probing](backlog/kt-retire-indirect-probing.md).
+8. ☑ **Finish the Dart half of the relay retirement** — **done 2026-09-18**
+   (branch `feature/retire-indirect-probing`; rulings page
+   [approved](superpowers/specs/2026-09-18-dart-relay-retirement-rulings.md)
+   the same day): the indirect phase and the relay handler are gone, the
+   grace window races the late Ack (the Kotlin flow-back adopted), ADR-004
+   and ADR-012 are amended, the mechanism is no longer called SWIM, the
+   asymmetric-partition suite pins the honest degradation with a third node
+   present. Closes [retire indirect probing](backlog/kt-retire-indirect-probing.md)
+   on both halves. **Remaining tail:** the OpenDoorApp pin bump (its own PR
+   in the app repo, device-checked on Android and iOS per the rulings).
 9. **The next Kotlin bump** (owner, 2026-09-16): the
    [payload size cap](backlog/kt-payload-size-cap.md),
    [get-or-create stream access](backlog/kt-get-or-create-stream.md), and
@@ -262,7 +265,7 @@ register, and working conventions live in the
 - ◐ **High** — [Port the wire-efficiency behaviors to the Kotlin library](backlog/kt-port-wire-efficiency.md) · PHASE 1 MERGED 2026-09-02 (gossip-kt 0dafefd, real merge, suite 999): pacing both loops, reactive push, probe suppression + 2-min cap, scheduler migration, median-SRTT parity, isRunning scheduler-delegation — IN PRODUCTION 2026-09-02 (opendoor-api d89110a), live-device validated (~50× idle-cadence cut); phase 2 remains: recency suppression, dominance-filtered + request-scoped digest responses, DigestBudgeter
 - ☑ **Low** — [Mirror the bounded-context structure in the Kotlin library](backlog/kt-mirror-bounded-contexts.md) · four evaluated divergences ported back + a Kotlin edge-table boundary test that now enforces the structure — shipped 2026-08-29 in gossip-kt 26dcc13..bd50285 (feature/compaction)
 - ◐ **Medium** — [Audit the Kotlin library for the bug classes fixed in Dart](backlog/kt-audit-legacy-bug-classes.md) · audit done (13-item inventory); the storage-contract batch shipped in gossip-kt 1ffbf0d..3836bc7, the sync-path-depth batch (KT-B) shipped 2026-08-29 closing items 3/9/11, the remaining classes flow through the campaign's later batches
-- ◐ **High** — [Retire indirect health probing from both libraries](backlog/kt-retire-indirect-probing.md) · **Kotlin half shipped** in gossip-kt ea0d51c (PR #8, 2026-09-15): the relay handler counts and ignores, the indirect phase is a grace window that races the late ack, Dart's ack-sender guard is ported; the Dart half remains · [ruled B, final](superpowers/specs/2026-09-01-swim-slimdown-decision.md) — the relay's purpose can't occur here (membership is local) and the Kotlin relay was inert in production anyway; Kotlin removes first inside the lifecycle batch (owner, 2026-09-14), the Dart half follows on this same item, PingReq becomes receive-only until the next dialect revision — replaces the former "make indirect probing work" defect item, closed by removal Dart rulings page drafted 2026-09-18 ([spec](superpowers/specs/2026-09-18-dart-relay-retirement-rulings.md)), awaiting owner review.
+- ☑ **High** — [Retire indirect health probing from both libraries](backlog/kt-retire-indirect-probing.md) · **Kotlin half shipped** in gossip-kt ea0d51c (PR #8, 2026-09-15): the relay handler counts and ignores, the indirect phase is a grace window that races the late ack, Dart's ack-sender guard is ported; the Dart half remains · [ruled B, final](superpowers/specs/2026-09-01-swim-slimdown-decision.md) — the relay's purpose can't occur here (membership is local) and the Kotlin relay was inert in production anyway; Kotlin removes first inside the lifecycle batch (owner, 2026-09-14), the Dart half follows on this same item, PingReq becomes receive-only until the next dialect revision — replaces the former "make indirect probing work" defect item, closed by removal Dart rulings page drafted 2026-09-18 ([spec](superpowers/specs/2026-09-18-dart-relay-retirement-rulings.md)), awaiting owner review. **Dart half shipped 2026-09-18** (rulings page approved; ADR-004/012 amended, SWIM renamed away, grace-window race adopted). Both halves done; the app pin bump is item 8's tail.
 - ☑ **High** — [Make stopping a Kotlin coordinator actually stop it](backlog/kt-coordinator-restart-lifecycle.md) · shipped in gossip-kt ea0d51c (PR #8, 2026-09-15, [rulings 1–12](superpowers/specs/2026-09-01-receive-loop-lifecycle-rulings.md)): the coordinator owns its collector (stop cancels it, pause keeps it, start joins a stale one then re-checks a lifecycle epoch), Dart's throwing preconditions and `resume()`, ingestion gated on the running flag, engines up before the collector attaches; the six withheld scenarios are the proof; suite 1046 → 1067
 - ☑ **Medium** — [Stop the Kotlin library from treating cancellation as a failure](backlog/kt-cancellation-swallowed.md) · shipped in the same batch (gossip-kt ea0d51c): carve-outs at the five surviving suspend-carrying catch-alls, the append-and-notify pair runs non-cancellable so a stop mid-merge strands nothing, and the simulated clock cancels parked and late delays on close
 - ☐ **Low** — [Sweep the remaining scenario coverage into the Kotlin library](backlog/kt-scenario-parity-sweep.md) · the harness and link-condition primitives now exist and ~66 scenarios are translated (the six lifecycle scenarios landed with gossip-kt ea0d51c); the scale and multi-channel groups plus two churn tests are mechanical follow-on; the relay scenario is obsolete

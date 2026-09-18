@@ -183,3 +183,7 @@ between nodes, and under ADR-007 a verdict never leaves the node that
 formed it; a wrongly suspected peer clears its name by answering the next
 probe. Kotlin's copy is dead scaffolding scoped for deletion in KT-E. The
 implementation plan follows this record.
+
+**Shipped 2026-09-18** on branch `feature/retire-indirect-probing` per the
+plan `docs/superpowers/plans/2026-09-18-dart-relay-retirement.md`; suite
+1274 → 1267. The OpenDoorApp pin bump follows as its own PR.

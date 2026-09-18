@@ -34,10 +34,10 @@ test. Each is a register row.
 Three more came out of the receive-loop lifecycle batch (2026-09-15): the
 restart path waiting out a still-unwinding listener before relaunching
 (valuable only if Dart ever runs handlers concurrently); the grace window
-after a failed probe racing the late answer instead of sleeping blind (worth
-adopting when Dart retires indirect probing, which rewrites the same lines);
-and serving a channel created during a pause immediately rather than after
-resume. Each is a register row.
+after a failed probe racing the late answer instead of sleeping blind
+(**adopted** with the Dart relay retirement, 2026-09-18); and serving a
+channel created during a pause immediately rather than after resume. Each is
+a register row.
 
 ## Why it matters
 

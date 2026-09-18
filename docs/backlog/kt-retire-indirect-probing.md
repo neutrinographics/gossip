@@ -50,11 +50,16 @@ already pin for the no-relay case.
 - **Kotlin half done:** gossip-kt ea0d51c (PR #8, 2026-09-15) — relay
   handler counts and ignores, the indirect phase became a grace window that
   races the late answer, the sender guard is ported, the message type still
-  decodes and its encoder stays for the wire fixtures. The Dart half is what
-  remains on this item.
+  decodes and its encoder stays for the wire fixtures.
+- **Dart half done:** 2026-09-18 on branch `feature/retire-indirect-probing`
+  ([rulings](../superpowers/specs/2026-09-18-dart-relay-retirement-rulings.md)) —
+  relay handler ignores, the indirect phase is a grace window that races the
+  late Ack, `PingReq` still decodes with its encoder kept for the wire
+  vectors, ADR-004/012 amended, the mechanism renamed away from SWIM. Both
+  halves are done; what remains is the OpenDoorApp pin bump.
 
 - The ruling and full rationale: [decision record](../superpowers/specs/2026-09-01-swim-slimdown-decision.md).
-- The Dart half's rulings page (2026-09-18, awaiting owner review):
+- The Dart half's rulings page (2026-09-18, approved):
   [Dart relay retirement rulings](../superpowers/specs/2026-09-18-dart-relay-retirement-rulings.md).
 - The Kotlin batch that absorbs the kt-side removal:
   [rulings page](../superpowers/specs/2026-09-01-receive-loop-lifecycle-rulings.md)

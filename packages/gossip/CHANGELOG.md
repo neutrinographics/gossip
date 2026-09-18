@@ -94,6 +94,20 @@ publish under the existing pub.dev `gossip` name must version above the old
 
 ### Behavioral
 
+- Indirect (relayed) health probing is retired. A probe is now a direct
+  Ping, a per-peer adaptive timeout, and a grace window of one more
+  timeout that ends the moment a late Ack lands; a failure is counted only
+  if the window closes empty. A `PingReq` frame from a peer on an older
+  build is decoded and ignored; this library never sends one. A pair that
+  is one-way deaf now degrades honestly — each side eventually marks the
+  other suspected, then unreachable, while entries keep converging through
+  any healthy third node, and the pair recovers after the link heals. See
+  ADR-004 (amended) and the retirement decision record in
+  `docs/superpowers/specs/`.
+- The failure detector's log prefix changed from `[SWIM] ` to
+  `[FailureDetector] `, and its malformed-frame error text now says
+  "membership message"; the mechanism is no longer described as SWIM
+  anywhere in the library's docs.
 - `StreamCompacted` is now emitted, from `ChannelService.compactStream`,
   whenever a compaction pass actually prunes entries (manual
   `EventStream.compact()` calls and the Coordinator's periodic
