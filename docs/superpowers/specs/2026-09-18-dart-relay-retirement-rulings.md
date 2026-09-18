@@ -172,5 +172,9 @@ touched the detector:
 
 ## Review outcome
 
-_Pending owner review. Record rulings changes here; the plan follows the
-record, not the other way around._
+_Partial (owner, 2026-09-18): open point 1 ruled — the full rename sweep
+including the log prefix (ruling 6 as recommended); open point 3 ruled —
+the device check is the bar for the app pin bump (ruling 10 as
+recommended). Open point 2 (ruling 3, the bootstrap probe) awaits the
+owner's answer after clarification. The plan follows the record, not the
+other way around._
