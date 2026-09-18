@@ -329,51 +329,6 @@ void main() {
     });
   });
 
-  group('ProbeTargetSelector.selectIntermediaries', () {
-    test('excludes the target and returns up to count reachable peers', () {
-      final selector = ProbeTargetSelector(
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        random: Random(11),
-      );
-      final target = addPeer('target');
-      final others = {for (var i = 0; i < 5; i++) addPeer('other$i')};
-
-      final selected = selector.selectIntermediaries(target, 3);
-
-      expect(selected, hasLength(3));
-      expect(selected.map((p) => p.id), isNot(contains(target)));
-      expect(others, containsAll(selected.map((p) => p.id)));
-      // No duplicates.
-      expect(selected.map((p) => p.id).toSet(), hasLength(3));
-    });
-
-    test('returns fewer than count when not enough candidates exist', () {
-      final selector = ProbeTargetSelector(
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        random: Random(),
-      );
-      final target = addPeer('target');
-      addPeer('other0');
-
-      final selected = selector.selectIntermediaries(target, 3);
-
-      expect(selected, hasLength(1));
-    });
-
-    test('returns empty when no candidates exist', () {
-      final selector = ProbeTargetSelector(
-        peerRegistry: peerRegistry,
-        timePort: timePort,
-        random: Random(),
-      );
-      final target = addPeer('target');
-
-      expect(selector.selectIntermediaries(target, 3), isEmpty);
-    });
-  });
-
   group('ProbeTargetSelector.nextUnreachableTarget', () {
     test('round-robins over unreachable peers', () {
       final selector = ProbeTargetSelector(

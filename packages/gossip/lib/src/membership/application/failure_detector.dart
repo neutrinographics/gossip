@@ -58,38 +58,28 @@ class _PendingPing {
   }) : completer = Completer<bool>();
 }
 
-/// The classification [FailureDetector._probe] returns for one probe
-/// attempt (direct leg plus indirect fallback).
+/// The classification [FailureDetector._probe] returns for one probe.
 ///
-/// Split into three "alive" cases rather than one so [FailureDetector._probe]
-/// can log the late-direct-Ack race distinctly at the point it detects it —
-/// even though every caller ([FailureDetector.performProbeRound] and
-/// [FailureDetector._probeUnreachablePeer]) folds [aliveIndirect] and
-/// [aliveLateDirect] back together when deciding what to do about the
-/// outcome.
+/// [aliveLate] is kept distinct from [aliveDirect] only so the detector
+/// can log the late-Ack case at the point it sees it — a late Ack is the
+/// signal that a timeout is running tight. Every caller handles the two
+/// alive cases identically.
 enum _ProbeOutcome {
-  /// The target's own Ack answered the direct Ping before its timeout.
+  /// The target's Ack answered before the direct timeout.
   aliveDirect,
 
-  /// The direct Ping timed out, but an intermediary's forwarded Ack
-  /// answered during the indirect phase.
-  aliveIndirect,
+  /// The target's Ack landed after the direct timeout but inside the grace
+  /// window (ADR-012).
+  aliveLate,
 
-  /// The direct Ping timed out and no forwarded Ack arrived, but the
-  /// original direct Ack itself landed late — during the indirect phase,
-  /// after the direct leg gave up waiting but before its pending entry
-  /// was cleaned up.
-  aliveLateDirect,
-
-  /// Neither the direct Ping nor the indirect phase produced an Ack.
+  /// No Ack arrived before the grace window closed.
   failed,
 }
 
-/// Protocol service implementing SWIM failure detection.
+/// Protocol service implementing probe-based failure detection.
 ///
-/// Detects peer failures through periodic probing with automatic fallback
-/// to indirect probing. Implements the SWIM (Scalable Weakly-consistent
-/// Infection-style Process Group Membership) protocol.
+/// Detects peer failures through periodic direct probing with a graded
+/// reachable → suspected → unreachable status.
 ///
 /// ## Protocol Flow
 ///
@@ -97,14 +87,13 @@ enum _ProbeOutcome {
 /// 1. Select the next probe target (round-robin over probable peers — see ProbeTargetSelector)
 /// 2. Send direct Ping
 /// 3. Wait for Ack (per-peer RTT-adaptive timeout)
-/// 4. If no Ack, initiate indirect ping via intermediaries
+/// 4. If no Ack, hold the pending ping open for one more timeout — the
+///    grace window (ADR-012) — and return the moment a late Ack lands
+/// 5. If still no Ack, increment failed probe count
 ///
-/// **Indirect Ping (when direct probe fails)**:
-/// 1. Select up to 3 other reachable peers as intermediaries
-/// 2. Send PingReq to each intermediary
-/// 3. Intermediaries ping the target and forward any Ack back
-/// 4. Wait for Ack via any intermediary
-/// 5. If no Ack, increment failed probe count
+/// There is no relayed (indirect) probe: a membership verdict never leaves
+/// the node that formed it (ADR-007), so asking a third peer to vouch for
+/// a silent one protects nothing — see ADR-004's history.
 ///
 /// **Failure Detection**:
 /// - After [failureThreshold] consecutive failures, mark peer as suspected
@@ -141,9 +130,9 @@ class FailureDetector {
   late final ProbeTimingPolicy _timing;
 
   /// Owns probe-target selection policy: round-robin peer selection,
-  /// indirect-ping intermediary picks, the unreachable-peer recovery
-  /// cursor, and the probing-hold grace period. See [ProbeTargetSelector]
-  /// for why this is a separate object rather than fields here.
+  /// the unreachable-peer recovery cursor, and the probing-hold grace
+  /// period. See [ProbeTargetSelector] for why this is a separate object
+  /// rather than fields here.
   late final ProbeTargetSelector _selector;
   final Random _random;
 
@@ -220,11 +209,6 @@ class FailureDetector {
       ),
     );
   }
-
-  /// SWIM's k: number of intermediaries asked to relay a ping when a
-  /// direct probe times out, before falling back to (or alongside) waiting
-  /// out the grace period for a late direct Ack.
-  static const int _indirectProbeFanout = 3;
 
   /// Drives the periodic probe round loop: computes each tick's delay
   /// (jittered [effectiveProbeInterval]), runs [performProbeRound], and
@@ -395,8 +379,8 @@ class FailureDetector {
   /// 1. Select the next probe target (round-robin over probable peers — see ProbeTargetSelector)
   /// 2. Send direct Ping
   /// 3. Wait for Ack (per-peer timeout)
-  /// 4. If no Ack, fall back to indirect ping
-  /// 5. Check if late Ack arrived during indirect phase
+  /// 4. If no Ack, wait out the grace window for a late Ack
+  /// 5. Record a failure only if the window closes empty
   ///
   /// Driven internally by [_scheduler]'s tick — production code never calls
   /// this directly. Kept public only so tests can force a round
@@ -418,22 +402,15 @@ class FailureDetector {
 
     switch (await _probe(peer.id)) {
       case _ProbeOutcome.aliveDirect:
+      case _ProbeOutcome.aliveLate:
         // If something else already called news() earlier in this same
         // round (e.g. a different peer's contact recovering it from
         // suspected), this quietRound() still runs right after — netting
         // a multiplier of 1.5x base rather than staying at 1x. Accepted:
         // it self-corrects, since the next quiet round continues growing
         // from wherever this landed, and the next real news() resets it
-        // to 1 regardless.
-        _timing.quietRound();
-      case _ProbeOutcome.aliveIndirect:
-      case _ProbeOutcome.aliveLateDirect:
-        // A forwarded indirect Ack carries the intermediary as sender, so
-        // handleAck only updated the intermediary's contact. Record contact
-        // for the target explicitly — otherwise a peer reachable only via
-        // intermediaries stays suspected forever (excluded from gossip,
-        // never unreachable, never recovered).
-        _recordPeerContact(peer.id, _timePort.nowMs);
+        // to 1 regardless. A late Ack is a healthy answer too: its
+        // contact was recorded by the Ack handler, so nothing more to do.
         _timing.quietRound();
       case _ProbeOutcome.failed:
         _handleProbeFailure(peer.id);
@@ -456,7 +433,8 @@ class FailureDetector {
   ///
   /// Returns true if an Ack was received, false on timeout. No failure is
   /// recorded on timeout — this is best-effort RTT bootstrapping, not
-  /// failure detection. No indirect ping is attempted.
+  /// failure detection. No grace window either: with no verdict to
+  /// protect, a late first sample is simply the next probe's.
   ///
   /// Called fire-and-forget from Coordinator.addPeer() to get the first
   /// RTT sample quickly instead of waiting for random probe selection.
@@ -465,18 +443,24 @@ class FailureDetector {
     final peer = peerRegistry.getPeer(peerId);
     if (peer == null) return false;
 
-    final gotAck = await _pingExchange(
-      peerId,
-      (sequence) => _sendPing(peerId, sequence),
-      effectivePingTimeoutForPeer(peerId),
-    );
+    final sequence = _nextSequence++;
+    final pending = _trackPendingPing(peerId, sequence);
+    final bool gotAck;
+    try {
+      await _sendPing(peerId, sequence);
+      gotAck = await _awaitAckWithTimeout(
+        pending,
+        effectivePingTimeoutForPeer(peerId),
+      );
+    } finally {
+      _cleanupPendingPing(sequence);
+    }
 
     if (gotAck) {
       _log('probeNewPeer got Ack from $peerId');
     } else {
       _log('probeNewPeer timed out for $peerId (no failure recorded)');
     }
-
     return gotAck;
   }
 
@@ -488,9 +472,8 @@ class FailureDetector {
   /// unreachable and neither sends messages.
   ///
   /// Like [probeNewPeer], this is best-effort: no failure is recorded on
-  /// timeout since the peer is already unreachable. Falls back to indirect
-  /// ping via intermediaries, which is critical for 3+ device scenarios
-  /// where a third peer can relay the probe.
+  /// timeout since the peer is already unreachable. Unlike it, the probe
+  /// carries a verdict (recovered or not), so it gets the grace window.
   ///
   /// Recovery happens via the existing path: if the peer responds with an
   /// Ack, [handleAck] → [_recordPeerContact] → [PeerRegistry.updatePeerContact]
@@ -501,19 +484,10 @@ class FailureDetector {
 
     _log('Probing unreachable peer ${peer.id} (best-effort recovery)');
 
-    // Indirect ping (inside _probe): ask intermediaries to probe on our
-    // behalf. In 2-device scenarios this finds no intermediaries and
-    // returns false.
     switch (await _probe(peer.id)) {
       case _ProbeOutcome.aliveDirect:
+      case _ProbeOutcome.aliveLate:
         _log('Unreachable peer ${peer.id} responded — recovered to reachable');
-      case _ProbeOutcome.aliveIndirect:
-      case _ProbeOutcome.aliveLateDirect:
-        // The forwarded Ack has the intermediary as sender, so handleAck()
-        // only updated the intermediary's contact. Explicitly recover the
-        // target peer.
-        _recordPeerContact(peer.id, _timePort.nowMs);
-        _log('Unreachable peer ${peer.id} responded (indirect) — recovered');
       case _ProbeOutcome.failed:
         _log('Unreachable peer ${peer.id} did not respond (still unreachable)');
     }
@@ -620,15 +594,15 @@ class FailureDetector {
     }
   }
 
-  /// Probes [target]: direct Ping first, falling back to an indirect ping
-  /// via intermediaries if the direct Ping times out.
+  /// Probes [target]: a direct Ping, then — if its timeout expires — the
+  /// grace window, one more per-peer timeout on the same pending ping.
   ///
-  /// Classifies the result as one of [_ProbeOutcome]'s four cases and
-  /// returns — it does not itself decide what a caller should do about it
-  /// (contact recording, pacer signals, failure bookkeeping). Those differ
-  /// between [performProbeRound]'s regular probing and
-  /// [_probeUnreachablePeer]'s best-effort recovery probing, so each maps
-  /// the outcome to its own policy.
+  /// Classifies the result as one of [_ProbeOutcome]'s cases and returns —
+  /// it does not itself decide what a caller should do about it (pacer
+  /// signals, failure bookkeeping). Those differ between
+  /// [performProbeRound]'s regular probing and [_probeUnreachablePeer]'s
+  /// best-effort recovery probing, so each maps the outcome to its own
+  /// policy.
   Future<_ProbeOutcome> _probe(NodeId target) async {
     final sequence = _nextSequence++;
     final pending = _trackPendingPing(target, sequence);
@@ -641,52 +615,29 @@ class FailureDetector {
       );
       if (gotDirectAck) return _ProbeOutcome.aliveDirect;
 
-      final gotIndirectAck = await _performIndirectPing(target);
-      if (gotIndirectAck) return _ProbeOutcome.aliveIndirect;
-
-      if (pending.completer.isCompleted) {
+      if (await _awaitLateAck(pending, target)) {
         _log(
           'Late Ack arrived for seq=$sequence from $target '
-          '(recovered during indirect ping phase)',
+          'within the grace window',
         );
-        return _ProbeOutcome.aliveLateDirect;
+        return _ProbeOutcome.aliveLate;
       }
       return _ProbeOutcome.failed;
     } finally {
-      // Late-Ack grace invariant: the direct pending entry must stay
-      // matchable while intermediaries relay on our behalf, or a late
-      // direct Ack that lands mid-indirect-phase finds no pending entry to
-      // complete and is silently lost. So cleanup spans both phases —
-      // it happens here, once, after the indirect phase concludes, never
-      // in a nested finally scoped to the direct leg alone.
+      // Late-Ack grace invariant: the pending entry must stay matchable
+      // through the grace window, or a late Ack finds nothing to complete
+      // and is silently lost. So cleanup spans both waits.
       _cleanupPendingPing(sequence);
     }
   }
 
-  /// Performs indirect ping when direct ping fails.
-  ///
-  /// Sends PingReq to up to 3 intermediaries asking them to probe the
-  /// target. When no intermediaries are available (2-device scenario),
-  /// waits for a grace period to allow late Acks to arrive.
-  Future<bool> _performIndirectPing(NodeId target) async {
-    final intermediaries = _selector.selectIntermediaries(
-      target,
-      _indirectProbeFanout,
-    );
-    final peerTimeout = effectivePingTimeoutForPeer(target);
-
-    if (intermediaries.isEmpty) {
-      await _timePort.delay(peerTimeout);
-      return false;
-    }
-
-    return _pingExchange(
-      target,
-      (sequence) => _sendPingRequests(intermediaries, target, sequence),
-      peerTimeout,
-      allowForwarded: true,
-    );
-  }
+  /// The grace window after a direct timeout (ADR-012): the pending ping
+  /// stays open for one more per-peer timeout so a slightly-late Ack still
+  /// counts. Returns true the moment such an Ack lands, false when the
+  /// window closes empty. Re-reads the timeout at entry so a fresh RTT
+  /// sample is honored.
+  Future<bool> _awaitLateAck(_PendingPing pending, NodeId target) =>
+      _awaitAckWithTimeout(pending, effectivePingTimeoutForPeer(target));
 
   void _handleProbeFailure(NodeId target) {
     _timing.news();
@@ -902,6 +853,7 @@ class FailureDetector {
     _PendingPing pending,
     Duration timeout,
   ) async {
+    if (pending.completer.isCompleted) return true;
     final timeoutFuture = _timePort.delay(timeout).then((_) => false);
     return Future.any([pending.completer.future, timeoutFuture]);
   }
@@ -914,15 +866,9 @@ class FailureDetector {
   /// pending, invokes [send] to transmit, races the Ack against [timeout],
   /// and always drops the pending entry afterward.
   ///
-  /// [send] is a callback rather than a fixed action because its three
-  /// callers each send something different: [probeNewPeer] sends a
-  /// stamped probe Ping (via [_sendPing]), [_performIndirectPing] sends a
-  /// PingReq fan-out (via [_sendPingRequests]), and [_handlePingReq] sends
-  /// a bare relay Ping directly (see its closure for why not [_sendPing]).
-  ///
-  /// Not used by [_probe]'s direct leg: that cleanup must span the
-  /// indirect phase that follows it, not fire immediately — see [_probe]'s
-  /// finally block.
+  /// [send] is a callback rather than a fixed action because its caller,
+  /// [_handlePingReq], sends a bare relay Ping directly (see its closure
+  /// for why not [_sendPing]), for now the only caller.
   Future<bool> _pingExchange(
     NodeId target,
     Future<void> Function(int sequence) send,
@@ -940,22 +886,6 @@ class FailureDetector {
       return await _awaitAckWithTimeout(pending, timeout);
     } finally {
       _cleanupPendingPing(sequence);
-    }
-  }
-
-  Future<void> _sendPingRequests(
-    List<Peer> intermediaries,
-    NodeId target,
-    int sequence,
-  ) async {
-    final pingReq = PingReq(
-      sender: localNode,
-      sequence: sequence,
-      target: target,
-    );
-    final bytes = _codec.encode(pingReq);
-    for (final intermediary in intermediaries) {
-      await _safeSend(intermediary.id, bytes, 'PingReq');
     }
   }
 

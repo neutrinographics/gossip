@@ -185,11 +185,10 @@ void main() {
 
       // Nobody ever sends an Ack. Advance past the per-peer timeout floor
       // (500ms) for the direct wait, then past the same floor again for
-      // the no-intermediary indirect fallback (single-peer registry, so
-      // there's nothing to relay through) -- ~1000ms total. If the round
-      // were still gated on the ~1500ms global timeout instead, it would
-      // still be waiting after this, and the assertion below would go
-      // red rather than merely stay green by coincidence.
+      // the grace window -- ~1000ms total. If the round were still gated
+      // on the ~1500ms global timeout instead, it would still be waiting
+      // after this, and the assertion below would go red rather than
+      // merely stay green by coincidence.
       await h.timePort.advance(const Duration(milliseconds: 501));
       await h.timePort.advance(const Duration(milliseconds: 501));
 

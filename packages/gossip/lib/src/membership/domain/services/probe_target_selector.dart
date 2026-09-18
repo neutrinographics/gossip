@@ -6,10 +6,9 @@ import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 
 /// Owns the failure detector's probe-target selection policy: which peer
-/// to ping next, which peers can stand in as indirect-ping intermediaries
-/// when a direct probe fails, which peer is due for the periodic
-/// unreachable-recovery probe, and the startup grace period that excludes
-/// a peer from probing altogether.
+/// to ping next, which peer is due for the periodic unreachable-recovery
+/// probe, and the startup grace period that excludes a peer from probing
+/// altogether.
 ///
 /// A separate class rather than fields on `FailureDetector`: the state it
 /// owns (the shuffled cursor, the probing-hold map, the per-peer
@@ -200,23 +199,6 @@ class ProbeTargetSelector {
     final peer = unreachable[_unreachableProbeIndex];
     _unreachableProbeIndex = (_unreachableProbeIndex + 1) % unreachable.length;
     return peer;
-  }
-
-  /// Picks up to [count] reachable peers, excluding [target], to relay an
-  /// indirect ping when a direct probe to [target] fails.
-  List<Peer> selectIntermediaries(NodeId target, int count) {
-    final candidates = peerRegistry.reachablePeers
-        .where((p) => p.id != target)
-        .toList();
-    if (candidates.isEmpty) return [];
-
-    final numToSelect = min(count, candidates.length);
-    final selected = <Peer>[];
-    for (var i = 0; i < numToSelect; i++) {
-      final index = _random.nextInt(candidates.length);
-      selected.add(candidates.removeAt(index));
-    }
-    return selected;
   }
 
   /// Stamps [peerId] as actually probed at [nowMs], resetting the

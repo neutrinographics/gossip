@@ -126,7 +126,7 @@ void main() {
         h.stopListening();
       });
 
-      test('does not perform indirect ping', () async {
+      test('sends exactly one Ping and nothing to any other peer', () async {
         final peer2 = h.addPeer('peer2');
         h.startListening();
 
@@ -162,10 +162,10 @@ void main() {
 
         await hCustom.timePort.advance(const Duration(milliseconds: 100));
 
-        // Ack from the WRONG peer with a colliding sequence. Direct probes
-        // require sender == target (forwarded Acks are only legal in the
-        // indirect phase); accepting this would mark a possibly-dead peerA
-        // alive and pollute its RTT estimate with peerB's sample.
+        // Ack from the WRONG peer with a colliding sequence. Only the probed
+        // target may confirm its own ping; accepting this would mark a
+        // possibly-dead peerA alive and pollute its RTT estimate with
+        // peerB's sample.
         final ack = Ack(sender: peerB.id, sequence: ping.sequence);
         final peerBPort = InMemoryMessagePort(peerB.id, hCustom.bus);
         await peerBPort.send(hCustom.localNode, hCustom.codec.encode(ack));
@@ -195,7 +195,7 @@ void main() {
     );
 
     test(
-      'records RTT for late Ack that arrives during indirect phase',
+      'records RTT for a late Ack that arrives inside the grace window',
       () async {
         h.startListening();
 
@@ -206,12 +206,12 @@ void main() {
         // Advance past the direct ping timeout (500ms)
         await h.timePort.advance(const Duration(milliseconds: 501));
 
-        // Send the late direct Ack during the indirect phase
+        // Send the late Ack inside the grace window
         final lateAck = Ack(sender: peer.id, sequence: ping.sequence);
         await peer.port.send(h.localNode, h.codec.encode(lateAck));
         await h.flush();
 
-        // Finish the indirect phase
+        // Close the grace window
         await h.timePort.advance(const Duration(milliseconds: 501));
         await probeRoundFuture;
 

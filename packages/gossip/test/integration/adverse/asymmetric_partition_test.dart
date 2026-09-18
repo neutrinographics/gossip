@@ -35,52 +35,6 @@ void main() {
       });
 
       test(
-        'indirect probing through the relay keeps both views reachable',
-        () async {
-          // Healthy baseline: everyone reachable, RTT samples collected.
-          await network.runRounds(5);
-          expect(
-            network['nodeA'].peerStatus(network['nodeB'].id),
-            equals(PeerStatus.reachable),
-          );
-          expect(
-            network['nodeB'].peerStatus(network['nodeA'].id),
-            equals(PeerStatus.reachable),
-          );
-
-          // nodeA stops hearing nodeB directly.
-          network.partitionOneWay('nodeB', 'nodeA');
-
-          // Run long enough for many probe rounds. Every direct probe on
-          // the A↔B pair now fails (nodeA's Pings reach nodeB but the Acks
-          // are lost; nodeB's Pings never arrive), so each round falls back
-          // to the indirect phase:
-          //   nodeA → PingReq → nodeC → Ping → nodeB → Ack → nodeC → nodeA
-          //   nodeB → PingReq → nodeC → Ping → nodeA → Ack → nodeC → nodeB
-          // Both relay paths avoid the blocked direction, so no probe
-          // failures accumulate on either side.
-          await network.runRounds(60);
-
-          expect(
-            network['nodeA'].peerStatus(network['nodeB'].id),
-            equals(PeerStatus.reachable),
-            reason:
-                'ping-req through nodeC must keep nodeB reachable '
-                'from the deaf node',
-          );
-          expect(
-            network['nodeB'].peerStatus(network['nodeA'].id),
-            equals(PeerStatus.reachable),
-            reason:
-                'ping-req through nodeC must keep nodeA reachable even '
-                'though nodeB cannot reach nodeA directly',
-          );
-          // The relay itself talks to both sides directly and stays healthy.
-          expect(network['nodeC'].reachablePeers.length, equals(2));
-        },
-      );
-
-      test(
         'state converges through the relay while the block is active',
         () async {
           // Baseline convergence before the partition.
