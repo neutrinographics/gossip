@@ -46,24 +46,6 @@ class _PendingPing {
   }) : completer = Completer<bool>();
 }
 
-/// The classification [FailureDetector._probe] returns for one probe.
-///
-/// [aliveLate] is kept distinct from [aliveDirect] only so the detector
-/// can log the late-Ack case at the point it sees it — a late Ack is the
-/// signal that a timeout is running tight. Every caller handles the two
-/// alive cases identically.
-enum _ProbeOutcome {
-  /// The target's Ack answered before the direct timeout.
-  aliveDirect,
-
-  /// The target's Ack landed after the direct timeout but inside the grace
-  /// window (ADR-012).
-  aliveLate,
-
-  /// No Ack arrived before the grace window closed.
-  failed,
-}
-
 /// Protocol service implementing probe-based failure detection.
 ///
 /// Detects peer failures through periodic direct probing with a graded
@@ -362,13 +344,8 @@ class FailureDetector {
     _messageSubscription = null;
   }
 
-  /// Performs a single probe round.
-  ///
-  /// 1. Select the next probe target (round-robin over probable peers — see ProbeTargetSelector)
-  /// 2. Send direct Ping
-  /// 3. Wait for Ack (per-peer timeout)
-  /// 4. If no Ack, wait out the grace window for a late Ack
-  /// 5. Record a failure only if the window closes empty
+  /// One probe round — the protocol flow in the class doc — driven by
+  /// [_scheduler]'s tick.
   ///
   /// Driven internally by [_scheduler]'s tick — production code never calls
   /// this directly. Kept public only so tests can force a round
@@ -388,20 +365,18 @@ class FailureDetector {
       return;
     }
 
-    switch (await _probe(peer.id)) {
-      case _ProbeOutcome.aliveDirect:
-      case _ProbeOutcome.aliveLate:
-        // If something else already called news() earlier in this same
-        // round (e.g. a different peer's contact recovering it from
-        // suspected), this quietRound() still runs right after — netting
-        // a multiplier of 1.5x base rather than staying at 1x. Accepted:
-        // it self-corrects, since the next quiet round continues growing
-        // from wherever this landed, and the next real news() resets it
-        // to 1 regardless. A late Ack is a healthy answer too: its
-        // contact was recorded by the Ack handler, so nothing more to do.
-        _timing.quietRound();
-      case _ProbeOutcome.failed:
-        _handleProbeFailure(peer.id);
+    if (await _probe(peer.id)) {
+      // If something else already called news() earlier in this same
+      // round (e.g. a different peer's contact recovering it from
+      // suspected), this quietRound() still runs right after — netting
+      // a multiplier of 1.5x base rather than staying at 1x. Accepted:
+      // it self-corrects, since the next quiet round continues growing
+      // from wherever this landed, and the next real news() resets it
+      // to 1 regardless. A late Ack is a healthy answer too: its
+      // contact was recorded by the Ack handler, so nothing more to do.
+      _timing.quietRound();
+    } else {
+      _handleProbeFailure(peer.id);
     }
   }
 
@@ -472,12 +447,10 @@ class FailureDetector {
 
     _log('Probing unreachable peer ${peer.id} (best-effort recovery)');
 
-    switch (await _probe(peer.id)) {
-      case _ProbeOutcome.aliveDirect:
-      case _ProbeOutcome.aliveLate:
-        _log('Unreachable peer ${peer.id} responded — recovered to reachable');
-      case _ProbeOutcome.failed:
-        _log('Unreachable peer ${peer.id} did not respond (still unreachable)');
+    if (await _probe(peer.id)) {
+      _log('Unreachable peer ${peer.id} responded — recovered to reachable');
+    } else {
+      _log('Unreachable peer ${peer.id} did not respond (still unreachable)');
     }
   }
 
@@ -578,14 +551,14 @@ class FailureDetector {
 
   /// Probes [target]: a direct Ping, then — if its timeout expires — the
   /// grace window, one more per-peer timeout on the same pending ping.
-  ///
-  /// Classifies the result as one of [_ProbeOutcome]'s cases and returns —
-  /// it does not itself decide what a caller should do about it (pacer
-  /// signals, failure bookkeeping). Those differ between
-  /// [performProbeRound]'s regular probing and [_probeUnreachablePeer]'s
-  /// best-effort recovery probing, so each maps the outcome to its own
-  /// policy.
-  Future<_ProbeOutcome> _probe(NodeId target) async {
+  /// Decides only whether the target answered, directly or within the
+  /// grace window — it does not itself decide what a caller should do
+  /// about that answer (pacer signals, failure bookkeeping). Those differ
+  /// between [performProbeRound]'s regular probing and
+  /// [_probeUnreachablePeer]'s best-effort recovery probing, so each maps
+  /// the result to its own policy. Logs the late-Ack case at the point it
+  /// sees it — a late Ack is the signal that a timeout is running tight.
+  Future<bool> _probe(NodeId target) async {
     final sequence = _nextSequence++;
     final pending = _trackPendingPing(target, sequence);
     try {
@@ -595,16 +568,16 @@ class FailureDetector {
         pending,
         effectivePingTimeoutForPeer(target),
       );
-      if (gotDirectAck) return _ProbeOutcome.aliveDirect;
+      if (gotDirectAck) return true;
 
       if (await _awaitLateAck(pending, target)) {
         _log(
           'Late Ack arrived for seq=$sequence from $target '
           'within the grace window',
         );
-        return _ProbeOutcome.aliveLate;
+        return true;
       }
-      return _ProbeOutcome.failed;
+      return false;
     } finally {
       // Late-Ack grace invariant: the pending entry must stay matchable
       // through the grace window, or a late Ack finds nothing to complete
@@ -733,7 +706,9 @@ class FailureDetector {
   /// protocol. Nothing happens beyond a log line: a membership verdict
   /// never leaves the node that formed it (ADR-007), so probing a third
   /// peer on someone else's behalf protected nothing. The frame is not
-  /// proof the sender can hear us either, so it records no contact.
+  /// proof the sender can hear us either, so the detector records no
+  /// contact for it (the sync engine's per-frame contact stamp, which keys
+  /// freshness suppression on the inbound path working, is unaffected).
   void _ignoreRelayRequest(PingReq pingReq, NodeId requester) {
     _log('Ignoring PingReq from $requester target=${pingReq.target}');
   }

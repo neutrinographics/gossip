@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted 2026-03; **amended 2026-09-18** — indirect (relayed) probing
+Accepted; **amended 2026-09-18** — indirect (relayed) probing
 retired. History below.
 
 ## Context
@@ -155,7 +155,7 @@ interval to 1 (probe every round) costs ~44 bytes/second, still negligible.
 
 ## History
 
-### Original decision (2026-03): SWIM
+### Original decision: SWIM
 
 The detector was first specified as SWIM (Scalable Weakly-consistent
 Infection-style Membership): direct probes plus, on a direct timeout, an

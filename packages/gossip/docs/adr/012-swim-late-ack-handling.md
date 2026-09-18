@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted 2026-05; **amended 2026-09-18** — the grace window is now the
+Accepted; **amended 2026-09-18** — the grace window is now the
 shape of every verdict-bearing probe, not a special case.
 
 ## Context
@@ -24,7 +24,7 @@ transitions and noise.
 
 Originally the only wait after a direct timeout was the indirect probe
 phase, so a two-device pair (no intermediaries) had no window at all, and a
-larger group's window was an accident of relaying. The 2026-05 decision
+larger group's window was an accident of relaying. The original decision
 added an explicit equal-length wait for the no-intermediary case. The
 2026-09 retirement of indirect probing (ADR-004 history) left that wait as
 the only path.
@@ -74,9 +74,10 @@ has no configuration knob of its own.
 
 ### Trade-offs
 
-With the 500ms floor: direct 500ms + grace 500ms = 1000ms per probe round
-worst case. Real failures are still detected within a few probe rounds,
-and false positives are more disruptive than slightly slower detection.
+At the 500 ms floor a failed probe costs 1000 ms (direct 500 ms + grace
+500 ms); at the 10 s ceiling it costs 20 s. Real failures are still
+detected within a few probe rounds, and false positives are more
+disruptive than slightly slower detection.
 
 ## Alternatives Considered
 
