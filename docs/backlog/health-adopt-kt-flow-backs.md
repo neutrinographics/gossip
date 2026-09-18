@@ -36,9 +36,7 @@ restart path waiting out a still-unwinding listener before relaunching
 (valuable only if Dart ever runs handlers concurrently); the grace window
 after a failed probe racing the late answer instead of sleeping blind; and
 serving a channel created during a pause immediately rather than after
-resume. Each is a register row. The 2026-09-18 relay-retirement review
-added one more: the Kotlin domain services take time and candidates as
-arguments where Dart's hold a time port and the registry.
+resume. Each is a register row.
 
 ## Why it matters
 
@@ -66,4 +64,6 @@ reasons.
   homed, closed, or exempted).
 - Closed rows: the grace-window race was adopted by the
   [Dart relay retirement](../superpowers/specs/2026-09-18-dart-relay-retirement-rulings.md)
-  (2026-09-18); the register row records the closure.
+  (2026-09-18); the register row records the closure; the data-not-ports
+  shape of the probe selector and timing policy was adopted on the same
+  branch (2026-09-18).

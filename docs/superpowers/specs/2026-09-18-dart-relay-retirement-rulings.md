@@ -207,3 +207,9 @@ cleanup in `finally` (Kotlin has two inline copies and can leak a pending
 ping on cancellation), and Kotlin's data-not-ports domain services (a Dart
 flow-back). The probe-interval rationale in ADR-012 and the timing policy
 was made honest about overruns.
+
+**Same-day addendum (owner, 2026-09-18):** the data-not-ports divergence
+was fixed on this branch rather than deferred — the probe selector and
+timing policy now match Kotlin's constructors and signatures, with the
+detector (the application service) supplying the clock reading, the
+candidate lists and the peer's RTT estimate.
