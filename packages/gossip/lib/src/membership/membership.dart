@@ -1,4 +1,4 @@
-/// The membership context: the SWIM peer model and the detector that
+/// The membership context: the peer model and the detector that
 /// maintains it.
 ///
 /// Membership imports nothing from `sync/` — it exercises no ACL

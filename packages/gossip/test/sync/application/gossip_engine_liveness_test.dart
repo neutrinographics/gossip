@@ -7,7 +7,7 @@ import 'package:test/test.dart';
 import 'gossip_engine_test_harness.dart';
 
 void main() {
-  group('GossipEngine feeds SWIM liveness', () {
+  group('GossipEngine feeds liveness', () {
     test('receiving a gossip message from a suspected peer recovers it and '
         'resets its failed-probe count', () async {
       final h = GossipEngineTestHarness();
@@ -15,7 +15,7 @@ void main() {
       h.createChannel('ch1', streamIds: ['s1']);
       h.startListening();
 
-      // Simulate SWIM having driven the peer toward failure (e.g. pings
+      // Simulate probing having driven the peer toward failure (e.g. pings
       // starved behind gossip on BLE) even though the peer is alive.
       h.peerRegistry.incrementFailedProbeCount(peer.id);
       h.peerRegistry.incrementFailedProbeCount(peer.id);

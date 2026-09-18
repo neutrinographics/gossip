@@ -8,7 +8,7 @@ import 'failure_detector_test_harness.dart';
 /// The main probe selection must round-robin over a shuffled order so
 /// every probable peer is probed once per cycle. Pure-random selection
 /// gives geometric coverage (E[rounds to probe a specific dead peer] =
-/// n-1, with a heavy tail), which makes SWIM detection latency scale
+/// n-1, with a heavy tail), which makes detection latency scale
 /// O(n · threshold) — minutes at n=8. Round-robin bounds it to ~(n-1)
 /// rounds per peer.
 void main() {

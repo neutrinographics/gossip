@@ -724,7 +724,7 @@ class GossipEngine {
   ///
   /// This bounds gossip coverage to ~(n-1) rounds instead of pure-random
   /// selection's geometric distribution (the same win round-robin probe
-  /// ordering gives SWIM), while the tiebreak keeps selection decorrelated
+  /// ordering gives failure detection), while the tiebreak keeps selection decorrelated
   /// across nodes — each node holds its own per-peer anti-entropy
   /// timestamps.
   SyncPartner _selectGossipPartner(List<SyncPartner> candidates) {
@@ -823,7 +823,7 @@ class GossipEngine {
     );
 
     // Receiving gossip from a peer is unambiguous proof of life. Feed it
-    // into SWIM liveness so an actively-syncing peer is never suspected or
+    // into liveness so an actively-syncing peer is never suspected or
     // evicted from the gossip set just because its (lower-frequency) pings
     // were starved behind gossip traffic on a slow transport. No-op for
     // unknown/removed peers.

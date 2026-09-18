@@ -1,7 +1,7 @@
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
 
-/// SWIM direct probe message for failure detection.
+/// Direct probe message for failure detection.
 ///
 /// [Ping] is sent periodically to a randomly selected peer to check if it's
 /// still reachable. The target should respond with an Ack message containing

@@ -13,10 +13,10 @@ const congestionThreshold = 3;
 /// Fixed timing so congestion arithmetic is deterministic:
 /// - `gossipInterval` matches `runRounds`' default 1000ms advance, so each
 ///   round advances the engine roughly one gossip round.
-/// - `probeInterval` is pushed far beyond the test horizon so SWIM sends no
-///   pings (which would inflate the held-message counts) and cannot
-///   reclassify the peer while the link is saturated — these tests isolate
-///   the congestion gate, not suspicion.
+/// - `probeInterval` is pushed far beyond the test horizon so the failure
+///   detector sends no pings (which would inflate the held-message counts)
+///   and cannot reclassify the peer while the link is saturated — these
+///   tests isolate the congestion gate, not suspicion.
 const config = CoordinatorConfig(
   gossipInterval: Duration(seconds: 1),
   probeInterval: Duration(hours: 1),

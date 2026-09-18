@@ -49,10 +49,10 @@ class AdaptiveTimingStatus {
   /// Effective gossip interval currently in use by the gossip engine.
   final Duration effectiveGossipInterval;
 
-  /// Effective SWIM ping timeout currently in use by the failure detector.
+  /// Effective ping timeout currently in use by the failure detector.
   final Duration effectivePingTimeout;
 
-  /// Effective SWIM probe interval currently in use by the failure detector.
+  /// Effective probe interval currently in use by the failure detector.
   final Duration effectiveProbeInterval;
 
   /// Total number of messages pending send across all peers.

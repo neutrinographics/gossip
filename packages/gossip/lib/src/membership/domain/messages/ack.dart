@@ -1,7 +1,7 @@
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
 
-/// SWIM acknowledgment response to a direct probe.
+/// Acknowledgment response to a direct probe.
 ///
 /// [Ack] is sent in response to a Ping message to confirm that the sender
 /// is alive and reachable. The sequence number matches the original Ping

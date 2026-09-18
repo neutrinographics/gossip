@@ -5,7 +5,7 @@ import 'package:gossip/src/membership/domain/entities/peer.dart';
 ///
 /// [PeerRepository] stores which peers are known — their identity, added
 /// and removed as devices connect and disconnect. It does not store live
-/// SWIM state: reachability status, contact times, and RTT/traffic metrics
+/// failure-detection state: reachability status, contact times, and RTT/traffic metrics
 /// are never persisted here (see "What actually reaches this interface"
 /// below).
 ///
@@ -26,7 +26,7 @@ import 'package:gossip/src/membership/domain/entities/peer.dart';
 ///
 /// ## What actually reaches this interface
 ///
-/// Only peer membership (add/remove) is written here. SWIM-driven state —
+/// Only peer membership (add/remove) is written here. Probe-driven state —
 /// reachability status, contact times, RTT and traffic metrics — lives
 /// exclusively in the in-memory `PeerRegistry` and is never persisted, by
 /// design: it is ephemeral runtime observation, meaningless across

@@ -45,7 +45,7 @@ class ProbeTargetSelector {
   /// exhausts it. This guarantees every probable peer is probed once per
   /// cycle — worst-case time-to-probe a specific peer is ~(n-1) rounds —
   /// instead of pure-random selection's geometric coverage (which makes
-  /// SWIM detection latency scale O(n · threshold)). Ids no longer probable
+  /// detection latency scale O(n · threshold)). Ids no longer probable
   /// (removed, held, gone unreachable) are skipped; newly probable peers
   /// join at the next reshuffle.
   final List<NodeId> _probeOrder = [];

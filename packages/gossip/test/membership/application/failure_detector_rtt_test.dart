@@ -218,7 +218,8 @@ void main() {
         expect(
           h.rttTracker.hasReceivedSamples,
           isTrue,
-          reason: 'Late Ack RTT should be recorded (no Karn ambiguity in SWIM)',
+          reason:
+              'Late Ack RTT should be recorded (no Karn ambiguity in probing)',
         );
         expect(
           h.peerRegistry.getPeer(peer.id)!.metrics.rttEstimate,

@@ -103,7 +103,7 @@ publish under the existing pub.dev `gossip` name must version above the old
 - Errors surfacing after `dispose()` are routed to `onLog` instead of
   being dropped.
 - Probe scheduling, gossip pacing, and failure-detection internals were
-  substantially reworked (SWIM suppression, adaptive pacing, compaction);
+  substantially reworked (probe suppression, adaptive pacing, compaction);
   observable protocol behavior is pinned by the test suite, and audit
   records in `docs/audits/` document each change.
 - `InMemoryTimePort.advance()` now fires each periodic callback once per

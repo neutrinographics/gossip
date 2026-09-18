@@ -1,4 +1,4 @@
-/// Reachability status for a peer in SWIM failure detection.
+/// Reachability status for a peer in failure detection.
 ///
 /// Lifecycle progression:
 /// - **reachable**: Peer responds to probes (healthy)

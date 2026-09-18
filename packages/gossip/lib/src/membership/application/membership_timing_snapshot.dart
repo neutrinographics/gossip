@@ -34,10 +34,10 @@ class MembershipTimingSnapshot {
   /// rather than cold-start defaults.
   final bool hasSamples;
 
-  /// This detector's current effective SWIM ping timeout.
+  /// This detector's current effective ping timeout.
   final Duration pingTimeout;
 
-  /// This detector's current effective SWIM probe interval.
+  /// This detector's current effective probe interval.
   final Duration probeInterval;
 
   const MembershipTimingSnapshot({

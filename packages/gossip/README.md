@@ -8,7 +8,7 @@ eventually-consistent convergence.
 ## Features
 
 - **Gossip-based sync**: Anti-entropy protocol with digest/delta exchange for efficient synchronization
-- **SWIM failure detection**: Scalable membership protocol for peer health monitoring
+- **Failure detection**: Direct probes with graded reachable/suspected/unreachable status for peer health
 - **Hybrid Logical Clocks**: Causally consistent timestamps without coordination
 - **Offline-first**: Local operations work without connectivity; sync happens when peers connect
 - **Transport agnostic**: Bring your own transport (Bluetooth, WiFi Direct, TCP, WebRTC)
@@ -225,7 +225,7 @@ The library follows Domain-Driven Design with clear layer separation:
 ┌─────────────────────────────────────────┐
 │   Domain    │  Protocol  │ Infrastructure│
 │  Aggregates │  Gossip    │  Repositories │
-│  Entities   │  SWIM      │  Ports        │
+│  Entities   │  Probes    │  Ports        │
 └─────────────────────────────────────────┘
 ```
 

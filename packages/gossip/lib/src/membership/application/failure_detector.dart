@@ -332,7 +332,7 @@ class FailureDetector {
     _scheduler.stop();
   }
 
-  /// Starts listening to incoming SWIM protocol messages.
+  /// Starts listening to incoming membership protocol messages.
   ///
   /// Safe to call repeatedly: any previous subscription is cancelled
   /// first so messages are never processed twice.
@@ -341,7 +341,7 @@ class FailureDetector {
     _messageSubscription = messagePort.incoming.listen(
       _handleIncomingMessage,
       // Without onError, one transport stream error becomes an uncaught
-      // zone error and permanently cancels SWIM message handling.
+      // zone error and permanently cancels membership message handling.
       onError: (Object error, StackTrace stackTrace) {
         _emitError(
           PeerSyncError(
@@ -662,13 +662,13 @@ class FailureDetector {
         PeerSyncError(
           message.sender,
           SyncErrorType.messageCorrupted,
-          'Malformed SWIM message from ${message.sender}: $e',
+          'Malformed membership message from ${message.sender}: $e',
           occurredAt: DateTime.now(),
           cause: e,
         ),
       );
       _log(
-        'Malformed SWIM message from ${message.sender}: $e',
+        'Malformed membership message from ${message.sender}: $e',
         level: LogLevel.error,
         error: e,
         stackTrace: st,
@@ -729,7 +729,7 @@ class FailureDetector {
     handleAck(ack, timestampMs: _timePort.nowMs);
   }
 
-  /// A relay request from a peer still running the retired relayed-probing
+  /// A relay request from a peer still running the retired indirect-probing
   /// protocol. Nothing happens beyond a log line: a membership verdict
   /// never leaves the node that formed it (ADR-007), so probing a third
   /// peer on someone else's behalf protected nothing. The frame is not
@@ -858,6 +858,6 @@ class FailureDetector {
     Object? error,
     StackTrace? stackTrace,
   }) {
-    onLog?.call(level, '[SWIM] $message', error, stackTrace);
+    onLog?.call(level, '[FailureDetector] $message', error, stackTrace);
   }
 }

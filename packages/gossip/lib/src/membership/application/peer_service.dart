@@ -8,10 +8,10 @@ import 'package:gossip/src/membership/domain/events/membership_events.dart';
 
 /// Application service for peer membership: add, remove, query.
 ///
-/// ## Persistence contract (memory-only SWIM state — by design)
+/// ## Persistence contract (memory-only failure-detection state — by design)
 ///
 /// Only membership itself (add/remove) reaches [PeerRepository].
-/// SWIM-driven state — reachability status, contact times, RTT and
+/// Probe-driven state — reachability status, contact times, RTT and
 /// traffic metrics — lives exclusively in the in-memory [PeerRegistry]
 /// and is NEVER persisted: it is ephemeral runtime observation that is
 /// meaningless across restarts. A persistent [PeerRepository]

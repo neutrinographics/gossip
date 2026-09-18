@@ -2,11 +2,11 @@ import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 
 /// A delay-based periodic loop implementing the generation-guarded
 /// `_generation`/`_scheduleNext...` idiom shared by the gossip round loop,
-/// the SWIM probe loop, and the coordinator's auto-compaction loop.
+/// the probe loop, and the coordinator's auto-compaction loop.
 ///
 /// Uses [TimePort.delay] rather than [TimePort.schedulePeriodic] so the
 /// interval between ticks can change every cycle (see [nextDelay]) —
-/// necessary for adaptive pacing (RTT-derived gossip intervals, SWIM
+/// necessary for adaptive pacing (RTT-derived gossip intervals, probe
 /// backoff) that a fixed periodic timer can't express.
 ///
 /// ## The forking hazard this forecloses

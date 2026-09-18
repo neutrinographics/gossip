@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:math';
 
+import 'package:gossip/src/membership/application/failure_detector.dart';
+import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/membership/domain/events/membership_events.dart'
     show PeerStatusChanged;
 import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
@@ -11,6 +13,8 @@ import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 import 'package:test/test.dart';
 
 import 'failure_detector_test_harness.dart';
@@ -189,7 +193,7 @@ void main() {
       h.stopListening();
     });
 
-    test('sends SWIM messages with high priority', () async {
+    test('sends membership messages with high priority', () async {
       late PriorityCapturingMessagePort capPort;
       final hCap = FailureDetectorTestHarness(
         pingTimeout: const Duration(milliseconds: 500),
@@ -215,7 +219,7 @@ void main() {
       expect(
         capPort.capturedPriorities,
         everyElement(equals(MessagePriority.high)),
-        reason: 'All SWIM messages should use high priority',
+        reason: 'All membership messages should use high priority',
       );
 
       await hCap.advancePastTimeout();
@@ -1154,6 +1158,39 @@ void main() {
       await peerSub.cancel();
       h.detector.stop();
       h.stopListening();
+    });
+  });
+
+  group('Logging', () {
+    test('log lines carry the [FailureDetector] prefix', () async {
+      final lines = <String>[];
+      final localNode = NodeId('local');
+      final registry = PeerRegistry(localNode: localNode);
+      final timePort = InMemoryTimePort();
+      final bus = InMemoryMessageBus();
+      final detector = FailureDetector(
+        codec: MembershipMessageCodec(wireVersion: WireVersion.v2),
+        localNode: localNode,
+        peerRegistry: registry,
+        timePort: timePort,
+        messagePort: InMemoryMessagePort(localNode, bus),
+        onLog: (level, message, [error, stackTrace]) => lines.add(message),
+      );
+      addTearDown(detector.stopListening);
+
+      // probeNewPeer logs "Sending Ping ..." before it awaits anything, and
+      // logs the timeout when the fake clock passes it — two lines, both
+      // prefixed. peer1 has no port on the bus, so the send may fail and
+      // be logged too; every line still carries the prefix.
+      registry.addPeer(NodeId('peer1'), occurredAt: DateTime.now());
+      final probe = detector.probeNewPeer(NodeId('peer1'));
+      await Future<void>.delayed(Duration.zero);
+      await timePort.advance(const Duration(seconds: 3));
+      await probe;
+
+      expect(lines, isNotEmpty);
+      expect(lines.every((l) => l.startsWith('[FailureDetector] ')), isTrue);
+      expect(lines.any((l) => l.contains('[SWIM]')), isFalse);
     });
   });
 }

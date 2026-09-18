@@ -103,11 +103,11 @@ class CoordinatorConfig {
   /// [100ms, 5s]. When non-null, the engine uses this value verbatim.
   final Duration? gossipInterval;
 
-  /// Explicit SWIM probe interval. When null (default), `FailureDetector`
+  /// Explicit probe interval. When null (default), `FailureDetector`
   /// derives the interval adaptively from pingTimeout * 3.
   final Duration? probeInterval;
 
-  /// Explicit SWIM ping timeout. When null (default), `FailureDetector`
+  /// Explicit ping timeout. When null (default), `FailureDetector`
   /// computes the timeout adaptively from per-peer RTT.
   final Duration? pingTimeout;
 

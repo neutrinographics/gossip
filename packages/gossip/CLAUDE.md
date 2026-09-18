@@ -10,7 +10,7 @@ see the root [`CLAUDE.md`](../../CLAUDE.md). For domain vocabulary, see
 ## Project Overview
 
 `gossip` is a pure-Dart library for synchronizing event streams across
-devices using an anti-entropy gossip protocol, with SWIM-based failure
+devices using an anti-entropy gossip protocol, with probe-based failure
 detection for peer liveness.
 
 ## Architecture: bounded contexts, not layers
@@ -22,7 +22,7 @@ modules under `lib/src/`:
 lib/src/
   shared/        # kernel — true leaf; imports nothing outside itself
   sync/          # core domain: anti-entropy replication of the event log
-  membership/    # SWIM liveness: peer model + the detector that maintains it
+  membership/    # liveness: peer model + the detector that maintains it
   coordinator/   # facade shell / composition root (not a bounded context)
 ```
 

@@ -3,7 +3,7 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 
 /// Sealed family root for domain events emitted by the membership context
-/// (peer registry, SWIM failure detection).
+/// (peer registry, failure detection).
 ///
 /// Every membership-context event extends [MembershipEvent], which itself
 /// extends the shared [DomainEvent] base. Consumers of the public

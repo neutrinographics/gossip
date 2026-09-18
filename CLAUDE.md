@@ -45,7 +45,7 @@ melos exec --scope="gossip_nearby" -- flutter test
 
 | Package | Type | Description |
 |---------|------|-------------|
-| `packages/gossip` | Pure Dart | Core gossip protocol - sync engine, SWIM failure detection, HLC |
+| `packages/gossip` | Pure Dart | Core gossip protocol - sync engine, failure detection, HLC |
 | `packages/gossip_nearby` | Flutter | Nearby Connections transport (Android) - peer discovery and message delivery |
 | `packages/gossip_bluey` | Flutter | BLE transport (Android + iOS) on top of the bluey library - supports mesh and star topologies |
 
@@ -61,7 +61,7 @@ modules, not DDD layers):
 lib/src/
   shared/        # kernel — true leaf; imports nothing outside itself
   sync/          # anti-entropy replication of the event log (channels, streams, entries)
-  membership/    # SWIM liveness: peer model + the detector that maintains it
+  membership/    # liveness: peer model + the detector that maintains it
   coordinator/   # facade shell / composition root (not a bounded context)
 ```
 
@@ -94,7 +94,7 @@ Synchronizes event streams across devices using anti-entropy gossip protocol.
 **Key components:**
 - `Coordinator` (`coordinator/`): Main entry point, manages sync lifecycle
 - `GossipEngine` (`sync/application/`): Gossip round scheduling, digest/delta exchange
-- `FailureDetector` (`membership/application/`): SWIM protocol for peer health
+- `FailureDetector` (`membership/application/`): probe-based failure detection for peer health
 - `Channel` (aggregate in `sync/domain/aggregates/`, facade in `coordinator/`): Sync group with membership
 - `HlcClock` (`sync/domain/services/`): Hybrid logical clock for causal ordering
 - `MessagePort` (`shared/domain/interfaces/`): Transport abstraction - app provides implementation

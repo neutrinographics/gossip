@@ -35,7 +35,7 @@ Three options were considered:
 
 1. **Static configuration per transport type**: Provide BLE vs WiFi presets. Simple but requires user to know transport type and doesn't handle mixed networks.
 
-2. **User-configurable timing**: Expose all timing parameters. Configuration is a liability - users shouldn't need SWIM expertise to use the library.
+2. **User-configurable timing**: Expose all timing parameters. Configuration is a liability - users shouldn't need failure-detection expertise to use the library.
 
 3. **RTT-adaptive timing**: Library measures round-trip time from ping/ack pairs and computes timeouts from observed latency. Self-tuning, works on any transport.
 
@@ -43,11 +43,11 @@ Three options were considered:
 
 Implement RTT-adaptive timing (Option 3). The library automatically adapts to network conditions by:
 
-1. **RTT tracking**: Measure round-trip time from SWIM ping/ack pairs using exponentially weighted moving average (EWMA) for smoothing
+1. **RTT tracking**: Measure round-trip time from probe ping/ack pairs using exponentially weighted moving average (EWMA) for smoothing
 2. **Adaptive timeouts**: Compute ping timeout as `RTT + 4 * variance` (covers 99.99% of cases)
 3. **Adaptive intervals**: Scale gossip and probe intervals based on observed RTT
 4. **Backpressure signaling**: `MessagePort` exposes `pendingSendCount()` so the library can throttle when transport is congested
-5. **Priority queues**: SWIM protocol messages (ping/ack) get high priority to prevent RTT measurement noise during gossip congestion
+5. **Priority queues**: Membership messages (ping/ack) get high priority to prevent RTT measurement noise during gossip congestion
 
 ### Timing Configuration Made Optional
 
@@ -70,7 +70,7 @@ class CoordinatorConfig {
 }
 ```
 
-Users no longer *need* to understand SWIM timing to use the library correctly,
+Users no longer *need* to understand failure-detection timing to use the library correctly,
 but the knobs are still there when needed. Each knob gates independently: a
 static `pingTimeout` or `probeInterval` overrides only that value — the others
 stay adaptive.
@@ -138,7 +138,7 @@ Default implementations ensure backward compatibility.
 
 Rejected because:
 - Configuration is a liability for most users
-- Requires SWIM expertise to set correctly
+- Requires failure-detection expertise to set correctly
 - Static values can't adapt to changing network conditions
 - Different transports need different values
 

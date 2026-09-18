@@ -103,7 +103,7 @@ await coordinator.removePeer(peerId);
 The library handles:
 - Tracking peer state (reachable, suspected, unreachable)
 - Peer selection for gossip rounds
-- SWIM failure detection
+- Failure detection
 
 The application handles:
 - Finding peers (discovery)
