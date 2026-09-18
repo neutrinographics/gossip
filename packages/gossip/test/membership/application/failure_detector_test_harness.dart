@@ -206,7 +206,7 @@ class FailureDetectorTestHarness {
     required _CountingMessagePort sendCounter,
   }) : _sendCounter = sendCounter;
 
-  /// Number of messages the local detector has sent (Ping/Ack/PingReq),
+  /// Number of messages the local detector has sent (Ping/Ack),
   /// across whichever [MessagePort] the harness is using.
   ///
   /// Used by suppression tests to assert an all-fresh probe
@@ -301,9 +301,8 @@ class FailureDetectorTestHarness {
   /// Adds a peer that automatically Acks every [Ping] it receives, as if
   /// it were a healthy remote node running its own failure detector.
   ///
-  /// Does not respond to [PingReq] — this peer is a dumb auto-responder,
-  /// not a full detector, so it never acts as an indirect-probe
-  /// intermediary.
+  /// Answers Pings only — this peer is a dumb auto-responder, not a full
+  /// detector.
   TestPeer addAnsweringPeer(String name) {
     final peer = addPeer(name);
     peer.port.incoming.listen((msg) {
@@ -393,8 +392,9 @@ class FailureDetectorTestHarness {
     await flush();
   }
 
-  /// Sends a [PingReq] from [sender] to the local detector, requesting
-  /// it probe [target].
+  /// Sends a [PingReq] from [sender] to the local detector, as a peer on
+  /// the retired relay protocol would. The detector ignores it; tests pin
+  /// that.
   Future<void> sendPingReq(
     TestPeer sender,
     TestPeer target, {

@@ -27,34 +27,22 @@ import 'package:gossip/src/membership/domain/messages/ping.dart';
 import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 
-/// Tracks a pending ping awaiting Ack response.
+/// Tracks a pending ping awaiting its Ack.
 ///
-/// Used to match incoming Acks with outgoing Pings by sequence number.
-/// The [completer] resolves to true when Ack is received, enabling timeout
-/// handling via Future.timeout().
-///
-/// Supports both direct pings (local → target) and indirect pings
-/// (local → intermediary → target → intermediary → local).
+/// Matched to an incoming Ack by sequence number, and only when that Ack's
+/// sender is [target]: a stale Ack with a colliding sequence from an
+/// unrelated peer must not mark a possibly-dead target alive. The
+/// [completer] resolves to true when the Ack arrives.
 class _PendingPing {
   final NodeId target;
   final int sequence;
   final int sentAtMs;
-
-  /// Whether a forwarded Ack (sender != target) may complete this ping.
-  ///
-  /// True only for indirect-phase pings, where intermediaries answer on
-  /// the target's behalf. Direct pings require the Ack sender to be the
-  /// probed target — otherwise a stale Ack with a colliding sequence
-  /// from an unrelated peer would mark the wrong peer alive.
-  final bool allowForwarded;
-
   final Completer<bool> completer;
 
   _PendingPing({
     required this.target,
     required this.sequence,
     required this.sentAtMs,
-    this.allowForwarded = false,
   }) : completer = Completer<bool>();
 }
 
@@ -512,15 +500,10 @@ class FailureDetector {
 
   /// Handles incoming Ack: updates peer contact and records RTT.
   ///
-  /// RTT is attributed to the probe target (from `_PendingPing.target`),
-  /// not `ack.sender` — because forwarded indirect Acks have the
-  /// intermediary as sender, not the original target.
-  ///
   /// Acks that don't match a pending ping are silently ignored. This is
-  /// normal when: (a) a very-late ack arrives after cleanup, (b) both
-  /// direct and indirect acks arrive for the same probe, or (c) a
-  /// forwarded ack races with a direct ack. The peer contact timestamp
-  /// is still updated regardless.
+  /// normal when a very-late Ack arrives after the grace window closed.
+  /// The sender's contact timestamp is updated regardless: an Ack is proof
+  /// of life for whoever sent it, even when it confirms no probe.
   @visibleForTesting
   void handleAck(Ack ack, {required int timestampMs}) {
     _recordPeerContact(ack.sender, timestampMs);
@@ -530,12 +513,11 @@ class FailureDetector {
       return;
     }
 
-    // Direct pings may only be confirmed by the probed target itself.
-    // A stale Ack with a colliding sequence from an unrelated peer (e.g.
-    // after a detector rebuild reset the sequence counter) must not mark
-    // a possibly-dead target alive. Forwarded Acks (indirect phase) are
-    // legitimately sent by intermediaries and are exempt.
-    if (!pending.allowForwarded && ack.sender != pending.target) {
+    // Only the probed target may confirm its own ping: a stale Ack with a
+    // colliding sequence from an unrelated peer (e.g. after a detector
+    // rebuild reset the sequence counter) must not mark a possibly-dead
+    // target alive.
+    if (ack.sender != pending.target) {
       _log(
         'Ignoring Ack seq=${ack.sequence} from ${ack.sender}: '
         'pending ping targets ${pending.target}',
@@ -543,7 +525,7 @@ class FailureDetector {
       return;
     }
 
-    _recordRtt(pending, ack.sender, timestampMs);
+    _recordRtt(pending, timestampMs);
     pending.completer.complete(true);
   }
 
@@ -711,7 +693,7 @@ class FailureDetector {
       } else if (protocolMessage is Ack) {
         _handleIncomingAck(protocolMessage);
       } else if (protocolMessage is PingReq) {
-        await _handlePingReq(protocolMessage, sender);
+        _ignoreRelayRequest(protocolMessage, sender);
       }
     } catch (e, st) {
       _emitError(
@@ -747,53 +729,26 @@ class FailureDetector {
     handleAck(ack, timestampMs: _timePort.nowMs);
   }
 
-  /// Intermediary role: ping target on behalf of requester, forward Ack back.
-  Future<void> _handlePingReq(PingReq pingReq, NodeId requester) async {
-    _log(
-      'Received PingReq from $requester '
-      'target=${pingReq.target} seq=${pingReq.sequence}',
-    );
-
-    // Use a LOCAL sequence number for the intermediary's Ping to the target.
-    // The prober's sequence (pingReq.sequence) is only echoed back in the
-    // forwarded Ack. Using the prober's sequence would collide with the
-    // intermediary's own pending pings in _pendingPings.
-    final gotAck = await _pingExchange(
-      pingReq.target,
-      // Deliberately NOT _sendPing: relaying on someone else's behalf
-      // isn't our own scheduling decision, so this bypasses the
-      // probe-attempt bookkeeping _sendPing does for our own selection
-      // choices.
-      (sequence) async {
-        final ping = Ping(sender: localNode, sequence: sequence);
-        await _safeSend(pingReq.target, _codec.encode(ping), 'Ping');
-      },
-      // Adaptive per-target timeout, not a fixed 500ms: on BLE a target's
-      // RTT can exceed 500ms, and a fixed timeout made the intermediary
-      // abandon the relay before the target could answer — wasting the
-      // whole indirect phase while the requester still waited out its own
-      // (longer) timeout.
-      effectivePingTimeoutForPeer(pingReq.target),
-    );
-
-    if (gotAck) {
-      final ack = Ack(sender: localNode, sequence: pingReq.sequence);
-      await _safeSend(requester, _codec.encode(ack), 'forwarded Ack');
-    }
+  /// A relay request from a peer still running the retired indirect-probing
+  /// protocol. Nothing happens beyond a log line: a membership verdict
+  /// never leaves the node that formed it (ADR-007), so probing a third
+  /// peer on someone else's behalf protected nothing. The frame is not
+  /// proof the sender can hear us either, so it records no contact.
+  void _ignoreRelayRequest(PingReq pingReq, NodeId requester) {
+    _log('Ignoring PingReq from $requester target=${pingReq.target}');
   }
 
-  /// Records an RTT sample from a matched Ack.
-  ///
-  /// RTT is attributed to pending.target (the peer being probed), not
-  /// ackSender — forwarded indirect Acks have the intermediary as sender.
+  /// Records an RTT sample from a matched Ack, attributed to the probed
+  /// target — which the sender guard in [handleAck] makes the same node as
+  /// the Ack's sender.
   ///
   /// All valid RTT samples are recorded regardless of whether they exceeded
   /// the timeout. Unlike TCP (where Karn's algorithm avoids ambiguity between
-  /// original and retransmitted segments), SWIM pings have unique sequence
+  /// original and retransmitted segments), probe pings have unique sequence
   /// numbers so every Ack is unambiguously matched. Recording all samples
   /// lets the EWMA adapt upward when latency increases, preventing a
   /// survivorship bias where only fast samples feed the estimate.
-  void _recordRtt(_PendingPing pending, NodeId ackSender, int timestampMs) {
+  void _recordRtt(_PendingPing pending, int timestampMs) {
     final rttMs = timestampMs - pending.sentAtMs;
 
     if (rttMs <= 0) return;
@@ -805,29 +760,17 @@ class FailureDetector {
     );
 
     _rttTracker.recordSample(rttSample);
-    // A forwarded Ack (indirect phase) measures the 2-hop path
-    // requester → intermediary → target → back. Attributing it to the
-    // target would systematically inflate its per-peer estimate; only
-    // Acks from the target itself count as direct samples.
-    if (ackSender == pending.target) {
-      peerRegistry.recordPeerRtt(pending.target, rttSample);
-    }
+    peerRegistry.recordPeerRtt(pending.target, rttSample);
     _log(
-      'Ack seq=${pending.sequence} from $ackSender target=${pending.target} '
-      '(RTT: ${rttMs}ms)',
+      'Ack seq=${pending.sequence} from ${pending.target} (RTT: ${rttMs}ms)',
     );
   }
 
-  _PendingPing _trackPendingPing(
-    NodeId target,
-    int sequence, {
-    bool allowForwarded = false,
-  }) {
+  _PendingPing _trackPendingPing(NodeId target, int sequence) {
     final pending = _PendingPing(
       target: target,
       sequence: sequence,
       sentAtMs: _timePort.nowMs,
-      allowForwarded: allowForwarded,
     );
     _pendingPings[sequence] = pending;
     return pending;
@@ -860,33 +803,6 @@ class FailureDetector {
 
   void _cleanupPendingPing(int sequence) {
     _pendingPings.remove(sequence);
-  }
-
-  /// Runs one ping/Ack exchange: allocates a sequence number, tracks it as
-  /// pending, invokes [send] to transmit, races the Ack against [timeout],
-  /// and always drops the pending entry afterward.
-  ///
-  /// [send] is a callback rather than a fixed action because its caller,
-  /// [_handlePingReq], sends a bare relay Ping directly (see its closure
-  /// for why not [_sendPing]), for now the only caller.
-  Future<bool> _pingExchange(
-    NodeId target,
-    Future<void> Function(int sequence) send,
-    Duration timeout, {
-    bool allowForwarded = false,
-  }) async {
-    final sequence = _nextSequence++;
-    final pending = _trackPendingPing(
-      target,
-      sequence,
-      allowForwarded: allowForwarded,
-    );
-    try {
-      await send(sequence);
-      return await _awaitAckWithTimeout(pending, timeout);
-    } finally {
-      _cleanupPendingPing(sequence);
-    }
   }
 
   Future<void> _safeSend(
