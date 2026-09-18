@@ -172,9 +172,14 @@ touched the detector:
 
 ## Review outcome
 
-_Partial (owner, 2026-09-18): open point 1 ruled — the full rename sweep
-including the log prefix (ruling 6 as recommended); open point 3 ruled —
-the device check is the bar for the app pin bump (ruling 10 as
-recommended). Open point 2 (ruling 3, the bootstrap probe) awaits the
-owner's answer after clarification. The plan follows the record, not the
-other way around._
+**Approved as recommended (owner, 2026-09-18).** All three open points
+ruled: the full rename sweep including the `[SWIM]` → `[FailureDetector]`
+log prefix (ruling 6); the new-peer RTT bootstrap probe stays outside the
+grace window (ruling 3); a device check on Android and iOS is the bar for
+the OpenDoorApp pin bump (ruling 10). Asked during review: whether Dart
+should adopt incarnation numbers. Answer recorded here so the amended
+ADR-004 carries it: no — refutation only has meaning when verdicts travel
+between nodes, and under ADR-007 a verdict never leaves the node that
+formed it; a wrongly suspected peer clears its name by answering the next
+probe. Kotlin's copy is dead scaffolding scoped for deletion in KT-E. The
+implementation plan follows this record.
