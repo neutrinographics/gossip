@@ -59,7 +59,7 @@ class ConnectionManager implements MessageDispatcher {
   /// a GATT write hangs (platform bug, dead link the state watcher never
   /// noticed), not to race normal writes: without a bound, one hung write
   /// blocks every queued message to that peer forever, including
-  /// high-priority SWIM pings.
+  /// high-priority failure-detection pings.
   static const Duration defaultSendTimeout = Duration(seconds: 30);
 
   final BlueyPort port;
@@ -147,9 +147,10 @@ class ConnectionManager implements MessageDispatcher {
   /// Each peer's chunked sends are serialized so concurrent
   /// `sendGossipMessage` calls to the same peer don't interleave their
   /// chunks on the wire (which would corrupt the receiver's FrameDecoder
-  /// byte-stream alignment). Within a peer, the high-priority lane (SWIM
-  /// pings/acks) drains ahead of the normal lane (bulk gossip) so failure
-  /// detection isn't delayed behind a large delta during congestion.
+  /// byte-stream alignment). Within a peer, the high-priority lane
+  /// (failure-detection pings/acks) drains ahead of the normal lane (bulk
+  /// gossip) so failure detection isn't delayed behind a large delta
+  /// during congestion.
   ///
   /// Queues are per-peer — not one global queue like `gossip_nearby`'s
   /// transport — because each peer is an independent framed link: sends

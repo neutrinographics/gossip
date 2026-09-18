@@ -44,6 +44,11 @@ void main() {
     addTearDown(targetSub.cancel);
 
     final codec = MembershipMessageCodec(wireVersion: WireVersion.v1);
+    final messagesReceivedBefore = nodeA.peers
+        .firstWhere((p) => p.id == requester.id)
+        .metrics
+        .messagesReceived;
+    final sentAtMs = nodeA.timePort.nowMs;
     await requester.messagePort.send(
       nodeA.id,
       codec.encode(
@@ -63,5 +68,20 @@ void main() {
       reason: 'no probe is relayed to the target',
     );
     expect(errors, isEmpty);
+
+    // The engine, not the detector, stamps contact and counts bytes for
+    // every frame, so an ignored relay request still earns the sender
+    // ordinary proof-of-life credit.
+    final requesterPeer = nodeA.peers.firstWhere((p) => p.id == requester.id);
+    expect(
+      requesterPeer.lastContactMs,
+      greaterThanOrEqualTo(sentAtMs),
+      reason: 'the sync engine stamps contact on every inbound frame',
+    );
+    expect(
+      requesterPeer.metrics.messagesReceived,
+      greaterThan(messagesReceivedBefore),
+      reason: 'the sync engine counts every inbound frame in its metrics',
+    );
   });
 }

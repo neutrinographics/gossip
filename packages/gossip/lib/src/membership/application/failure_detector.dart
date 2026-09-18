@@ -20,7 +20,6 @@ import 'package:gossip/src/membership/domain/services/probe_timing_policy.dart';
 import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_port.dart';
-import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
 import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
@@ -110,7 +109,7 @@ class FailureDetector {
   /// protocol messages.
   ///
   /// Injected by the composition root (`Coordinator` wires a
-  /// [MembershipMessageCodec]; test harnesses do the same) rather than
+  /// `MembershipMessageCodec`; test harnesses do the same) rather than
   /// constructed inline, so the detector depends only on the shared
   /// [MessageCodec] seam, not a concrete codec class.
   /// [MessageCodec.decode] answers null for a frame outside this codec's
@@ -365,7 +364,7 @@ class FailureDetector {
       return;
     }
 
-    if (await _probe(peer.id)) {
+    if (await _probe(peer.id, graceWindow: true)) {
       // If something else already called news() earlier in this same
       // round (e.g. a different peer's contact recovering it from
       // suspected), this quietRound() still runs right after — netting
@@ -400,24 +399,14 @@ class FailureDetector {
   /// protect, a late first sample is simply the next probe's.
   ///
   /// Called fire-and-forget from Coordinator.addPeer() to get the first
-  /// RTT sample quickly instead of waiting for random probe selection.
+  /// RTT sample quickly instead of waiting for the peer's turn in the
+  /// probe rotation.
   Future<bool> probeNewPeer(NodeId peerId) async {
-    _timing.news();
     final peer = peerRegistry.getPeer(peerId);
     if (peer == null) return false;
+    _timing.news();
 
-    final sequence = _nextSequence++;
-    final pending = _trackPendingPing(peerId, sequence);
-    final bool gotAck;
-    try {
-      await _sendPing(peerId, sequence);
-      gotAck = await _awaitAckWithTimeout(
-        pending,
-        effectivePingTimeoutForPeer(peerId),
-      );
-    } finally {
-      _cleanupPendingPing(sequence);
-    }
+    final gotAck = await _probe(peerId, graceWindow: false);
 
     if (gotAck) {
       _log('probeNewPeer got Ack from $peerId');
@@ -447,7 +436,7 @@ class FailureDetector {
 
     _log('Probing unreachable peer ${peer.id} (best-effort recovery)');
 
-    if (await _probe(peer.id)) {
+    if (await _probe(peer.id, graceWindow: true)) {
       _log('Unreachable peer ${peer.id} responded — recovered to reachable');
     } else {
       _log('Unreachable peer ${peer.id} did not respond (still unreachable)');
@@ -549,8 +538,11 @@ class FailureDetector {
     }
   }
 
-  /// Probes [target]: a direct Ping, then — if its timeout expires — the
-  /// grace window, one more per-peer timeout on the same pending ping.
+  /// Probes [target]: a direct Ping, then — when [graceWindow] is true and
+  /// its timeout expires — the grace window, one more per-peer timeout on
+  /// the same pending ping. The bootstrap probe ([probeNewPeer]) passes
+  /// false: it records no failure, so it has no verdict for the window to
+  /// protect, and a late first RTT sample is simply the next probe's.
   /// Decides only whether the target answered, directly or within the
   /// grace window — it does not itself decide what a caller should do
   /// about that answer (pacer signals, failure bookkeeping). Those differ
@@ -558,7 +550,7 @@ class FailureDetector {
   /// [_probeUnreachablePeer]'s best-effort recovery probing, so each maps
   /// the result to its own policy. Logs the late-Ack case at the point it
   /// sees it — a late Ack is the signal that a timeout is running tight.
-  Future<bool> _probe(NodeId target) async {
+  Future<bool> _probe(NodeId target, {required bool graceWindow}) async {
     final sequence = _nextSequence++;
     final pending = _trackPendingPing(target, sequence);
     try {
@@ -569,8 +561,9 @@ class FailureDetector {
         effectivePingTimeoutForPeer(target),
       );
       if (gotDirectAck) return true;
+      if (!graceWindow) return false;
 
-      if (await _awaitLateAck(pending, target)) {
+      if (await _awaitLateAck(pending)) {
         _log(
           'Late Ack arrived for seq=$sequence from $target '
           'within the grace window',
@@ -591,8 +584,10 @@ class FailureDetector {
   /// counts. Returns true the moment such an Ack lands, false when the
   /// window closes empty. Re-reads the timeout at entry so a fresh RTT
   /// sample is honored.
-  Future<bool> _awaitLateAck(_PendingPing pending, NodeId target) =>
-      _awaitAckWithTimeout(pending, effectivePingTimeoutForPeer(target));
+  Future<bool> _awaitLateAck(_PendingPing pending) => _awaitAckWithTimeout(
+    pending,
+    effectivePingTimeoutForPeer(pending.target),
+  );
 
   void _handleProbeFailure(NodeId target) {
     _timing.news();
@@ -705,10 +700,11 @@ class FailureDetector {
   /// A relay request from a peer still running the retired indirect-probing
   /// protocol. Nothing happens beyond a log line: a membership verdict
   /// never leaves the node that formed it (ADR-007), so probing a third
-  /// peer on someone else's behalf protected nothing. The frame is not
-  /// proof the sender can hear us either, so the detector records no
-  /// contact for it (the sync engine's per-frame contact stamp, which keys
-  /// freshness suppression on the inbound path working, is unaffected).
+  /// peer on someone else's behalf protected nothing. The detector records
+  /// nothing for it: the sync engine already stamps every inbound frame as
+  /// contact and counts its bytes, so the sender gets the same
+  /// proof-of-life credit any frame earns, and the detector has no probe
+  /// to complete.
   void _ignoreRelayRequest(PingReq pingReq, NodeId requester) {
     _log('Ignoring PingReq from $requester target=${pingReq.target}');
   }
@@ -771,7 +767,6 @@ class FailureDetector {
     _PendingPing pending,
     Duration timeout,
   ) async {
-    if (pending.completer.isCompleted) return true;
     final timeoutFuture = _timePort.delay(timeout).then((_) => false);
     return Future.any([pending.completer.future, timeoutFuture]);
   }

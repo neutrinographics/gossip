@@ -49,7 +49,10 @@ void main() {
       expect(
         h.peerRegistry.getPeer(requester.id)!.lastContactMs,
         equals(contactBefore),
-        reason: 'a relay request is not proof the sender can hear us',
+        reason:
+            'the detector itself records nothing; the frame\'s '
+            'proof-of-life credit comes from the sync engine\'s per-frame '
+            'stamp',
       );
     });
   });
