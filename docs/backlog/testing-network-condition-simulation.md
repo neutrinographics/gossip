@@ -16,8 +16,7 @@ ways, and today none of them can be expressed in a test:
   retry and timeout logic actually runs.
 - **One-way (asymmetric) partitions** — A can hear B but B can't hear A: the
   classic degraded-radio case, which the failure detector now reports
-  honestly instead of masking through a relay, currently impossible to
-  construct.
+  honestly instead of masking through a relay.
 - **Duplicate delivery** — the same frame arriving twice.
 - **Corruption** — mangled bytes on the wire.
 - **Real backpressure** — today "congestion" is a number a test writes into

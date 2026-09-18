@@ -101,6 +101,11 @@ bugs, not polish.
   "SWIM", including a user-visible "SWIM probe interval" label; the core
   renamed the mechanism to failure detection on 2026-09-18, and these
   should follow.
+- One Bluetooth-transport integration test (the reconnect-during-a-chunked-send
+  case in the adverse link-supersession suite) is timing-sensitive: it passes
+  every time on its own and on the main branch, but has failed once inside
+  the concurrent whole-monorepo run (2026-09-18). Either give it a
+  deterministic wait or mark the harness expectation it depends on.
 
 ## Related
 
