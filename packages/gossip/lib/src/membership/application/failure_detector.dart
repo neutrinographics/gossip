@@ -94,14 +94,16 @@ class FailureDetector {
 
   /// Owns the ping-timeout / probe-interval policy: static vs. adaptive
   /// per knob, the 3x-timeout interval formula, and the quiescence
-  /// pacer. See [ProbeTimingPolicy] for why this is a separate object
+  /// pacer. Pure — this detector supplies the peer's RTT estimate on each
+  /// call. See [ProbeTimingPolicy] for why this is a separate object
   /// rather than fields here.
   late final ProbeTimingPolicy _timing;
 
   /// Owns probe-target selection policy: round-robin peer selection,
   /// the unreachable-peer recovery cursor, and the probing-hold grace
-  /// period. See [ProbeTargetSelector] for why this is a separate object
-  /// rather than fields here.
+  /// period. Pure — this detector supplies the clock reading and the
+  /// candidate lists on each call. See [ProbeTargetSelector] for why this
+  /// is a separate object rather than fields here.
   late final ProbeTargetSelector _selector;
   final Random _random;
 
@@ -138,18 +140,13 @@ class FailureDetector {
        _random = random ?? Random(),
        _rttTracker = rttTracker ?? RttTracker() {
     _timing = ProbeTimingPolicy(
-      peerRegistry: peerRegistry,
       rttTracker: _rttTracker,
       staticPingTimeout: pingTimeout,
       staticProbeInterval: probeInterval,
     );
     // Shares this same Random instance (not a fresh one) — seeded-test
     // determinism depends on every draw coming from one generator.
-    _selector = ProbeTargetSelector(
-      peerRegistry: peerRegistry,
-      timePort: timePort,
-      random: _random,
-    );
+    _selector = ProbeTargetSelector(random: _random);
     _scheduler = GenerationScheduler(
       timePort: timePort,
       // ±20% jitter decorrelates probe loops across nodes so they don't
@@ -229,7 +226,8 @@ class FailureDetector {
   /// production code has no caller; kept public solely for tests to assert
   /// hold state directly.
   @visibleForTesting
-  bool hasProbingHold(NodeId peerId) => _selector.hasProbingHold(peerId);
+  bool hasProbingHold(NodeId peerId) =>
+      _selector.hasProbingHold(peerId, _timePort.nowMs);
 
   /// Drops all per-peer bookkeeping for a peer that has been removed from
   /// the system entirely.
@@ -249,7 +247,9 @@ class FailureDetector {
   /// Per-peer ping timeout. Delegates to [_timing] — see
   /// [ProbeTimingPolicy.effectivePingTimeoutForPeer].
   Duration effectivePingTimeoutForPeer(NodeId peerId) =>
-      _timing.effectivePingTimeoutForPeer(peerId);
+      _timing.effectivePingTimeoutForPeer(
+        peerRegistry.getPeer(peerId)?.metrics.rttEstimate,
+      );
 
   /// Effective probe interval (time between probe rounds). Delegates to
   /// [_timing] — see [ProbeTimingPolicy.effectiveProbeInterval].
@@ -355,6 +355,8 @@ class FailureDetector {
 
     // Regular probe round: select reachable or suspected peer.
     final peer = _selector.nextProbeTarget(
+      peerRegistry.probablePeers,
+      nowMs: _timePort.nowMs,
       freshnessWindow: effectiveProbeInterval,
     );
     if (peer == null) {
@@ -431,7 +433,7 @@ class FailureDetector {
   /// Ack, [handleAck] → [_recordPeerContact] → [PeerRegistry.updatePeerContact]
   /// transitions it back to reachable.
   Future<void> _probeUnreachablePeer() async {
-    final peer = _selector.nextUnreachableTarget();
+    final peer = _selector.nextUnreachableTarget(peerRegistry.unreachablePeers);
     if (peer == null) return;
 
     _log('Probing unreachable peer ${peer.id} (best-effort recovery)');
@@ -447,8 +449,11 @@ class FailureDetector {
   /// current [effectiveProbeInterval] as its freshness window) for tests —
   /// production code reaches it only through [performProbeRound].
   @visibleForTesting
-  Peer? nextProbeTarget() =>
-      _selector.nextProbeTarget(freshnessWindow: effectiveProbeInterval);
+  Peer? nextProbeTarget() => _selector.nextProbeTarget(
+    peerRegistry.probablePeers,
+    nowMs: _timePort.nowMs,
+    freshnessWindow: effectiveProbeInterval,
+  );
 
   // Production traffic reaches the next four members only through
   // _handleIncomingMessage; each is public solely so tests can drive it

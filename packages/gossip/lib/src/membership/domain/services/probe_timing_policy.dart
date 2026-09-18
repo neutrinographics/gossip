@@ -1,8 +1,7 @@
-import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/shared/domain/services/duration_clamp.dart';
 import 'package:gossip/src/shared/domain/services/quiescence_pacer.dart';
 import 'package:gossip/src/shared/domain/services/rtt_tracker.dart';
-import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/rtt_estimate.dart';
 
 /// Owns the failure detector's probe-timing policy: how long to wait for
 /// an Ack, and how often to run a probe round.
@@ -19,16 +18,13 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 /// and getters.
 class ProbeTimingPolicy {
   ProbeTimingPolicy({
-    required PeerRegistry peerRegistry,
     required RttTracker rttTracker,
     Duration? staticPingTimeout,
     Duration? staticProbeInterval,
-  }) : _peerRegistry = peerRegistry,
-       _rttTracker = rttTracker,
+  }) : _rttTracker = rttTracker,
        _staticPingTimeout = staticPingTimeout,
        _staticProbeInterval = staticProbeInterval;
 
-  final PeerRegistry _peerRegistry;
   final RttTracker _rttTracker;
 
   /// A caller-supplied fixed ping timeout, or null for the adaptive
@@ -70,14 +66,13 @@ class ProbeTimingPolicy {
     );
   }
 
-  /// Per-peer ping timeout, falling back to the global estimate.
-  ///
-  /// Uses the peer's own RTT estimate if available, otherwise uses the
-  /// global [effectivePingTimeout]. This lets fast peers use shorter
-  /// timeouts while slow peers get longer ones.
-  Duration effectivePingTimeoutForPeer(NodeId peerId) {
+  /// Per-peer ping timeout: the peer's own [peerRtt] estimate when it has
+  /// one, else the global [effectivePingTimeout]. This lets fast peers use
+  /// shorter timeouts while slow peers get longer ones. The caller passes
+  /// the estimate — rather than a peer id the policy would look up itself —
+  /// so the policy holds no aggregate.
+  Duration effectivePingTimeoutForPeer(RttEstimate? peerRtt) {
     if (_staticPingTimeout != null) return _staticPingTimeout;
-    final peerRtt = _peerRegistry.getPeer(peerId)?.metrics.rttEstimate;
     if (peerRtt != null) {
       return peerRtt.suggestedTimeout(
         minTimeout: _minPingTimeout,
