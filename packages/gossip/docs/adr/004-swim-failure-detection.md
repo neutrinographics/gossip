@@ -1,56 +1,64 @@
-# ADR-004: SWIM Protocol for Failure Detection
+# ADR-004: Probe-Based Failure Detection
 
 ## Status
 
-Accepted
+Accepted 2026-03; **amended 2026-09-18** — indirect (relayed) probing
+retired. History below.
 
 ## Context
 
-In a distributed system, nodes need to detect when peers become unreachable. This is essential for:
-- Avoiding wasted sync attempts to dead nodes
-- Maintaining accurate peer status for the application
-- Efficient gossip peer selection
+In a distributed system, nodes need to detect when peers become unreachable:
+- to avoid wasted sync attempts to dead nodes,
+- to keep peer status accurate for the application,
+- to steer gossip partner selection.
 
-Common failure detection approaches:
-1. **Heartbeat**: Periodic "I'm alive" messages from each peer
-2. **Ping-Pong**: Direct probes to each peer
-3. **SWIM**: Scalable Weakly-consistent Infection-style Membership protocol
-4. **Phi Accrual**: Adaptive failure detection based on heartbeat history
-
-The library targets small networks (up to 8 devices) with potentially unreliable connections (mobile, P2P).
+The library targets small networks (up to 8 devices) with potentially
+unreliable connections (mobile, P2P). Under ADR-007 membership is local
+metadata: no node ever tells another who it thinks is alive.
 
 ## Decision
 
-**Use the SWIM protocol for failure detection.** SWIM combines direct probes with indirect probes through other peers to reduce false positives.
+**Detect failures with direct probes, graded status, and slow recovery
+probing.** Each round the detector pings one peer and waits a per-peer
+RTT-adaptive timeout; if that expires it holds the ping open for one more
+timeout — the grace window (ADR-012) — and counts a failure only if the
+window closes empty.
 
 ```
-Direct Probe:
+Probe:
   A ──ping──> B
-  A <──ack─── B
-
-Indirect Probe (when direct fails):
-  A ──ping-req──> C ──ping──> B
-  A <──────ack─────── C <──ack─── B
+  A <──ack─── B            (before the timeout: reachable)
+  A <──ack─── B            (inside the grace window: still reachable)
+  (nothing)                (window closes empty: one failure counted)
 ```
+
+No probe is ever relayed through a third peer. In the SWIM literature the
+relay exists to stop one node's false "dead" verdict from spreading through
+the group; here a verdict never leaves the node that formed it, so the
+relay would protect nothing — and keeping a one-way-deaf link marked
+reachable would keep the node sending into a link that cannot answer,
+while data converges through any healthy third node regardless.
 
 ## Rationale
 
-1. **Reduces false positives**: Indirect probes catch transient network issues
-2. **Scalable**: O(1) message overhead per node per protocol period
-3. **Battle-tested**: Used in production systems (HashiCorp Serf, Consul)
-4. **Configurable**: Suspicion threshold tunable for different environments
-5. **Simple state machine**: reachable → suspected → unreachable
+1. **The status means what it says**: "I cannot usefully exchange data
+   with this peer directly" is exactly what the status gates.
+2. **Scalable**: O(1) probe messages per node per round.
+3. **Configurable**: suspicion thresholds tunable for different networks.
+4. **Simple state machine**: reachable → suspected → unreachable.
+5. **One code path**: every verdict-bearing probe has the same shape,
+   so the late-Ack protection (ADR-012) is universal.
 
 ## Protocol Details
 
 ### States
 
-- **Reachable**: Peer responds to probes normally
-- **Suspected**: After `suspicionThreshold` (default 5) consecutive probe failures.
-  Peer is still probed and can recover by responding.
-- **Unreachable**: After `unreachableThreshold` (default 15) consecutive probe failures.
-  Excluded from regular probing and gossip. Periodically probed every
-  `unreachableProbeInterval` (default 5) rounds for recovery.
+- **Reachable**: Peer answers probes.
+- **Suspected**: After `suspicionThreshold` (default 5) consecutive probe
+  failures. Still probed; recovers by answering.
+- **Unreachable**: After `unreachableThreshold` (default 15) consecutive
+  probe failures. Excluded from regular probing and gossip. Probed for
+  recovery every `unreachableProbeInterval` (default 5) rounds.
 
 ### Configuration
 
@@ -59,22 +67,27 @@ CoordinatorConfig(
   suspicionThreshold: 5,       // Failed probes before suspected (default: 5)
   unreachableThreshold: 15,    // Failed probes before unreachable (default: 15)
   unreachableProbeInterval: 5, // Probe unreachable peers every N rounds (default: 5)
-  startupGracePeriod: Duration(seconds: 10), // Grace period for new peers
+  startupGracePeriod: Duration(seconds: 10), // Hold new peers out of probing
 )
 ```
 
 Timing parameters (ping timeout, probe interval, gossip interval) are
-RTT-adaptive and not directly configurable — see ADR-013.
+RTT-adaptive and not directly configurable — see ADR-013. The grace
+window is one more per-peer ping timeout and has no knob of its own.
 
-### Incarnation Numbers
+### No incarnation numbers
 
-Each node maintains an incarnation number that increments when refuting false suspicions. This prevents stale failure information from propagating.
+SWIM's incarnation numbers let a wrongly suspected node refute the rumor.
+There is no rumor here — a suspicion is private to the node that formed
+it — so a wrongly suspected peer clears its name by answering the next
+probe, or by sending anything at all. Neither library implements
+incarnation numbers; the Kotlin twin's leftover scaffolding is scheduled
+for deletion.
 
 ### Tuning Guide
 
-All parameters are set via `CoordinatorConfig` and passed to `Coordinator.create()`.
-Timing values (ping timeout, probe interval) are RTT-adaptive and not directly
-configurable — only the policy thresholds below are tunable.
+All parameters are set via `CoordinatorConfig` and passed to
+`Coordinator.create()`. Only the policy thresholds below are tunable.
 
 | Parameter | Default | Effect of raising | Effect of lowering |
 |-----------|---------|-------------------|--------------------|
@@ -94,39 +107,42 @@ governs half-open links.
 
 1. **0–7.5s**: First 5 probes fail → peer becomes **suspected**
 2. **7.5–22.5s**: 10 more probes fail → peer becomes **unreachable**
-3. **Every ~7.5s thereafter**: One unreachable probe fires. If the peer responds
-   (directly or via an intermediary), it recovers to **reachable** immediately.
+3. **Every ~7.5s thereafter**: One recovery probe fires. If the peer
+   answers, directly or inside the grace window, it recovers to
+   **reachable** immediately.
 
 #### Recovery paths
 
-- **Suspected → Reachable**: Peer responds to any regular probe
-- **Unreachable → Reachable**: Three ways:
-  1. Periodic unreachable probe gets a response (direct or indirect via intermediary)
-  2. Peer sends an incoming Ping (handled by `_handleIncomingPing`)
+- **Suspected → Reachable**: the peer answers any regular probe, or sends
+  anything the node receives.
+- **Unreachable → Reachable**: three ways:
+  1. A periodic recovery probe gets an answer
+  2. The peer sends an incoming Ping (handled by the detector)
   3. Transport reconnection triggers `addPeer()` (e.g., BLE reconnect)
 
 #### Bandwidth cost of unreachable probing
 
-A SWIM Ping is ~66 bytes. At `unreachableProbeInterval: 5` with ~1.5s probe
-intervals, that's one 66-byte message every ~7.5s per unreachable peer — roughly
-9 bytes/second, or 0.06% of typical gossip traffic. Lowering the interval to 1
-(probe every round) costs ~44 bytes/second, still negligible.
+A Ping is ~66 bytes. At `unreachableProbeInterval: 5` with ~1.5s probe
+intervals, that's one 66-byte message every ~7.5s per unreachable peer —
+roughly 9 bytes/second, or 0.06% of typical gossip traffic. Lowering the
+interval to 1 (probe every round) costs ~44 bytes/second, still negligible.
 
 ## Consequences
 
 ### Positive
 
 - Fast detection of actual failures (~7.5s to suspected, ~22.5s to unreachable)
-- Low false positive rate with indirect probes and two-tier thresholds
+- Low false-positive rate from the grace window and two-tier thresholds
 - Works well with unreliable mobile networks
 - Automatic recovery from mutual-unreachable deadlocks via periodic probing
 - Minimal bandwidth overhead
+- One probe shape on both libraries
 
 ### Negative
 
-- More complex than simple heartbeats
-- Requires peers to relay ping-req messages
-- Small delay before declaring node unreachable
+- A one-way-deaf pair is reported as degraded even when a third node
+  could reach both sides (intended: data still converges through it)
+- Small delay before declaring a node unreachable
 
 ### Integration
 
@@ -134,29 +150,56 @@ intervals, that's one 66-byte message every ~7.5s per unreachable peer — rough
 - Shares MessagePort for network communication
 - Updates PeerRegistry with status changes
 - Emits PeerStatusChanged events
+- A `PingReq` frame from a peer on an older build is decoded and ignored;
+  the type leaves the wire at the next dialect revision.
+
+## History
+
+### Original decision (2026-03): SWIM
+
+The detector was first specified as SWIM (Scalable Weakly-consistent
+Infection-style Membership): direct probes plus, on a direct timeout, an
+indirect probe relayed through up to three intermediaries. The rationale
+was fewer false positives from transient network issues, and precedent in
+HashiCorp Serf and Consul. SWIM proper is three mechanisms — probing,
+dissemination of verdicts, and refutation by incarnation number — and only
+the probing was ever built; ADR-007 made membership deliberately local.
+
+### Retirement (ruled 2026-09-01, Kotlin shipped 2026-09-15, Dart 2026-09-18)
+
+With no dissemination, the relay's purpose — insulating the group from one
+node's false verdict — had no referent, and its local effect was
+counterproductive (a deaf link kept marked reachable). On the Kotlin twin
+the relay had also been structurally inert since the port, so the server
+fleet had been running without it unnoticed. Both libraries now converge
+on the slimmer detector; the full argument is the retirement decision
+record in `docs/superpowers/specs/2026-09-01-swim-slimdown-decision.md`,
+and the Dart batch's rulings are in
+`docs/superpowers/specs/2026-09-18-dart-relay-retirement-rulings.md`.
+The mechanism is no longer called SWIM anywhere the library describes
+itself, since neither dissemination, refutation, nor indirect probing
+remain.
 
 ## Alternatives Considered
 
 ### Simple Heartbeat
 
-Each peer broadcasts "I'm alive" periodically:
-- Simpler to implement
-- But O(n) messages per period
-- Higher false positive rate
-- Doesn't scale well
+Each peer broadcasts "I'm alive" periodically: simpler, but O(n) messages
+per period, higher false-positive rate, poor scaling.
 
 ### Phi Accrual Detector
 
-Adaptive threshold based on heartbeat history:
-- More accurate for stable networks
-- But complex to tune
-- Assumes regular heartbeats
-- Overkill for small networks
+Adaptive threshold based on heartbeat history: more accurate for stable
+networks but complex to tune, assumes regular heartbeats, overkill here.
+
+### Passive liveness only
+
+No dedicated probes; liveness from transport link events plus sync-traffic
+recency. Rejected in the retirement record: quiescence pacing makes a
+converged mesh deliberately quiet, so passive observation cannot tell
+"paced and healthy" from "dead" — the idle probe is load-bearing.
 
 ### No Failure Detection
 
-Let gossip timeout handle failures:
-- Simplest option
-- But wastes bandwidth on dead peers
-- No status visibility for application
-- Slow to detect failures
+Let gossip timeouts handle failures: wastes bandwidth on dead peers, gives
+the application no status, slow to detect.

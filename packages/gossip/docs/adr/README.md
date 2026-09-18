@@ -13,7 +13,7 @@ An ADR captures an important architectural decision along with its context and c
 | [001](001-single-isolate-execution.md) | Single-Isolate Execution Model | Accepted |
 | [002](002-separate-entry-storage.md) | Separate Entry Storage from Aggregates | Accepted |
 | [003](003-payload-agnostic-design.md) | Payload-Agnostic Design | Accepted |
-| [004](004-swim-failure-detection.md) | SWIM Protocol for Failure Detection | Accepted |
+| [004](004-swim-failure-detection.md) | Probe-Based Failure Detection | Accepted, amended 2026-09-18 |
 | [005](005-hybrid-logical-clocks.md) | Hybrid Logical Clocks for Ordering | Accepted |
 | [006](006-transport-discovery-external.md) | Transport and Discovery External to Library | Accepted |
 | [007](007-membership-local-metadata.md) | Membership as Local Metadata | Accepted |
@@ -21,7 +21,7 @@ An ADR captures an important architectural decision along with its context and c
 | [009](009-version-vectors-for-sync.md) | Version Vectors for Sync State Tracking | Accepted |
 | [010](010-ddd-layered-architecture.md) | Bounded-Context Architecture | Accepted |
 | [011](011-error-callback-pattern.md) | Error Callback Pattern for Recoverable Errors | Accepted |
-| [012](012-swim-late-ack-handling.md) | SWIM Late-Ack Handling | Accepted |
+| [012](012-swim-late-ack-handling.md) | Late-Ack Grace Window | Accepted, amended 2026-09-18 |
 
 ## Template
 

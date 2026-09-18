@@ -149,7 +149,7 @@ Implements `MessagePort` using BLE via the [bluey](https://github.com/neutrinogr
 | 001 | Single-isolate execution - no thread synchronization |
 | 002 | Entry storage separate from aggregates (via `EntryRepository`) |
 | 003 | Payload-agnostic - library syncs opaque bytes |
-| 004 | SWIM protocol for failure detection |
+| 004 | Probe-based failure detection (indirect probing retired 2026-09) |
 | 005 | Hybrid Logical Clocks for ordering |
 | 006 | Transport and discovery external to library |
 | 008 | Anti-entropy gossip with digest/delta exchange |
