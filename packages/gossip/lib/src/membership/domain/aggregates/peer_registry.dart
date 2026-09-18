@@ -21,7 +21,7 @@ import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 /// ## SWIM State Transitions
 /// Peers progress through these states:
 /// 1. **reachable** → **suspected**: After probe failures exceed threshold
-/// 2. **suspected** → **unreachable**: After indirect probe also fails
+/// 2. **suspected** → **unreachable**: After further consecutive probe failures
 /// 3. **suspected** → **reachable**: On successful contact (probe response)
 ///
 /// ## Invariants
@@ -190,7 +190,7 @@ class PeerRegistry {
   ///
   /// Used by SWIM failure detection to transition peers through states:
   /// - reachable → suspected (after probe failures)
-  /// - suspected → unreachable (after indirect probe fails)
+  /// - suspected → unreachable (after further probe failures)
   /// - suspected → reachable (on successful contact)
   ///
   /// No-op if peer doesn't exist or status is unchanged.

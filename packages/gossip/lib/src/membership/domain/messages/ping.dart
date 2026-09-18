@@ -7,9 +7,9 @@ import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
 /// still reachable. The target should respond with an Ack message containing
 /// the same sequence number.
 ///
-/// If no Ack is received within the timeout period, the failure detector
-/// initiates an indirect probe via PingReq to distinguish between target
-/// failure and network partition.
+/// If no Ack is received within the timeout, the failure detector holds
+/// the ping open for one more timeout (the grace window) before counting
+/// a failure.
 ///
 /// Message flow:
 /// ```

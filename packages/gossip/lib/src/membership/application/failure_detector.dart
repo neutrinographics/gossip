@@ -729,7 +729,7 @@ class FailureDetector {
     handleAck(ack, timestampMs: _timePort.nowMs);
   }
 
-  /// A relay request from a peer still running the retired indirect-probing
+  /// A relay request from a peer still running the retired relayed-probing
   /// protocol. Nothing happens beyond a log line: a membership verdict
   /// never leaves the node that formed it (ADR-007), so probing a third
   /// peer on someone else's behalf protected nothing. The frame is not

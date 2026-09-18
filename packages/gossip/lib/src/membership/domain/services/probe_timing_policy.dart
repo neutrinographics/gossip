@@ -89,11 +89,11 @@ class ProbeTimingPolicy {
 
   /// Effective probe interval (time between probe rounds).
   ///
-  /// Computed as 3x the effective ping timeout to allow time for both
-  /// direct and indirect probes within each interval, then paced: quiet
-  /// (all-answered) rounds stretch this toward [_maxProbeInterval]; a
-  /// miss or membership change snaps it back to the formula's raw value.
-  /// A static override bypasses the pacer entirely.
+  /// Computed as 3x the effective ping timeout — room for the direct probe
+  /// and its grace window, plus slack — then paced: quiet (all-answered)
+  /// rounds stretch this toward [_maxProbeInterval]; a miss or membership
+  /// change snaps it back to the formula's raw value. A static override
+  /// bypasses the pacer entirely.
   Duration get effectiveProbeInterval {
     if (_staticProbeInterval != null) return _staticProbeInterval;
     final baseInterval = effectivePingTimeout * _probeIntervalMultiplier;

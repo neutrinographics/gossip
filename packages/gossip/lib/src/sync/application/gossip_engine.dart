@@ -174,7 +174,7 @@ class GossipEngine {
   /// constructed inline, so the engine depends only on the shared
   /// [MessageCodec] seam, not a concrete codec class.
   /// [MessageCodec.decode] answers null for a frame outside this codec's
-  /// family (e.g. a membership Ping/Ack/PingReq sharing the same transport) — see the
+  /// family (e.g. a membership Ping/Ack sharing the same transport) — see the
   /// null-check in [_handleIncomingMessage].
   final MessageCodec _codec;
 
@@ -853,7 +853,7 @@ class GossipEngine {
       );
       return;
     }
-    // Foreign-family frame (e.g. a membership Ping/Ack/PingReq sharing
+    // Foreign-family frame (e.g. a membership Ping/Ack sharing
     // the same transport) — not ours to handle. Routine traffic, not an
     // error.
     if (protocolMessage == null) return;

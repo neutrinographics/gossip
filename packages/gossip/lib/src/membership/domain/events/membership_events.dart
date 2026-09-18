@@ -36,8 +36,8 @@ final class PeerRemoved extends MembershipEvent {
 /// Fired when: PeerRegistry.updatePeerStatus changes a peer's status.
 /// Common transitions:
 /// - reachable → suspected (probe failure)
-/// - suspected → unreachable (indirect probe also failed)
-/// - suspected → reachable (peer recovered or refuted suspicion)
+/// - suspected → unreachable (further probe failures)
+/// - suspected → reachable (peer answered again)
 final class PeerStatusChanged extends MembershipEvent {
   final NodeId peerId;
   final PeerStatus oldStatus;

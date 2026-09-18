@@ -4,7 +4,7 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 ///
 /// [ProtocolMessage] is the parent of all messages exchanged between peers
 /// over the network. The protocol includes two categories of messages:
-/// - **SWIM messages**: Failure detection (Ping, Ack, PingReq)
+/// - **Membership messages**: Failure detection (Ping, Ack; PingReq is received-only)
 /// - **Gossip messages**: Anti-entropy (DigestRequest, DigestResponse, DeltaRequest, DeltaResponse)
 ///
 /// Every message includes the sender's [NodeId] for peer identification and

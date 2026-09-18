@@ -155,7 +155,7 @@ shared codec. The equivalent here, `ProtocolCodec`, has dissolved entirely —
   — wire type bytes 3-6.
 - `MembershipMessageCodec`
   (`membership/infrastructure/membership_message_codec.dart`) encodes and
-  decodes `Ping`/`Ack`/`PingReq` — wire type bytes 0-2.
+  decodes `Ping`/`Ack`/`PingReq` (the last received-only since the relay retirement) — wire type bytes 0-2.
 - Both implement the one shared interface,
   `shared/domain/interfaces/message_codec.dart`
   (`abstract interface class MessageCodec`), and each answers `null` from

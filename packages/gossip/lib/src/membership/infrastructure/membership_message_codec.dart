@@ -9,8 +9,9 @@ import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
 import 'package:gossip/src/shared/domain/value_objects/wire_types.dart';
 import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 
-/// Wire codec for the membership context's SWIM messages: [Ping], [Ack],
-/// [PingReq] — [WireTypes.membership] type bytes 0-2.
+/// Wire codec for the membership context's messages: [Ping], [Ack], and
+/// the retired-but-still-decoded [PingReq] — [WireTypes.membership] type
+/// bytes 0-2.
 ///
 /// Wire format: `[Type Byte][JSON Payload]` (v1) or
 /// `[0xF2][Type Byte][JSON Payload]` (v2, [WireVersion.v2]). The JSON
