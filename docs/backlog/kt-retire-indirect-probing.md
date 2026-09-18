@@ -55,8 +55,7 @@ already pin for the no-relay case.
   ([rulings](../superpowers/specs/2026-09-18-dart-relay-retirement-rulings.md)) —
   relay handler ignores, the indirect phase is a grace window that races the
   late Ack, `PingReq` still decodes with its encoder kept for the wire
-  vectors, ADR-004/012 amended, the mechanism renamed away from SWIM. Both
-  halves are done; what remains is the OpenDoorApp pin bump.
+  vectors, ADR-004/012 amended, the mechanism renamed away from SWIM.
 
 - The ruling and full rationale: [decision record](../superpowers/specs/2026-09-01-swim-slimdown-decision.md).
 - The Dart half's rulings page (2026-09-18, approved):
