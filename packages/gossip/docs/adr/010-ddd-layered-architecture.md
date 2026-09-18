@@ -15,7 +15,7 @@ history for the superseded text). Shipped as Batch 3, Part 2 of
 The prior layout organized `packages/gossip` by DDD *layer*
 (`domain/application/protocol/infrastructure/facade`), so the file tree said
 "DDD template" instead of what the software does. Two subdomains were
-invisible in the tree — anti-entropy synchronization and SWIM membership —
+invisible in the tree — anti-entropy synchronization and membership —
 and their only contract was undocumented reach-ins through `PeerRegistry`.
 Port interfaces (`MessagePort`, `TimePort`) lived in the outermost
 (infrastructure) layer while inner layers depended on them, backwards from
@@ -37,7 +37,7 @@ here as findings to port back to `gossip-kt`:
    + retention, all one operation). Channels, streams, entries, retention,
    and materialization are one language: the replicated event log → one
    **sync** context.
-2. kt splits `peers/` from `detection/`, but the SWIM detector *is* the
+2. kt splits `peers/` from `detection/`, but the failure detector *is* the
    process that maintains the peer model — one thing, arbitrarily cut in
    two. Here it stays one **membership** context.
 3. kt homes `RttTracker` in `detection/model`, but both engines consume it
@@ -54,7 +54,7 @@ here as findings to port back to `gossip-kt`:
 lib/src/
   shared/        # kernel — true leaf; imports nothing outside itself
   sync/          # CORE DOMAIN: anti-entropy replication of the event log
-  membership/    # SWIM liveness: peer model + the detector that maintains it
+  membership/    # liveness: peer model + the detector that maintains it
   coordinator/   # facade shell / composition root (not a bounded context)
 ```
 
@@ -155,7 +155,7 @@ shared codec. The equivalent here, `ProtocolCodec`, has dissolved entirely —
   — wire type bytes 3-6.
 - `MembershipMessageCodec`
   (`membership/infrastructure/membership_message_codec.dart`) encodes and
-  decodes `Ping`/`Ack`/`PingReq` — wire type bytes 0-2.
+  decodes `Ping`/`Ack`/`PingReq` (the last received-only since the relay retirement) — wire type bytes 0-2.
 - Both implement the one shared interface,
   `shared/domain/interfaces/message_codec.dart`
   (`abstract interface class MessageCodec`), and each answers `null` from

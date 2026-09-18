@@ -25,10 +25,7 @@ void main() {
           rttVariance: const Duration(milliseconds: 75),
         ),
       );
-      final policy = ProbeTimingPolicy(
-        peerRegistry: peerRegistry,
-        rttTracker: rttTracker,
-      );
+      final policy = ProbeTimingPolicy(rttTracker: rttTracker);
 
       // 300 + 4*75 = 600ms
       expect(
@@ -44,10 +41,7 @@ void main() {
           rttVariance: const Duration(milliseconds: 5),
         ),
       );
-      final policy = ProbeTimingPolicy(
-        peerRegistry: peerRegistry,
-        rttTracker: rttTracker,
-      );
+      final policy = ProbeTimingPolicy(rttTracker: rttTracker);
 
       // Raw = 20 + 4*5 = 40ms, floored to 500ms.
       expect(
@@ -63,10 +57,7 @@ void main() {
           rttVariance: const Duration(seconds: 3),
         ),
       );
-      final policy = ProbeTimingPolicy(
-        peerRegistry: peerRegistry,
-        rttTracker: rttTracker,
-      );
+      final policy = ProbeTimingPolicy(rttTracker: rttTracker);
 
       // Raw = 5000 + 4*3000 = 17000ms, capped to 10s.
       expect(policy.effectivePingTimeout, equals(const Duration(seconds: 10)));
@@ -76,22 +67,22 @@ void main() {
   group('ProbeTimingPolicy per-peer ping timeout', () {
     test('prefers the per-peer RTT estimate over the global one', () {
       final policy = ProbeTimingPolicy(
-        peerRegistry: peerRegistry,
         rttTracker: RttTracker(), // global stays at the 1500ms cold-start
       );
       final peerId = NodeId('peer1');
       peerRegistry.addPeer(peerId, occurredAt: DateTime.now());
       peerRegistry.recordPeerRtt(peerId, const Duration(milliseconds: 100));
+      final peerRtt = peerRegistry.getPeer(peerId)?.metrics.rttEstimate;
 
       // Per-peer first sample: SRTT=100ms, RTTVAR=50ms -> raw 300ms,
       // floored to 500ms -- still well under the 1500ms global fallback,
       // proving the per-peer estimate (not the global one) gated this.
       expect(
-        policy.effectivePingTimeoutForPeer(peerId),
+        policy.effectivePingTimeoutForPeer(peerRtt),
         equals(const Duration(milliseconds: 500)),
       );
       expect(
-        policy.effectivePingTimeoutForPeer(peerId),
+        policy.effectivePingTimeoutForPeer(peerRtt),
         lessThan(policy.effectivePingTimeout),
       );
     });
@@ -103,13 +94,10 @@ void main() {
           rttVariance: const Duration(milliseconds: 75),
         ),
       );
-      final policy = ProbeTimingPolicy(
-        peerRegistry: peerRegistry,
-        rttTracker: rttTracker,
-      );
+      final policy = ProbeTimingPolicy(rttTracker: rttTracker);
 
       expect(
-        policy.effectivePingTimeoutForPeer(NodeId('ghost')),
+        policy.effectivePingTimeoutForPeer(null),
         equals(policy.effectivePingTimeout),
       );
     });
@@ -124,7 +112,6 @@ void main() {
         ),
       );
       final policy = ProbeTimingPolicy(
-        peerRegistry: peerRegistry,
         rttTracker: rttTracker,
         staticProbeInterval: const Duration(seconds: 3),
       );
@@ -141,7 +128,6 @@ void main() {
 
     test('a static pingTimeout must NOT pin the probe interval', () {
       final policy = ProbeTimingPolicy(
-        peerRegistry: peerRegistry,
         rttTracker: RttTracker(),
         staticPingTimeout: const Duration(milliseconds: 800),
       );
@@ -156,7 +142,6 @@ void main() {
 
     test('both knobs static take effect independently', () {
       final policy = ProbeTimingPolicy(
-        peerRegistry: peerRegistry,
         rttTracker: RttTracker(),
         staticPingTimeout: const Duration(milliseconds: 700),
         staticProbeInterval: const Duration(seconds: 4),
@@ -178,10 +163,7 @@ void main() {
           rttVariance: const Duration(milliseconds: 75),
         ),
       );
-      final policy = ProbeTimingPolicy(
-        peerRegistry: peerRegistry,
-        rttTracker: rttTracker,
-      );
+      final policy = ProbeTimingPolicy(rttTracker: rttTracker);
 
       // pingTimeout = 600ms, interval = 3 * 600 = 1800ms.
       expect(
@@ -198,10 +180,7 @@ void main() {
         ),
       );
       rttTracker.recordSample(const Duration(milliseconds: 20));
-      final policy = ProbeTimingPolicy(
-        peerRegistry: peerRegistry,
-        rttTracker: rttTracker,
-      );
+      final policy = ProbeTimingPolicy(rttTracker: rttTracker);
 
       expect(
         policy.effectiveProbeInterval.inMilliseconds,
@@ -217,10 +196,7 @@ void main() {
         ),
       );
       rttTracker.recordSample(const Duration(seconds: 8));
-      final policy = ProbeTimingPolicy(
-        peerRegistry: peerRegistry,
-        rttTracker: rttTracker,
-      );
+      final policy = ProbeTimingPolicy(rttTracker: rttTracker);
 
       // pingTimeout = 10s (capped), 3*10s = 30s (exactly the ceiling).
       expect(
@@ -236,10 +212,7 @@ void main() {
           rttVariance: const Duration(milliseconds: 75),
         ),
       );
-      final policy = ProbeTimingPolicy(
-        peerRegistry: peerRegistry,
-        rttTracker: rttTracker,
-      );
+      final policy = ProbeTimingPolicy(rttTracker: rttTracker);
       final base = policy.effectiveProbeInterval;
 
       policy.quietRound();
@@ -251,7 +224,6 @@ void main() {
 
     test('a static probeInterval bypasses the pacer entirely', () {
       final policy = ProbeTimingPolicy(
-        peerRegistry: peerRegistry,
         rttTracker: RttTracker(),
         staticProbeInterval: const Duration(seconds: 2),
       );

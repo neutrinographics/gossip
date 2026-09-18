@@ -21,7 +21,7 @@ abstract interface class PeerDirectory {
   List<SyncPartner> reachablePartners();
 
   /// Records successful contact with [peer] at [nowMs] (mirrors
-  /// `PeerRegistry.updatePeerContact`) — proof of life for SWIM liveness.
+  /// `PeerRegistry.updatePeerContact`) — proof of life for liveness.
   void recordContact(NodeId peer, int nowMs);
 
   /// Records a received message from [peer] for metrics/rate-limiting

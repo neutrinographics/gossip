@@ -57,13 +57,19 @@ entries, and the anti-entropy protocol that keeps them converged.
 
 ## membership
 
-The context that maintains the peer model and detects failures: the SWIM
-protocol.
+The context that maintains the peer model and detects failures by direct
+probing.
 
 - **Peer** — A remote node this node knows about and tracks the
   reachability of, held in the peer registry.
-- **Probe** — A SWIM ping sent directly to a peer, or indirectly via
-  intermediaries, to test whether it is still reachable.
+- **Probe** — A Ping sent directly to a peer to test whether it is still
+  reachable; if the Ack misses the timeout, the probe waits one more
+  timeout (the grace window) before counting a failure.
+- **Grace window** — The extra wait, one more probe timeout, that a probe
+  holds open after its timeout so a slightly-late acknowledgement still
+  counts. Distinct from the *probing hold* that keeps a newly connected
+  peer out of probing while its link settles (called a grace period in
+  the configuration).
 - **Suspicion** — The intermediate reachability state a peer enters after a
   failed probe, before it is confirmed unreachable or refuted by a later
   response.
@@ -73,8 +79,8 @@ protocol.
 - **Suppression** — Skipping a peer's next scheduled probe because recent
   liveness evidence already shows it's alive; bounded by a hard ceiling so
   it can never mask a real failure indefinitely.
-- **Reachability** — A peer's current SWIM status: reachable, suspected, or
-  unreachable (`PeerStatus`).
+- **Reachability** — A peer's current failure-detection status:
+  reachable, suspected, or unreachable (`PeerStatus`).
 
 ## shared
 

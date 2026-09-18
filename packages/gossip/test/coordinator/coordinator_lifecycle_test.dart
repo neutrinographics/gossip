@@ -292,7 +292,7 @@ void main() {
         ),
         reason:
             'a transport error must surface via the errors stream as a '
-            'protocol-level error, not kill SWIM/gossip listening as an '
+            'protocol-level error, not kill membership/gossip listening as an '
             'unhandled zone error',
       );
 

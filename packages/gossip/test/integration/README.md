@@ -7,7 +7,7 @@ This directory contains integration tests for the gossip sync library. Tests are
 ```
 integration/
   edge_cases/         # Edge case handling (duplicates, ordering)
-  failure_detection/  # SWIM protocol and peer status
+  failure_detection/  # failure detection and peer status
   lifecycle/          # Coordinator and channel lifecycle
   ordering/           # HLC timestamps and sequence numbers
   sync/               # Core synchronization scenarios

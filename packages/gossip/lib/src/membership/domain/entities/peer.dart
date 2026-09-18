@@ -9,7 +9,7 @@ import 'package:gossip/src/membership/domain/entities/peer_metrics.dart';
 /// A [Peer] entity tracks all state for a remote node participating in
 /// gossip, including:
 /// - **Identity**: Unique node identifier
-/// - **Reachability**: Current status from SWIM failure detection
+/// - **Reachability**: Current status from failure detection
 /// - **Contact tracking**: Last communication and anti-entropy timestamps
 /// - **Failure detection**: Consecutive probe failure count
 /// - **Metrics**: Communication statistics for rate limiting
@@ -29,7 +29,7 @@ class Peer {
   /// to a truncated form of the node ID.
   final String displayName;
 
-  /// Current reachability status from SWIM failure detection.
+  /// Current reachability status from failure detection.
   ///
   /// Lifecycle: reachable → suspected → unreachable
   final PeerStatus status;
@@ -43,7 +43,7 @@ class Peer {
   /// that haven't synced recently.
   final int? lastAntiEntropyMs;
 
-  /// Consecutive probe failures in SWIM failure detection.
+  /// Consecutive probe failures in failure detection.
   ///
   /// Incremented on each failed probe, reset on successful contact.
   /// When this exceeds a threshold, the peer transitions to suspected.

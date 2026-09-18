@@ -32,7 +32,8 @@ audit — its round "R10".
 ## Rough approach
 
 Dispatch on the wire type byte before decoding; let the send path accept
-pre-encoded bytes (the ping-request path already shows the pattern); use
+pre-encoded bytes — the reactive push fan-out (the engine encodes one
+delta and sends it to every reachable peer) is the case that needs it; use
 views instead of buffer copies; cache the resolved GATT characteristic per
 link; for the rebuild, repair from a checkpoint or offer folds a
 commutativity opt-in that keeps the incremental path.

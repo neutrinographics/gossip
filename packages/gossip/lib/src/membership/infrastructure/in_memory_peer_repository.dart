@@ -6,7 +6,7 @@ import 'package:gossip/src/membership/domain/interfaces/peer_repository.dart';
 /// recommended repository for most applications.
 ///
 /// Peers are discovered at runtime and re-add themselves on reconnection, so
-/// nothing is lost by not persisting them; SWIM-driven status is never
+/// nothing is lost by not persisting them; probe-driven status is never
 /// persisted by contract regardless of implementation (see
 /// [PeerRepository]). A persistent implementation is only useful for
 /// app-level features built around peer history (e.g., "recently seen

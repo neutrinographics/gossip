@@ -61,6 +61,29 @@ The pieces, roughly in the order they are worth doing:
   (its clock closed or its scope cancelled) should still report itself
   as running, which it does today.
 
+Three more came out of the Dart relay retirement's review (2026-09-18),
+where the Dart detector ended up ahead of the Kotlin one it was matching:
+
+- **One probe path, cleaned up in a `finally`.** The Kotlin detector spells
+  out the probe sequence twice (the regular round and the recovery probe)
+  and removes the pending ping outside any `finally`, so a round cancelled
+  mid-wait leaves its entry behind for the detector's lifetime — a small
+  leak. Dart now has one shared probe routine with a flag for the bootstrap
+  probe, and the cleanup cannot be skipped. Port that shape; while there,
+  drop the second contact write on a late acknowledgement (the Ack handler
+  already recorded it) and add the sequence number to the late-Ack log
+  line so it correlates with the send line.
+- **Give an ignored relay request ordinary proof-of-life credit.** Dart
+  stamps contact for every inbound frame before decoding it, so a relay
+  request from an older peer refreshes that peer's last-contact time like
+  any other frame; Kotlin stamps only sync frames, so on the server the
+  same frame earns nothing. Stamp per frame at the routing point.
+- **Stop calling it SWIM.** The Kotlin detector's class doc, README and
+  CLAUDE.md still describe the mechanism as SWIM and log with a `[SWIM]`
+  prefix; Dart renamed to failure detection and `[FailureDetector]`. Same
+  words on both sides, plus the Dart caveat that the probe interval is only
+  nominally three timeouts and a slow peer can overrun it.
+
 ## Why it matters
 
 Deferred findings that live only in a review transcript are the ones that

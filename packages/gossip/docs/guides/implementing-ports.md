@@ -103,13 +103,13 @@ only hit on cache misses (startup, first access).
 ## PeerRepository
 
 Stores peer identity and membership — which peers are known, not live
-SWIM state.
+failure-detection state.
 
 ### Write volume
 
 `save()` and `delete()` fire only when peer membership changes (a peer is
 added or removed), not per protocol message. Reachability status, contact
-timestamps, and RTT/traffic metrics are SWIM-driven state that lives
+timestamps, and RTT/traffic metrics are probe-driven state that lives
 exclusively in the in-memory `PeerRegistry` and is never persisted here —
 a persistent implementation only ever sees peers appear and disappear.
 
@@ -166,8 +166,8 @@ Transport abstraction for sending/receiving protocol messages.
 
 ### Best-effort delivery
 
-The library handles reliability itself via version vectors and SWIM
-protocol. Your transport should **not** retry failed sends. Just
+The library handles reliability itself via version vectors and failure
+detection. Your transport should **not** retry failed sends. Just
 deliver once and move on. Lost messages are detected and recovered
 at the protocol layer.
 
@@ -181,7 +181,7 @@ otherwise the default (0) disables backpressure.
 
 ### Priority
 
-`send()` receives a `MessagePriority` parameter. SWIM health-check
+`send()` receives a `MessagePriority` parameter. Membership health-check
 messages use `high` priority; gossip data uses `normal`. If your
 transport supports priority queuing, process high-priority messages
 first to keep failure detection responsive.

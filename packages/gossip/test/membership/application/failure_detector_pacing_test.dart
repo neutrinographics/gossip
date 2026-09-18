@@ -63,10 +63,8 @@ void main() {
       expect(h.detector.effectiveProbeInterval, greaterThan(base));
 
       // Second round of the cycle is guaranteed to land on deadpeer: a
-      // genuine miss (direct probe times out, then the only reachable
-      // peer — peer1 — is asked to indirect-probe on our behalf but never
-      // forwards an Ack, since it's a dumb auto-Ack stub, not a real
-      // detector). Drive both timeouts explicitly.
+      // genuine miss (direct probe times out, then the grace window closes
+      // empty). Drive both waits explicitly.
       final missRound = h.detector.performProbeRound();
       await h.flush();
       await h.advancePastTimeout(timeout: h.detector.effectivePingTimeout);

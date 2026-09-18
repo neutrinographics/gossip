@@ -2,7 +2,7 @@
 ///
 /// This library provides a mobile-first, offline-capable event stream synchronization
 /// system with fast, eventually-consistent convergence (O(log n) rounds) using
-/// gossip protocols and SWIM failure detection.
+/// gossip protocols and probe-based failure detection.
 ///
 /// ## Quick Start
 ///
@@ -74,7 +74,7 @@
 ///
 /// The library uses:
 /// - **Gossip Protocol**: Anti-entropy sync with digest/delta exchange
-/// - **SWIM Protocol**: Failure detection for peer health
+/// - **Failure Detection**: Direct probes for peer health
 /// - **Hybrid Logical Clocks**: Causally consistent timestamps
 /// - **Version Vectors**: Efficient sync state tracking
 ///

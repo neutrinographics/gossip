@@ -16,7 +16,7 @@ import 'package:gossip/src/coordinator/sync_state.dart';
 /// Main entry point for the gossip sync library.
 ///
 /// [Coordinator] manages the lifecycle of the sync system, including:
-/// - Peer management and failure detection (SWIM protocol)
+/// - Peer management and failure detection
 /// - Channel lifecycle and membership
 /// - Protocol services (gossip anti-entropy)
 /// - Event and error streams for observability
@@ -135,7 +135,7 @@ class Coordinator {
   /// Gossip engine for anti-entropy synchronization.
   GossipEngine? _gossipEngine;
 
-  /// Failure detector for SWIM protocol.
+  /// Failure detector for peer liveness.
   FailureDetector? _failureDetector;
 
   /// Cache of channel facades by ID.
@@ -606,7 +606,7 @@ class Coordinator {
   ///
   /// The peer starts in [PeerStatus.reachable] and will be included in:
   /// - Gossip peer selection for anti-entropy
-  /// - SWIM failure detection probing (after grace period or successful probe)
+  /// - Failure-detection probing (after grace period or successful probe)
   ///
   /// If [displayName] is not provided, defaults to a truncated form of the
   /// node ID.

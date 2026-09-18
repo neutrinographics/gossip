@@ -16,7 +16,7 @@ import 'package:gossip/src/shared/domain/value_objects/rtt_estimate.dart';
 /// tracker.recordSample(Duration(milliseconds: 150));
 /// tracker.recordSample(Duration(milliseconds: 180));
 ///
-/// // Get adaptive timeout for SWIM probes
+/// // Get adaptive timeout for probes
 /// final timeout = tracker.suggestedTimeout();
 /// ```
 ///

@@ -1,9 +1,5 @@
-import 'dart:math';
-
-import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
-import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 import 'package:gossip/src/membership/infrastructure/membership_message_codec.dart';
 import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:test/test.dart';
@@ -12,87 +8,6 @@ import 'failure_detector_test_harness.dart';
 
 void main() {
   final codec = MembershipMessageCodec(wireVersion: WireVersion.v2);
-
-  group('Suspected peer recovery via indirect probes (SWIM)', () {
-    test('a suspected peer reachable only through an intermediary recovers '
-        'to reachable', () async {
-      // Seeded so the round-robin shuffle (over [target, intermediary],
-      // added in that order) puts target first in the probe order — the
-      // recovery then completes deterministically on the very first probe
-      // round, instead of an unseeded run needing anywhere from 1 to n
-      // rounds before target's turn comes up in the rotation.
-      final h = FailureDetectorTestHarness(
-        pingTimeout: const Duration(milliseconds: 500),
-        random: Random(2),
-      );
-      final target = h.addPeer('target');
-      final intermediary = h.addPeer('intermediary');
-
-      h.startListening();
-
-      // The intermediary is fully functional: it acks direct pings and
-      // services PingReqs (simulating a successful relay to the target).
-      final sub = intermediary.port.incoming.listen((msg) {
-        final decoded = codec.decode(msg.bytes);
-        if (decoded is Ping) {
-          intermediary.port.send(
-            h.localNode,
-            codec.encode(
-              Ack(sender: intermediary.id, sequence: decoded.sequence),
-            ),
-          );
-        } else if (decoded is PingReq) {
-          intermediary.port.send(
-            h.localNode,
-            codec.encode(
-              Ack(sender: intermediary.id, sequence: decoded.sequence),
-            ),
-          );
-        }
-      });
-      // The target never answers direct pings: it drifted out of direct
-      // radio range but remains reachable via the intermediary.
-
-      // Drive the target into suspected state.
-      h.peerRegistry.updatePeerStatus(
-        target.id,
-        PeerStatus.suspected,
-        occurredAt: DateTime.now(),
-      );
-
-      // Seed 2 selects target for this single probe round: the direct
-      // ping times out, the indirect PingReq relay through intermediary
-      // succeeds, and target recovers to reachable within this one round.
-      final round = h.detector.performProbeRound();
-      await h.flush(3);
-      // Direct phase times out.
-      await h.timePort.advance(const Duration(milliseconds: 501));
-      await h.flush(3);
-      // Indirect phase: PingReq relayed, forwarded Ack arrives.
-      await h.timePort.advance(const Duration(milliseconds: 501));
-      await h.flush(3);
-      await round;
-
-      final probed = h.peerRegistry.getPeer(target.id)!;
-      expect(
-        probed.status,
-        equals(PeerStatus.reachable),
-        reason:
-            'a peer that answers every indirect probe must not stay '
-            'suspected forever',
-      );
-      expect(
-        probed.metrics.rttEstimate,
-        isNull,
-        reason:
-            'a forwarded Ack measures a 2-hop path and must not be '
-            'attributed to the target as a direct RTT sample',
-      );
-
-      await sub.cancel();
-      h.stopListening();
-    });
-  });
 
   group('Ack sender validation', () {
     test('an Ack from a different peer with a colliding sequence does not '

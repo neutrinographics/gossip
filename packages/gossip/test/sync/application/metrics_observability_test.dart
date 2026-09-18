@@ -55,7 +55,7 @@ void main() {
         await coordinator.addPeer(peerId);
         await coordinator.start();
 
-        // One SWIM ping from the peer. Both the gossip engine and the
+        // One probe ping from the peer. Both the gossip engine and the
         // failure detector subscribe to the same incoming stream.
         final peerPort = InMemoryMessagePort(peerId, bus);
         await peerPort.send(

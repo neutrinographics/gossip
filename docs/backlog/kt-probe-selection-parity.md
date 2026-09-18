@@ -38,9 +38,8 @@ with it — the extraction is what makes the behavior reviewable.
 
 - Structural half done 2026-09-02 (gossip-kt PR #7): kt now has a
   `ProbeTargetSelector` with Dart's name and home, random pick kept, plus
-  the timing policy objects; this item is now the fair-rotation cursor,
-  moving intermediary selection onto the selector (moot if indirect
-  probing is retired first), and the remaining helper adoptions.
+  the timing policy objects; this item is now the fair-rotation cursor and
+  the remaining helper adoptions.
 - Found untracked by the 2026-09-01 parity survey; recorded in the
   [twin parity program](../parity.md).
 - Distinct from (but adjacent to) the *suppression* behaviors — probing a

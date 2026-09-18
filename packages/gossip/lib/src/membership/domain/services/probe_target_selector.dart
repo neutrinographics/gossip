@@ -1,15 +1,12 @@
 import 'dart:math';
 
-import 'package:gossip/src/membership/domain/aggregates/peer_registry.dart';
 import 'package:gossip/src/membership/domain/entities/peer.dart';
-import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 
 /// Owns the failure detector's probe-target selection policy: which peer
-/// to ping next, which peers can stand in as indirect-ping intermediaries
-/// when a direct probe fails, which peer is due for the periodic
-/// unreachable-recovery probe, and the startup grace period that excludes
-/// a peer from probing altogether.
+/// to ping next, which peer is due for the periodic unreachable-recovery
+/// probe, and the startup grace period that excludes a peer from probing
+/// altogether.
 ///
 /// A separate class rather than fields on `FailureDetector`: the state it
 /// owns (the shuffled cursor, the probing-hold map, the per-peer
@@ -17,16 +14,15 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 /// with the detector's ping/ack/timeout orchestration. Giving the policy a
 /// class of its own names the behavior precisely — round-robin selection
 /// with holds and suppression, not random — and lets it be tested, and
-/// reasoned about, independently of the protocol machinery.
+/// reasoned about, independently of the protocol machinery. The selector
+/// owns only its own policy state — the shuffled cursor, the holds, the
+/// per-peer last-attempt stamps — and is told the time and the candidates
+/// on every call, so it reads nothing from the world and can be reasoned
+/// about, and tested, as a pure policy; this is the shape the Kotlin twin
+/// has.
 class ProbeTargetSelector {
-  ProbeTargetSelector({
-    required this.peerRegistry,
-    required this.timePort,
-    required Random random,
-  }) : _random = random;
+  ProbeTargetSelector({required Random random}) : _random = random;
 
-  final PeerRegistry peerRegistry;
-  final TimePort timePort;
   final Random _random;
 
   /// Hard cap on how long freshness alone may suppress a probe: 4× the
@@ -46,7 +42,7 @@ class ProbeTargetSelector {
   /// exhausts it. This guarantees every probable peer is probed once per
   /// cycle — worst-case time-to-probe a specific peer is ~(n-1) rounds —
   /// instead of pure-random selection's geometric coverage (which makes
-  /// SWIM detection latency scale O(n · threshold)). Ids no longer probable
+  /// detection latency scale O(n · threshold)). Ids no longer probable
   /// (removed, held, gone unreachable) are skipped; newly probable peers
   /// join at the next reshuffle.
   final List<NodeId> _probeOrder = [];
@@ -94,11 +90,12 @@ class ProbeTargetSelector {
     _probingHeldUntil.remove(peerId);
   }
 
-  /// Returns true if the peer currently has an active probing hold.
-  bool hasProbingHold(NodeId peerId) {
+  /// Returns true if the peer currently has an active probing hold as of
+  /// [nowMs].
+  bool hasProbingHold(NodeId peerId, int nowMs) {
     final holdUntil = _probingHeldUntil[peerId];
     if (holdUntil == null) return false;
-    return timePort.nowMs < holdUntil;
+    return nowMs < holdUntil;
   }
 
   /// Drops all per-peer bookkeeping for a peer that has been removed from
@@ -114,14 +111,15 @@ class ProbeTargetSelector {
     _lastProbeAttemptMs.remove(peerId);
   }
 
-  /// Selects the next peer to probe (reachable or suspected), round-robin
-  /// over a shuffled order.
+  /// Selects the next peer to probe (reachable or suspected) from
+  /// [probable], round-robin over a shuffled order.
   ///
   /// Includes suspected peers so they can recover by responding to probes.
   /// Peers with an active probing hold are excluded to prevent false
   /// positives during connection startup. [freshnessWindow] suppresses
   /// peers already proven alive by recent inbound traffic — see
-  /// [_isProbeEligible] for the suppression-cap rationale.
+  /// [_isProbeEligible] for the suppression-cap rationale. [nowMs] is the
+  /// caller's clock reading.
   ///
   /// Selection cycles through a shuffled permutation of the probable set:
   /// every peer is probed exactly once per cycle, then the set is
@@ -129,16 +127,19 @@ class ProbeTargetSelector {
   /// (e.g. silently-dead) peer to ~(n-1) rounds — pure-random selection
   /// would give a geometric distribution with a long tail, driving
   /// O(n · threshold) detection latency.
-  Peer? nextProbeTarget({required Duration freshnessWindow}) {
-    final nowMs = timePort.nowMs;
+  Peer? nextProbeTarget(
+    List<Peer> probable, {
+    required int nowMs,
+    required Duration freshnessWindow,
+  }) {
     final intervalMs = freshnessWindow.inMilliseconds;
     final maxSuppressionMs = _maxProbeSuppression.inMilliseconds;
-    final probable = peerRegistry.probablePeers
+    final eligible = probable
         .where((p) => _isProbeEligible(p, nowMs, intervalMs, maxSuppressionMs))
         .toList();
-    if (probable.isEmpty) return null;
+    if (eligible.isEmpty) return null;
 
-    final byId = {for (final p in probable) p.id: p};
+    final byId = {for (final p in eligible) p.id: p};
 
     // Advance the cursor, skipping ids that are no longer probable
     // (removed / held / gone unreachable since the last reshuffle).
@@ -185,38 +186,20 @@ class ProbeTargetSelector {
     return capExpired;
   }
 
-  /// Round-robins over [PeerRegistry.unreachablePeers], returning the next
-  /// target for periodic recovery probing. Returns null when there are no
-  /// unreachable peers.
+  /// Round-robins over [unreachable], returning the next target for
+  /// periodic recovery probing. Returns null when there are no unreachable
+  /// peers.
   ///
   /// Wraps the cursor into range first, so index drift from membership
   /// changes (a peer recovering or being removed) since the last call
   /// can't throw or silently skip past the end of the list.
-  Peer? nextUnreachableTarget() {
-    final unreachable = peerRegistry.unreachablePeers;
+  Peer? nextUnreachableTarget(List<Peer> unreachable) {
     if (unreachable.isEmpty) return null;
 
     _unreachableProbeIndex = _unreachableProbeIndex % unreachable.length;
     final peer = unreachable[_unreachableProbeIndex];
     _unreachableProbeIndex = (_unreachableProbeIndex + 1) % unreachable.length;
     return peer;
-  }
-
-  /// Picks up to [count] reachable peers, excluding [target], to relay an
-  /// indirect ping when a direct probe to [target] fails.
-  List<Peer> selectIntermediaries(NodeId target, int count) {
-    final candidates = peerRegistry.reachablePeers
-        .where((p) => p.id != target)
-        .toList();
-    if (candidates.isEmpty) return [];
-
-    final numToSelect = min(count, candidates.length);
-    final selected = <Peer>[];
-    for (var i = 0; i < numToSelect; i++) {
-      final index = _random.nextInt(candidates.length);
-      selected.add(candidates.removeAt(index));
-    }
-    return selected;
   }
 
   /// Stamps [peerId] as actually probed at [nowMs], resetting the

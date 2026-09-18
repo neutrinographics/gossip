@@ -93,6 +93,22 @@ Individually small; collectively they are the gap between "audited" and
 "clean". The two latents above deserve to be fixed first — they are
 bugs, not polish.
 
+## Seeds
+
+- The example chat app's settings sheet
+  (`examples/gossip_chat/lib/presentation/screens/settings_sheet.dart`)
+  still describes the core's probing as "SWIM", including a user-visible
+  "SWIM probe interval" label, and its pinning test asserts that exact
+  label text
+  (`examples/gossip_chat/test/presentation/screens/settings_sheet_test.dart`);
+  the core renamed the mechanism to failure detection on 2026-09-18 (the
+  transport packages already followed, C10), and these should too.
+- One Bluetooth-transport integration test (the reconnect-during-a-chunked-send
+  case in the adverse link-supersession suite) is timing-sensitive: it passes
+  every time on its own and on the main branch, but has failed once inside
+  the concurrent whole-monorepo run (2026-09-18). Either give it a
+  deterministic wait or mark the harness expectation it depends on.
+
 ## Related
 
 - Findings COR3-28, COR3-30, and the MIN-/OBS-series in

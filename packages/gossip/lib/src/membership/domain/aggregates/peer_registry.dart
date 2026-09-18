@@ -6,22 +6,22 @@ import 'package:gossip/src/shared/domain/events/domain_event.dart';
 import 'package:gossip/src/membership/domain/events/membership_events.dart';
 import 'package:gossip/src/membership/domain/value_objects/peer_status.dart';
 
-/// Aggregate root managing peer membership and SWIM failure detection state.
+/// Aggregate root managing peer membership and failure detection state.
 ///
 /// [PeerRegistry] is the authoritative source for all peer-related state in
-/// the gossip system. It enforces invariants, tracks SWIM protocol state
+/// the gossip system. It enforces invariants, tracks failure-detection state
 /// transitions, and emits domain events for state changes.
 ///
 /// ## Responsibilities
 /// - **Membership management**: Add/remove peers, prevent duplicate entries
-/// - **SWIM failure detection**: Track probe failures, status transitions
+/// - **Failure detection**: Track probe failures, status transitions
 /// - **Contact tracking**: Record last message and anti-entropy timestamps
 /// - **Metrics collection**: Track communication statistics per peer
 ///
-/// ## SWIM State Transitions
+/// ## Failure-Detection State Transitions
 /// Peers progress through these states:
 /// 1. **reachable** → **suspected**: After probe failures exceed threshold
-/// 2. **suspected** → **unreachable**: After indirect probe also fails
+/// 2. **suspected** → **unreachable**: After further consecutive probe failures
 /// 3. **suspected** → **reachable**: On successful contact (probe response)
 ///
 /// ## Invariants
@@ -188,9 +188,9 @@ class PeerRegistry {
 
   /// Updates a peer's reachability status.
   ///
-  /// Used by SWIM failure detection to transition peers through states:
+  /// Used by failure detection to transition peers through states:
   /// - reachable → suspected (after probe failures)
-  /// - suspected → unreachable (after indirect probe fails)
+  /// - suspected → unreachable (after further probe failures)
   /// - suspected → reachable (on successful contact)
   ///
   /// No-op if peer doesn't exist or status is unchanged.

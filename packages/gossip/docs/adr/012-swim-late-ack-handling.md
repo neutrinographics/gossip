@@ -1,113 +1,101 @@
-# ADR-012: SWIM Late-Ack Handling
+# ADR-012: Late-Ack Grace Window
 
 ## Status
 
-Accepted
+Accepted; **amended 2026-09-18** — the grace window is now the
+shape of every verdict-bearing probe, not a special case.
 
 ## Context
 
-The SWIM failure detection protocol (ADR-004) uses direct pings with a timeout, falling back to indirect pings through intermediaries when the direct ping times out. However, in real-world mobile network conditions, Acks sometimes arrive slightly after the direct ping timeout expires.
+Failure detection (ADR-004) sends a direct Ping and waits a per-peer
+RTT-adaptive timeout for the Ack. In real mobile network conditions, Acks
+sometimes arrive slightly after that timeout.
 
-Observed behavior in production logs showed a pattern:
+Observed behavior in production logs showed the pattern:
 ```
-[14:21:42.788] SWIM: Probe FAILED for NodeId(...) (pings sent: 6, acks received: 5)
-[14:21:42.963] SWIM: Received Ack seq=6
-[14:21:42.964] SWIM: Ack seq=6 did NOT match any pending ping (pending sequences: [])
+Probe FAILED for NodeId(...) (pings sent: 6, acks received: 5)
+Received Ack seq=6
+Ack seq=6 did NOT match any pending ping (pending sequences: [])
 ```
 
-The Ack arrived ~175ms after the probe timeout, causing a spurious probe failure even though the peer was healthy. This creates unnecessary "suspected" transitions and noise in failure detection.
+The Ack arrived ~175ms after the probe timeout, causing a spurious probe
+failure even though the peer was healthy — unnecessary "suspected"
+transitions and noise.
 
-Two scenarios were identified:
-
-1. **3+ devices**: The indirect ping phase provides natural delay, but the original pending ping was being cleaned up immediately on timeout, preventing late Ack matching.
-
-2. **2-device scenario**: With only two devices, there are no intermediaries for indirect ping. The `_performIndirectPing` method returned immediately, giving no time for late Acks to arrive.
+Originally the only wait after a direct timeout was the indirect probe
+phase, so a two-device pair (no intermediaries) had no window at all, and a
+larger group's window was an accident of relaying. The original decision
+added an explicit equal-length wait for the no-intermediary case. The
+2026-09 retirement of indirect probing (ADR-004 history) left that wait as
+the only path.
 
 ## Decision
 
-**Keep pending pings alive during the indirect ping phase and add a grace period when no intermediaries exist.**
+**Every verdict-bearing probe holds its pending ping open for one more
+per-peer timeout after the direct timeout — the grace window — and counts
+a failure only if the window closes empty.** The window races the still-
+open pending ping, so it ends the instant a late Ack lands rather than
+sleeping its full length.
 
-### Implementation
+Applies to the regular probe round and the unreachable-recovery probe.
+Does not apply to the new-peer RTT bootstrap probe: it records no failure,
+so there is no verdict to protect, and a late first sample is simply the
+next probe's.
 
-1. **Don't remove pending ping on timeout**: The `_awaitAckWithTimeout` method no longer removes the pending ping when timeout occurs. Late-arriving Acks can still be matched.
-
-2. **Check for late Acks after indirect phase**: After both direct and indirect probes complete, check if the original Ack arrived late. Only record probe failure if neither direct, indirect, nor late Ack succeeded.
-
-3. **Grace period for 2-device scenario**: When no intermediaries are available, wait for `indirectPingTimeout` duration as a grace period before declaring failure. This gives late Acks time to arrive even without indirect probing.
-
-```dart
-Future<bool> _performIndirectPing(NodeId target, int sequence) async {
-  final intermediaries = _selectRandomIntermediaries(target, 3);
-
-  if (intermediaries.isEmpty) {
-    // No intermediaries - wait grace period for late Acks
-    await timePort.delay(_indirectPingTimeout);
-    return false;
-  }
-  // ... indirect ping logic
-}
-```
-
-4. **Cleanup after probe round**: Pending pings are cleaned up only after the entire probe round completes (both direct and indirect phases).
+The window's length is the same per-peer adaptive timeout as the direct
+wait, re-read when the window opens so a fresh RTT sample is honored. It
+has no configuration knob of its own.
 
 ## Rationale
 
-1. **Matches real-world network behavior**: Mobile networks often have variable latency. An Ack arriving 100-200ms late shouldn't trigger failure detection.
-
-2. **No protocol changes**: This is an implementation improvement within the existing SWIM protocol. No new message types or peer coordination required.
-
-3. **Consistent behavior**: Both 2-device and multi-device scenarios now handle late Acks the same way - by waiting for the indirect ping timeout duration.
-
-4. **Minimal overhead**: The grace period is only the `indirectPingTimeout` (default 500ms), same as what would be spent on indirect probing anyway.
+1. **Matches real-world network behavior**: an Ack 100–200ms late is a
+   healthy peer, not a failure.
+2. **No protocol change**: no new message types, no peer coordination.
+3. **One shape**: two-device pairs and larger groups behave identically,
+   and both libraries follow the same probe shape (Dart shares one code
+   path; the Kotlin port of that shape is tracked in the divergence
+   register).
+4. **Bounded cost**: a failed probe takes two per-peer timeouts. The probe
+   interval is nominally three global timeouts, so a slow peer or a
+   recovery probe in the same round can overrun it; rounds are sequential,
+   so an overrun only delays the next tick.
 
 ## Consequences
 
 ### Positive
 
-- Reduces spurious probe failures from network latency spikes
-- More stable peer status in 2-device scenarios
-- Cleaner logs without "did NOT match any pending ping" warnings
-- No false suspicions from transient delays
+- No spurious probe failures from latency spikes
+- Stable peer status in two-device pairs
+- No "did NOT match any pending ping" noise for merely-late Acks
+- The late-Ack case is logged distinctly, which is the signal that a
+  timeout is running tight
 
 ### Negative
 
-- Slightly longer time to detect actual failures in 2-device scenario (adds grace period)
-- More complex probe round logic with deferred cleanup
-- Pending ping map holds entries slightly longer
+- Detecting a real failure takes up to two timeouts per probe instead of
+  one
+- The pending-ping map holds entries slightly longer
 
 ### Trade-offs
 
-The grace period in 2-device scenarios adds latency to failure detection. With default settings:
-- Direct timeout: 500ms
-- Grace period: 500ms
-- Total: 1000ms per probe round
-
-This is acceptable because:
-- Real failures will still be detected within 3 seconds (3 failed probes)
-- False positives are more disruptive than slightly slower detection
-- Mobile networks commonly have latency spikes in this range
+At the 500 ms floor a failed probe costs 1000 ms (direct 500 ms + grace
+500 ms); at the 10 s ceiling it costs 20 s. Real failures are still
+detected within a few probe rounds, and false positives are more
+disruptive than slightly slower detection.
 
 ## Alternatives Considered
 
-### Increase Direct Ping Timeout
+### Increase the direct ping timeout
 
-Simply increase `pingTimeout` to account for latency:
-- Simpler implementation
-- But delays detection for all probes, not just edge cases
-- Doesn't solve the fundamental timing issue
+Simpler, but delays detection for all probes, not just the edge cases, and
+still drops an Ack that lands just after the longer timeout.
 
-### Adaptive Timeout (Phi Accrual)
+### Ignore late Acks entirely
 
-Track Ack latency history and adapt timeout:
-- More sophisticated
-- But adds significant complexity
-- Overkill for small device networks
-- Still doesn't handle the cleanup timing issue
+Simplest, but causes the spurious failures this record exists to remove.
 
-### Ignore Late Acks Entirely
+### Sleep the full window, then check
 
-Let late Acks be discarded as before:
-- Simplest approach
-- But causes unnecessary probe failures
-- Poor UX with frequent status changes
-- Wastes indirect ping bandwidth on healthy peers
+The pre-2026-09 Dart shape. Same verdicts, but a late Ack at +100ms still
+cost the remaining 400ms of the round. The Kotlin twin raced the window
+from the start; Dart adopted the race with the retirement.

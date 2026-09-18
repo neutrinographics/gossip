@@ -94,6 +94,23 @@ publish under the existing pub.dev `gossip` name must version above the old
 
 ### Behavioral
 
+- Indirect (relayed) health probing is retired. A probe is now a direct
+  Ping, a per-peer adaptive timeout, and a grace window of one more
+  timeout that ends the moment a late Ack lands; a failure is counted only
+  if the window closes empty. A `PingReq` frame from a peer on an older
+  build is decoded and ignored; this library never sends one. A
+  one-way-deaf link now degrades honestly — the side that hears nothing
+  back marks its peer suspected, then unreachable (the peer that still
+  receives its Pings sees it as mostly reachable, dipping to suspected
+  between the deaf side's slow recovery probes), entries keep converging
+  through any healthy third node, and the deaf side recovers its peer
+  after the link heals. See ADR-004 (amended) and the retirement decision
+  record in `docs/superpowers/specs/`.
+- The failure detector's log prefix changed from `[SWIM] ` to
+  `[FailureDetector] `, and its malformed-frame error text now says
+  "membership message"; the library no longer describes its own mechanism
+  as SWIM — the term survives only as the literature reference (the paper
+  citation, ADR-004's history) it departs from.
 - `StreamCompacted` is now emitted, from `ChannelService.compactStream`,
   whenever a compaction pass actually prunes entries (manual
   `EventStream.compact()` calls and the Coordinator's periodic
@@ -103,7 +120,7 @@ publish under the existing pub.dev `gossip` name must version above the old
 - Errors surfacing after `dispose()` are routed to `onLog` instead of
   being dropped.
 - Probe scheduling, gossip pacing, and failure-detection internals were
-  substantially reworked (SWIM suppression, adaptive pacing, compaction);
+  substantially reworked (probe suppression, adaptive pacing, compaction);
   observable protocol behavior is pinned by the test suite, and audit
   records in `docs/audits/` document each change.
 - `InMemoryTimePort.advance()` now fires each periodic callback once per

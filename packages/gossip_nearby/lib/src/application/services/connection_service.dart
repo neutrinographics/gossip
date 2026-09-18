@@ -80,7 +80,7 @@ class ConnectionService implements MessageDispatcher {
   final Map<EndpointId, _PendingDiscovery> _pendingDiscoveries = {};
   bool _disposed = false;
 
-  /// High-priority message queue (SWIM pings/acks).
+  /// High-priority message queue (failure-detection pings/acks).
   final Queue<_QueuedMessage> _highPriorityQueue = Queue<_QueuedMessage>();
 
   /// Normal-priority message queue (gossip messages).
@@ -160,9 +160,10 @@ class ConnectionService implements MessageDispatcher {
 
   /// Sends a gossip message to the specified peer.
   ///
-  /// Messages are queued by priority. High-priority messages (SWIM pings/acks)
-  /// are processed before normal-priority messages (gossip data) to ensure
-  /// failure detection isn't delayed during congestion.
+  /// Messages are queued by priority. High-priority messages
+  /// (failure-detection pings/acks) are processed before normal-priority
+  /// messages (gossip data) to ensure failure detection isn't delayed
+  /// during congestion.
   @override
   Future<void> sendGossipMessage(
     NodeId destination,

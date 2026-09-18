@@ -12,7 +12,6 @@ import 'package:gossip/src/membership/infrastructure/membership_message_codec.da
 import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:gossip/src/membership/domain/messages/ack.dart';
 import 'package:gossip/src/membership/domain/messages/ping.dart';
-import 'package:gossip/src/membership/domain/messages/ping_req.dart';
 import 'package:test/test.dart';
 
 import '../../support/pump.dart';
@@ -21,226 +20,41 @@ import 'failure_detector_test_harness.dart';
 void main() {
   final codec = MembershipMessageCodec(wireVersion: WireVersion.v2);
 
-  group('Intermediary role', () {
-    late FailureDetectorTestHarness h;
-    late TestPeer prober;
-    late TestPeer target;
-
-    setUp(() {
-      h = FailureDetectorTestHarness(
-        localName: 'intermediary',
+  group('Relay requests from older peers', () {
+    test('an inbound PingReq is decoded and ignored', () async {
+      final h = FailureDetectorTestHarness(
+        localName: 'local',
         pingTimeout: const Duration(milliseconds: 500),
       );
-      prober = h.addPeer('prober');
-      target = h.addPeer('target');
-    });
-
-    test('forwards Ack back to prober when target responds', () async {
+      final requester = h.addPeer('requester');
+      final target = h.addPeer('target');
       h.startListening();
+      addTearDown(h.stopListening);
 
-      // Target auto-responds with Ack
-      final targetSub = target.port.incoming.listen((msg) {
-        final decoded = codec.decode(msg.bytes);
-        if (decoded is Ping) {
-          final ack = Ack(sender: target.id, sequence: decoded.sequence);
-          target.port.send(h.localNode, codec.encode(ack));
-        }
-      });
-
-      final (proberMessages, proberSub) = h.captureMessages(prober);
-
-      await h.sendPingReq(prober, target, sequence: 42);
-      await h.flush(2);
-
-      expect(proberMessages, hasLength(1));
-      expect(proberMessages.first, isA<Ack>());
-      final forwardedAck = proberMessages.first as Ack;
-      expect(forwardedAck.sender, equals(h.localNode));
-      expect(forwardedAck.sequence, equals(42));
-
-      await targetSub.cancel();
-      await proberSub.cancel();
-      h.stopListening();
-    });
-
-    test('does not forward Ack when target does not respond', () async {
-      h.startListening();
-
-      final (proberMessages, proberSub) = h.captureMessages(prober);
-
-      await h.sendPingReq(prober, target, sequence: 42);
-
-      // Advance past intermediary timeout (200ms)
-      await h.timePort.advance(const Duration(milliseconds: 201));
-      await h.flush();
-
-      expect(proberMessages, isEmpty);
-
-      await proberSub.cancel();
-      h.stopListening();
-    });
-
-    test('sends Ping to the correct target', () async {
-      h.startListening();
-
+      final (requesterMessages, requesterSub) = h.captureMessages(requester);
+      addTearDown(requesterSub.cancel);
       final (targetMessages, targetSub) = h.captureMessages(target);
+      addTearDown(targetSub.cancel);
+      final contactBefore = h.peerRegistry.getPeer(requester.id)!.lastContactMs;
 
-      await h.sendPingReq(prober, target, sequence: 99);
-      await h.flush();
+      await h.sendPingReq(requester, target, sequence: 42);
+      // Long enough for the old relay's own probe timeout to have fired.
+      await h.timePort.advance(const Duration(seconds: 3));
+      await h.flush(3);
 
-      expect(targetMessages, hasLength(1));
-      expect(targetMessages.first, isA<Ping>());
-      final ping = targetMessages.first as Ping;
-      expect(ping.sender, equals(h.localNode));
-      expect(ping.sequence, greaterThan(0));
-
-      // Clean up — advance past timeout so _handlePingReq completes
-      await h.timePort.advance(const Duration(milliseconds: 201));
-
-      await targetSub.cancel();
-      h.stopListening();
+      expect(targetMessages, isEmpty, reason: 'no probe is relayed');
+      expect(requesterMessages, isEmpty, reason: 'no Ack is forwarded');
+      expect(h.sentMessageCount, equals(0));
+      expect(h.errors, isEmpty, reason: 'an ignored frame is not an error');
+      expect(
+        h.peerRegistry.getPeer(requester.id)!.lastContactMs,
+        equals(contactBefore),
+        reason:
+            'the detector itself records nothing; the frame\'s '
+            'proof-of-life credit comes from the sync engine\'s per-frame '
+            'stamp',
+      );
     });
-
-    test(
-      'selects correct number of intermediaries based on peer count',
-      () async {
-        // Scenario 1: 2 peers total → 1 intermediary available
-        final h1 = FailureDetectorTestHarness(
-          localName: 'local1',
-          pingTimeout: const Duration(milliseconds: 500),
-        );
-        final peers1 = [h1.addPeer('peerA'), h1.addPeer('peerB')];
-
-        h1.startListening();
-
-        final captures1 = [
-          h1.captureMessages(peers1[0]),
-          h1.captureMessages(peers1[1]),
-        ];
-
-        final probe1 = h1.detector.performProbeRound();
-        await h1.flush();
-
-        // Direct ping timeout → indirect phase
-        await h1.timePort.advance(const Duration(milliseconds: 501));
-        await h1.flush();
-
-        // One peer got the Ping (target), the other should get PingReq
-        var totalPingReqs1 = 0;
-        for (final (msgs, _) in captures1) {
-          totalPingReqs1 += msgs.whereType<PingReq>().length;
-        }
-        expect(
-          totalPingReqs1,
-          equals(1),
-          reason: 'With 2 peers, exactly 1 intermediary should receive PingReq',
-        );
-
-        await h1.timePort.advance(const Duration(milliseconds: 501));
-        await probe1;
-        for (final (_, sub) in captures1) {
-          await sub.cancel();
-        }
-        h1.stopListening();
-
-        // Scenario 2: 4 peers total → 3 intermediaries (capped at 3)
-        final h3 = FailureDetectorTestHarness(
-          localName: 'local3',
-          pingTimeout: const Duration(milliseconds: 500),
-        );
-        final peers3 = [
-          h3.addPeer('peer1'),
-          h3.addPeer('peer2'),
-          h3.addPeer('peer3'),
-          h3.addPeer('peer4'),
-        ];
-
-        h3.startListening();
-
-        final captures3 = <(List<dynamic>, dynamic)>[];
-        for (final p in peers3) {
-          captures3.add(h3.captureMessages(p));
-        }
-
-        final probe3 = h3.detector.performProbeRound();
-        await h3.flush();
-
-        await h3.timePort.advance(const Duration(milliseconds: 501));
-        await h3.flush();
-
-        // 3 of the 4 peers (all except the target) should get PingReqs
-        var totalPingReqs3 = 0;
-        for (final (msgs, _) in captures3) {
-          totalPingReqs3 += msgs.whereType<PingReq>().length;
-        }
-        expect(
-          totalPingReqs3,
-          equals(3),
-          reason: 'With 4 peers, 3 intermediaries should receive PingReq',
-        );
-
-        await h3.timePort.advance(const Duration(milliseconds: 501));
-        await probe3;
-        for (final (_, sub) in captures3) {
-          await sub.cancel();
-        }
-        h3.stopListening();
-      },
-    );
-
-    test(
-      'PingReq with colliding sequence does not overwrite local pending ping',
-      () async {
-        final h = FailureDetectorTestHarness(
-          localName: 'intermediary-B',
-          pingTimeout: const Duration(milliseconds: 500),
-        );
-        final prober = h.addPeer('prober-A');
-        final target = h.addPeer('target-C');
-
-        h.startListening();
-
-        final localPingFuture = h.expectPing(target);
-        final probeFuture = h.detector.probeNewPeer(target.id);
-        final localPing = await localPingFuture;
-
-        final collidingSeq = localPing.sequence;
-
-        await h.sendPingReq(prober, target, sequence: collidingSeq);
-        await h.flush();
-
-        // C responds to B's original Ping
-        await h.timePort.advance(const Duration(milliseconds: 100));
-        final ack = Ack(sender: target.id, sequence: collidingSeq);
-        await target.port.send(h.localNode, codec.encode(ack));
-        await h.flush();
-
-        // Advance past probeNewPeer's timeout
-        await h.timePort.advance(const Duration(milliseconds: 500));
-
-        final gotAck = await probeFuture;
-
-        expect(
-          gotAck,
-          isTrue,
-          reason:
-              'probeNewPeer Ack should match the local pending ping, '
-              'not be stolen by the PingReq handler',
-        );
-
-        expect(
-          h.rttTracker.hasReceivedSamples,
-          isTrue,
-          reason:
-              'RTT should be recorded for the local probe, '
-              'not lost due to PingReq collision',
-        );
-
-        // Clean up — advance past intermediary timeout for PingReq handler
-        await h.timePort.advance(const Duration(milliseconds: 201));
-        h.stopListening();
-      },
-    );
   });
 
   group('Error handling', () {

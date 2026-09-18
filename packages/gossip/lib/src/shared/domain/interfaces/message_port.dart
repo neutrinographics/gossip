@@ -6,12 +6,12 @@ import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
 ///
 /// Transports that support priority queuing will process high-priority
 /// messages before normal-priority messages. This ensures time-sensitive
-/// protocol messages (like SWIM pings/acks) aren't delayed behind bulk
+/// protocol messages (like probe pings/acks) aren't delayed behind bulk
 /// data transfers during congestion.
 enum MessagePriority {
   /// High priority for time-sensitive protocol messages.
   ///
-  /// Used by SWIM failure detection for pings and acks, which must be
+  /// Used by failure detection for pings and acks, which must be
   /// delivered promptly to avoid false positive peer failures.
   high,
 
@@ -132,7 +132,7 @@ abstract class MessagePort {
   ///   roll back optimistic state immediately instead of timing out
   ///
   /// The optional [priority] parameter indicates message urgency:
-  /// - [MessagePriority.high]: Time-sensitive messages (SWIM pings/acks)
+  /// - [MessagePriority.high]: Time-sensitive messages (probe pings/acks)
   /// - [MessagePriority.normal]: Regular gossip messages (default)
   ///
   /// Transports that support priority queuing should process high-priority
