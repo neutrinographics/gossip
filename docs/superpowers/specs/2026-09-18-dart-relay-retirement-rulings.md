@@ -194,3 +194,16 @@ contact on every inbound frame before decoding it, so an ignored relay
 request still refreshes the sender's last-contact time at the library
 level — the same as any frame, and correct: it proves the inbound path
 works, which is what freshness suppression keys on.
+
+**Owner-requested review (2026-09-18):** a correctness pass and a
+Kotlin-parity/DDD pass found no logic defect. Ruling 1's rationale for the
+detector recording no contact ("not proof the sender can hear us") was
+wrong — an inbound Ping is recorded on identical evidence; the honest
+reason is that the sync engine already credits every frame and the
+detector has no probe to complete, and the code and test now say so.
+Three divergences were registered: the library-level contact stamp for an
+ignored relay request (Kotlin lacks it), Dart's single probe path with
+cleanup in `finally` (Kotlin has two inline copies and can leak a pending
+ping on cancellation), and Kotlin's data-not-ports domain services (a Dart
+flow-back). The probe-interval rationale in ADR-012 and the timing policy
+was made honest about overruns.

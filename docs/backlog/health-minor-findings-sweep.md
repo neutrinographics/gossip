@@ -95,12 +95,14 @@ bugs, not polish.
 
 ## Seeds
 
-- The transport packages (`gossip_bluey`'s connection manager,
-  `gossip_nearby`'s connection service and message dispatcher) and the
-  example chat app's settings sheet still describe the core's probing as
-  "SWIM", including a user-visible "SWIM probe interval" label; the core
-  renamed the mechanism to failure detection on 2026-09-18, and these
-  should follow.
+- The example chat app's settings sheet
+  (`examples/gossip_chat/lib/presentation/screens/settings_sheet.dart`)
+  still describes the core's probing as "SWIM", including a user-visible
+  "SWIM probe interval" label, and its pinning test asserts that exact
+  label text
+  (`examples/gossip_chat/test/presentation/screens/settings_sheet_test.dart`);
+  the core renamed the mechanism to failure detection on 2026-09-18 (the
+  transport packages already followed, C10), and these should too.
 - One Bluetooth-transport integration test (the reconnect-during-a-chunked-send
   case in the adverse link-supersession suite) is timing-sensitive: it passes
   every time on its own and on the main branch, but has failed once inside

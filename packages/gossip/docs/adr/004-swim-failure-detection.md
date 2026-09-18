@@ -136,7 +136,8 @@ interval to 1 (probe every round) costs ~44 bytes/second, still negligible.
 - Works well with unreliable mobile networks
 - Automatic recovery from mutual-unreachable deadlocks via periodic probing
 - Minimal bandwidth overhead
-- One probe shape on both libraries
+- One probe shape on both libraries (Dart shares one code path; the
+  Kotlin port of that shape is tracked in the divergence register)
 
 ### Negative
 

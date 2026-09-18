@@ -36,7 +36,9 @@ restart path waiting out a still-unwinding listener before relaunching
 (valuable only if Dart ever runs handlers concurrently); the grace window
 after a failed probe racing the late answer instead of sleeping blind; and
 serving a channel created during a pause immediately rather than after
-resume. Each is a register row.
+resume. Each is a register row. The 2026-09-18 relay-retirement review
+added one more: the Kotlin domain services take time and candidates as
+arguments where Dart's hold a time port and the registry.
 
 ## Why it matters
 

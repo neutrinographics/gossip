@@ -52,9 +52,13 @@ has no configuration knob of its own.
    healthy peer, not a failure.
 2. **No protocol change**: no new message types, no peer coordination.
 3. **One shape**: two-device pairs and larger groups behave identically,
-   and both libraries read the same probe line for line.
-4. **Bounded cost**: worst case a failed probe takes two timeouts; the probe
-   interval is sized at three (room for both, plus slack).
+   and both libraries follow the same probe shape (Dart shares one code
+   path; the Kotlin port of that shape is tracked in the divergence
+   register).
+4. **Bounded cost**: a failed probe takes two per-peer timeouts. The probe
+   interval is nominally three global timeouts, so a slow peer or a
+   recovery probe in the same round can overrun it; rounds are sequential,
+   so an overrun only delays the next tick.
 
 ## Consequences
 
