@@ -12,19 +12,25 @@ import '../../support/test_network.dart';
 /// nodeA can send to nodeB, but everything nodeB sends to nodeA is lost.
 /// nodeA is the "one-way-deaf" node — it never hears nodeB directly.
 ///
-/// With a relay (nodeC bidirectionally connected to both sides), SWIM's
-/// indirect probing (PingReq via nodeC) must keep both views reachable and
-/// gossip must converge through the relay. Without a relay, the deaf node
-/// has no intermediaries and must eventually suspect its peer.
+/// There is no relayed probing: a third node connected to both sides
+/// cannot vouch for the pair, so the deaf node degrades honestly and marks
+/// its peer suspected, then unreachable — while entries keep converging
+/// through the third node, and the pair recovers after the heal.
 void main() {
   group('Asymmetric Partition', () {
-    group('With relay (nodeC connected to both sides)', () {
+    group('With a third node connected to both sides', () {
       late TestNetwork network;
       final channelId = ChannelId('asym-relay-channel');
       final streamId = StreamId('data');
 
       setUp(() async {
-        network = await TestNetwork.create(['nodeA', 'nodeB', 'nodeC']);
+        network = await TestNetwork.create(
+          ['nodeA', 'nodeB', 'nodeC'],
+          config: const CoordinatorConfig(
+            suspicionThreshold: 3,
+            unreachableThreshold: 6,
+          ),
+        );
         await network.connectAll();
         await network.setupChannel(channelId, streamId);
         await network.startAll();
@@ -34,8 +40,41 @@ void main() {
         await network.dispose();
       });
 
+      test('the deaf node suspects its peer even though a third node could '
+          'have vouched for it', () async {
+        await network.runRounds(5);
+        expect(
+          network['nodeA'].peerStatus(network['nodeB'].id),
+          equals(PeerStatus.reachable),
+        );
+
+        // nodeA stops hearing nodeB directly. Its Pings still reach
+        // nodeB, but every Ack back is lost; each probe times out
+        // through the grace window and records a failure. nodeC is not
+        // asked to relay anything.
+        network.partitionOneWay('nodeB', 'nodeA');
+        await network.runRounds(80);
+
+        expect(
+          network['nodeA'].peerStatus(network['nodeB'].id),
+          anyOf(equals(PeerStatus.suspected), equals(PeerStatus.unreachable)),
+          reason: 'a silent direct link is reported as such — honestly',
+        );
+        // The third node talks to both sides directly and stays healthy
+        // in everyone's view.
+        expect(network['nodeC'].reachablePeers.length, equals(2));
+        expect(
+          network['nodeA'].peerStatus(network['nodeC'].id),
+          equals(PeerStatus.reachable),
+        );
+        expect(
+          network['nodeB'].peerStatus(network['nodeC'].id),
+          equals(PeerStatus.reachable),
+        );
+      });
+
       test(
-        'state converges through the relay while the block is active',
+        'state converges through the third node while the block is active',
         () async {
           // Baseline convergence before the partition.
           await network['nodeA'].write(channelId, streamId, [0xA0]);
@@ -115,9 +154,8 @@ void main() {
         );
 
         // nodeA becomes deaf to nodeB. nodeA's Pings still reach nodeB,
-        // but every Ack back is lost — and with no third node there are no
-        // intermediaries for an indirect ping, so each probe round records
-        // a failure on nodeA.
+        // but every Ack back is lost, so each probe times out through the
+        // grace window and records a failure on nodeA.
         network.partitionOneWay('nodeB', 'nodeA');
 
         // With RTT-adaptive timing, 80 rounds gives ample probe rounds for
