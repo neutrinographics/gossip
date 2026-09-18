@@ -54,6 +54,8 @@ already pin for the no-relay case.
   remains on this item.
 
 - The ruling and full rationale: [decision record](../superpowers/specs/2026-09-01-swim-slimdown-decision.md).
+- The Dart half's rulings page (2026-09-18, awaiting owner review):
+  [Dart relay retirement rulings](../superpowers/specs/2026-09-18-dart-relay-retirement-rulings.md).
 - The Kotlin batch that absorbs the kt-side removal:
   [rulings page](../superpowers/specs/2026-09-01-receive-loop-lifecycle-rulings.md)
   and [Make stopping a Kotlin coordinator actually stop it](kt-coordinator-restart-lifecycle.md).
