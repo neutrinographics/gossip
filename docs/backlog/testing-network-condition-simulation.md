@@ -15,8 +15,9 @@ ways, and today none of them can be expressed in a test:
 - **Loss of individual messages** — one dropped reply, not a dead node, so
   retry and timeout logic actually runs.
 - **One-way (asymmetric) partitions** — A can hear B but B can't hear A: the
-  classic degraded-radio case the failure detector's indirect probing was
-  built for, currently impossible to construct.
+  classic degraded-radio case, which the failure detector now reports
+  honestly instead of masking through a relay, currently impossible to
+  construct.
 - **Duplicate delivery** — the same frame arriving twice.
 - **Corruption** — mangled bytes on the wire.
 - **Real backpressure** — today "congestion" is a number a test writes into

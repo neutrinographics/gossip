@@ -187,3 +187,10 @@ implementation plan follows this record.
 **Shipped 2026-09-18** on branch `feature/retire-indirect-probing` per the
 plan `docs/superpowers/plans/2026-09-18-dart-relay-retirement.md`; suite
 1274 → 1267. The OpenDoorApp pin bump follows as its own PR.
+
+**Precision note (final review, 2026-09-18):** ruling 1's "records no
+contact for its sender" is the detector's behavior. The sync engine stamps
+contact on every inbound frame before decoding it, so an ignored relay
+request still refreshes the sender's last-contact time at the library
+level — the same as any frame, and correct: it proves the inbound path
+works, which is what freshness suppression keys on.

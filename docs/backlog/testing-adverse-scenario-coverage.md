@@ -13,8 +13,9 @@ anyway. The initial target list:
   the pending-request timeout expires, the request is retried, and the data
   still converges (today only unit tests touch this logic).
 - **Asymmetric partition** — one-way link failure between two nodes, with a
-  third node relaying: verifies the failure detector's indirect probing
-  actually rescues the pair.
+  third node present: the one-way-deaf node degrades honestly (suspected,
+  then unreachable) while entries keep converging through the third node,
+  and recovers once the link heals.
 - **Duplicate frames** — the same message delivered twice must not corrupt
   state or double-apply entries (idempotency is currently only tested by
   re-running rounds, which re-sends equivalent — not identical — traffic).
@@ -28,8 +29,9 @@ anyway. The initial target list:
 
 These are the production failure modes of a Bluetooth mesh in the field.
 Every one of them currently has protocol-level logic dedicated to it —
-timeouts, indirect probes, drift bounds, congestion gates — whose end-to-end
-behavior is untested because the harness couldn't produce the condition.
+timeouts, graded failure-detection status, drift bounds, congestion gates —
+whose end-to-end behavior is untested because the harness couldn't produce
+the condition.
 
 ## Rough approach
 

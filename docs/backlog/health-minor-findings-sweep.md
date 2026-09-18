@@ -93,6 +93,15 @@ Individually small; collectively they are the gap between "audited" and
 "clean". The two latents above deserve to be fixed first — they are
 bugs, not polish.
 
+## Seeds
+
+- The transport packages (`gossip_bluey`'s connection manager,
+  `gossip_nearby`'s connection service and message dispatcher) and the
+  example chat app's settings sheet still describe the core's probing as
+  "SWIM", including a user-visible "SWIM probe interval" label; the core
+  renamed the mechanism to failure detection on 2026-09-18, and these
+  should follow.
+
 ## Related
 
 - Findings COR3-28, COR3-30, and the MIN-/OBS-series in
