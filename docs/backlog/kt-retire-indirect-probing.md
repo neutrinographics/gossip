@@ -51,7 +51,7 @@ already pin for the no-relay case.
   handler counts and ignores, the indirect phase became a grace window that
   races the late answer, the sender guard is ported, the message type still
   decodes and its encoder stays for the wire fixtures.
-- **Dart half done:** 2026-09-18 on branch `feature/retire-indirect-probing`
+- **Dart half done:** 2026-09-18, merged as 9ada5fd (PR #16)
   ([rulings](../superpowers/specs/2026-09-18-dart-relay-retirement-rulings.md)) —
   relay handler ignores, the indirect phase is a grace window that races the
   late Ack, `PingReq` still decodes with its encoder kept for the wire
