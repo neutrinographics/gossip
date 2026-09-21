@@ -46,6 +46,7 @@ test: under a second, median and maximum, in a real meeting.
 
 ## Related
 
+- Shipped: opendoor-api PR #25 (merge b703e9f, Heroku v51, 2026-09-21); design audit at opendoor-api `docs/reviews/2026-09-21-inbound-queue-pr-ddd-ca-audit.md`. Acceptance is the next real meeting's `wait=` column.
 - Spec (for review): opendoor-api `docs/superpowers/specs/2026-09-21-inbound-queue-under-load-design.md` — cached stream marks (R1) and targeted delta queries (R2), which also covers the full-stream reads item.
 - Evidence: [the 2026-09-21 meeting report](../audits/2026-09-21-production-meeting-v50.md), findings 1 and 2.
 - The measurement that found it: [measure how far behind the inbound queue runs](server-inbound-merge-latency.md).

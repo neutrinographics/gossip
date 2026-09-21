@@ -34,6 +34,7 @@ visible, rather than inside the pool's connection timeout.
 
 ## Related
 
+- Done: opendoor-api PR #25 (2026-09-21), as R2 of the inbound-queue spec; the byte-size walk leftover is on [small follow-ups from the inbound-queue design audit](server-audit-follow-ups.md).
 - Surfaced by the final review of the meeting-fixes pull request
   (opendoor-api branch `feature/meeting-server-fixes`, 2026-09-16).
 - [Let the server prune presence while a meeting is running](server-compaction-under-load.md)
