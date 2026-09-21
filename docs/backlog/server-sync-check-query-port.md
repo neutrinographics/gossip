@@ -44,5 +44,6 @@ only consumer.
 
 ## Related
 
+- Done: opendoor-api PR #26 (merge 989fc15, Heroku v52, 2026-09-21) — `StreamProgressQuery` in the sync domain, `PgStreamProgressQuery` on the marks table; the route no longer references the engine's repository.
 - The audit that found it: opendoor-api `docs/reviews/2026-09-21-inbound-queue-pr-ddd-ca-audit.md`, CA1-2.
 - The change that made it sharper: [keep the server's inbound queue under a second in a meeting](server-inbound-queue-under-load.md).
