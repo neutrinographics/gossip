@@ -21,7 +21,8 @@ it does, 25 s deep at eight phones, and it drops sockets through the ping
 timeout ([2026-09-21 measurement](audits/2026-09-21-production-meeting-v50.md)),
 so [keeping that queue under a second](backlog/server-inbound-queue-under-load.md)
 went first — shipped as Heroku v51 on 2026-09-21, acceptance at the next
-real meeting — ahead of the wire work. Work
+real meeting, with its design audit's one exposed-surface finding closed
+the same evening as v52 — ahead of the wire work. Work
 proceeds in this order (owner-set; rationale for the original ordering in
 the [retirement decision record](superpowers/specs/2026-09-01-swim-slimdown-decision.md)'s
 review outcome and the parity program; re-ordered 2026-09-02 after the
@@ -162,7 +163,8 @@ purification batch merged):
    measured ~300 KB at the same phone counts but the
    [v50 meeting](audits/2026-09-21-production-meeting-v50.md) was back at
    ~700 KB with eight phones, so the digest share is to be
-   re-measured through the tunnel on v50 before this spec claims a saving
+   re-measured through the tunnel on the current release (v52 or later)
+   before this spec claims a saving
    (the 2026-09-03 tunnel number was ~700 KB/min for one phone,
    almost all 8 KB all-channel digests sent about once a second because
    presence heartbeats keep the pacer at its floor (plus group and account
@@ -188,7 +190,8 @@ purification batch merged):
 
 Kotlin work ships via opendoor-api submodule bumps — items 1 and 2 rode
 one bump (#17, deployed); item 3 rode #18 (v45); item 5 rode #21 (v47),
-carrying item 4 alone; item 6 was a server-only release (#22, v48). The
+carrying item 4 alone; item 6 was a server-only release (#22, v48), as were the inbound-queue
+fix (#25, v51) and the sync-check query port (#26, v52) on 2026-09-21. The
 payload-cap, get-or-create, and KT-E fixes ride the next Kotlin bump,
 item 9.
 Behind the list, the other parity-completeness items queue in the
