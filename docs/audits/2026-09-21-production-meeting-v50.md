@@ -146,10 +146,61 @@ what the server has received. The library adopted every truncated history
 and no data was lost, but the warning volume is a symptom to expect
 whenever finding 1 is present.
 
+## Finding 5: the room split four and four, and so does the server's per-phone table (observation)
+
+The owner reported that when the meeting was paused and then left, four
+devices reacted within seconds and four took a long time, and that page
+changes during the lesson showed the same split. The server's per-phone
+counters over the ten minutes divide the same way:
+
+| phone (user) | bytes out to it | reconnects | measured RTT |
+|---|---|---|---|
+| `94a852bc` (`b50e193f`) | 4.1 MB | 0 | 270 ms |
+| `3064532f` (`796a0e50`) | 5.8 MB | 0 | 254 ms |
+| `13a8acdd` (`f27c3b5a`) | 6.6 MB | 1 | 308 ms |
+| `e0c67580` (`6e7617c2`) | 6.9 MB | 1 | 342–358 ms |
+| `b74dae49` (`4f5f10e2`) | 8.0 MB | 1 | 455 ms |
+| `7476dd3c` (`d307c89b`) | 8.1 MB | 3 | 421 ms |
+| `0cf455f9` (`506fc806`) | 8.5 MB | 3 | 487 ms |
+| `132b8168` (`bafc4a4a`) | 8.8 MB | 4 | 348–367 ms |
+
+The second four drew a third more from the server, were dropped by the
+ping timeout eleven times between them against two for the first four,
+and sit on the slower network path. Two readings fit, and they are not
+exclusive:
+
+- **The first four had a second path.** The app runs the Nearby
+  Connections transport beside the WebSocket, as a star with the
+  facilitator advertising and members attaching (up to seven). A phone on
+  that star gets a page change from the facilitator's phone within a
+  second, whatever the server's queue is doing, and then needs fewer
+  entries from the server; a phone that never attached, or lost the
+  link, gets everything through the 25 s queue. That predicts exactly
+  this table.
+- **The second four were being dropped.** Each ping timeout puts a
+  fresh digest at the back of the queue and a catch-up delta behind it,
+  so a phone cycling every minute or two pays the wait repeatedly and
+  draws more bytes. That also predicts the table, and the two readings
+  reinforce each other: a phone with no Nearby path is the one whose
+  whole experience is the queue.
+
+The server cannot tell which reading is which; the app's own log can
+(which phones held a Nearby link to the facilitator). The owner can map
+the four slow devices to the ids above. Either way the remedy is finding
+1: with the queue under a second, both groups react within seconds.
+
+**Aside, server-side.** The per-phone `bytesIn`/`messagesIn` counters in
+`/admin/sync` read about 1 KB and 20–37 messages per phone for the whole
+meeting, while the health line's inbound was 1.2 MB a minute; those
+counters do not count inbound gossip frames. Minor, but the table above
+cannot use them.
+
 ## What this report cannot see
 
 - Bytes by message type (finding 3): only a tunnel run with a phone's
   log shows the digest share.
+- Which phones held a Nearby link to the facilitator (finding 5): the
+  app's log, not the server's.
 - Where the 90 ms per frame goes on the server: the health line has no
   per-message timing; a profile or per-stage timing on the inbound path is
   the next measurement if the fix is not obvious from reading the code.
