@@ -46,6 +46,7 @@ test: under a second, median and maximum, in a real meeting.
 
 ## Related
 
+- Spec (for review): opendoor-api `docs/superpowers/specs/2026-09-21-inbound-queue-under-load-design.md` — cached stream marks (R1) and targeted delta queries (R2), which also covers the full-stream reads item.
 - Evidence: [the 2026-09-21 meeting report](../audits/2026-09-21-production-meeting-v50.md), findings 1 and 2.
 - The measurement that found it: [measure how far behind the inbound queue runs](server-inbound-merge-latency.md).
 - The likeliest single cost: [stop the server reading a whole stream to answer a per-author question](server-entry-repository-full-stream-reads.md).
