@@ -15,9 +15,12 @@ traffic. Stability work went before performance work because the server
 side had two known defects that outweighed any remaining inefficiency;
 both shipped in v48 on 2026-09-16 and were confirmed fixed by the first
 meeting on it ([2026-09-17 measurement](audits/2026-09-17-production-meeting-v48.md)),
-so performance is next — with one open question riding along, whether the
-server's inbound queue backs up at the peak of a meeting, now measurable
-on every health line since v50. Work
+so performance is next — and the question that rode along, whether the
+server's inbound queue backs up in a meeting, was answered on 2026-09-21:
+it does, 25 s deep at eight phones, and it drops sockets through the ping
+timeout ([2026-09-21 measurement](audits/2026-09-21-production-meeting-v50.md)),
+so [keeping that queue under a second](backlog/server-inbound-queue-under-load.md)
+is the first server item ahead of the wire work. Work
 proceeds in this order (owner-set; rationale for the original ordering in
 the [retirement decision record](superpowers/specs/2026-09-01-swim-slimdown-decision.md)'s
 review outcome and the parity program; re-ordered 2026-09-02 after the
@@ -97,7 +100,16 @@ purification batch merged):
    on v48 before item 10's spec sizes its win. Two small follow-ups
    surfaced: the ping-timeout policy and an eleven-second inbound backlog
    at the busiest minute (nine to ten phones), read from sends to a peer
-   removed eleven seconds earlier. Original brief: the
+   removed eleven seconds earlier. **Read again on v50, 2026-09-21** (a
+   ten-minute meeting, eight phones, live collector; [report](audits/2026-09-21-production-meeting-v50.md)):
+   the inbound queue filled within ninety seconds and held a 23–27 s wait
+   for nine of ten minutes, emptying within a minute of the room going
+   quiet; thirteen ping timeouts on six phones followed, all displaced
+   cleanly, because the pong is read by the loop stuck behind the full
+   queue; traffic was ~700 KB out per phone per minute again, not 300 KB;
+   27 sequence holes and 90 floor adoptions in five minutes, all handled.
+   Both room-visible symptoms (a slow join, a two-minute page change) are
+   that queue. Original brief: the
    next real meeting on those releases, read through the
    health and merge lines. **A second before-picture exists**: the last
    meeting of 2026-09-16 on v47, read from the Papertrail archive after a
@@ -145,9 +157,11 @@ purification batch merged):
    written while items 8 and 9 are built, since it needs the owner's ruling
    before any code. The biggest measured waste by far: the 2026-09-15 meeting
    confirmed 710 KB out per phone per minute across up to seven phones,
-   ~97 % digests — but the [v48 meeting](audits/2026-09-17-production-meeting-v48.md)
-   measured ~300 KB at the same phone counts, so the digest share is to be
-   re-measured through the tunnel on v48 before this spec claims a saving
+   ~97 % digests — the [v48 meeting](audits/2026-09-17-production-meeting-v48.md)
+   measured ~300 KB at the same phone counts but the
+   [v50 meeting](audits/2026-09-21-production-meeting-v50.md) was back at
+   ~700 KB with eight phones, so the digest share is to be
+   re-measured through the tunnel on v50 before this spec claims a saving
    (the 2026-09-03 tunnel number was ~700 KB/min for one phone,
    almost all 8 KB all-channel digests sent about once a second because
    presence heartbeats keep the pacer at its floor (plus group and account
@@ -209,7 +223,7 @@ detection. Seeded from the deferred follow-ups of the 2026-07 audits
 - ☐ **Low** — [Revisit the failure-detection sensitivity thresholds](backlog/engine-swim-threshold-tuning.md) · measure and possibly tighten the 5/15 consecutive-miss thresholds now that fair-rotation probing and adaptive timeouts are in place — and re-measure once indirect checks are retired, since the thresholds were set with them
 - ☐ **Low** — [Best-effort pre-connect identity hash in the Android advertisement](backlog/engine-preconnect-adv-hash.md) · skip initiating a losing mutual connect on Android↔Android pairs; post-connect tie-break stays the backstop
 - ☐ **Medium** — [Send reactive pushes only to peers that share the data](backlog/engine-push-scoping.md) · scope push fan-out by channel membership + congestion-gate pushes and request bursts (2026-08 audit R6)
-- ☐ **Medium** — [Only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md) · digests advertise every channel a node holds, including its own user channel; measured on a mixed Android/iOS pair as 19 unusable channel ids × 22 rounds (~6.4 KB/exchange), and in the 2026-09-15 meeting as ~97 % of 710 KB out per phone per minute (the v48 meeting of 2026-09-17 measured ~300 KB per phone; digest share to be re-measured) — wasted airtime, log noise, and group/account ids disclosed to unrelated peers
+- ☐ **Medium** — [Only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md) · digests advertise every channel a node holds, including its own user channel; measured on a mixed Android/iOS pair as 19 unusable channel ids × 22 rounds (~6.4 KB/exchange), and in the 2026-09-15 meeting as ~97 % of 710 KB out per phone per minute (the v48 meeting of 2026-09-17 measured ~300 KB per phone, the v50 meeting of 2026-09-21 ~700 KB again; digest share to be re-measured) — wasted airtime, log noise, and group/account ids disclosed to unrelated peers
 - ☐ **Medium** — [Coalesce wire traffic into fewer radio wakeups](backlog/engine-message-coalescing.md) · SRTT-scaled debounce, batched deltas, push-pull completion, transport hold window (2026-08 audit R7)
 - ☑ **High** — [Suppress pulling an author's range a peer has already failed to supply](backlog/engine-stalled-range-request-backoff.md) · per-author suppression with doubling re-probe backoff, per the [approved spec](superpowers/specs/2026-08-31-stalled-range-suppression-design.md) (pure-DDD shape: `StalledRangeRegistry` aggregate, strict command/query split) — merged 2026-09-01 as 7ebd076 (#15); the Kotlin port is in production since 2026-09-02. NOT the cause of the 2026-08-31 R14 incident: that was an uncapped JVM heap, and the loop ran 16 more times after that fix with no memory pressure
 - ☐ **Low** — [Shrink version vectors on the wire with an author-index table](backlog/engine-author-index-wire-format.md) · wire-format change, both ends (2026-08 audit R8)
@@ -257,7 +271,8 @@ program because the fleet's health depends on them.
 - ☑ **High** — [Stop the server from talking to a phone's dead session after it reconnects](backlog/server-session-ownership.md) · a reconnecting phone is unregistered by the old handler's cleanup; 267 sends to departed peers in the 2026-09-15 meeting, 193 from one phone that reconnected twelve times — the registered session is the owner, unregister-if-mine, register displaces, one two-sessions test; ships with the compaction fix (shipped in v48, 2026-09-16)
 - ☑ **High** — [Let the server prune presence while a meeting is running](backlog/server-compaction-under-load.md) · every 5-minute compaction tick failed for three hours on 2026-09-15 (Postgres serialization collision with heartbeat inserts; 23 failures, table 2,970 → 39,989 rows, recovered in one pass after the room emptied) and each failure also escaped as an uncaught worker-thread exception — read-committed floor update, one delete per author, a transaction primitive that cannot cancel its caller (shipped in v48, 2026-09-16)
 - ☐ **Medium** — [Stop the server reading a whole stream to answer a per-author question](backlog/server-entry-repository-full-stream-reads.md) · the batch append and the entries-since query each load the entire stream and filter in memory, ~150 times a minute in a meeting; push the predicates into SQL, and bound the transaction helper's IO dispatcher while there (final review of the meeting-fixes PR, 2026-09-16)
-- ◐ **Medium** — [Measure how far behind the server's inbound queue runs at the peak of a meeting](backlog/server-inbound-merge-latency.md) · **implemented, live-device validated and merged 2026-09-17** (opendoor-api PR #24, real merge 7d7b279: `wait=<median>/<max>` on the health line, `lastMinuteWait` in `/admin/sync`; two phones in a waiting room read tens of milliseconds); released as Heroku v50 at 15:35 local the same day, `wait=` live on the production health line; done when the next meeting's read says whether the peak backlog is real · one observation from the 2026-09-17 meeting: at its busiest minute a just-disconnected phone drew replies for eleven more seconds, the shape of an eleven-second inbound backlog, past the app's 6 s presence freshness bound; add arrival-to-merge latency to the health line, then decide (owner agreed 2026-09-17)
+- ☐ **High** — [Keep the server's inbound queue under a second in a meeting](backlog/server-inbound-queue-under-load.md) · measured 2026-09-21 at eight phones: the queue fills within ninety seconds and holds a 23–27 s wait all meeting, so a page change takes two minutes to reach the room and the server drops sockets through its 30 s ping timeout (the pong is read by the loop stuck behind the full queue; six of eight phones in one minute); about 90 ms of work per inbound message today, most of them summaries that merge nothing — measure where it goes, then cheaper replies (full-stream reads first) and, if needed, per-group parallel handling in the Kotlin engine (needs a ruling); acceptance is `wait=` under a second in a real meeting
+- ☑ **Medium** — [Measure how far behind the server's inbound queue runs at the peak of a meeting](backlog/server-inbound-merge-latency.md) · **answered 2026-09-21**: the backlog is real and not peak-only — 23–27 s at eight phones for nine of ten minutes ([report](audits/2026-09-21-production-meeting-v50.md)); the fix is the item above · **implemented, live-device validated and merged 2026-09-17** (opendoor-api PR #24, real merge 7d7b279: `wait=<median>/<max>` on the health line, `lastMinuteWait` in `/admin/sync`; two phones in a waiting room read tens of milliseconds); released as Heroku v50 at 15:35 local the same day, `wait=` live on the production health line; done when the next meeting's read says whether the peak backlog is real · one observation from the 2026-09-17 meeting: at its busiest minute a just-disconnected phone drew replies for eleven more seconds, the shape of an eleven-second inbound backlog, past the app's 6 s presence freshness bound; add arrival-to-merge latency to the health line, then decide (owner agreed 2026-09-17)
 
 ## Kotlin port
 

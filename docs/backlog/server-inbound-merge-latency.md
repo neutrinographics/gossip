@@ -45,5 +45,6 @@ ruling.
 ## Related
 
 - Evidence: [the 2026-09-17 meeting report](../audits/2026-09-17-production-meeting-v48.md), finding 4.
+- Done: answered by [the 2026-09-21 meeting report](../audits/2026-09-21-production-meeting-v50.md), finding 1 — the wait is 23–27 s at eight phones; the fix is [keep the server's inbound queue under a second in a meeting](server-inbound-queue-under-load.md).
 - The likeliest cost inside each merge: [stop the server reading a whole stream to answer a per-author question](server-entry-repository-full-stream-reads.md).
 - The phone-side symptom it may explain: the presence flicker noted on the roadmap's measurement item.
