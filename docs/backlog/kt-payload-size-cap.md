@@ -35,6 +35,7 @@ spec records so the two libraries can never disagree about the limit.
 
 ## Related
 
+- **Done** (2026-09-22) — gossip-kt 7caf94f (item 9, PR #9): `CoordinatorConfig.maxMessageBytes` and the derived cap (7,552 bytes on v1, 22,656 on v2) refused at append; the server's frame ceiling rides the opendoor-api bump.
 - Found untracked by the 2026-09-01 parity survey; recorded in the
   [twin parity program](../parity.md).
 - The budget arithmetic lives in the

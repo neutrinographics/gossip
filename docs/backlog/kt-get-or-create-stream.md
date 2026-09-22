@@ -32,6 +32,7 @@ on the contract they are supposed to pin.
 
 ## Related
 
+- **Done** (2026-09-22) — gossip-kt 7caf94f (item 9, PR #9): the aggregate reports instead of throwing and the harness workaround is gone; the server's workaround goes with the opendoor-api bump.
 - Recorded (previously unhomed) in the
   [divergence register](kt-normalize-twin-divergences.md), row
   "`getOrCreateStream` is not get-or-create in kt".
