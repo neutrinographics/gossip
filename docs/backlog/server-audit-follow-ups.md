@@ -26,6 +26,12 @@ They are grouped here so they are not lost; each is an hour or less.
 - **One aggregate statement for a stream's byte size.** The status query
   still materialises every row of every stream once a minute to sum their
   sizes; a single `SUM` over the payload lengths does the same.
+- **Count inbound bytes per phone from the transport.** The per-phone
+  table in the status endpoint reads a few KB received per phone over a
+  meeting in which the health line counted two megabytes a minute: its
+  figure comes from the sync library's per-peer metrics, which do not see
+  the gossip frames the transport hands in. Feed it from the same counter
+  the health line uses (seen 2026-09-21 and again 2026-09-22).
 - **A flaky WebSocket test.** "Every connection in a chain of reconnects is
   ended" occasionally fails with a concurrent-modification error inside its
   own log-capture helper, not in the code under test. A flaky suite hides
