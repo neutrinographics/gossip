@@ -182,3 +182,13 @@ OpenDoorApp PR #501:
 4. Ruling 10: whether the server's Postgres repository should start
    extending the library's shared contract test (recommended if the fixture
    plumbing is cheap; otherwise a Postgres-only ordering test is the bar).
+
+## Review outcome
+
+**Approved as recommended (owner, 2026-09-22).** All four open points take
+the recommended answer: a 64 KiB frame ceiling on the server (ruling 5);
+`COLLATE "C"` on the author tie-break (ruling 3); contact credit stamped
+before decoding, so a malformed frame still refreshes its sender (ruling
+8); the server's Postgres repository extends the library's shared contract
+test if the fixture plumbing is cheap, otherwise a Postgres-only ordering
+test is the bar (ruling 10). The implementation plan follows this record.
