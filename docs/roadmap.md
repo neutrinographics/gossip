@@ -147,8 +147,10 @@ purification batch merged):
    and ADR-012 are amended, the mechanism is no longer called SWIM, the
    asymmetric-partition suite pins the honest degradation with a third node
    present. Closes [retire indirect probing](backlog/kt-retire-indirect-probing.md)
-   on both halves. **Remaining tail:** the OpenDoorApp pin bump (its own PR
-   in the app repo, device-checked on Android and iOS per the rulings).
+   on both halves. **Remaining tail:** the OpenDoorApp pin bump — open as
+   OpenDoorApp PR #501 (2026-09-22; pin 2d6c618 → 9ada5fd, no app source
+   changes, analyze clean, 3,107 tests pass), waiting on the owner's device
+   check on Android and iOS per the rulings.
 9. **The next Kotlin bump** (owner, 2026-09-16): the
    [payload size cap](backlog/kt-payload-size-cap.md),
    [get-or-create stream access](backlog/kt-get-or-create-stream.md), and
