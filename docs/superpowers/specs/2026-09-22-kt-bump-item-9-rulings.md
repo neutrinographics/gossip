@@ -192,3 +192,16 @@ before decoding, so a malformed frame still refreshes its sender (ruling
 8); the server's Postgres repository extends the library's shared contract
 test if the fixture plumbing is cheap, otherwise a Postgres-only ordering
 test is the bar (ruling 10). The implementation plan follows this record.
+
+**Precision note (plan-writing, 2026-09-22):** Kotlin's `LogEntry` already
+implements the full comparison (timestamp, author id, sequence); only its
+in-memory repository's binary search ignores it, inserting on the
+timestamp alone. Ruling 2's library half is therefore the repository and
+the interface contract, not the entry type. Two side facts the plan
+carries: the Kotlin engine counted no per-peer bytes for sync frames at
+all, so ruling 8 also fixes the server's per-phone inbound counters
+(the 2026-09-21 aside); and H2 has no per-expression collation, so
+ruling 3's `COLLATE "C"` renders only on the PostgreSQL dialect and is
+proven by a Postgres-gated test, with the H2 suite covering the
+(author, sequence) tie-break itself. Plan:
+gossip-kt `docs/superpowers/plans/2026-09-22-kt-bump-item-9.md`.
