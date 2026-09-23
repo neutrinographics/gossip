@@ -205,3 +205,5 @@ ruling 3's `COLLATE "C"` renders only on the PostgreSQL dialect and is
 proven by a Postgres-gated test, with the H2 suite covering the
 (author, sequence) tie-break itself. Plan:
 gossip-kt `docs/superpowers/plans/2026-09-22-kt-bump-item-9.md`.
+
+**Precision note (Codex round 5, 2026-09-23):** ruling 3 said byte order "is what Kotlin's and Dart's string comparison do". It is not, for characters outside the Basic Multilingual Plane: both compare UTF-16 code units. The Kotlin library now defines the author tie-break as unsigned UTF-8 byte order (`NodeId : Comparable`), so it matches `COLLATE "C"` exactly; Dart's comparison is a flow-back on the register. Rounds 2–4 also bounded identifiers (64 UTF-8 bytes, no JSON-escaped characters) so the payload cap's envelope allowance is a proven bound; production holds only 36-byte UUIDs and short stream names.
