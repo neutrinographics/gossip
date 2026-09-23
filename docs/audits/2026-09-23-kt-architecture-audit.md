@@ -680,10 +680,11 @@ attached, and a stalled collector grows the queue, reported once at WARN
 past a thousand pending. This is the Dart twin's semantics; the rulings
 page carries the precision note.
 
-**Fixes landed (gossip-kt PR #10, head 9f6d671, suite 1,093 → 1,111):**
-KCA1-1, KCA1-6, KCA1-17, KCA1-27, KCA1-55. Also guarded ahead of its
-deletion in batch F: `CachingChannelRepository` (KCA1-47's adapter now
-keeps the port contract KCA1-1 wrote). Two observations for later
+**Fixes landed (gossip-kt PR #10, head 11ec8a3, suite 1,093 → 1,105 after three external review rounds):**
+KCA1-1, KCA1-6, KCA1-17, KCA1-27, KCA1-55, and KCA1-47 pulled forward
+from batch F: `CachingChannelRepository` is deleted (an external review
+showed its read-through cannot be serialized under the lock rule, and
+nothing wired it). Two observations for later
 batches: `EntryAppended` events from concurrent appends to one stream may
 be observed out of sequence order (the wire path and the fold are
 unaffected); compaction serializes against local appends only, and a
