@@ -299,3 +299,22 @@ shape on the Dart side, so ruling 16 is restated above as a shared item
 rather than an accepted divergence; the Dart flow-back item lands at
 Medium after the digest work (ruling 15). PR #9 merges with nothing
 further added. The plans follow this record, one per batch.
+
+**Precision note (batch A execution, 2026-09-23).** Two refinements made
+during batch A, recorded here because they change what the rulings
+promise. Ruling 9 said the events flow becomes a suspending `emit` with
+the buffer as slack. The whole-branch review showed that a collector
+which calls back into the coordinator from inside its own `collect` (the
+server's side-effect processor does exactly this on a group discovery)
+would wait on itself once the buffer filled, and the node would stop.
+Batch A therefore gives the coordinator an unbounded internal queue and
+one forwarder: producers never suspend, events are delivered in order
+and never dropped, a collector may call back in, and a collector that
+stops draining grows the queue, which the coordinator reports at WARN
+past a thousand pending events. This is the Dart twin's semantics (an
+unbounded per-listener queue), so ruling 9's "backpressure" wording is
+withdrawn; the flow-back list gains nothing from it. Ruling 2 named a
+`SynchronizedChannelRepository` wrapper; batch A guarded the in-memory
+adapter itself with the monitor the entry repository already uses, which
+the audit's fix direction allowed ("a wrapper or a guarded adapter") and
+which keeps the lock in the same layer with one class fewer.
