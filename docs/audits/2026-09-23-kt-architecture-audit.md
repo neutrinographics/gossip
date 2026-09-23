@@ -661,3 +661,32 @@ responsibility. **Not read:** the remaining 85 test files under
 scan by design and outside this rubric, and the code-quality pass should
 take them. The Dart twin was read where a finding names a divergence,
 not audited.
+
+## Addendum (batch A, 2026-09-23)
+
+**KCA1-55 — The coordinator's public `errors` flow had no producer.**
+Found while fixing KCA1-17: `Coordinator.kt:150` declared `_errors` and
+exposed it as `errors`, and nothing in `src/main` emitted into it; Dart
+feeds its error stream from the error callback (`coordinator.dart:386`).
+Minor, Kotlin-only; fixed in batch A by one reporter feeding both.
+
+**Ruling 9 revised during batch A.** The whole-branch review showed that a
+suspending emit on the events flow lets a collector that calls back into
+the coordinator (the server's side-effect processor does) wait on itself
+once the buffer fills. Batch A therefore gives the coordinator an
+unbounded internal queue and one forwarder: producers never suspend,
+events are delivered in order and never dropped once a collector is
+attached, and a stalled collector grows the queue, reported once at WARN
+past a thousand pending. This is the Dart twin's semantics; the rulings
+page carries the precision note.
+
+**Fixes landed (gossip-kt PR #10, head 9f6d671, suite 1,093 → 1,111):**
+KCA1-1, KCA1-6, KCA1-17, KCA1-27, KCA1-55. Also guarded ahead of its
+deletion in batch F: `CachingChannelRepository` (KCA1-47's adapter now
+keeps the port contract KCA1-1 wrote). Two observations for later
+batches: `EntryAppended` events from concurrent appends to one stream may
+be observed out of sequence order (the wire path and the fold are
+unaffected); compaction serializes against local appends only, and a
+backfilled entry merged between compaction's read and its removal can
+land below the raised floor (pre-existing; the merge path is the engine
+extraction's territory, KCA1-5).
