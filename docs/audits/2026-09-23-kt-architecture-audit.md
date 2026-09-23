@@ -680,7 +680,7 @@ attached, and a stalled collector grows the queue, reported once at WARN
 past a thousand pending. This is the Dart twin's semantics; the rulings
 page carries the precision note.
 
-**Fixes landed (gossip-kt PR #10, head 11ec8a3, suite 1,093 → 1,105 after three external review rounds):**
+**Fixes landed (gossip-kt PR #10, merged 2026-09-23 as 4a53e72, suite 1,093 → 1,107 after six external review rounds):**
 KCA1-1, KCA1-6, KCA1-17, KCA1-27, KCA1-55, and KCA1-47 pulled forward
 from batch F: `CachingChannelRepository` is deleted (an external review
 showed its read-through cannot be serialized under the lock rule, and
