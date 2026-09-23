@@ -1,0 +1,663 @@
+# gossip-kt architecture audit (2026-09-23)
+
+**What this is.** A full clean-architecture, cohesion and coupling audit
+of the Kotlin twin, read at the head of gossip-kt PR #9 (`feature/item-9-bump`,
+b55da0b, suite 1,093 green). Rubric: the clean-architecture skill's
+dependency rule and component principles, plus the repository's own
+rules from its CLAUDE.md (bounded contexts, the one ACL concession, lock
+placement, pure domain, "data, not ports", comments say why). The
+domain-model pass (DDD rubric, written logic only) and the code-quality
+pass follow this one, after its fixes land. The owner asked for the
+audit after eight rounds of external review on one PR kept surfacing
+items; this report is the findings list for approval, and nothing here
+has been changed.
+
+**Method.** Ground truth first: the import graph, the two machine-checked
+gates, sizes per area (main source 9,861 lines in 130 files; tests
+23,301 lines in 101 files). Then five read-only deep-readers, one per
+territory, each reading its files in full against the rubric. Then
+every claim re-verified against source by the orchestrator: each cited
+line opened, each seam (dead code, duplication, reachability) followed
+to every hop, and reachability on the one production consumer
+(opendoor-api) checked by grep. About 140 citations were checked; none
+was fabricated; a handful of line ranges were loose by a few lines and
+are corrected below. Severity is re-graded on one ladder: Critical is
+unsound now, Major is a real defect in what the library exists to do,
+Moderate is a structural gap that will bite, Minor is real, cheap and
+low-risk, Observation is recorded with no action. A defect unreachable
+today grades as the hazard it is.
+
+**No prior architecture audit of gossip-kt exists.** The baseline is the
+tracked debt in the gossip repo's backlog: `kt-application-types-against-domain`
+(application classes import their `Synchronized*` wrappers), the register
+row "Wire budget arithmetic's home" (`CoordinatorConfig` imports the sync
+codec for the envelope constant), and the recorded `PendingPullTracker`
+stateful-domain-service smell. Where a finding is that debt, it is not
+re-reported; where it is worse than described, this says so.
+
+## Verdict
+
+The architecture is sound at the boundaries and loose in the middle.
+The bounded contexts hold mechanically: `shared/` is a true leaf,
+`sync/` and `membership/` never name each other outside the one ACL
+adapter, the composition root is the only sink, and both gates are
+honest (the lock-placement debt rows match the code line for line). The
+domain ports the engines depend on are narrow and domain-owned, the
+identifier invariant and the byte-order comparison each have exactly one
+home, cancellation discipline is uniform, and the test harness runs
+real production code end to end.
+
+Inside the contexts the picture is weaker, in three ways that recur
+across every territory:
+
+1. **The application layer wires itself.** Engines name concrete codecs,
+   construct their own `Synchronized*` collaborators with defaults, and
+   hold framework primitives; the tracked debt item describes imports,
+   but the code constructs. One infrastructure class imports its own
+   application layer, a cycle.
+2. **The clock is everywhere.** Forty-three `Instant.now()` reads sit in
+   events, errors and aggregates while every class involved holds or
+   could hold the `TimePort`, so nothing is comparable under a simulated
+   clock and domain events carry two timestamps.
+3. **Written but not wired.** Nine configuration knobs, eleven error
+   types and events, a materializer disposal, an incarnation chain and a
+   stream config exist in the public surface with no producer or reader.
+
+One finding is Major and reachable in production today: the channel
+aggregate store is an unguarded map wired as the default, and
+`createChannel` is a check-then-act outside the per-channel lock that PR
+#9 just added, while the server creates a channel per joining phone. The
+rest is 27 Moderate findings (structural, will bite on the next change
+in that area), 22 Minor, and 4 Observations. The good design is worth
+protecting on purpose; the list of what is healthy is below.
+
+**About PR #9.** Nothing in the branch's diff breaks the rubric. The
+branch fixed a real lost-update (the per-channel mutex), extended the
+accepted-debt rows correctly, and put the identifier invariant in one
+place. One stale comment on the branch says kt has no byte cap after the
+branch added one (KCA1-39); that is the only item here the PR itself
+should carry.
+
+## Findings
+
+IDs are `KCA1-n` (Kotlin clean-architecture audit, first). Paths are
+under `src/main/kotlin/com/neutrinographics/gossip/` unless stated;
+test paths under `src/test/kotlin/com/neutrinographics/gossip/`.
+
+### MAJOR
+
+**KCA1-1 — The channel aggregate store is unguarded and `createChannel`
+is a check-then-act outside the channel lock.** `InMemoryChannelRepository`
+keeps its aggregates in a bare map with no synchronization, and
+`Coordinator.kt:180` wires it as the default; `CachingChannelRepository`
+has the same shape. `ChannelService.createChannel` (`ChannelService.kt:105-113`)
+runs `findById` then `save` with no lock, while every other aggregate
+write goes through `withChannel` under `channelLocks` (`:443`), whose own
+KDoc names the harm: a stream registered by one joiner lost to another's
+repeat lookup, after which the engine ignores that stream's deltas.
+`compactStream` (`:301-313`) likewise reads, computes and removes holding
+neither the channel lock nor the per-stream append lock. **Reachable:**
+opendoor-api passes no channel repository, so it runs the default, and
+`CoordinatorLifecycle.kt:94` and `:135` execute `getChannel(cid) ?:
+createChannel(cid)` per connecting phone; two phones joining a new
+channel at once race the map and the check. **Fix:** a `Synchronized*`
+wrapper (or a guarded adapter) in `sync/infrastructure/` per the lock
+rule; route `createChannel` through `channelLocks`; take the stream lock
+in `compactStream` or document why it need not.
+
+### MODERATE
+
+**KCA1-2 — Both engines depend on concrete codecs, not the `MessageCodec`
+port.** `GossipEngine.kt:28,82` types `codec: SyncMessageCodec` and uses
+one method, `codec.encode` (`:926`), which the port in
+`shared/domain/interfaces/MessageCodec.kt` declares.
+`FailureDetector.kt:22,74` goes further: `codec: MembershipMessageCodec =
+MembershipMessageCodec(WireVersion.V1)`, a constructing default that pins
+the dialect inside the application layer. Not covered by the tracked
+debt (that item is scoped to the `Synchronized*` wrappers). **Fix:** type
+both against `MessageCodec`, no default; the composition root already
+passes the instances (`Coordinator.kt:272`).
+
+**KCA1-3 — Application classes construct their own `Synchronized*`
+collaborators, which is worse than the tracked debt describes.**
+`GossipEngine.kt:91-92` (`stalledRanges`, a defaulted constructor
+parameter), `:104-106` (`timing`), `:161` (`pusher`), `:187`
+(`pendingPullTracker`), `:206` (`reportedGaps`); `ReactivePusher.kt:37`
+(`pushes`). The backlog item `kt-application-types-against-domain` says
+the application layer *imports* the wrappers; its own fix sketch says
+"application constructors take the pure type with no default; every
+construction site passes the synchronized instance explicitly". The code
+constructs five collaborators itself, so none can be substituted or
+pre-seeded, and paying the debt touches these sites, not just imports.
+**Fix:** as the item's sketch says; wire in `Coordinator.Companion`.
+
+**KCA1-4 — `membership/application` and `membership/infrastructure`
+form a cycle.** `SynchronizedPendingPingRegistry` (infrastructure) imports
+the application layer it wraps, while the application layer imports the
+wrapper. Infrastructure may depend on inner layers, but the inner layer
+must not depend back. **Fix:** move the pure registry the wrapper
+serializes into `membership/domain` (it is a registry of pending probes,
+a domain concept), so the wrapper depends only inward.
+
+**KCA1-5 — `GossipEngine` is 1,021 lines, `handleDeltaResponse` carries
+eight concerns, and the plan's own extraction trigger has passed.**
+`GossipEngine.kt:426-586` runs the pause gate, membership filter,
+pull settlement, floor adoption, contiguity filtering, gap reporting,
+canonical sort, HLC advance, append and notify, news, credit and
+continuation in one method. Digest building (`:685-700`), request
+computation (`:737-793`) and the merge path have no domain home, unlike
+pacing, gaps, stalled ranges and pushes, which do. The Dart reference
+hosts these in `DeltaMerger` and `DigestBudgeter`; the parity record E2
+accepts their absence on one ground (no `KeyedTaskChain` needed), and
+the kt plan that made the call set its own trigger: extract when the
+pusher lands or the engine grows past taste. Both have happened.
+Pagination (`hasMore = false`, `:394`) has nowhere to go but this method.
+**Fix:** extract the merge path and the request/digest computation into
+sync application services; restate E2 as "no `KeyedTaskChain`".
+
+**KCA1-6 — A throwing materializer skips the engine's bookkeeping and the
+merged event.** `GossipEngine.kt:544-561`: `onEntriesMerged` runs inside
+the `NonCancellable` block; `recordNews()` and `recordAntiEntropy(...)`
+follow it, and the continuation follows those. The callback is
+`channelService.foldMergedEntries` → `MaterializationService.foldEntries`
+→ `runIsolatedPerState`, which rethrows the first failure
+(`MaterializationService.kt:197`). The coordinator reports the throw as
+`PROTOCOL_ERROR` (`Coordinator.kt:435-447`), so it is not silent, but the
+node then stretches its interval as if quiet, loses coverage credit and
+abandons a multi-page drain, and the coordinator's `EntriesMerged`
+emission (`Coordinator.kt:285-293`), which the server's health ledger
+counts, never fires. Dart orders it the other way on purpose
+(`delta_merger.dart:234-245`). The server registers five materializers.
+**Fix:** bookkeeping before the notification, Dart's order.
+
+**KCA1-7 — Scheduler liveness doubles as the ingestion policy.**
+`GossipEngine.kt:213` defines `isRunning` as `scheduler.isRunning`, and
+`:342`, `:362`, `:436` and `:842` gate reciprocal pulls, digest-response
+pulls, delta ingestion and local-write pushes on it. `GenerationScheduler`
+sets the flag false when `TimePort.delay` itself throws
+(`GenerationScheduler.kt:26-36,88-94`). A scheduling failure therefore
+turns the node serve-only: it answers digests and delta requests but
+merges nothing, including reactive pushes, until `start()` is called,
+and only the scheduling error is reported. **Fix:** a posture flag
+separate from the loop's liveness.
+
+**KCA1-8 — The wall clock is read in events, errors and aggregates while
+a `TimePort` exists.** Forty-three `Instant.now()` reads library-wide.
+Every sync domain event defaults `at = Instant.now()` and passes it to
+`DomainEvent(at)`, so events carry two stamps; `GossipEngine` stamps six
+errors from the wall clock while using `timePort.nowMs` for protocol time
+three lines away (`:126,143,172,671,941,970` vs `:512,561,570,772`);
+`ChannelService` stamps ten and falls back to
+`Hlc(System.currentTimeMillis(), 0)` (`:208,302`, mirroring Dart);
+`Coordinator.kt:414,430,443,557` and `FailureDetector.kt:121,132,469`
+do the same. Under a simulated clock nothing is comparable with anything
+else. **Fix:** an `Instant`-valued reading on `TimePort`; application
+services stamp; events take `at` as a required argument; aggregates take
+`now` as data.
+
+**KCA1-9 — The materializer cursor is a bare `Hlc`; Dart replaced exactly
+this with `FoldCursor`, and the divergence is unregistered.**
+`MaterializationService.kt:53` (`var cursor: Hlc?`), `:287-291` folds
+`timestamp > cursor`, `:301` and `:350` set it from timestamps alone.
+Dart's value object states the defect (`fold_cursor.dart:9-16`): an entry
+that ties the cursor's timestamp may or may not have been folded, so the
+cursor carries timestamp, author and sequence. The live path is guarded
+by the tail-tie rule (`GossipEngine.kt:547-553`); the hole is a crash
+between `appendAll` and `save` with a tying entry, after which the next
+`initialize` skips it forever. The server persists cursors
+(`GroupMaterializer.kt:25,80` and four siblings). No row in `parity.md`
+or the divergence register. **Fix:** port `FoldCursor`; until then, a
+register row.
+
+**KCA1-10 — Materializer state updates drop silently and a disposed
+materializer's collectors never finish.** `MaterializationService.kt:63-69`:
+`MutableSharedFlow<T>(extraBufferCapacity = 1)` with `tryEmit`'s result
+discarded; with the default `SUSPEND` overflow it returns false whenever
+a subscriber is one update behind. Dart's broadcast controller cannot
+drop. `disposeChannel`/`disposeAll` (`:200-211`) remove state but never
+complete the flow. The server does not consume `stateStream` today, so
+this is a hazard, and a "no silent errors" violation. **Fix:**
+`replay = 1, onBufferOverflow = DROP_OLDEST` (a latest-state stream is
+what a view wants) and a completing dispose.
+
+**KCA1-11 — The accepted per-materializer mutex is wider than its debt
+row says and is silently non-reentrant.** The row
+(`LockPlacementTest.kt:71-79`) sanctions a section that "suspends across
+repository IO"; under `matState.mutex.withLock` (`:109,149,163`) the
+service also calls the application's `initial` (`:270,321`), `fold` in a
+loop (`:296,326,347`) and `save` (`:250,306,333`). A slow materializer
+stalls every `getState`/`foldEntries` for that key with no timeout; a
+`kotlinx.coroutines.sync.Mutex` is not reentrant, so a materializer whose
+`save` or `fold` calls `getState` for its own key deadlocks, and neither
+`StateMaterializer`'s KDoc nor the class warns. **Fix:** state the real
+scope in the row; document the re-entrancy ban; consider Dart's
+compute-outside, commit-inside split (`materialization_service.dart:197-198`).
+
+**KCA1-12 — The Ping reply bypasses `safeSend`.** The coordinator's
+router sends the Ack itself (`Coordinator.kt:585-589`:
+`failureDetector.handlePing(message)`, then `membershipCodec.encode`, then
+`effectiveMessagePort.send(message.sender, bytes)`), so the reply goes out
+at the default `NORMAL` priority, without `recordMessageSent`, and a send
+failure surfaces as the receive loop's generic `PROTOCOL_ERROR` instead
+of the `PEER_UNREACHABLE` every other membership send reports through
+`safeSend` (`FailureDetector.kt:457-475`). Two ways to reach one
+operation: `FailureDetector.encodeMessage` is public and unused outside
+the detector. The server's port ignores priority and reports zero
+pending sends (`WebSocketMessagePort.kt:46-65`), so the priority half is
+inert there; the bookkeeping and error-type halves stand. **Fix:** the
+detector owns the reply (`handlePing` sends through `safeSend`); the
+router only dispatches.
+
+**KCA1-13 — Failure-detector thresholds and the status transition table
+live in the application, with a read-decide-write race.** The detector
+reads a peer's state, decides the transition from thresholds it holds,
+and writes back, with the registry's lock released in between; Dart's
+aggregate owns the transition. **Fix:** the transition rule on the
+`Peer`/registry aggregate, taking `now` and the thresholds as data; the
+application supplies readings.
+
+**KCA1-14 — The recorded stateful-domain-service smell has five more
+instances.** `PendingPullTracker` is on record. The same shape, a
+mutable "domain service" that needs a `Synchronized*` wrapper to be
+safe, also describes `HlcClock` and `GossipTimingPolicy`
+(`sync/domain/services/`), `ProbeTargetSelector` and `ProbeTimingPolicy`
+(`membership/domain/services/`), and `LoopGeneration`
+(`shared/domain/services/`, two `var`s mutated by five methods, wrapped
+by `SynchronizedLoopGeneration`). The owner's standing rule is pure DDD:
+a domain service takes data and returns data. **Fix:** per class, either
+make it pure (data in, data out, the caller holds the state) or name it
+what it is (a small entity or a value the application owns); pay it
+together with the recorded item.
+
+**KCA1-15 — `GenerationScheduler` is an application orchestrator filed
+under `shared/domain/services`.** `GenerationScheduler.kt:48-62` holds a
+`CoroutineScope` and a `TimePort` and runs its own delay-and-tick loop
+(`scope.launch { timePort.delay(...); tick() }`). CLAUDE.md's rule is
+that domain services hold no IO and no clocks; the lock-placement gate
+does not see `launch` or `delay`, so this passes it while breaking the
+written rule and sets the precedent. Its generation bookkeeping is
+already isolated in `LoopGeneration`. **Fix:** move the loop to an
+application-layer primitive (or `coordinator/`) and leave the pure
+generation state in the domain.
+
+**KCA1-16 — Configuration the coordinator accepts but does not wire.**
+`startupGracePeriod` and the probing holds are inert (Dart wires them);
+`adaptiveTimingEnabled` is half-wired and its thresholds unvalidated;
+`healthStatus()` returns a hardcoded `isHealthy = true`; `maxConnections`
+(`CoordinatorConfig.kt:24`) has no reader and no Dart counterpart. Each is
+a published promise the library does not keep. **Fix:** wire or delete
+each; validate what stays.
+
+**KCA1-17 — Coordinator events are `tryEmit` on a 100-slot buffer with
+silent drops, and the server counts merges from that stream.**
+`Coordinator.kt:285` emits `EntriesMerged` with `tryEmit` and discards the
+result; opendoor-api's `CoordinatorLifecycle.kt:65` collects
+`coordinator.events` into the health ledger's merge counts. A slow
+collector undercounts production merges with no signal. **Fix:** report
+a false `tryEmit` through `onError`, or suspend on `emit` from the
+already-suspending call site.
+
+**KCA1-18 — `Channel.compact` duplicates `compactAll` without its
+safeguards.** The facade's per-channel compaction re-implements the
+service's loop without the per-stream isolation and the unconfigured
+store handling `compactAll` carries (`ChannelService.kt:337-364`). **Fix:**
+one implementation on the service; the facade delegates.
+
+**KCA1-19 — No sync-with-new-peer on `peers.add`; Dart has one, and the
+divergence is unregistered.** Dart's coordinator runs `_syncWithNewPeer`
+when a peer is added; kt's `Peers.add` registers and bootstraps a probe
+only, so the first exchange waits for the next round. opendoor-api adds a
+peer per WebSocket connection (`PeerConnections.kt:46`), so every joining
+phone waits up to one idle interval for its first digest. **Fix:** port
+the immediate digest, or record the divergence with the latency it costs.
+
+**KCA1-20 — Stream identity has two sources of truth.**
+`EntryRepository.streamIds` answers "which streams exist" from the entry
+store while the aggregate answers it from `ChannelAggregate.streamIds`;
+`Channel.kt:54-64` unions the two; `InMemoryEntryRepository.clearStream`
+(`:180-186`) empties a stream but leaves its key, so a retired stream
+still reports; `resourceUsage` (`Coordinator.kt:670-680`) walks the union.
+**Fix:** the aggregate owns stream identity; the repository answers only
+about entries; `clearStream` retires the key.
+
+**KCA1-21 — `entriesForAuthorAfter` is uncalled but pinned by the
+published contract test.** Every adapter, including the server's
+Postgres repository, must implement and pass a query nothing calls.
+**Fix:** delete it from the port and the contract, or give it its caller.
+
+**KCA1-22 — The frame layout is re-derived in both codecs, the two
+dialects share ~110 duplicated lines, and the expansion arithmetic sits
+in the facade that declares itself schema-free.** `SyncMessageCodec` and
+`MembershipMessageCodec` each read marker offsets that `WireTypes` claims
+to own; `SyncWireV1`/`SyncWireV2` duplicate the envelope code; the
+"4 characters a byte" and "4 per 3" ratios (`SyncMessageCodec.kt:113-128`)
+are facts about each dialect's payload encoding held outside it. **Fix:**
+one envelope reader in `WireTypes`; a shared envelope module for the two
+dialects; `SyncWireV1.maxEntryPayload(usable)` / `SyncWireV2...` with the
+facade only subtracting the envelope and dispatching.
+
+**KCA1-23 — `HlcClock` and `PendingPullTracker` take the fat `TimePort`
+for one reading.** Both need `nowMs`; the port also carries `delay`,
+timers and cancellation. Dart gives them a `TimeSource`. **Fix:** a
+narrow `Clock`-shaped port for readers; keep `TimePort` for schedulers.
+
+**KCA1-24 — `LocalNodeRepository` bundles three concerns.**
+`LocalNodeRepository.kt:6-22`: node identity, HLC clock state (sync's
+vocabulary) and the incarnation number (membership's) in one shared port;
+`ChannelService`, `GossipEngine` and `PeerService` each call exactly one
+of its seven methods (`ChannelService.kt:213`, `GossipEngine.kt:962`,
+`PeerService.kt:35`). **Fix:** narrow ports per concern, one adapter
+implementing all.
+
+**KCA1-25 — `shared/infrastructure` ships ~860 lines of test-only
+simulation.** `InMemoryMessageBus` (481 lines: partition, drop, corrupt,
+duplicate, hold) and `InMemoryTimePort` (377 lines: advance, tick, idle
+waits) have no `src/main` consumer outside their own package and none on
+the server. `RealTimePort`, `SynchronizedLoopGeneration`,
+`InMemoryLocalNodeRepository` and `InMemoryMessagePort` are real adapters
+and belong. **Fix:** move the two simulators (and the `support/` harness
+over them) into `gossip-kt-testing`, which is published and already
+exists for exactly this.
+
+**KCA1-26 — The published contract test omits `getTailTimestamp` and
+under-covers `streamIds`.** Zero calls to `getTailTimestamp` in
+`EntryRepositoryContractTest.kt`; `streamIds` appears only as two
+side-assertions (`:191,200`); the positive tests sit in the in-memory
+adapter's private suite under a header calling them "in-memory-specific"
+(`InMemoryEntryRepositoryTest.kt:97`). `getTailTimestamp` drives the
+engine's out-of-order rule (`GossipEngine.kt:536`), so an adapter that
+gets it wrong causes silent materializer divergence. The server's
+repository is about to extend this contract (item 9, Part B). **Fix:**
+promote those tests into the contract.
+
+**KCA1-27 — Two launches escape the `ErrorCallback` contract, and the
+coordinator scope has no exception handler.** `ReactivePusher.kt:47-60`
+guards only the delay; `flush(batches)` (`:59`) → `flushPendingPushes`
+calls the peer directory and the port outside any try. The bootstrap
+probe is `scope.launch { failureDetector.probeNewPeer(peer) }`
+(`Coordinator.kt:132-134`) with the same exposure. The scope is
+`CoroutineScope(dispatcher + SupervisorJob())` (`Coordinator.kt:195`),
+no `CoroutineExceptionHandler`, so a throw reaches the JVM default
+handler, never `onError`. Dart's pusher has the same hole. **Fix:** a
+`CoroutineExceptionHandler` on the scope routing to `onError`, plus the
+two local guards.
+
+### MINOR
+
+**KCA1-28 — The incarnation chain is dead across three layers.**
+`PeerRegistry.kt:121-124` (KDoc: "unused: verdicts never travel"),
+`SynchronizedPeerRegistry.kt:61-62,79-80`, `PeerService.kt:33-36`,
+`updatePeerIncarnation` flips status without an event; persisted and
+restored (`Coordinator.kt:203-207`), never exercised. **Fix:** one
+register row, or retire with the relay protocol.
+
+**KCA1-29 — `SynchronizedPeerRegistry` publishes a racy pair and an
+escape hatch.** `getUncommittedEvents`/`clearUncommittedEvents`
+(`:38-39`) have no caller because `PeerService.dispatchEvents` uses
+`withLock` on purpose; `peerRegistry.withLock { reg -> reg.allPeers }`
+hands the pure aggregate to the caller. **Fix:** delete the pair;
+expose the queries the callers need.
+
+**KCA1-30 — Two `PeerOperationSkipped` per unknown-sender frame, and the
+event's `operation` is a string copy of the method name.** Nine literal
+sites in `PeerRegistry.kt`. **Fix:** one skip per frame; an enum.
+
+**KCA1-31 — The stop triplet is written three times.**
+`Coordinator.kt:483-485,497-499,521-523`; `startEngines()` exists,
+`stopEngines()` does not. **Fix:** extract.
+
+**KCA1-32 — Dead vocabulary in the public surface.** Seven of eleven
+`SyncErrorType` values, `BufferOverflowError`, `TransformSyncError`, four
+of eleven sync events (`ChannelRemoved`, `NonMemberEntriesRejected`,
+`BufferOverflowOccurred`, `SyncErrorOccurred`), `ChannelAggregate.isMember`,
+and `StreamConfig` have no producer or reader in `src/main` or on the
+server. Dart raises none of the seven either, so this is parity-consistent
+dead code, but kt's `NonMemberEntriesRejected` KDoc claims an enforcement
+Dart explicitly disclaims. **Fix:** delete, or document as reserved.
+
+**KCA1-33 — A channel that vanishes between `listIds()` and `findById()`
+is advertised as empty, silently.** `GossipEngine.kt:686-691`. Every other
+unknown-channel path logs. **Fix:** a WARN, or a `ChannelSyncError`.
+
+**KCA1-34 — Three policies for an unconfigured collaborator.** Missing
+entry store → `StorageSyncError` (`ChannelService.kt:178,237,265`);
+`compactAll` → silent with a stated reason (`:337-341`); missing
+materialization service → silent in five places with no reason
+(`:385,393,404,413,420`), so `registerMaterializer` evaporates. **Fix:**
+one policy, stated.
+
+**KCA1-35 — `dispose()` clears the lock maps while operations may run.**
+`ChannelService.kt:427-431`; a later caller mints a fresh mutex.
+**Fix:** a terminal flag, or stop clearing.
+
+**KCA1-36 — The `""` cursor sentinel round-trips as "corrupt".**
+`MaterializationService.kt:306,333` save `""` for a null cursor;
+`:273-279` parse it as invalid and force a rebuild; `:249-251` skip the
+save instead. **Fix:** one rule in the `StateMaterializer` contract.
+
+**KCA1-37 — `disposeChannel` has no production caller; kt has no
+`removeChannel`; `ChannelRemoved` is never emitted.** Dart has all three
+(`channel_service.dart:179-206`). **Fix:** port `removeChannel` or record
+the gap.
+
+**KCA1-38 — The merged-batch ordering invariant is documented in the
+caller, not the callee.** `GossipEngine.kt:525-529` sorts and explains;
+`MaterializationService.incrementalFold` takes `newEntries.last()` as the
+cursor (`:349-351`) with no stated precondition, and `foldEntries` is
+public; the helper's KDoc still says "Preserves original order" (`:593`).
+**Fix:** state the precondition on the callee; fix the KDoc.
+
+**KCA1-39 — A comment on this branch says kt has no byte cap, after the
+branch added one.** `GossipEngine.kt:850-854`: "No size guard yet: kt has
+no payload/message byte cap anywhere (its own roadmap item)". PR #9 added
+`CoordinatorConfig.maxMessageBytes` and the append-time cap. **Fix:** on
+PR #9, reword to say the push path relies on the append-time cap.
+
+**KCA1-40 — Three log vocabularies.** `GossipEngine.LogLevel`
+(`:1020`) shadows `shared/domain/values/LogLevel` (`WARN` vs `WARNING`),
+so the composition root bridges them (`Coordinator.kt:255-258,345`); the
+detector's seam is `((String) -> Unit)?`, dropping severity. Dart's engine
+uses the shared enum. Four unused imports in the engine (`:6,20,49,50`).
+**Fix:** one `LogCallback` from `shared/`.
+
+**KCA1-41 — The per-peer backpressure predicate is written twice.**
+`GossipEngine.kt:297-299` and `:872-874`, identical. Inert on the server
+(pending count is always 0). **Fix:** one helper.
+
+**KCA1-42 — `EntriesMergedCallback` lives in `shared/domain/errors`.** It
+fires on success, is sync vocabulary, and has one consumer
+(`GossipEngine.kt:85`). **Fix:** move to `sync/application`, or retire in
+favor of the `EntriesMerged` event.
+
+**KCA1-43 — `LogEntry.sizeBytes` documents a wire estimate it is not.**
+`LogEntry.kt:41-47` claims "wire protocol sizing" with a 36-byte author;
+identifiers are bounded at 64 bytes and the v1 dialect costs four
+characters a byte, so it is neither. Its only consumers are storage
+accounting (`ChannelService.kt:309`, `InMemoryEntryRepository.kt:140`,
+`Coordinator.kt:678`). **Fix:** say it is a storage heuristic; measure
+the author.
+
+**KCA1-44 — `MessagePort` says nothing about priority, and both adapters
+ignore it.** `InMemoryMessagePort.kt:20-27` drops it; the server's port
+drops it; the port defaults it. **Fix:** state the contract (advisory,
+or an ordering guarantee) and make the in-memory adapter honor it so it
+is testable.
+
+**KCA1-45 — `RttTracker` duplicates `RttEstimate`'s defaults.**
+`RttEstimate.kt:41-42`, `RttTracker.kt:104-105`. **Fix:** one home.
+
+**KCA1-46 — A `shared/` KDoc names `ChannelService`.**
+`HlcProvider.kt:5-9`; prose only, the gate does not see it. **Fix:** say
+"a context's application service".
+
+**KCA1-47 — `CachingChannelRepository` contradicts its own KDoc, duplicates
+`deepCopy`, and is unwired.** `:8-14` promises identity-map semantics;
+`:25-30` returns copies; `:37-43` duplicates `InMemoryChannelRepository.kt:45-51`,
+both reaching for `reconstitute` from outside the aggregate, which drops
+uncommitted events. **Fix:** `ChannelAggregate.copy()`; fix or drop the
+decorator.
+
+**KCA1-48 — The boundary gate's edges are sharper than its documentation
+and looser than the rule.** `BoundaryTest.kt:83` scans raw text including
+comments while `LockPlacementTest.kt:111` scrubs them, and neither the
+asymmetry nor the typealias/reflection limit (`LockPlacementTest.kt:40-43`
+has the block; `BoundaryTest` does not) is stated; the ACL check
+(`:84-86`) tests the directory, not "to implement an adapter for an
+interface its own domain defines"; CLAUDE.md's Boundary Rule omits the
+`testing` edge-table row (`BoundaryTest.kt:23-29`). **Fix:** a known-limits
+block; a one-file allowlist for the concession; one CLAUDE.md sentence.
+
+**KCA1-49 — Wire fixture paths are unguarded.** `WireGoldenTest.kt:63`,
+`WireVectorConformanceTest.kt:53-54` build `File(...)` from a root-relative
+literal with no `isDirectory` guard, unlike both architecture tests.
+**Fix:** the same guard, or classpath loading.
+
+**KCA1-50 — README counts are stale.** `README.md:113` says 25 contract
+tests (36); `:195` says 532 tests (1,057 in `src/test`). **Fix:** drop the
+numbers.
+
+### OBSERVATION
+
+**KCA1-51 — `sync/domain/services/` mixes four stateless retention
+strategies with three stateful protocol-state holders.** A
+`domain/retention/` package would match the concept-first layout.
+
+**KCA1-52 — `WireTypes` names both contexts.** `WireTypes.kt:19-25`
+defends it in place as the envelope agreement both families publish;
+recorded, not disputed.
+
+**KCA1-53 — Boundaries have no compiler backstop.** One compilation unit;
+`internal` is module-scoped; the text scan is the whole enforcement.
+Already the project's chosen trade-off.
+
+**KCA1-54 — `LogEntry.equals` (author + sequence) and `compareTo` (full
+order) disagree by design.** No sorted-set or tree structure keys on
+`LogEntry` anywhere in `src/main`, so nothing relies on `compareTo == 0`
+meaning identity. Worth a sentence on the class.
+
+## What is genuinely healthy
+
+Verified, and worth protecting on purpose:
+
+- **The bounded contexts hold mechanically.** `shared/` imports nothing
+  outside itself (all 44 files); `sync/` names membership only in
+  `MembershipPeerDirectory`, at `sync/infrastructure/`, whose KDoc,
+  code and the gate all agree; `coordinator/` is the only sink;
+  `acceptedDebt` is empty. The gate scans fully-qualified names, not just
+  imports, and catches wildcard imports.
+- **The lock-placement rows are exact.** All six `ChannelService` lines
+  and four `MaterializationService` lines match the code; the scrubber's
+  test suite is adversarial (nested comments, delimiters in strings, raw
+  strings); nothing else in the application or domain layers holds a
+  primitive.
+- **The engine's ports are domain-owned and narrow.** `PeerDirectory` has
+  three methods, each the exact call the engine makes; `EntryRepository`,
+  `ChannelRepository`, `TimePort`, `MessagePort`, `LocalNodeRepository`
+  are all defined inward. `GossipEngine` and `ChannelService` never
+  reference each other; the coordinator's lambda is the only join.
+- **One home for each invariant.** `requireIdentifier` is the single
+  identifier rule, called from all three id types' `init`; `compareUtf8`
+  is the single byte-order comparison behind `NodeId.compareTo` and
+  `LogEntry`'s author tiebreak; the canonical order lives in
+  `LogEntry.compareTo` and the repository contract states it once; the
+  out-of-order rule is stated once and carried as data.
+- **Cancellation discipline is uniform.** Every `catch (e: Exception)` is
+  preceded by a rethrow of `CancellationException`; the `NonCancellable`
+  block around append-and-notify is argued in place and is the right
+  tool; `runIsolatedPerState` gives every materializer its turn and
+  suppresses rather than drops later failures.
+- **Value objects encapsulate.** `VersionVector` copies on construction and
+  exposes an unmodifiable view; `IncomingMessage` hand-rolls
+  `ByteArray` equality; `WireTypes.classifyFrame` partitions the marker
+  space exhaustively with a named reason per branch.
+- **The harness runs real code.** `TestNetwork`/`TestNode` wire real
+  coordinators over real in-memory adapters through public API only; the
+  contract test is dogfooded by the in-memory adapter; the Gradle
+  dependency direction is correct; architecture tests run in CI with no
+  filters.
+- **`ReactivePusher` is a real separate reason to change**, owns only
+  *when*, and documents the race behind each of its four entry points.
+- **The gap-reporting split is deliberate, not duplicated**: the solicited
+  gate appears twice (`GossipEngine.kt:503,642`) because stalled-range
+  recording must not be dedup-gated, with Dart's identical split.
+
+## Adjusted and discarded claims
+
+- **Discarded:** T5's claim that CLAUDE.md leaves the gate's `src/main`
+  scope undocumented; `CLAUDE.md:100` states it. The `testing` row half
+  of that finding survives as part of KCA1-48.
+- **Re-graded down:** T5's contract-test gap (Major → Moderate, support
+  machinery with one adapter in the world, about to be fixed by Part B);
+  T5's comment-scan asymmetry and missing known-limits block (Moderate →
+  Minor, documentation); T1's `EntriesMergedCallback` placement and
+  `sizeBytes` estimate (Moderate → Minor, cheap and the estimate is a
+  storage heuristic, not wire sizing); T4's double `PeerOperationSkipped`
+  (Moderate → Minor).
+- **Re-graded up:** T2's unguarded channel repository and T3's
+  `createChannel` check-then-act merged and raised to Major once the
+  server's default wiring and per-joiner `createChannel` calls were
+  confirmed; T3's `ReactivePusher` flush hole and T4's bootstrap-probe
+  observation merged and raised to Moderate once the scope was confirmed
+  to have no exception handler.
+- **Merged duplicates:** the wall-clock pattern (four reports → KCA1-8);
+  the concrete-codec dependency (T3 + T4 → KCA1-2); stateful domain
+  services (T1 + T2 + T4 → KCA1-14); dead vocabulary (T1 + T2 → KCA1-32);
+  stream identity (T2 F1, F11 + T4 F14 → KCA1-20).
+- **Reachability notes added:** the server ignores priority and reports
+  zero pending sends (KCA1-12, KCA1-41 inert there); the server registers
+  five materializers and persists cursors (KCA1-6, KCA1-9, KCA1-11
+  reachable); the server does not consume `stateStream` or `healthStatus`
+  (KCA1-10, KCA1-16 hazards); Dart raises none of the seven unused error
+  types (KCA1-32 parity-consistent).
+- **Citations:** none fabricated. T3's lock-placement row citation
+  (`:71-79`) covers the materialization row only; the `ChannelService`
+  row is `:59-70`. T4's line ranges for `Channel.kt` and `EventStream.kt`
+  were confirmed as given.
+
+## Recommendations
+
+| R | What | Findings | Effort |
+|---|------|----------|--------|
+| R1 | Guard the channel store; `createChannel` and `compactStream` under the locks | KCA1-1 | S |
+| R2 | Fix the stale cap comment on PR #9 | KCA1-39 | XS |
+| R3 | Bookkeeping before notification; exception handler on the scope; report dropped events | KCA1-6, KCA1-17, KCA1-27 | S |
+| R4 | Engines depend on ports; no self-construction; break the membership cycle | KCA1-2, KCA1-3, KCA1-4, KCA1-40 | M |
+| R5 | A clock reading on `TimePort`; events take `at`; stamp in the application | KCA1-8, KCA1-23 | M |
+| R6 | Register or port the four divergences: `FoldCursor`, sync-with-new-peer, `removeChannel`, incarnation chain | KCA1-9, KCA1-19, KCA1-28, KCA1-37 | S (rows) / M (ports) |
+| R7 | Wire or delete: config knobs, dead vocabulary, `entriesForAuthorAfter`, `StreamConfig` | KCA1-16, KCA1-21, KCA1-32 | S |
+| R8 | Extract the merge path and request/digest computation from the engine; restate E2 | KCA1-5 | L |
+| R9 | Materialization: state stream, debt-row scope, cursor sentinel, dispose | KCA1-10, KCA1-11, KCA1-36 | S |
+| R10 | Pure domain: transition table on the aggregate; the six stateful services; `GenerationScheduler` out of `shared/domain` | KCA1-13, KCA1-14, KCA1-15 | L |
+| R11 | Stream identity on the aggregate; facades read through the service | KCA1-20, KCA1-18 | M |
+| R12 | Codec envelope in one place; dialect arithmetic in its dialect | KCA1-22 | M |
+| R13 | Narrow `LocalNodeRepository`; simulators into `gossip-kt-testing`; contract-test coverage | KCA1-24, KCA1-25, KCA1-26 | M |
+| R14 | Minor sweep: KCA1-29 to KCA1-35, KCA1-38, KCA1-41 to KCA1-50 | as listed | S |
+
+**Suggested order.** R1 and R2 first: R1 is the only reachable defect and
+R2 belongs on the open PR. R3 next, since all three are small and each
+closes a silent path on the production server. R4 and R5 before anything
+larger, because the extraction in R8 and the purity work in R10 both get
+cheaper once the engines take ports and the clock is injected. R6 and R7
+are bookkeeping that can land any time and should land before the
+domain-model audit, which will otherwise re-find them. R8 through R13
+are design batches, each its own spec. R14 rides along with whichever
+batch touches the file.
+
+## Coverage
+
+| Territory | Files | Lines | Read by |
+|-----------|-------|-------|---------|
+| `shared/` (domain + infrastructure) | 44 | 2,223 | T1, in full |
+| `sync/domain` + `sync/infrastructure` | 50 | 2,959 | T2, in full |
+| `sync/application` (engine, service, materialization, pusher) | 4 | 1,954 | T3, in full |
+| `membership/` + `coordinator/` | 32 | 2,725 | T4, in full |
+| Architecture tests, `support/` harness, wire tests, `gossip-kt-testing`, Gradle, CLAUDE.md, README | 16 | 3,284 | T5, in full |
+| opendoor-api (`sync/` package, materializers, lifecycle) | — | — | orchestrator, by grep, for reachability only |
+
+Every file under `src/main` of both Gradle modules was some reader's
+responsibility. **Not read:** the remaining 85 test files under
+`src/test` (`sync/`, `integration/`, `shared/`, `membership/`,
+`coordinator/`), enumerated only; they are outside the boundary gate's
+scan by design and outside this rubric, and the code-quality pass should
+take them. The Dart twin was read where a finding names a divergence,
+not audited.
