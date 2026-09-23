@@ -31,7 +31,7 @@ They are grouped here so they are not lost; each is an hour or less.
   meeting in which the health line counted two megabytes a minute: its
   figure comes from the sync library's per-peer metrics, which do not see
   the gossip frames the transport hands in. Feed it from the same counter
-  the health line uses (seen 2026-09-21 and again 2026-09-22).
+  the health line uses (seen 2026-09-21 and again 2026-09-22). **Done with item 9** (opendoor-api PR #28 (merge 9f9be61, released as Heroku v54 on 2026-09-23)): every inbound frame is counted at the receive point since gossip-kt PR #9; the tunnel run read the per-phone counters climbing with the health line's `in=`.
 - **A flaky WebSocket test.** "Every connection in a chain of reconnects is
   ended" occasionally fails with a concurrent-modification error inside its
   own log-capture helper, not in the code under test. A flaky suite hides
