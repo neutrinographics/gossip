@@ -224,13 +224,22 @@ observations.
     ships, and the two accepted divergences (ruling 16) as permanent
     rows.
 
-16. **Two divergences are accepted, with rows.** The materializer
-    state stream becomes a conflated latest-state flow (`replay = 1`,
-    drop oldest) with a completing dispose, where Dart delivers every
-    update: a materialized view is state, and a consumer that needs
-    every fold reads the log. And `LoopGeneration` plus the
-    `SynchronizedState` holder exist only in Kotlin, because Dart is
-    single-isolate.
+16. **The materializer state stream becomes latest-wins on both
+    sides; one divergence is accepted.** The stream conflates: `replay = 1`,
+    drop oldest, and a completing dispose, so a subscriber always holds
+    the newest state and a late subscriber gets the current one on
+    subscribe. A materialized view is state, and a consumer that needs
+    every fold reads the log. Dart takes the same shape (a latest-value
+    holder with replay on listen and one pending value per subscriber,
+    replacing the bare broadcast controller): the app already routes
+    around the Dart stream because a late subscriber can miss the fold
+    (`start_sync_for_user.dart`, "can miss emissions due to subscription
+    timing"), and its two remaining consumers map state to a derived
+    value, so latest-wins changes nothing they observe and removes the
+    workaround. This is a shared item on the flow-back list, not a
+    divergence. The one accepted, permanent divergence is
+    `LoopGeneration` plus the `SynchronizedState` holder, which exist
+    only in Kotlin because Dart is single-isolate.
 
 ## Pins the plans must carry
 
@@ -274,8 +283,19 @@ observations.
    entities/aggregates and keep the bespoke wrappers, which satisfies
    the letter of DDD at a fraction of the cost but leaves the shape the
    standing rule rejects.
-3. Ruling 16: a conflated materializer state stream as an accepted
-   divergence (recommended), or every-update delivery with the emission
-   moved outside the mutex to match Dart exactly.
+3. Ruling 16: a conflated materializer state stream (recommended), or
+   every-update delivery with the emission moved outside the mutex to
+   match Dart exactly.
 4. Ruling 15: the Dart flow-back item at Medium after the digest work
    (recommended), or scheduled before it.
+
+## Review outcome
+
+**Approved as recommended (owner, 2026-09-23).** Part B of item 9 ships
+before the audit batches (ruling 1); the six stateful services take the
+pure split with one generic holder (ruling 11); the materializer state
+stream conflates, and after discussion the owner asked for the same
+shape on the Dart side, so ruling 16 is restated above as a shared item
+rather than an accepted divergence; the Dart flow-back item lands at
+Medium after the digest work (ruling 15). PR #9 merges with nothing
+further added. The plans follow this record, one per batch.
