@@ -773,7 +773,7 @@ flow-back sweep.
 
 ## Addendum (batch C, 2026-09-24)
 
-**Fixes landed (gossip-kt PR #12, head 7d1ffc2, suite 1,125 → 1,133; merge
+**Fixes landed (gossip-kt PR #12, head e31d3af, suite 1,125 → 1,147; merge
 pending):** KCA1-9, KCA1-16, KCA1-19, KCA1-20, KCA1-21, KCA1-24, KCA1-28,
 KCA1-32, KCA1-37.
 
@@ -865,3 +865,33 @@ declares (flow-back); the no-op re-add hold (flow-back); the bootstrap-probe
 retry (Kotlin sweep candidate); the digest to a removed peer (parity,
 exempt); `|` inside a node id versus the cursor form (parity, exempt). The
 incarnation row and the test-only accessors row close.
+
+**Review rounds on PR #12 (2026-09-24).** Two external rounds and one
+owner-requested architecture review (cohesion, coupling, DDD, CA), every
+claim verified against the head before ruling. Landed: every `Duration` the
+config carries must be finite and `holdProbing` saturates (an infinite grace
+overflowed the hold deadline into "already expired"); `FoldCursor` rejects a
+non-positive sequence at construction and in parsing; a fold queued on a
+state's mutex before disposal no longer runs after it — `disposed` is set
+under the mutex and one helper is the only place the class takes a state's
+mutex; the stream locks are acquired iteratively with reverse release (the
+recursive form overflowed at a few thousand streams and released nothing on
+a mid-acquisition failure). From the architecture review: the registry's
+admission is a named domain outcome (`PeerAdmission`: added, recovered,
+already reachable) rather than a Boolean threaded through three layers; the
+detector owns the grace knob and the admission rule (`admitPeer`), so the
+composition root wires it unconditionally instead of branching; the fold
+cursor parses positionally (`|` is a legal identifier character) and its
+legacy timestamp-only form is constructible only by parsing; the lock
+hierarchy (channel ⊃ stream, one order) is stated where the locks live; the
+`Channel` facade reads members and streams through the service and no
+longer holds a repository; the aggregate answers `hasStream` itself; two
+KDoc claims were corrected (why the service raises `ChannelRemoved`; the
+engine's per-channel snapshots — a buffered push may go out once, stale pull
+marks are dropped only at engine stop or peer removal). Deferred with a
+recorded home: two-phase disposal so removal does not wait on application
+materializer code under the locks, and `GossipEngine.clearPendingFor(channel)`
+(D); a cheaper health read model (later); moving the retired-surface pin out
+of the architecture package to match declarations, and one shared source
+scanner for the six gates (F). Consumer notes gained: `addPeer` returns
+`PeerAdmission`; `FailureDetector` takes `startupGracePeriod` (defaulted).

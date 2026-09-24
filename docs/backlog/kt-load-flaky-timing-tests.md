@@ -49,6 +49,10 @@ times under load.
 
 ## Related
 
+- `CausalityTest`'s "HLC physical time advances with simulated time" failed
+  once during PR #12's review rounds (a sequence-hole protocol error from a
+  compaction race), green in isolation and in the next two full runs; the
+  unsolicited-delta reactive-push test tripped once more the same day.
 - The burst-coalescing reactive-push engine test failed two of four
   full-suite runs during batch C (gossip-kt PR #12, 2026-09-24), green in
   isolation and at the base commit; it spins on a wall-clock timeout.
