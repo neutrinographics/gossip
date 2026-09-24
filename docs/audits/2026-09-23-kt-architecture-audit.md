@@ -694,8 +694,8 @@ extraction's territory, KCA1-5).
 
 ## Addendum (batch B, 2026-09-24)
 
-**Fixes landed (gossip-kt PR #11, head cd762dd, suite 1,107 → 1,125; merge
-pending):** KCA1-2, KCA1-3, KCA1-4, KCA1-8, KCA1-23, KCA1-29, KCA1-40.
+**Fixes landed (gossip-kt PR #11, merged 2026-09-24 as 3506a68, head cd762dd,
+suite 1,107 → 1,125):** KCA1-2, KCA1-3, KCA1-4, KCA1-8, KCA1-23, KCA1-29, KCA1-40.
 
 - KCA1-8 and KCA1-23: a narrow `Clock` port (`nowMs`, `now(): Instant`)
   that `TimePort` extends; `HlcClock` and `PendingPullTracker` take only the
