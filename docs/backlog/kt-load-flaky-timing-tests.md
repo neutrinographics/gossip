@@ -49,6 +49,10 @@ times under load.
 
 ## Related
 
+- During batch D (2026-09-24/25) the reactive-push pair tripped in three of
+  five full-suite runs on one machine and never in isolation; the batch's
+  ledger holds the tally. Its ten-second wall-clock timeouts are the
+  suspect.
 - `CoordinatorTest`'s log-forwarding test threw a concurrent-modification
   error once (PR #12, round 3): it iterates a synchronized list without
   holding its monitor while the log callback appends from another thread —

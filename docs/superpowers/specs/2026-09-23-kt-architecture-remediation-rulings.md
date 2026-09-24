@@ -332,3 +332,15 @@ every `addPeer`, including a no-op re-add of a known reachable peer, which
 lets a caller that re-announces its peers renew the hold indefinitely;
 batch C holds only for an add the registry acted on (new or revived) and
 records the divergence as a Dart flow-back rather than matching it.
+
+**Precision note (batch D execution, 2026-09-25).** Ruling 10 named the
+second extracted service `DigestBudgeter`, after Dart's. Dart's
+`DigestBudgeter` byte-budgets digest lists (`fitRequest`, `fitResponse`) and
+Dart cuts delta pages in the engine's `_fitDeltaToBudget`; the Kotlin
+service extracted in batch D holds neither — it holds digest building, pull
+planning and the page seam that is `hasMore`'s only producer. It is
+therefore `PullPlanner`, and Dart's name is kept for the byte budget when
+the wire-efficiency phase brings it. Ruling 10's "merge path" also gained
+one guarantee the ruling did not ask for: `DeltaMerger` holds the stream's
+lock across the merge, shared with local appends, compaction and removal,
+which is what closed the limits batches A and C had parked.

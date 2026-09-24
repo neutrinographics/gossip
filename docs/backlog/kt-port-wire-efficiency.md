@@ -67,3 +67,9 @@ byte-budgeted digest rotation.
   work, which sits on the same surface as this item.
 - Siblings: [Mirror the bounded-context structure in the Kotlin library](kt-mirror-bounded-contexts.md),
   [Audit the Kotlin library for the bug classes fixed in Dart](kt-audit-legacy-bug-classes.md).
+
+Where the Kotlin budgets will land: since the architecture remediation's
+batch D, `PullPlanner.page` is the one place a delta response is assembled
+and the only producer of `hasMore`, and `PullPlanner.buildLocalDigests` the
+one place a digest list is built — the response-side and digest-side budgets
+attach there.

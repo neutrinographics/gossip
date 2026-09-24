@@ -903,3 +903,68 @@ which makes the straggler impossible by construction. Consumer notes
 gained: `addPeer` returns `PeerAdmission`; `FailureDetector` takes
 `startupGracePeriod` (defaulted); `EventStream.registerMaterializer` and
 `ChannelService.registerMaterializer` are `suspend`.
+
+## Addendum (batch D, 2026-09-25)
+
+**Fixes landed (gossip-kt PR #13, head fe4c01f, suite 1,152 → 1,212; merge
+pending):** KCA1-5, KCA1-38, KCA1-42.
+
+- KCA1-5: `GossipEngine` (1,060 → ~800 lines) keeps the round loop, message
+  routing and sending. `DeltaMerger` owns the merge path — solicited floor
+  adoption, contiguity, gap reporting and stalls, sort, HLC advance,
+  append-and-notify, continuation — with today's side-effect order kept
+  statement for statement (the review's eleven-row table is in the batch
+  ledger); from the version-vector read through the merged callback it runs
+  under the stream's lock after an under-lock re-check of the channel and
+  stream, and the floor adoption runs under the same lock in its own span.
+  `PullPlanner` owns digest building, pull planning (each pull sent as it is
+  planned, today's interleaving, pinned) and the page seam that is
+  `hasMore`'s only producer; pagination is not implemented. Contiguity
+  selection is a pure domain service (`ContiguitySelector`). One
+  `StreamLocks` holder replaces the two lock maps inside `ChannelService`;
+  the composition root wires it into the service and the engine; it has
+  deliberately no way to drop a lock; the `LockPlacementTest` row moved
+  with it. Ruling 10 named the second service `DigestBudgeter`; it is
+  `PullPlanner` because it holds none of Dart's `DigestBudgeter`'s byte
+  budgeting (precision note on the rulings page).
+- KCA1-38: `foldEntries` requires a batch in `LogEntry` order and says why
+  (the cursor is the batch's last entry); `StateMaterializer`'s contract
+  says a fold that blocks stalls the stream and must not call back into the
+  library.
+- KCA1-42: `EntriesMergedCallback` lives in `sync/application`.
+- Carried items closed: the merge path shares the stream lock, so the limit
+  batch C documented on `removeChannel` and `quiesce` is gone; the
+  compaction-vs-merge race is closed and turned out to be a double fold
+  (the batch-A observation "a merged entry can land below the raised floor"
+  was wrong: the floor never exceeds the version vector); a removal racing
+  the auto-compaction pass no longer emits a spurious error; the engine
+  forgets a removed channel (`clearPendingFor`: pull marks, stalled ranges,
+  reported gaps, buffered pushes) and the reactive flush re-checks the
+  channel before each send.
+
+**Timing against main, stated on purpose.** Every merge-path row is in its
+original position; rows five to ten (and the floor adoption, in its own
+span) now wait for and exclude a local append, compaction or removal of the
+same stream, and the single collector delays the next inbound frame by that
+local operation's length, bounded by repository IO plus one materializer
+fold; the planner waits on the same lock only in the rare
+authorship-claim branch. The continuation is returned to the engine and
+sent immediately with `sendDeltaRequest` unchanged. A pull's dedup clock
+still starts at its own send. The engine's constructor gains the shared
+lock holder — the one stated deviation from the spec's "engine tests
+unchanged" pin (three construction sites gain one argument, no assertion
+changed).
+
+**Observations for later batches.** `GossipEngine` still carries twenty
+constructor parameters and its own wiring, and `flushPendingPushes`'s
+fan-out sits outside `ReactivePusher` (E/F). `StalledRangeRegistry` is now
+shared by three application services (E). Whether `StreamLocks` belongs in
+`infrastructure/` behind a domain-facing port (F). A pull mark in the
+common no-adoption branch can outlive a removal until the tracker's timeout
+(bounded; pre-existing). `MergeOutcome.mergedNewEntries` has no production
+reader on either twin (parity debt).
+
+**Consumer notes for the server bump after batch F.** `Coordinator.create`
+is unchanged; the server constructs the coordinator, not the engine.
+`ChannelService.foldMergedEntries` now refuses an unsorted batch.
+`EntriesMergedCallback` moved packages (only if the server names it).
