@@ -773,7 +773,7 @@ flow-back sweep.
 
 ## Addendum (batch C, 2026-09-24)
 
-**Fixes landed (gossip-kt PR #12, head e31d3af, suite 1,125 → 1,147; merge
+**Fixes landed (gossip-kt PR #12, head b93354a, suite 1,125 → 1,152; merge
 pending):** KCA1-9, KCA1-16, KCA1-19, KCA1-20, KCA1-21, KCA1-24, KCA1-28,
 KCA1-32, KCA1-37.
 
@@ -893,5 +893,13 @@ recorded home: two-phase disposal so removal does not wait on application
 materializer code under the locks, and `GossipEngine.clearPendingFor(channel)`
 (D); a cheaper health read model (later); moving the retired-surface pin out
 of the architecture package to match declarations, and one shared source
-scanner for the six gates (F). Consumer notes gained: `addPeer` returns
-`PeerAdmission`; `FailureDetector` takes `startupGracePeriod` (defaulted).
+scanner for the six gates (F). A third external round then found that a
+cancellation during the disposal wait left a channel with an erased log,
+and that a materializer registered during disposal survived it; removal is
+now two-phase (a cancellable, all-or-nothing quiesce, then a
+non-cancellable discard → clear → delete → emit span with no wait inside),
+and registration is refused for a missing channel under the channel lock,
+which makes the straggler impossible by construction. Consumer notes
+gained: `addPeer` returns `PeerAdmission`; `FailureDetector` takes
+`startupGracePeriod` (defaulted); `EventStream.registerMaterializer` and
+`ChannelService.registerMaterializer` are `suspend`.
