@@ -318,3 +318,17 @@ withdrawn; the flow-back list gains nothing from it. Ruling 2 named a
 adapter itself with the monitor the entry repository already uses, which
 the audit's fix direction allowed ("a wrapper or a guarded adapter") and
 which keeps the lock in the same layer with one class fewer.
+
+**Precision note (batch C execution, 2026-09-24).** Ruling 6 said
+`ChannelRemoved` and `SyncErrorOccurred` stay and gain their producers.
+`ChannelRemoved` did (batch C's `removeChannel`). `SyncErrorOccurred` had
+never been produced on either twin — both libraries deliver errors through
+the error callback and the errors flow — and giving it a producer would put
+every error on the events flow a second time, which no consumer asked for
+and Dart does not do. Batch C therefore deletes it (its own commit), the
+owner confirmed the refinement before execution, and the matching Dart
+deletion joins the flow-back list. Ruling 7's grace hold: Dart holds on
+every `addPeer`, including a no-op re-add of a known reachable peer, which
+lets a caller that re-announces its peers renew the hold indefinitely;
+batch C holds only for an add the registry acted on (new or revived) and
+records the divergence as a Dart flow-back rather than matching it.

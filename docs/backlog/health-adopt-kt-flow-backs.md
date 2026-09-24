@@ -45,6 +45,12 @@ through the clock port with a placement test that fails the build on a
 direct wall-clock read; and the failure detector logging its peer status
 transitions at info rather than debug. Each is a register row.
 
+Two more came out of batch C of the same remediation (2026-09-24): deleting
+the error and event vocabulary neither twin raises, and holding failure
+detection off a newly added peer only when the add actually registered or
+revived it, so a repeated announcement of a known peer cannot renew the hold.
+Each is a register row.
+
 ## Why it matters
 
 The migration's ground rule is bidirectional: the Kotlin library catching up

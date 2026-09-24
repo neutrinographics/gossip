@@ -770,3 +770,98 @@ and measure the collector's throughput in a room.
 direct `DateTime.now()` reads and the absence of a clock-placement gate
 (KCA1-8/23); the detector's log severities (KCA1-40). Homed to the
 flow-back sweep.
+
+## Addendum (batch C, 2026-09-24)
+
+**Fixes landed (gossip-kt PR #12, head 7d1ffc2, suite 1,125 → 1,133; merge
+pending):** KCA1-9, KCA1-16, KCA1-19, KCA1-20, KCA1-21, KCA1-24, KCA1-28,
+KCA1-32, KCA1-37.
+
+- KCA1-32, KCA1-28, KCA1-24 and the `maxConnections` half of KCA1-16: the
+  seven unraised `SyncErrorType` values, `BufferOverflowError`,
+  `TransformSyncError`, `BufferOverflowOccurred`, `NonMemberEntriesRejected`,
+  `SyncErrorOccurred` (owner-confirmed refinement of ruling 6: no producer
+  on either twin, so deleted rather than given one), `StreamConfig`,
+  `ChannelAggregate.isMember`, `CoordinatorConfig.maxConnections` and the
+  whole incarnation chain are gone; `LocalNodeRepository` has Dart's shape
+  (the finer split by concern stays the shared follow-up ruling 6 names). A
+  sixth architecture pin, `RetiredSurfaceTest`, raw-text-scans both source
+  trees and both test trees for every retired name.
+- The rest of KCA1-16: `CoordinatorConfig` validates `suspicionThreshold ≥ 1`,
+  `unreachableThreshold > suspicionThreshold`, `unreachableProbeInterval ≥ 1`
+  and `startupGracePeriod ≥ 0`; `startupGracePeriod` gained its reader (below);
+  `HealthStatus` carries `state` and derives `isHealthy` from it;
+  `adaptiveTimingEnabled` stays gossip-only because the probe policy has no
+  adaptive switch by construction (documented, not threaded).
+- KCA1-37: `ChannelService.removeChannel` and `Coordinator.removeChannel`,
+  Dart's order (clear entries, dispose materializer state, delete the
+  aggregate, emit `ChannelRemoved`), under the channel lock and every stream
+  lock; `appendEntry` re-checks stream existence under the stream lock it now
+  shares with removal; `MaterializationService.disposeChannel` is suspend and
+  waits out an in-flight fold under the state's own mutex, removing the exact
+  state it snapshotted.
+- KCA1-19: `GossipEngine.syncWithPeer` sends one digest on `peers.add` while
+  running (news recorded first, as Dart); the startup grace hold is set for an
+  add the registry acted on, before or after `start()`, and cleared early when
+  the bootstrap probe is answered; `FailureDetector.holdProbing(peer, duration)`
+  owns the deadline arithmetic.
+- KCA1-9: `FoldCursor` in `sync/domain/values` carries timestamp, author and
+  sequence in `LogEntry`'s order (`NodeId.compareTo`, the same unsigned byte
+  order the server's `COLLATE "C"` produces); legacy timestamp-only strings
+  parse with their old tie rule; a rejected author segment is corruption
+  (full rebuild), not a crash.
+- KCA1-20 and KCA1-21: `EntryRepository` loses `streamIds` and
+  `entriesForAuthorAfter`; `clearStream` retires the key; `Channel.getStream`
+  and `resourceUsage` read the aggregate; the published contract test gains
+  `getTailTimestamp` (null on empty; last in total order; a tie returns it)
+  and states that key retirement is adapter-checked.
+
+**Timing against main, stated on purpose.** `appendEntry`'s missing-stream
+error is emitted after the stream lock is granted rather than before queuing,
+and one repository read moved under the E3-exempt append lock (same-stream
+appends serialize it; a Postgres read on the server). `ChannelRemoved` is
+published after the delete, under the locks, through the non-suspending
+queue. Adding a peer while running does register → hold → probe → digest;
+a peer added before `start()` is held for `startupGracePeriod` (default
+10 s) unless its bootstrap probe is answered, where before it was
+probe-eligible from the first round; re-adding a known reachable peer
+neither sets nor extends a hold. `removeChannel` holds the channel and
+stream locks while a materializer's in-flight `fold`/`save` finishes. The
+cursor paths are unchanged in order. Lock graph: channel → stream →
+materializer state → leaf monitors, one total order, no cycle.
+
+**Observations for later batches.** The engine's inbound merge path
+bypasses the service's locks, so a delta already past the engine's channel
+check when `removeChannel` runs can land an entry the removal never sees
+(the compaction-vs-merge class; batch D). A materializer whose `fold`/`save`
+hangs now wedges appends to that channel under `removeChannel` (D: bounded
+wait or a `StateMaterializer` contract sentence). `getTailTimestamp` returns
+an `Hlc` only, so the engine's tail-tie rule still forces a rebuild on every
+timestamp tie; a full-position tail would make it exact (D/E). A removal
+racing the auto-compaction pass emits one benign "Compaction skipped" error
+(D). `nextUnreachableTarget` consults no probing hold (harmless; the
+recovery probe carries the grace window). Gradle keeps `:test` up to date
+after a comment-only source change, so the six source-scanning gates do not
+re-run on such a change — declare the scanned trees as test inputs (F); the
+retired-surface pin's `\b` match cannot see a renamed revival (F, KDoc).
+The flaky-tests item gains the burst-coalescing engine test.
+
+**Consumer notes for the server bump after batch F.** `PgEntryRepository`,
+`MarksCachingEntryRepository` and the test `RecordingEntryRepository` drop
+`streamIds` and `entriesForAuthorAfter`; `PeerDto` drops `incarnation`;
+`PgLocalNodeRepository` drops its two incarnation methods; persisted cursor
+strings grow to `Hlc(p:l)|author|seq` (well inside the 200-character column)
+and existing ones keep parsing; `CoordinatorConfig(maxConnections = …)` no
+longer compiles; `HealthStatus` gains `state`; the seven error values are
+gone; `PeerRegistry.addPeer`/`PeerService.addPeer` return `Boolean`
+(source-compatible). Behaviour: every WebSocket connection's `peers.add`
+now sends that phone a digest at once and holds probing for 10 s unless the
+bootstrap probe is answered, so a phone that connects and stays silent is
+condemned 10 s later than before; a remove-then-add per reconnect restarts
+the hold legitimately. The events-queue acceptance item from batch A stands.
+
+**Register rows added with this addendum:** the dead vocabulary Dart still
+declares (flow-back); the no-op re-add hold (flow-back); the bootstrap-probe
+retry (Kotlin sweep candidate); the digest to a removed peer (parity,
+exempt); `|` inside a node id versus the cursor form (parity, exempt). The
+incarnation row and the test-only accessors row close.

@@ -49,6 +49,9 @@ times under load.
 
 ## Related
 
+- The burst-coalescing reactive-push engine test failed two of four
+  full-suite runs during batch C (gossip-kt PR #12, 2026-09-24), green in
+  isolation and at the base commit; it spins on a wall-clock timeout.
 - Seen three more times during the architecture remediation batches A and B
   (gossip-kt PRs #10 and #11, September 2026), where the reactive-push
   diagnosis above was written down; the batch B ledger holds the runs.
