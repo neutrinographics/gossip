@@ -773,8 +773,8 @@ flow-back sweep.
 
 ## Addendum (batch C, 2026-09-24)
 
-**Fixes landed (gossip-kt PR #12, head b93354a, suite 1,125 → 1,152; merge
-pending):** KCA1-9, KCA1-16, KCA1-19, KCA1-20, KCA1-21, KCA1-24, KCA1-28,
+**Fixes landed (gossip-kt PR #12, merged 2026-09-24 as 629935a, head b93354a,
+suite 1,125 → 1,152):** KCA1-9, KCA1-16, KCA1-19, KCA1-20, KCA1-21, KCA1-24, KCA1-28,
 KCA1-32, KCA1-37.
 
 - KCA1-32, KCA1-28, KCA1-24 and the `maxConnections` half of KCA1-16: the
