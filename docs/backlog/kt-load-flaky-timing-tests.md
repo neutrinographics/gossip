@@ -21,6 +21,18 @@ simulated clock to hold a second parked sleeper before advancing time, and
 a loaded machine can leave that sleeper unregistered for longer than the
 wait allows.
 
+The architecture remediation batches (September 2026) added a fourth: the
+churn scenario test, which drives eight coordinators through joins and
+departures on real timeouts and tripped three times across two batches on
+a saturated machine, passing every isolated rerun. The same batches
+produced a diagnosis for the reactive-push pair: each test launches the
+coroutine that collects the peer's incoming messages and then appends the
+entry without waiting for that collector to subscribe, and the flow it
+collects keeps no history, so under load the push can be delivered before
+anyone is listening and the assertion waits on a message that has already
+gone by. The fix is the ordinary one: await the subscription (or collect
+from a flow that replays) before acting.
+
 ## Why it matters
 
 A flaky test trains people to rerun instead of read. Every future batch
@@ -36,6 +48,10 @@ for rather than a fixed sleep. Confirm by running the full suite several
 times under load.
 
 ## Related
+
+- Seen three more times during the architecture remediation batches A and B
+  (gossip-kt PRs #10 and #11, September 2026), where the reactive-push
+  diagnosis above was written down; the batch B ledger holds the runs.
 
 - Seen twice more during the receive-loop lifecycle batch (gossip-kt PR #8,
   September 2026), whose other deferred findings live in

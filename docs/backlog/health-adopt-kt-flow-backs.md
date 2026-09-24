@@ -38,6 +38,13 @@ after a failed probe racing the late answer instead of sleeping blind; and
 serving a channel created during a pause immediately rather than after
 resume. Each is a register row.
 
+Three more came out of the Kotlin architecture remediation (batches A and
+B, September 2026): the guard on the reactive push's fire-and-forget flush,
+which routes its failure to the error callback; every time stamp read
+through the clock port with a placement test that fails the build on a
+direct wall-clock read; and the failure detector logging its peer status
+transitions at info rather than debug. Each is a register row.
+
 ## Why it matters
 
 The migration's ground rule is bidirectional: the Kotlin library catching up

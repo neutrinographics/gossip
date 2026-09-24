@@ -691,3 +691,82 @@ unaffected); compaction serializes against local appends only, and a
 backfilled entry merged between compaction's read and its removal can
 land below the raised floor (pre-existing; the merge path is the engine
 extraction's territory, KCA1-5).
+
+## Addendum (batch B, 2026-09-24)
+
+**Fixes landed (gossip-kt PR #11, head cd762dd, suite 1,107 → 1,125; merge
+pending):** KCA1-2, KCA1-3, KCA1-4, KCA1-8, KCA1-23, KCA1-29, KCA1-40.
+
+- KCA1-8 and KCA1-23: a narrow `Clock` port (`nowMs`, `now(): Instant`)
+  that `TimePort` extends; `HlcClock` and `PendingPullTracker` take only the
+  reading. Every domain event takes `at` as a required argument, aggregates
+  take `now` as data and read no clock, the two services stamp from their
+  injected clock through one private helper each. `ClockPlacementTest`
+  forbids every JVM and Kotlin wall-clock read outside `infrastructure/`
+  (the ten `java.time` factories in call and method-reference form, the
+  `System` reads, `java.time.Clock`, `Date`/`Calendar`, `TimeSource`,
+  `TimeMark` and its reads, the `measure*` helpers, kotlinx-datetime's
+  `Clock.System`) over both source trees with an empty debt map;
+  `RealTimePort.now()` is the one sanctioned read. Under a simulated clock,
+  every event and error stamp equals the simulation.
+- KCA1-2 and KCA1-40: both engines take `MessageCodec` with no default and
+  the shared `LogCallback` with severity; the engine's private `LogLevel`
+  and the coordinator's two adapters are gone. Ruling taken during the
+  batch: the detector logs its four status transitions at INFO and
+  everything else at DEBUG, and has no WARNING line — an undecodable frame
+  is the coordinator's error report. (The plan text said "malformed frames
+  at WARNING"; the shipped shape is the one stated here.)
+- KCA1-4: `PendingPing`/`PendingPingRegistry` are membership domain
+  aggregates and the wrapper depends inward; `LayerDirectionTest` states
+  the rule (domain references domain; application never references
+  infrastructure) and ends the batch with an empty map.
+- KCA1-3 and KCA1-29: ten `Synchronized*` wrappers subclass their `open`
+  pure classes and override every public member under one monitor, each
+  with a reflection pin, and `SynchronizedWrapperCoverageTest` pins the
+  shape itself (every `Synchronized*` class subclasses a `domain/` class
+  and has a pin). Every application constructor takes the pure type with no
+  default and constructs nothing; `Coordinator.create` wires every wrapper.
+  `SynchronizedPeerRegistry` is a plain monitor: the coroutine `Mutex`, the
+  `withLock` escape hatch and the racy read-then-clear pair are gone;
+  `drainUncommittedEvents(publish)` takes, clears and publishes in one call
+  under the registry's monitor, so batch A's ordering guarantee for peer
+  events holds by construction. The backlog item
+  `kt-application-types-against-domain` closes.
+
+**Timing against main, stated on purpose.** News and anti-entropy credit
+are unchanged from batch A; every event is published at the same point
+relative to its mutation as on main; the only stamp shift is an event's
+`at` now being read before the storage write rather than after (invisible
+to consumers). The registry's lock changed from a coroutine mutex to a
+monitor, so a waiting caller parks its thread for the length of an
+in-memory map operation instead of yielding. Three wrappers re-enter their
+own monitor through an overridden member (`GossipTimingPolicy`,
+`PendingPullTracker`, `ProbeTimingPolicy`), which is why the wrappers are
+monitors and not mutexes; each says so.
+
+**Observations for later batches.** `open` domain classes make their
+invariants overridable — the accepted cost of ruling 3's shape (batch E may
+revisit). `PendingPing` carries a `CompletableDeferred` into `domain/`
+(batch E, with KCA1-14). `healthStatus` reads the peer and reachable counts
+in two calls with no snapshot (a monitoring read; a combined query is the
+shape if exactness is ever wanted). `PeerRegistry.uncommittedEvents` and
+`clearUncommittedEvents` are now test-only production API (batch C sweep;
+register row). The text-scanning clock gate cannot see a clock read through
+an imported type alias; its KDoc assigns that to review, and closing it
+would mean resolving types. Two wall-clock flakes recurred during the batch
+and are recorded on the flaky-tests item with a diagnosis for the
+reactive-push pair.
+
+**Consumer notes for the server bump after batch F.** `Coordinator.create`'s
+signature is unchanged. The server constructs none of the services whose
+constructors changed (`ChannelService`, `PeerService`, the engines). The
+server's INFO logger will start carrying the detector's peer status
+transitions; nothing moves to WARN. An unreachable peer that answers the
+periodic probe logs two INFO lines (recovery recorded twice, a pre-existing
+shape). Batch A's acceptance item stands: surface the events backlog depth
+and measure the collector's throughput in a room.
+
+**Flow-back to Dart (register rows added with this addendum):** the 45
+direct `DateTime.now()` reads and the absence of a clock-placement gate
+(KCA1-8/23); the detector's log severities (KCA1-40). Homed to the
+flow-back sweep.

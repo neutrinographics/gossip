@@ -60,3 +60,11 @@ one did, and only a hand audit caught it.
   (`SynchronizedSyncActivityLedger`, `SynchronizedPeerIdentities`,
   `LayerDirectionTest`).
 - Sibling: [Mirror the bounded-context structure in the Kotlin library](kt-mirror-bounded-contexts.md).
+- **Done** (2026-09-24): batch B of the
+  [Kotlin architecture remediation](../superpowers/specs/2026-09-23-kt-architecture-remediation-rulings.md)
+  (ruling 3), gossip-kt PR #11 — ten wrappers subclass their `open` pure
+  classes and override every public member under one monitor, each with a
+  reflection pin; every application constructor takes the pure type with no
+  default and constructs nothing; `LayerDirectionTest` and
+  `SynchronizedWrapperCoverageTest` guard the shape with empty debt maps.
+  The register row above is closed.
