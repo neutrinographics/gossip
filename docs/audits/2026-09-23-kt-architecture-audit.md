@@ -906,7 +906,7 @@ gained: `addPeer` returns `PeerAdmission`; `FailureDetector` takes
 
 ## Addendum (batch D, 2026-09-25)
 
-**Fixes landed (gossip-kt PR #13, head fe4c01f, suite 1,152 → 1,212; merge
+**Fixes landed (gossip-kt PR #13, head 1f4ad0a, suite 1,152 → 1,214; merge
 pending):** KCA1-5, KCA1-38, KCA1-42.
 
 - KCA1-5: `GossipEngine` (1,060 → ~800 lines) keeps the round loop, message
@@ -939,8 +939,11 @@ pending):** KCA1-5, KCA1-38, KCA1-42.
   was wrong: the floor never exceeds the version vector); a removal racing
   the auto-compaction pass no longer emits a spurious error; the engine
   forgets a removed channel (`clearPendingFor`: pull marks, stalled ranges,
-  reported gaps, buffered pushes) and the reactive flush re-checks the
-  channel before each send.
+  reported gaps, buffered pushes — called inside the removal's locked span,
+  after the delete and before the event, so a recreation of the same id
+  cannot lose its fresh state; an external review round found the
+  after-the-lock version) and the reactive flush re-checks the channel
+  before each send.
 
 **Timing against main, stated on purpose.** Every merge-path row is in its
 original position; rows five to ten (and the floor adoption, in its own
