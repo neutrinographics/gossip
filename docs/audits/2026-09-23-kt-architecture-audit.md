@@ -981,7 +981,7 @@ should look at; if it shows, a cached or existence-only read is the fix.
 
 ## Addendum (batch E, 2026-09-25)
 
-**Fixes landed (gossip-kt PR #14, opened 2026-09-25, head 3039c76,
+**Fixes landed (gossip-kt PR #14, opened 2026-09-25, head 9b07f21,
 suite 1,218 → 1,255):** KCA1-13, KCA1-14, KCA1-15.
 
 - KCA1-14: the six stateful domain services are gone as a shape. `HlcClock`,
@@ -1062,7 +1062,22 @@ The one mark site runs under the stream lock, so nothing competing lands
 in the pause; a completion that does only clears the mark. An in-step port
 read is granted to `LocalHlc` alone, whose stamps must never go backwards.
 
-**Observations for batch F.** `DeltaMerger` and `GossipEngine` are typed
+**Owner-requested controller review (2026-09-25).** The whole production
+diff read against main once more, statement for statement: the arithmetic
+of all six services and the transition table is verbatim, every call point
+is where it was, the config's threshold validation is the same rule the
+new value requires, and the restored clock starts from main's default. One
+mistake found and fixed (9b07f21): the transition collapse had reworded the
+INFO verdict line; main's exact wording is restored, with the threshold as
+the count token (equal at every crossing), and pinned so a refactor cannot
+move it again. No parser in the server repository depended on it.
+
+**Observations for batch F.** `PeerRegistry.recordProbeFailure` returns the
+status entered while `updatePeerContact` returns the status left — the same
+`PeerStatus?` shape with opposite meaning, each stated on its KDoc; a
+from/to value would be the honest return for both, and it touches the
+registry, its wrapper, the service, the detector and four test classes, so
+it goes with F's detector items before the bump. `DeltaMerger` and `GossipEngine` are typed
 against the concrete `LocalHlc` because `HlcProvider` is a shared port and
 `receive` is sync-only (deliberate; recorded). `handleAck` takes two cell
 reads where main took one (interleavings traced in the Task 8 review; at
