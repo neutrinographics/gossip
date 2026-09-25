@@ -981,7 +981,7 @@ should look at; if it shows, a cached or existence-only read is the fix.
 
 ## Addendum (batch E, 2026-09-25)
 
-**Fixes landed (gossip-kt PR #14, opened 2026-09-25, head b43fcf2,
+**Fixes landed (gossip-kt PR #14, opened 2026-09-25, head 3039c76,
 suite 1,218 → 1,255):** KCA1-13, KCA1-14, KCA1-15.
 
 - KCA1-14: the six stateful domain services are gone as a shape. `HlcClock`,
@@ -1050,6 +1050,17 @@ on the probe round, `probe()` and its cleanup, Ack handling, pull
 mark/release/complete, HLC issue and receive, scheduler tick/stop, gossip
 pacing, both lifecycles and error reporting is at its original call point
 with its original conditions.
+
+**External review rounds.** Round 1 (on b43fcf2) asked for the pull
+gate's clock read to move back inside the update, as the deleted wrapper
+had it. Refused with the limit written on the contract (3039c76): a
+reading taken by the caller just before the step can be stale by one
+thread pause, which can hold a mark that expired during the pause for one
+more digest round or shorten a mark or a round-trip sample by that pause —
+against deadlines of seconds, and never a mark that outlives its request.
+The one mark site runs under the stream lock, so nothing competing lands
+in the pause; a completion that does only clears the mark. An in-step port
+read is granted to `LocalHlc` alone, whose stamps must never go backwards.
 
 **Observations for batch F.** `DeltaMerger` and `GossipEngine` are typed
 against the concrete `LocalHlc` because `HlcProvider` is a shared port and
