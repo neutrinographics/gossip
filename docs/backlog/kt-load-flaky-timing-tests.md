@@ -33,6 +33,12 @@ anyone is listening and the assertion waits on a message that has already
 gone by. The fix is the ordinary one: await the subscription (or collect
 from a flow that replays) before acting.
 
+A related hygiene gap surfaced in the same batch: a test method written as
+an expression body that ends in a non-void assertion gets a non-void return
+type, and the test runner silently skips it while still reporting a green
+build; only counting the executed cases against the declared ones shows the
+gap. A gate that does that count belongs with the architecture gates.
+
 ## Why it matters
 
 A flaky test trains people to rerun instead of read. Every future batch

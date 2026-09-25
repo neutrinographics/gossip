@@ -906,7 +906,7 @@ gained: `addPeer` returns `PeerAdmission`; `FailureDetector` takes
 
 ## Addendum (batch D, 2026-09-25)
 
-**Fixes landed (gossip-kt PR #13, head 5ff6a80, suite 1,152 → 1,217; merge
+**Fixes landed (gossip-kt PR #13, head 98b2831, suite 1,152 → 1,218; merge
 pending):** KCA1-5, KCA1-38, KCA1-42.
 
 - KCA1-5: `GossipEngine` (1,060 → ~800 lines) keeps the round loop, message
@@ -951,8 +951,10 @@ span) now wait for and exclude a local append, compaction or removal of the
 same stream, and the single collector delays the next inbound frame by that
 local operation's length, bounded by repository IO plus one materializer
 fold; the planner waits on the same lock only in the rare
-authorship-claim branch. The continuation is returned to the engine and
-sent immediately with `sendDeltaRequest` unchanged. A pull's dedup clock
+authorship-claim branch. The continuation decision runs inside the same
+span (a third external round found a removal could slip between the
+apply and the mark); the continuation is returned to the engine and sent
+immediately with `sendDeltaRequest` unchanged. A pull's dedup clock
 still starts at its own send. The engine's constructor gains the shared
 lock holder — the one stated deviation from the spec's "engine tests
 unchanged" pin (three construction sites gain one argument, no assertion
