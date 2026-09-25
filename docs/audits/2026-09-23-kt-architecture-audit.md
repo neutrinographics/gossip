@@ -906,7 +906,7 @@ gained: `addPeer` returns `PeerAdmission`; `FailureDetector` takes
 
 ## Addendum (batch D, 2026-09-25)
 
-**Fixes landed (gossip-kt PR #13, head 98b2831, suite 1,152 → 1,218; merge
+**Fixes landed (gossip-kt PR #13, head f406d25, suite 1,152 → 1,218; merge
 pending):** KCA1-5, KCA1-38, KCA1-42.
 
 - KCA1-5: `GossipEngine` (1,060 → ~800 lines) keeps the round loop, message

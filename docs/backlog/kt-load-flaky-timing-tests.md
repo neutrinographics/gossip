@@ -60,9 +60,11 @@ times under load.
   ledger holds the tally. Its ten-second wall-clock timeouts are the
   suspect.
 - `CoordinatorTest`'s log-forwarding test threw a concurrent-modification
-  error once (PR #12, round 3): it iterates a synchronized list without
-  holding its monitor while the log callback appends from another thread —
-  a test-only fix.
+  error (PR #12, round 3, and twice more during PR #13): it iterated a
+  synchronized list without holding its monitor while the log callback
+  appended from another thread. Fixed in PR #13 (f406d25) by making every
+  recording list in that file copy-on-write, so iteration is a snapshot;
+  batch D's own removal pin had the same defect and the same fix.
 - `CausalityTest`'s "HLC physical time advances with simulated time" failed
   once during PR #12's review rounds (a sequence-hole protocol error from a
   compaction race), green in isolation and in the next two full runs; the
