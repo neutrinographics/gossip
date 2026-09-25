@@ -981,7 +981,7 @@ should look at; if it shows, a cached or existence-only read is the fix.
 
 ## Addendum (batch E, 2026-09-25)
 
-**Fixes landed (gossip-kt PR #14, opened 2026-09-25, head 9b07f21,
+**Fixes landed (gossip-kt PR #14, merged 2026-09-25 as 9704c96, head 9b07f21,
 suite 1,218 → 1,255):** KCA1-13, KCA1-14, KCA1-15.
 
 - KCA1-14: the six stateful domain services are gone as a shape. `HlcClock`,
