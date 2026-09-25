@@ -906,7 +906,7 @@ gained: `addPeer` returns `PeerAdmission`; `FailureDetector` takes
 
 ## Addendum (batch D, 2026-09-25)
 
-**Fixes landed (gossip-kt PR #13, head 1f4ad0a, suite 1,152 → 1,214; merge
+**Fixes landed (gossip-kt PR #13, head 5ff6a80, suite 1,152 → 1,217; merge
 pending):** KCA1-5, KCA1-38, KCA1-42.
 
 - KCA1-5: `GossipEngine` (1,060 → ~800 lines) keeps the round loop, message
@@ -968,6 +968,11 @@ common no-adoption branch can outlive a removal until the tracker's timeout
 reader on either twin (parity debt).
 
 **Consumer notes for the server bump after batch F.** `Coordinator.create`
-is unchanged; the server constructs the coordinator, not the engine.
+is unchanged; the server constructs the coordinator, not the engine. After
+the second external review round the per-stream planning step runs under
+the stream lock with an under-lock channel re-read, so the server now pays
+one `ChannelRepository.findById` per stream digest per inbound digest
+(was one per channel digest) — a Postgres read that item 10's re-measure
+should look at; if it shows, a cached or existence-only read is the fix.
 `ChannelService.foldMergedEntries` now refuses an unsorted batch.
 `EntriesMergedCallback` moved packages (only if the server names it).
