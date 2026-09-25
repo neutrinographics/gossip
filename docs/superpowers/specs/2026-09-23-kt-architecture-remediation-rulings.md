@@ -344,3 +344,23 @@ the wire-efficiency phase brings it. Ruling 10's "merge path" also gained
 one guarantee the ruling did not ask for: `DeltaMerger` holds the stream's
 lock across the merge, shared with local appends, compaction and removal,
 which is what closed the limits batches A and C had parked.
+
+**Precision note (batch E execution, 2026-09-25).** Three refinements to
+rulings 11 and 12. First, the generic holder sits behind a port: the
+application layer is typed against `StateCell<T>` in `shared/domain/interfaces`
+(`update` runs a transition against the current value as one step; `read`
+runs a query), and `SynchronizedState<T>` in `shared/infrastructure` is its
+one implementation — batch B's layer rule (application never names
+infrastructure) applies to the holder as much as to the wrappers, and the
+wrapper-coverage gate admits exactly one such holder. Second, randomness is
+an input: `ProbeTargetSelector` takes the random draw as an argument rather
+than owning a generator, so a selection is a pure function and a test needs
+no seeding. Third, the pending-ping registry, which the batch-B ledger
+carried into this batch, splits the same way with one placement decision:
+the `PendingPings` value records what is outstanding, and the coroutine
+deferreds an ack completes are owned by the failure detector in a cell of
+its own, so the domain carries no coroutine type. The detector's transition
+is spelled as two named transitions on the peer (`probeFailed`, `contacted`)
+rather than one `transition(now, thresholds)`, because the two are decided
+at different call points with different inputs; the registry applies each
+under its one lock, which is what ruling 11 asked for.

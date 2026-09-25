@@ -56,6 +56,12 @@ flags and scopes stay put.
 ## Related
 
 - **Done:** gossip-kt 26e5e24 (PR #7, 2026-09-02).
+- **Done, second half:** the wrapper-per-service shape this item shipped
+  was itself superseded by ruling 11 of the
+  [architecture remediation rulings](../superpowers/specs/2026-09-23-kt-architecture-remediation-rulings.md):
+  batch E (gossip-kt PR #14, 2026-09-25) made the six services stateless —
+  immutable values, pure transitions, one generic holder — and deleted
+  their six wrappers. Wrappers remain for aggregates only.
 - **Rulings for review:**
   [Kotlin domain purification — rulings](../superpowers/specs/2026-09-02-kt-domain-purification-rulings.md)
   (2026-09-02) — the inventory of every lock outside `infrastructure/` and

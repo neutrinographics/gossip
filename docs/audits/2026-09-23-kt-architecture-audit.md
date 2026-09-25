@@ -978,3 +978,106 @@ one `ChannelRepository.findById` per stream digest per inbound digest
 should look at; if it shows, a cached or existence-only read is the fix.
 `ChannelService.foldMergedEntries` now refuses an unsorted batch.
 `EntriesMergedCallback` moved packages (only if the server names it).
+
+## Addendum (batch E, 2026-09-25)
+
+**Fixes landed (gossip-kt PR #14, opened 2026-09-25, head b43fcf2,
+suite 1,218 → 1,255):** KCA1-13, KCA1-14, KCA1-15.
+
+- KCA1-14: the six stateful domain services are gone as a shape. `HlcClock`,
+  `GossipTimingPolicy`, `PendingPullTracker`, `ProbeTargetSelector`,
+  `ProbeTimingPolicy` and `LoopGeneration` are pure objects over immutable
+  values (`Hlc`, `GossipTiming`, `PendingPulls` with `RttTracking`,
+  `ProbeSelection`, `ProbeTiming` with `ProbeTimingConfig`, `Generation`):
+  each transition is a function from (state, inputs) to (state, result),
+  time and randomness are inputs, and each has a property-style test. The
+  value lives in one generic holder, `SynchronizedState<T>`, the only
+  implementation of the `StateCell<T>` port (`update` runs a transition as
+  one step against the current value; `read` runs a query); the
+  application layer composes value, object and cell, and the six bespoke
+  `Synchronized*` wrappers plus `SynchronizedPendingPingRegistry` are
+  deleted. `LocalHlc` (sync/application) is this node's clock over a
+  `StateCell<Hlc>` and the clock port, reading the wall clock inside the
+  deciding step on purpose, with the port's leaf obligation stated. The
+  pending-ping registry the batch-B ledger carried splits the same way:
+  `PendingPings` records what is outstanding; the deferreds an Ack
+  completes are the detector's, in a cell of their own, completed outside
+  any monitor. The wrapper-coverage gate admits exactly two shapes:
+  `open` aggregate + `Synchronized*` subclass + reflection pin, and the
+  one holder. The recorded `PendingPullTracker` smell closes on this side.
+- KCA1-13: `FailureThresholds` is a validated value; the transition table is
+  on `Peer` (`probeFailed(thresholds)`, `contacted(atMs)`), and
+  `PeerRegistry.recordProbeFailure` / `updatePeerContact` apply it under
+  the wrapper's one lock and return the resulting status, so the detector
+  no longer reads, decides and writes across three lock acquisitions; the
+  race is pinned (twenty concurrent failures, one transition each rung).
+  The detector's dead default thresholds are gone; `Coordinator.create` had
+  passed the configured ones since 9042b80.
+- KCA1-15: `LoopScheduler` is a port in `shared/domain/interfaces`
+  (`start(Loop)`, `stop`, `isRunning`); `GenerationScheduler` is its
+  adapter in `shared/infrastructure` over the time port and a scope;
+  `LoopGeneration` stays pure in the domain.
+- Beyond the plan, from the reviews: the leaf-port obligation the deleted
+  clock wrapper used to state is restated on `LocalHlc` and on the
+  `StateCell` contract (with the stated exception for a value that carries a
+  handle completed outside the cell); the unreachable-probe counter is a
+  cell; one private apply-and-announce in the registry; a once-only
+  duplicate-Ack pin; `PendingPingRegistry` sits with the services.
+
+**Timing against main, stated on purpose.** Twelve side-effect rows moved;
+the review's table is in the batch ledger. The ones a consumer could see:
+a duplicate `start()` on a running scheduler was a restart at main (the
+generation bumped, the pending delay went stale, a fresh delay armed under
+the newly passed loop) and is now a no-op that discards the incoming loop —
+the plan's "start-idempotence stays" premise was wrong about main, the new
+behaviour is the stricter one, and it is unreachable through the
+coordinator, engine or detector, each of which guards `isRunning` first.
+A failed probe that crosses a threshold now publishes `PeerStatusChanged`
+before the INFO verdict line (was after) and dispatches once (was twice);
+the log's count token is the crossed threshold, equal to the peer's count at
+every reachable crossing. The clock reads that fed the pull tracker and the
+ping registry moved out of their monitors to the caller (an input), except
+the pending ping's send stamp, which a review round hoisted after a task
+had moved it in; `tryMark` marks at the instant it judged (one read, not
+two). `updatePeerContact` writes contact, count and status as one value and
+then queues the event (was event, then a second write; not observable —
+events drain after the call), and reports the status the contact left so
+the detector's recovery line is decided by the write that made it, not by
+a read before it; a status write that changes nothing now stores an equal
+copy (was skipped; no identity check or event depends on it). HLC restore builds the cell from the saved
+value instead of constructing and then restoring (same state). Everything
+on the probe round, `probe()` and its cleanup, Ack handling, pull
+mark/release/complete, HLC issue and receive, scheduler tick/stop, gossip
+pacing, both lifecycles and error reporting is at its original call point
+with its original conditions.
+
+**Observations for batch F.** `DeltaMerger` and `GossipEngine` are typed
+against the concrete `LocalHlc` because `HlcProvider` is a shared port and
+`receive` is sync-only (deliberate; recorded). `handleAck` takes two cell
+reads where main took one (interleavings traced in the Task 8 review; at
+worst one late RTT sample, never a verdict). `Coordinator` builds the
+compaction scheduler even when no interval is configured (one generation
+bump on a closed gate). Carried from D: `GossipEngine`'s constructor and
+the flush fan-out; `StalledRangeRegistry` shared by three services;
+`healthStatus`'s two reads; `ContiguityGap` self-validation; `StreamLocks`'
+home; the shared gate scanner; Gradle test inputs; a silently-skipped-test
+gate.
+
+**Consumer notes for the server bump after batch F.** Constructor changes
+are root-only (`FailureDetector` takes thresholds, a grace period and three
+cells — pings, awaiting acks, rounds since the last unreachable probe;
+`GossipEngine`, `DeltaMerger`, `PullPlanner` take `LocalHlc`, a
+`StateCell<PendingPulls>` and `StreamLocks`); `Coordinator.create` is
+unchanged. `PeerRegistry.updatePeerContact` and `PeerService.recordPeerContact`
+return `PeerStatus?` (the status left; null for an unknown peer). Removed or re-meant public surface, to grep for at the bump:
+`FailureDetector.checkPeerHealth` is gone and `recordProbeFailure` now
+transitions and logs where it only incremented; `PeerOperationSkipped.operation`
+for an unknown-peer failure reads `recordProbeFailure` (was
+`incrementFailedProbeCount`) — a published event payload; the seven deleted
+wrappers. Newly public or moved types, only if the server names them:
+`PendingPing` (values), `IntervalMode`, `RttTracking`, `PendingPulls`,
+`PendingPings`, `ProbeSelection`, `ProbeTiming`, `ProbeTimingConfig`,
+`Generation`, `FailureThresholds`, `StateCell`/`Transition`, `LoopScheduler`;
+`PendingPingRegistry` and `PendingPings` live under `membership/domain/services`.
+A duplicate `start()` is a no-op (above). No wire, storage or event-sequence
+change.

@@ -51,6 +51,16 @@ detection off a newly added peer only when the add actually registered or
 revived it, so a repeated announcement of a known peer cannot renew the hold.
 Each is a register row.
 
+Seven more came out of batch E (2026-09-25), the pure-domain batch: the
+hybrid logical clock, gossip pacing, pending pulls, probe target selection
+and probe timing each split into an immutable state value plus pure
+functions, with the value held by one generic holder the application layer
+composes (randomness and the time are inputs, so every transition is
+reproducible in a test); the peer's status transition table living on the
+peer itself, applied by the registry; and the periodic scheduler as a
+domain port with an infrastructure adapter. The pending-pulls split is the
+one the tracker-reshape item already owns; the other six are register rows.
+
 ## Why it matters
 
 The migration's ground rule is bidirectional: the Kotlin library catching up
