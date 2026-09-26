@@ -69,6 +69,12 @@ the whole directory. Two other batch F items are recorded as Kotlin-only
 JUnit would silently skip), and the in-memory bus's placement is the owner's
 call (the register row says why).
 
+Batch G (2026-09-26), the minor sweep, added three small ones: the skipped-operation
+event carrying a typed operation rather than a string; the port contract stating
+what message priority promises and the in-memory simulator honouring it so the
+contract can be tested; and the materializer contract saying that an empty
+persisted cursor means "nothing folded yet", not corruption.
+
 ## Why it matters
 
 The migration's ground rule is bidirectional: the Kotlin library catching up

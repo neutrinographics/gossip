@@ -1190,3 +1190,108 @@ flaky-tests item.
 **Owner-facing.** Ruling 14's Dart premise was wrong (Dart's bus is in the
 library); the register carries the row for the owner's call. Batch G (the
 minor sweep) is on the roadmap as its own item before the bump.
+
+## Addendum (batch G, 2026-09-26)
+
+**Fixes landed (gossip-kt PR #16, opened 2026-09-26, head 8c1db40, suite
+1,269 → 1,282 across both modules — root 1,219, testing 63):** KCA1-30, 31, 33, 34, 36, 41, 43,
+44, 45, 46, and the batch E/F observations (the registry's return-shape
+asymmetry, the compaction scheduler built when compaction is off,
+`ContiguityGap` self-validation, `healthStatus`'s two reads). KCA1-51 closes
+as parity (both twins keep the retention policies under
+`sync/domain/services`).
+
+- Membership: a status move is one value, `PeerStatusChange(from, to)`,
+  nullable when nothing moved; `PeerRegistry.updatePeerContact` and
+  `recordProbeFailure` return it, the detector reads `to` for the verdict
+  and `from` for the recovery line (both INFO lines unchanged, pinned).
+  `PeerOperationSkipped.operation` is the enum `PeerOperation` (KCA1-30).
+- Coordinator: one `stopEngines()` (engine, detector, compaction — the same
+  order at the three sites; KCA1-31); the compaction scheduler exists only
+  when an interval is configured (`LoopScheduler?`); `healthStatus` counts
+  from one registry snapshot.
+- Sync: a channel that vanishes between listing and read is logged at
+  WARNING and still advertised empty (KCA1-33); the materialization service
+  is required — the only production construction always passed one, so the
+  three policies for its absence collapse to none (KCA1-34); one
+  `hasSendCapacity` predicate (KCA1-41); `ContiguityGap` requires what a gap
+  is; an empty persisted cursor restores as a start, not a rebuild, and the
+  materializer contract says so (KCA1-36 — kt wrote `""` for "nothing
+  folded" and read it as corruption; Dart never writes one).
+- Shared: the RTT timeout defaults have one home (KCA1-45); `LogEntry.sizeBytes`'s
+  comment says what the heuristic is (the formula is Dart's, unchanged;
+  KCA1-43); `HlcProvider`'s KDoc names application services (KCA1-46); the
+  `MessagePort.send` priority contract is stated and the in-memory bus
+  honours it on a held link (KCA1-44).
+
+**Timing against main, stated on purpose.** The three stop paths are in
+their original order (engine, detector, compaction) at their original
+points. `healthStatus` takes one registry read where it took two — the two
+counts can no longer disagree. A coordinator without a compaction interval
+builds no scheduler (it built one and never started it). A vanished channel
+now produces one WARNING line where it produced nothing. A materializer
+restored from an empty cursor folds from the start instead of being fully
+rebuilt — the same folds, without the reset. The in-memory bus (test
+dependency) delivers HIGH before NORMAL when a held link is released;
+production transports are unchanged. Nothing else moved.
+
+**Review rounds.** The whole-branch review found one Important — the
+empty-cursor rule is consumer-visible and was missing from the bump list
+(added above, with the server's `UserMaterializer` named) — and six Minors,
+five taken in one fix wave (a deleted pin retargeted to the stream-existence
+branch it still proves; the bus's `route` loses a priority default nothing
+needed; `startCompaction` loses a guard and its how-comment; `stopEngines`'s
+KDoc loses "inverse"; one shared inert-materialization fixture with its
+reason) and one recorded (the event and the return value spell the same
+transition twice — a register row for the next structural batch). The
+`DeltaMergerTest` serialization case failed in five of roughly ten full
+runs of this batch and passed in isolation every time; the flaky-tests item
+records the frequency.
+
+**Observations left.** `ChannelService.entryRepository` remains the one
+nullable dependency, with `StorageSyncError` branches for its absence — the
+same kind of policy the materialization one was, but part of the public
+error surface; a joint decision with Dart, not a sweep item.
+
+**The server bump (after this batch).** Everything batches A–G changed that
+the server can see, collected once:
+- Build: add `testImplementation` on `gossip-kt-testing`; the server's
+  `DigestExchangeReadsNoMarksTest` imports
+  `com.neutrinographics.gossip.testing.bus.InMemoryMessageBus` (F).
+- Repositories: `PgEntryRepository`, `MarksCachingEntryRepository` and the
+  test `RecordingEntryRepository` drop `streamIds` and
+  `entriesForAuthorAfter`; `PgLocalNodeRepository` drops its two incarnation
+  methods; `PeerDto` drops `incarnation` (C). `ChannelAggregate.copy()`
+  exists; `reconstitute` stays for the Postgres adapter (F).
+- Config and health: `CoordinatorConfig(maxConnections = …)` no longer
+  compiles; `HealthStatus` gains `state`; `CoordinatorConfig` validates its
+  thresholds and durations (C).
+- Events: the seven dead `SyncErrorType` values and the never-produced
+  events are gone (C); `PeerOperationSkipped.operation` is the enum
+  `PeerOperation` — a server match on the old string switches (E rename, G
+  type); `PeerRegistry.addPeer`/`PeerService.addPeer` return `Boolean` (C).
+- Registry and service returns, only if the server calls them:
+  `updatePeerContact`/`recordPeerContact` and `recordProbeFailure` return
+  `PeerStatusChange?` (E, then G); `FailureDetector.checkPeerHealth` is gone
+  and `recordProbeFailure` transitions and logs (E).
+- Persisted cursors grow to `Hlc(p:l)|author|seq` (fits the column);
+  existing ones keep parsing (C). An empty persisted cursor now restores as
+  a start — the same folds from the beginning without the reset — where it
+  forced a full rebuild before (G); the server's `UserMaterializer` persists
+  the cursor string it is handed and loads it back as is, so a user channel
+  with nothing folded yet stops being rebuilt on every start; a materializer
+  whose `initial` reports "nothing saved" as `null` is unaffected.
+- Behaviour: every WebSocket `peers.add` sends a digest at once and holds
+  probing 10 s unless the bootstrap probe answers (C); detector transitions
+  log at INFO (B); one `ChannelRepository.findById` per stream digest per
+  inbound digest — watch it in the re-measure (D); a duplicate `start()` is
+  a no-op (E); `ChannelService.foldMergedEntries` refuses an unsorted batch
+  (D); the priority a server port ignores is now stated as advisory (G).
+- Types moved or newly public, only if the server names them: `EntriesMergedCallback`
+  (D); `PendingPing`, `IntervalMode`, `RttTracking`, `PendingPulls`,
+  `PendingPings`, `ProbeSelection`, `ProbeTiming`, `ProbeTimingConfig`,
+  `Generation`, `FailureThresholds`, `StateCell`/`Transition`,
+  `LoopScheduler`, `PendingPingRegistry` under `membership/domain/services`
+  (E); the seven deleted `Synchronized*` service wrappers (E).
+- Acceptance from batch A stands: surface the events backlog depth and
+  measure the collector's throughput in a room.

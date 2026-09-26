@@ -85,7 +85,10 @@ times under load.
 - Seen during batch F (2026-09-26): `DeltaMergerTest`'s "two concurrent
   merges of one stream serialize — no partial batches, no spurious errors"
   failed once under full-suite load and passed three of three in isolation;
-  the batch touched no merge code. A fifth member of the list.
+  the batch touched no merge code. A fifth member of the list — and during
+  batch G (2026-09-26) it failed in five of roughly ten full runs and passed
+  in isolation every time, so it is now the most frequent flake in the suite
+  and the reason this item should move up.
 - The Dart side's adverse-network harness is the model for
   simulated-time-driven tests:
   [Simulate adverse network conditions in the test harness](testing-network-condition-simulation.md).
