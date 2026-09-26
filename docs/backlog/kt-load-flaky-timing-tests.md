@@ -82,6 +82,10 @@ times under load.
 - Recorded during the
   [Kotlin domain purification](../superpowers/specs/2026-09-02-kt-domain-purification-rulings.md)
   batch (its ledger lists both occurrences).
+- Seen during batch F (2026-09-26): `DeltaMergerTest`'s "two concurrent
+  merges of one stream serialize — no partial batches, no spurious errors"
+  failed once under full-suite load and passed three of three in isolation;
+  the batch touched no merge code. A fifth member of the list.
 - The Dart side's adverse-network harness is the model for
   simulated-time-driven tests:
   [Simulate adverse network conditions in the test harness](testing-network-condition-simulation.md).

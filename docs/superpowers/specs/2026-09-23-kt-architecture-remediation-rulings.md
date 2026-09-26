@@ -364,3 +364,27 @@ is spelled as two named transitions on the peer (`probeFailed`, `contacted`)
 rather than one `transition(now, thresholds)`, because the two are decided
 at different call points with different inputs; the registry applies each
 under its one lock, which is what ruling 11 asked for.
+
+**Precision note (batch F execution, 2026-09-26).** Ruling 14 says Dart
+keeps its in-memory bus under `test/`. It does not: Dart's
+`InMemoryMessageBus` and `InMemoryMessagePort` live in the library, in
+`packages/gossip/lib/src/shared/infrastructure/in_memory_message_port.dart`.
+The Kotlin move stands on the finding's own ground — KCA1-25, a simulator
+shipped in the production artifact a consumer pays for — and the Dart side
+becomes a register row for the owner rather than a reason to keep kt's bus
+in `src/main`. `InMemoryMessagePort` moved with the bus (it is the bus's
+port; nothing in the library constructs either), and the harness that
+drives whole nodes moved with them, so the testing module is a second
+consumption root beside `coordinator/`, allowed to name every context.
+`InMemoryTimePort` stayed, as ruled. Ruling 14's "one-file allowlist for
+the ACL concession" replaced a directory rule that had exempted every
+`infrastructure/` file: the allowlist names `MembershipPeerDirectory.kt`
+alone and fails as stale when a listed file stops reaching across, so a
+second adapter that crosses a context is a reviewed edit, not a free ride.
+Ruling 13's "frame classification and the envelope layout live in
+`WireTypes` alone" was already true of classification before the audit;
+what batch F moved was the envelope width (onto the framing the classifier
+returns), the two dialects' shared digest codec, and each dialect's
+expansion arithmetic. A seventh gate not in any ruling, `TestShapeTest`,
+came out of the batch E lesson that JUnit skips a value-returning `@Test`
+without a word.

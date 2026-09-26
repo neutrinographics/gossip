@@ -49,7 +49,7 @@ was decided. Anything not listed here is expected to reach parity.
 | E1 | Sublayer name `value_objects/` (Dart) vs `values/` (kt) | Kotlin package names cannot contain underscores. Normalizable only by Dart renaming *toward* the forced abbreviation — kept, because "value object" is the domain term and Dart is the normative side | Structure mirror, 2026-08-29; upheld on review, 2026-09-01 |
 | E2 | kt has no `KeyedTaskChain` | kt has `DeltaMerger` and `PullPlanner` with Dart's `DeltaMerger`/engine-side responsibilities since the architecture remediation's batch D (gossip-kt PR #13); what it still lacks is the `KeyedTaskChain`, because its single-collector receive loop serializes handlers — and its merge path additionally takes the stream lock local writes hold, which Dart's merger chain does not. Reassess the chain only if Dart ever adopts a single-dispatch receive loop | Divergence register, "Merge-path serialization"; restated 2026-09-25 |
 | E3 | kt needs thread safety Dart never will (ADR-001 is Dart-only; the single-threaded-confinement alternative was rejected: it would serialize the server's suspending repository work and still not cover the non-suspend lifecycle facade) — but **NARROWED 2026-09-02 (owner)**: the exemption covers only *infrastructure wrappers, coroutine-scope parameters, and application mutexes whose critical sections suspend across repository IO* (the per-stream append mutex and the per-materializer mutex — exactly two, each allow-listed line by line). Locks inside domain or application classes are otherwise NOT exempt — the domain stays pure, per [the purification item](backlog/kt-pure-domain-concurrency.md); no volatile flag survives outside `infrastructure/` and the check rejects one. **Machine-checked** since gossip-kt 26e5e24 (2026-09-02) by `LockPlacementTest`, which scans every package reference to a concurrency library over comment-scrubbed source. One recorded carve-out to the wrappers' "call nothing while held" rule: the clock's and pull tracker's leaf `TimePort.nowMs` read inside their monitors (the pure classes hold the port for Dart parity) | Divergence register, "Thread-safety posture"; upheld 2026-09-01, narrowed 2026-09-02 |
-| E4 | kt names its pending-ping bookkeeping as a class (`PendingPingRegistry`, application layer) where Dart keeps the same map inline in its detector | The entry carries the ack signal, a coroutine deferred, so kt needs a wrapper around it and a wrapper needs a pure body to wrap; Dart's single isolate needs neither. Same state, same contract, one extra named class on the kt side — not a flow-back, because Dart would gain nothing from it | Purification batch review, 2026-09-02 |
+| E4 | kt names its pending-ping bookkeeping as a domain service (`PendingPingRegistry`, a pure object over a `PendingPings` value) where Dart keeps the same map inline in its detector | kt needs the outstanding pings to be one value a monitor can guard because acks arrive on other threads; the coroutine deferreds an ack completes are the detector's own, in an application-held cell (batch E, 2026-09-25), so the domain carries no coroutine type. Same state, same contract, one extra named object on the kt side — not a flow-back, because Dart would gain nothing from it | Purification batch review, 2026-09-02; restated after batch E |
 
 An exemption is falsifiable: if a later incident shows the skipped thing did
 have a purpose, delete the row and open a port item. The first review
@@ -60,6 +60,15 @@ construction-time zero-dropping; homed as KT-E scope in the
 **gains `resume()`** for API and vocabulary parity (folded into the
 receive-loop lifecycle batch's rulings; shipped in gossip-kt ea0d51c,
 2026-09-15, with Dart's throwing preconditions).
+
+**Shared items (both twins the same, no divergence to register — 2026-09-26).**
+Found while planning batch F of the Kotlin remediation, each true of both
+libraries and so a joint improvement if ever taken, not a flow-back: the
+reactive pusher owns *when* to push while the engine owns the sending on both
+sides; the retention policies sit under `sync/domain/services` on both sides
+beside the pure protocol services; and the gossip engine's constructor is as
+wide on both sides (kt takes twenty-one parameters), because both composition
+roots wire every collaborator by hand.
 
 ## Open joint decisions
 

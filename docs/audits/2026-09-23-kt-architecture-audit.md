@@ -1107,3 +1107,86 @@ wrappers. Newly public or moved types, only if the server names them:
 `PendingPingRegistry` and `PendingPings` live under `membership/domain/services`.
 A duplicate `start()` is a no-op (above). No wire, storage or event-sequence
 change.
+
+## Addendum (batch F, 2026-09-26)
+
+**Fixes landed (gossip-kt PR #15, opened 2026-09-26, head dda41a4, suite
+1,255 → 1,269 across both modules — root 1,208, testing 61):** KCA1-22, KCA1-25, KCA1-47 (the
+remainder), KCA1-48, KCA1-49. Recorded as already closed by earlier work,
+not by this batch: KCA1-24 (`LocalNodeRepository` matched Dart's shape after
+batch C, and ruling 6 made the finer split a shared follow-up), KCA1-26
+(`getTailTimestamp` contract coverage landed with batch C), KCA1-35
+(`ChannelService.dispose` is a one-liner since `StreamLocks`, batch D),
+KCA1-50 (the README's counts were already gone).
+
+- KCA1-22: frame classification was already `WireTypes`' alone; the envelope
+  width now travels on the framing the classifier returns
+  (`FrameFraming.V1.envelopeWidth`, `V2.envelopeWidth`; the undecodable case
+  has none), so neither codec facade spells the width. The two sync dialects
+  share their digest and version-vector codec (`SyncWireCommon`, six
+  functions that were byte-identical copies) and each owns its expansion
+  arithmetic (`SyncWireV1.maxEntryPayload = usable / 4`,
+  `SyncWireV2.maxEntryPayload = (usable / 4) * 3`); the facade subtracts the
+  envelope overhead and dispatches. Golden and conformance fixtures unchanged.
+- KCA1-47: `ChannelAggregate.copy()` — a snapshot behind fresh collections,
+  no uncommitted events — for the in-memory repository, which no longer
+  reconstitutes from outside the aggregate. `reconstitute` stays for
+  persistence adapters.
+- KCA1-25: `InMemoryMessageBus`, `InMemoryMessagePort` and the seven-file
+  harness (`TestNetwork`, `TestNode`, `Scenario`, `FixedClock`,
+  `TestInstant`, `GuardedMemberPin`) live in `gossip-kt-testing`
+  (`testing/bus`, `testing/harness`); the artifact ships neither (jar
+  listing: zero entries). `InMemoryTimePort` stays. The boundary gate's
+  `testing` row names `coordinator` and `membership` too, because a harness
+  that drives whole nodes is a consumption root like the composition root
+  it constructs; the lock and clock gates learned the module's adapter
+  trees.
+- KCA1-48, 49 and the carried gate items: one `SourceTrees` scanner for the
+  gates (roots, project-root guard, walk, comment scrub); `BoundaryTest`
+  blanks comments, states its limits (type aliases, reflection, strings) and
+  pins the ACL concession to `MembershipPeerDirectory.kt` alone, failing a
+  listed file that stops reaching across; the wire fixture loads guard the
+  project root; `RetiredSurfaceTest` states that a renamed revival is not
+  seen; both test tasks declare the scanned trees as inputs so a
+  comment-only change re-runs the gates; and a seventh gate,
+  `TestShapeTest`, fails any `@Test` method that returns a value (JUnit 5
+  skips it silently — the batch E lesson, now mechanical); the check itself
+  is `TestShape` in the testing module's harness, walks a module's compiled
+  test classes and their ancestors (the inherited contract tests included),
+  and both modules run it over their own tests. Each was proved
+  by mutation before and after: a KDoc naming another context failed the
+  old gate and passes the new; a stray reach from a second infrastructure
+  file passed the old gate and fails the new, naming the allowlist; a
+  value-returning test ran 12 of 13 declared cases under the old suite and
+  fails the new gate by name.
+
+**Timing against main, stated on purpose.** Nothing observable moved: the
+codec's bytes are pinned by the fixtures; the aggregate copy is the same
+snapshot the adapter made by reconstituting; the moved classes have no
+production caller. The whole-branch review's table is therefore empty and
+was still written.
+
+**Consumer notes for the server bump after batch G.** The server's
+`DigestExchangeReadsNoMarksTest` constructs `InMemoryMessageBus` from
+`shared.infrastructure`; it imports
+`com.neutrinographics.gossip.testing.bus.InMemoryMessageBus` after the bump
+and the server's build adds `testImplementation` on `gossip-kt-testing`
+(absent today). `ChannelAggregate.copy()` only if named. No wire, storage,
+event or constructor change.
+
+**Review rounds.** The whole-branch review found one Important item — the
+skipped-test gate could not see the testing module's own tests and said the
+module had none — and eight Minors; the fix wave made the check the
+harness's, run by both modules (probes red in each), keyed the allowlist
+project-relative like its sibling gates, and corrected three KDoc claims,
+one of which (that a string literal is not seen) the plan itself had
+prescribed wrongly. Not taken, recorded: a stale check for the adapter-tree
+exemption (the trees exist by construction); a `Decodable` sub-interface
+to finish ruling 13 by construction (a design change, later); the
+self-referential delegation test (the fixed-value budget test is the pin).
+A `DeltaMergerTest` serialization case flaked once under load and joins the
+flaky-tests item.
+
+**Owner-facing.** Ruling 14's Dart premise was wrong (Dart's bus is in the
+library); the register carries the row for the owner's call. Batch G (the
+minor sweep) is on the roadmap as its own item before the bump.

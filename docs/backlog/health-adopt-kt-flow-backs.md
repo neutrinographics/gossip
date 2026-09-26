@@ -61,6 +61,14 @@ peer itself, applied by the registry; and the periodic scheduler as a
 domain port with an infrastructure adapter. The pending-pulls split is the
 one the tracker-reshape item already owns; the other six are register rows.
 
+One more came out of batch F (2026-09-26): the boundary test naming the one
+file allowed to reach across a context from its infrastructure layer, and
+failing that file as stale if it stops reaching across, instead of exempting
+the whole directory. Two other batch F items are recorded as Kotlin-only
+(the aggregate copying itself for callers on other threads; a gate for tests
+JUnit would silently skip), and the in-memory bus's placement is the owner's
+call (the register row says why).
+
 ## Why it matters
 
 The migration's ground rule is bidirectional: the Kotlin library catching up
