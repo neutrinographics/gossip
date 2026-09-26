@@ -1110,7 +1110,7 @@ change.
 
 ## Addendum (batch F, 2026-09-26)
 
-**Fixes landed (gossip-kt PR #15, opened 2026-09-26, head dda41a4, suite
+**Fixes landed (gossip-kt PR #15, merged 2026-09-26 as 25ac67e, head dda41a4, suite
 1,255 → 1,269 across both modules — root 1,208, testing 61):** KCA1-22, KCA1-25, KCA1-47 (the
 remainder), KCA1-48, KCA1-49. Recorded as already closed by earlier work,
 not by this batch: KCA1-24 (`LocalNodeRepository` matched Dart's shape after
