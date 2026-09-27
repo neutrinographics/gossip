@@ -1193,7 +1193,7 @@ minor sweep) is on the roadmap as its own item before the bump.
 
 ## Addendum (batch G, 2026-09-26)
 
-**Fixes landed (gossip-kt PR #16, opened 2026-09-26, head 69fec9e, suite
+**Fixes landed (gossip-kt PR #16, merged 2026-09-27 as b72569e, head 69fec9e, suite
 1,269 → 1,282 across both modules — root 1,219, testing 63):** KCA1-30, 31, 33, 34, 36, 41, 43,
 44, 45, 46, and the batch E/F observations (the registry's return-shape
 asymmetry, the compaction scheduler built when compaction is off,
