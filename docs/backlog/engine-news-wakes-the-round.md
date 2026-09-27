@@ -53,6 +53,8 @@ phones before the Dart half ships.
 
 ## Related
 
+- Rulings for review: [News wakes a sleeping gossip round — rulings](../superpowers/specs/2026-09-27-round-wake-rulings.md) (2026-09-27).
+
 - Sibling: [Coalesce wire traffic into fewer radio wakeups](engine-message-coalescing.md)
   (the pacing this item leaves intact); [Only tell a peer about the groups you both belong to](engine-scope-digests-to-shared-groups.md)
   (the other cost measured in the same run).
