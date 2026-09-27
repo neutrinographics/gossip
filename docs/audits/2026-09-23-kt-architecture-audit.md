@@ -1281,7 +1281,9 @@ the server can see, collected once:
 - Events: the seven dead `SyncErrorType` values and the never-produced
   events are gone (C); `PeerOperationSkipped.operation` is the enum
   `PeerOperation` — a server match on the old string switches (E rename, G
-  type); `PeerRegistry.addPeer`/`PeerService.addPeer` return `Boolean` (C).
+  type); `PeerRegistry.addPeer`/`PeerService.addPeer` return `PeerAdmission` (`ADDED`,
+  `RECOVERED`, `ALREADY_REACHABLE`; C — the list first said `Boolean`, the bump's
+  review corrected it; the server ignores the result).
 - Registry and service returns, only if the server calls them:
   `updatePeerContact`/`recordPeerContact` and `recordProbeFailure` return
   `PeerStatusChange?` (E, then G); `FailureDetector.checkPeerHealth` is gone
