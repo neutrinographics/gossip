@@ -1286,6 +1286,10 @@ the server can see, collected once:
   `updatePeerContact`/`recordPeerContact` and `recordProbeFailure` return
   `PeerStatusChange?` (E, then G); `FailureDetector.checkPeerHealth` is gone
   and `recordProbeFailure` transitions and logs (E).
+- Signatures the compile found that this list first missed (the bump's red
+  list is the proof, not the prose): `EventStream.registerMaterializer` is
+  `suspend` (C) — the server's `MaterializerRegistration.registerOn` follows;
+  `EntriesMerged` takes `at: Instant` (B) — a test fixture constructs it.
 - Persisted cursors grow to `Hlc(p:l)|author|seq` (fits the column);
   existing ones keep parsing (C). An empty persisted cursor now restores as
   a start — the same folds from the beginning without the reset — where it
