@@ -1193,7 +1193,7 @@ minor sweep) is on the roadmap as its own item before the bump.
 
 ## Addendum (batch G, 2026-09-26)
 
-**Fixes landed (gossip-kt PR #16, opened 2026-09-26, head 8c1db40, suite
+**Fixes landed (gossip-kt PR #16, opened 2026-09-26, head 69fec9e, suite
 1,269 → 1,282 across both modules — root 1,219, testing 63):** KCA1-30, 31, 33, 34, 36, 41, 43,
 44, 45, 46, and the batch E/F observations (the registry's return-shape
 asymmetry, the compaction scheduler built when compaction is off,
@@ -1247,6 +1247,18 @@ transition twice — a register row for the next structural batch). The
 `DeltaMergerTest` serialization case failed in five of roughly ten full
 runs of this batch and passed in isolation every time; the flaky-tests item
 records the frequency.
+
+**Owner-requested controller review (2026-09-27).** Every production hunk
+read against main for cohesion, coupling and the layer rules: the new values
+validate themselves, the registry returns a domain value whose two ends its
+one application consumer reads, nothing in `application/` names
+`infrastructure/`, and the simulator's priority lives in the test-dependency
+adapter over a shared domain value. Three KDocs fixed (69fec9e): one told
+history instead of intent, one value documented its own reader, and the
+shared kernel's clock port named a sync application class — a coupling in
+prose the boundary gate rightly does not see. Recorded for the next detector
+touch: the status-to-threshold mapping in the detector's verdict line is
+`FailureThresholds`' knowledge.
 
 **Observations left.** `ChannelService.entryRepository` remains the one
 nullable dependency, with `StorageSyncError` branches for its absence — the
