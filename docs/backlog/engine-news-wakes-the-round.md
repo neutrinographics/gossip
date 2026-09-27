@@ -42,10 +42,14 @@ Give the scheduler a way to be woken: restart the current wait with the
 policy's fresh interval when news arrives and the pending wait is longer than
 that interval (a node already at the fast pace is left alone, so a busy room
 does not round on every merge). Bound it by the pacing floor and jitter that
-already exist. Land it in the Kotlin library first (the server is the hub),
-then in Dart. Pin it with a test that arms a thirty-second wait, records news,
-and sees the next round within the fast interval; measure it again with two
-phones.
+already exist. Land it in the Kotlin library first (the server is the hub,
+so that half alone fixes presence latency for the fleet), then in Dart in the
+same shape — a Bluetooth mesh has no hub to come to a phone, so a phone that
+merges news from one neighbour must wake its own round before it can tell
+the next — then bump the app's pin so the phones carry it. Pin each half
+with a test that arms a thirty-second wait, records news, and sees the next
+round within the fast interval; measure the server half again with two
+phones before the Dart half ships.
 
 ## Related
 
