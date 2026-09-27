@@ -1,6 +1,6 @@
 # News wakes a sleeping gossip round — rulings
 
-**Status:** for the owner's review. **Item:** [Wake a sleeping gossip round when there is news](../backlog/engine-news-wakes-the-round.md) (High, confirmed 2026-09-27). **Applies to:** both twins, Kotlin first.
+**Status:** approved 2026-09-27 (see Review outcome). **Item:** [Wake a sleeping gossip round when there is news](../backlog/engine-news-wakes-the-round.md) (High, confirmed 2026-09-27). **Applies to:** both twins, Kotlin first.
 
 ## The finding, restated
 
