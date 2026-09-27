@@ -1265,8 +1265,13 @@ nullable dependency, with `StorageSyncError` branches for its absence — the
 same kind of policy the materialization one was, but part of the public
 error surface; a joint decision with Dart, not a sweep item.
 
-**The server bump (after this batch).** Everything batches A–G changed that
-the server can see, collected once:
+**The server bump — DONE.** opendoor-api PR #32 (merged 2026-09-27 as 1c77a30)
+moved the pin a850615 → b72569e and was released as Heroku v58 the same evening,
+after two live-device runs through the tunnel (one phone, then two). The compile
+found three signatures this list had missed (recorded above); the validation found
+no regression and two library items worth fixing next (the sleeping round, the
+digest storm). Everything batches A–G changed that the server can see, collected
+once:
 - Build: add `testImplementation` on `gossip-kt-testing`; the server's
   `DigestExchangeReadsNoMarksTest` imports
   `com.neutrinographics.gossip.testing.bus.InMemoryMessageBus` (F).
