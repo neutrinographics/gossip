@@ -34,8 +34,22 @@ there is no hub to come to a phone — has the same shape between every pair.
    nothing: a loop not running, a tick in flight (its next wait will read
    the fresh interval anyway), or a pending wait already shorter than the
    fresh interval (a node at the active cadence is left alone, so a busy room
-   does not round on every merge). To decide, the scheduler remembers when
-   its current wait ends (`TimePort.nowMs` at arming plus the delay).
+   does not round on every merge).
+
+   The decision is a rule, so it lives on the value, not in the adapter:
+   `Generation` gains the instant its current wait ends (`waitEndsAtMs`,
+   null while no wait is armed), `LoopGeneration` gains the pure transitions
+   `arm(g, endsAtMs)` and `wake(g, nowMs, freshDelayMs): Transition<Generation, Boolean>`
+   — a new generation and "re-arm" when a wait is pending and ends after
+   `nowMs + freshDelayMs`, the same generation and "leave it" otherwise —
+   and the adapter only executes the answer, as it already does for
+   `start`, `stop` and `expire`. The adapter reads `TimePort.nowMs` when it
+   arms and when it is woken (infrastructure is where the clock gate allows
+   that); the rule takes the reading as an input and is pinned by
+   property-style tests. On the Dart side the scheduler still carries its
+   own timer state (the port-and-adapter split is a recorded flow-back), so
+   the same pure rule sits beside the class there until that flow-back
+   lands.
 
 2. **News wakes the round.** The gossip engine's `recordNews()` — the one
    place both twins reset the pacer — calls `scheduler.wake()` after the
@@ -79,6 +93,10 @@ there is no hub to come to a phone — has the same shape between every pair.
 - **Parity:** the Dart scheduler's tests state the same five cases; the
   register carries any site where one twin records news and the other does
   not.
+- **Purity:** `Generation` stays a `data class`; `LoopGeneration.arm` and
+  `wake` are pure functions with property-style tests (same inputs, same
+  outputs, no mutation); nothing under `domain/` gains a `var`, and the
+  adapter gains no state outside its one cell.
 
 ## Consumer notes
 
@@ -90,4 +108,4 @@ there is no hub to come to a phone — has the same shape between every pair.
 
 ## Review outcome
 
-_Pending the owner's review._
+**Approved (owner, 2026-09-27)**, with the owner's request to check the rulings against DDD and Clean Architecture: the wake decision moved from the adapter onto the `Generation` value as pure transitions (ruling 1, precision), the port/adapter direction and the single news seam confirmed; the Purity pin added.
