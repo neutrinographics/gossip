@@ -134,6 +134,12 @@ as written here, not ruling 1's literal text.
   made where the answered pull is still known: the merge path receives what
   the response answered (the pull's ask, or nothing), since the mark itself
   is retired before the continuation is issued (Codex round 2).
+  And a page that answered no pull of ours can still say there is more; its
+  continuation re-arms the mark a pull still outstanding to that peer holds,
+  so the re-arm keeps that pull's authors — the pull's answer, arriving
+  next, must still be recognised as one (Codex round 4). Together: an
+  answered pull's authors come from the answer, an unanswered pull's from
+  the mark it left outstanding; both join the page's.
 - *Known limit, until ruling 3.* A peer whose history is truncated at the
   front and that reports no floor answers above everything asked, so by
   content it is indistinguishable from a push: no stall is recorded, no
