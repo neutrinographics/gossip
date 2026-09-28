@@ -109,3 +109,17 @@ there is no hub to come to a phone — has the same shape between every pair.
 ## Review outcome
 
 **Approved (owner, 2026-09-27)**, with the owner's request to check the rulings against DDD and Clean Architecture: the wake decision moved from the adapter onto the `Generation` value as pure transitions (ruling 1, precision), the port/adapter direction and the single news seam confirmed; the Purity pin added.
+
+**Precisions from the Kotlin half (gossip-kt PR #17, 2026-09-28).**
+
+- *The wait's end is kept on the timer's clock.* The deadline a wake compares
+  against must be on the timeline the wait itself is on, not the wall clock:
+  a device whose clock is set while a long wait is pending would otherwise
+  make the wait look over (the wake declines, the stale interval is slept)
+  or longer (a needless re-arm). The time port gains a monotonic reading
+  (`monotonicMs`; the simulated port's is its one clock), and the scheduler
+  arms and wakes on it. The Dart half does the same with a `Stopwatch`-backed
+  reading on its time port, not `DateTime.now()`.
+- *A wake asks for no interval when no wait is pending*, and its one update
+  applies only to the loop and generation its readings were taken from — a
+  stop and a start in between make them about nothing.
