@@ -121,5 +121,9 @@ there is no hub to come to a phone — has the same shape between every pair.
   arms and wakes on it. The Dart half does the same with a `Stopwatch`-backed
   reading on its time port, not `DateTime.now()`.
 - *A wake asks for no interval when no wait is pending*, and its one update
-  applies only to the loop and generation its readings were taken from — a
-  stop and a start in between make them about nothing.
+  applies only to the wait its readings were taken for — the same loop, the
+  same generation, the same wait end. A stop and a start in between make the
+  readings about nothing; so does that wait ending and the tick arming the
+  next under the same run, which would otherwise be cut short by an interval
+  read for its predecessor (one early tick). The Dart half carries the same
+  three-part binding.
