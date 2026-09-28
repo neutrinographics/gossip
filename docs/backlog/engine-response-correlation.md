@@ -42,6 +42,8 @@ heuristics piecemeal.
 
 ## Related
 
+- Rulings for review: [A delta response answers one pull, or none — rulings](../superpowers/specs/2026-09-28-response-correlation-rulings.md) (2026-09-28) — raised by the round-wake fix, whose Task 3 measured the misclassification at six of ten churn runs with the wake and none without.
+
 - Flagged concretely by the PR #15 review (a racing reactive push recorded
   as a stalled pull); the stalled-range spec documents the bounded impact.
 - The wire-versioning machinery that would carry a request id:
