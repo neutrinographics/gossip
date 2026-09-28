@@ -119,6 +119,18 @@ as written here, not ruling 1's literal text.
   vector on the mark after shaping it, so a response can arrive against a
   mark that carries none yet; that response completes the mark on
   existence alone, as today.
+- *An answer speaks to what the pull was for (ruling 2, precision; Codex
+  review of gossip-kt PR #17).* Ruling 2's "valid prefix" is a prefix of the
+  answer to *this* pull, so the mark records, besides `since`, the authors
+  the peer's digest showed it ahead on — what the pull was for. A response
+  answers only if, besides beginning where asked for every author it
+  carries, it carries one of those authors or reports a floor past what we
+  hold of one. Without this, a peer's push of its own newest entry, for an
+  author we hold at its tip, begins exactly where an answer would and would
+  retire a pull for a different author — on a mesh, where every peer
+  writes, the commonest response there is. A continuation's ask joins its
+  pull's authors with the authors its pages have carried, because which of
+  them the next page opens with is the responder's choice.
 - *Known limit, until ruling 3.* A peer whose history is truncated at the
   front and that reports no floor answers above everything asked, so by
   content it is indistinguishable from a push: no stall is recorded, no

@@ -46,7 +46,8 @@ heuristics piecemeal.
 - Ruling 1 (classify by content) landed in the Kotlin library on the
   round-wake branch (gossip-kt PR #17, 269f790): the pull mark carries the vector it
   asked for, and a response retires it only when its content can be the
-  answer; ten of ten churn runs clean with the wake. Known limit recorded in
+  answer — beginning where the pull asked, and speaking to an author the
+  pull was for; ten of ten churn runs clean with the wake. Known limit recorded in
   the rulings' Precisions: a peer truncated at the front that reports no
   compaction floor is indistinguishable from a push until the request id of
   ruling 3 lands. The Dart half rides the Dart round-wake plan; the item
