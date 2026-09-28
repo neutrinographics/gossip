@@ -1,6 +1,6 @@
 # A delta response answers one pull, or none — rulings
 
-**Status:** for the owner's review. **Item:** [Correlate delta responses with the pulls that solicited them](../backlog/engine-response-correlation.md) (Low today; this page asks to raise it). **Blocks:** the round-wake fix (gossip-kt `feature/round-wake`, Tasks 1–3 landed and green).
+**Status:** approved 2026-09-28. **Item:** [Correlate delta responses with the pulls that solicited them](../backlog/engine-response-correlation.md) (Low today; this page asks to raise it). **Blocks:** the round-wake fix (gossip-kt `feature/round-wake`, Tasks 1–3 landed and green).
 
 ## Why now
 
@@ -96,4 +96,4 @@ something only helps after the app's pin moves.
 
 ## Review outcome
 
-_Pending the owner's review._
+**Approved (owner, 2026-09-28)** as proposed: ruling 1 lands as Task 3b of the round-wake branch; ruling 3 becomes its own item after both twins carry the wake.
