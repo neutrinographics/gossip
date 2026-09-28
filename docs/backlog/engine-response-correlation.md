@@ -51,6 +51,11 @@ heuristics piecemeal.
   compaction floor is indistinguishable from a push until the request id of
   ruling 3 lands. The Dart half rides the Dart round-wake plan; the item
   stays open until ruling 3 ships on both.
+- A second residual the content rule leaves for ruling 3: a response that
+  lands in the moment between a pull being marked and its vector being
+  recorded retires the mark on existence alone, so the request then goes
+  out unmarked and its true answer reads as unprompted. Bounded (one pull,
+  one missed floor and RTT sample), and closed by the request id.
 
 - Flagged concretely by the PR #15 review (a racing reactive push recorded
   as a stalled pull); the stalled-range spec documents the bounded impact.
