@@ -162,6 +162,19 @@ as written here, not ruling 1's literal text.
   key whole would drop the pull the peer did receive, and its answer would
   read as unprompted. The mark holds what it displaced, and a release
   restores it exactly as it was. The Dart half does the same.
+- *A displaced pull is judged by its own vector (Codex round 7; supersedes
+  the "joined with any mark still outstanding" wording above).* The pull's
+  answer is the peer's snapshot when it answered, older than the page that
+  came unprompted meanwhile, so it may repeat what that page advanced;
+  judged by the continuation's newer vector it would read as unprompted.
+  So there is no join: the displaced pull stays beneath the continuation,
+  untouched, and a response is judged against the continuation's ask first
+  and the displaced pull's next, each by its own vector; answering either
+  leaves the other outstanding, and retiring the continuation gives the
+  displaced pull back. And a page with more to come hands the rest of the
+  pull it answered to the continuation's ask instead of narrowing its mark,
+  so the same pull never stands twice; only a final response that answers
+  part narrows. The Dart half takes this shape: the mark is a small stack.
 - *Known limit, until ruling 3.* A peer whose history is truncated at the
   front and that reports no floor answers above everything asked, so by
   content it is indistinguishable from a push: no stall is recorded, no

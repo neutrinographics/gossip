@@ -135,3 +135,11 @@ there is no hub to come to a phone — has the same shape between every pair.
   delay's own suspension. A `nextDelay` of no time at all is a scheduling
   failure like one that throws (a loop taken at its word would spin). The
   Dart half: arm the timer and record its end in the same synchronous step.
+- *A woken wait ends no later than the wait it cut short (Codex round 7).*
+  A clock reading taken before the decision can age before it is acted on
+  (the thread paused in between), and a decision made on it could re-arm
+  past the very end it judged too far away. The rule names the end of the
+  wait it cuts short, and the arm bounds the fresh interval by that end on
+  a fresh reading, never below a millisecond so a wake never runs the tick
+  inline in whoever had the news. Holds by construction, whatever the
+  reading's age. The Dart half carries the same bound.
