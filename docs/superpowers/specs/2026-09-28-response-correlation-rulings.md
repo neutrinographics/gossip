@@ -1,6 +1,6 @@
 # A delta response answers one pull, or none — rulings
 
-**Status:** approved 2026-09-28. **Item:** [Correlate delta responses with the pulls that solicited them](../backlog/engine-response-correlation.md) (Low today; this page asks to raise it). **Blocks:** the round-wake fix (gossip-kt `feature/round-wake`, Tasks 1–3 landed and green).
+**Status:** approved 2026-09-28; ruling 1 landed in Kotlin (gossip-kt `feature/round-wake`, 269f790) with the precisions below. **Item:** [Correlate delta responses with the pulls that solicited them](../backlog/engine-response-correlation.md) (Low today; this page asks to raise it). **Blocks:** the round-wake fix (gossip-kt `feature/round-wake`, Tasks 1–3 landed and green).
 
 ## Why now
 
@@ -83,9 +83,10 @@ something only helps after the app's pin moves.
 - Tracker: `answers(mark, response)` true for a response starting at
   `since + 1` for every author it carries; true when the floor covers the
   start; false when any author starts above `since + 1` with no floor to
-  explain it; false for a response carrying no author the pull can judge
-  (an empty response answers nothing — today's `complete` semantics for an
-  empty page are kept and stated); property-style, inputs unmutated.
+  explain it; true for a response carrying no author (an empty response
+  from the asked peer is the answer — today's semantics for an empty page,
+  kept and stated; corrected 2026-09-28, see Precisions); property-style,
+  inputs unmutated.
 - Engine: a push arriving while a pull is outstanding is merged as a push
   — no stalled range, no protocol error, the mark still outstanding — and
   the true answer arriving afterwards is treated as the answer (floor
@@ -97,3 +98,33 @@ something only helps after the app's pin moves.
 ## Review outcome
 
 **Approved (owner, 2026-09-28)** as proposed: ruling 1 lands as Task 3b of the round-wake branch; ruling 3 becomes its own item after both twins carry the wake.
+
+**Precisions from the Kotlin half (2026-09-28).** The Dart half takes these
+as written here, not ruling 1's literal text.
+
+- *The floor clause.* A compaction floor is the last sequence the sender
+  compacted through, so a compacted answer starts at `floor + 1`, not at the
+  floor; ruling 1's literal "floor at or above the first sequence" alone
+  would read every compacted answer as a push (two existing floor pins went
+  red on it). The rule as landed: for every author the response carries,
+  its first sequence is one past the higher of `since[author]` and
+  `floor[author]` — the position the merge path judges contiguity from
+  once the floor is adopted — or the floor is at or past the first sequence
+  (a sender that sends at or below its own floor contradicts itself but
+  withholds nothing, so it answers too).
+- *An empty response is the answer.* A response carrying no author, from
+  the asked peer, answers the pull: the peer replied with nothing left to
+  give. The pin above said the opposite and is corrected.
+- *A mark without a vector completes as before.* The planner records the
+  vector on the mark after shaping it, so a response can arrive against a
+  mark that carries none yet; that response completes the mark on
+  existence alone, as today.
+- *Known limit, until ruling 3.* A peer whose history is truncated at the
+  front and that reports no floor answers above everything asked, so by
+  content it is indistinguishable from a push: no stall is recorded, no
+  suppression follows, and the pull re-issues at the adaptive timeout
+  (2–30 s) instead of the doubling backoff. No peer on the fleet does this
+  (both twins report a floor whenever they compact, and the 2026-08-31
+  incident that motivated stalled-range suppression was the JVM's heap,
+  not a truncated peer); the request id of ruling 3 closes it. Recorded on
+  the item.

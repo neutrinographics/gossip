@@ -42,7 +42,15 @@ heuristics piecemeal.
 
 ## Related
 
-- Rulings for review: [A delta response answers one pull, or none — rulings](../superpowers/specs/2026-09-28-response-correlation-rulings.md) (2026-09-28) — raised by the round-wake fix, whose Task 3 measured the misclassification at six of ten churn runs with the wake and none without.
+- Rulings, approved 2026-09-28: [A delta response answers one pull, or none — rulings](../superpowers/specs/2026-09-28-response-correlation-rulings.md) — raised by the round-wake fix, whose Task 3 measured the misclassification at six of ten churn runs with the wake and none without.
+- Ruling 1 (classify by content) landed in the Kotlin library on the
+  round-wake branch (gossip-kt 269f790): the pull mark carries the vector it
+  asked for, and a response retires it only when its content can be the
+  answer; ten of ten churn runs clean with the wake. Known limit recorded in
+  the rulings' Precisions: a peer truncated at the front that reports no
+  compaction floor is indistinguishable from a push until the request id of
+  ruling 3 lands. The Dart half rides the Dart round-wake plan; the item
+  stays open until ruling 3 ships on both.
 
 - Flagged concretely by the PR #15 review (a racing reactive push recorded
   as a stalled pull); the stalled-range spec documents the bounded impact.
