@@ -155,6 +155,13 @@ as written here, not ruling 1's literal text.
   know). A continuation's ask is (what the page left unaccounted for, what
   the page carried), joined with any mark still outstanding. The Dart half
   takes the two-set ask as written here.
+- *A continuation the peer never receives gives back the pull it was
+  re-armed over (Codex round 6).* One key holds one mark, so a continuation's
+  re-arm displaces the mark of a pull still in flight to the same peer for
+  the same stream; when the continuation's send is refused, releasing the
+  key whole would drop the pull the peer did receive, and its answer would
+  read as unprompted. The mark holds what it displaced, and a release
+  restores it exactly as it was. The Dart half does the same.
 - *Known limit, until ruling 3.* A peer whose history is truncated at the
   front and that reports no floor answers above everything asked, so by
   content it is indistinguishable from a push: no stall is recorded, no
