@@ -57,6 +57,13 @@ heuristics piecemeal.
   recorded retires the mark on existence alone, so the request then goes
   out unmarked and its true answer reads as unprompted. Bounded (one pull,
   one missed floor and RTT sample), and closed by the request id.
+- A third, from the controller's review of gossip-kt PR #17: a probe of a
+  suppressed range asks from above what the peer can supply, so the peer's
+  answer begins above where it was asked and reads as a push under the
+  content rule. The suppression cadence is unaffected (it re-arms when the
+  probe is sent), but the probe's mark now lingers until the pull timeout,
+  during which other pulls of that stream from that peer wait. Bounded by
+  the adaptive timeout; closed by the request id.
 
 - Flagged concretely by the PR #15 review (a racing reactive push recorded
   as a stalled pull); the stalled-range spec documents the bounded impact.
