@@ -1,6 +1,6 @@
 # A delta response answers one pull, or none — rulings
 
-**Status:** approved 2026-09-28; ruling 1 landed in Kotlin (gossip-kt `feature/round-wake`, 269f790) with the precisions below. **Item:** [Correlate delta responses with the pulls that solicited them](../backlog/engine-response-correlation.md) (Low today; this page asks to raise it). **Blocks:** the round-wake fix (gossip-kt `feature/round-wake`, Tasks 1–3 landed and green).
+**Status:** approved 2026-09-28; ruling 1 landed in Kotlin (gossip-kt PR #17, 269f790) with the precisions below. **Item:** [Correlate delta responses with the pulls that solicited them](../backlog/engine-response-correlation.md) (Low today; this page asks to raise it). **Blocks:** the round-wake fix (gossip-kt `feature/round-wake`, Tasks 1–3 landed and green).
 
 ## Why now
 

@@ -53,7 +53,14 @@ phones before the Dart half ships.
 
 ## Related
 
-- Rulings for review: [News wakes a sleeping gossip round — rulings](../superpowers/specs/2026-09-27-round-wake-rulings.md) (2026-09-27).
+- Rulings, approved 2026-09-27: [News wakes a sleeping gossip round — rulings](../superpowers/specs/2026-09-27-round-wake-rulings.md).
+- Kotlin half: gossip-kt PR #17 (`feature/round-wake`, 2026-09-28). The
+  shape it landed: the scheduler port can be woken, the decision is a pure
+  rule on the generation value, the adapter holds one cell, and the engine's
+  one news seam wakes the loop after resetting the pace. It carries the
+  content rule from [the correlation item](engine-response-correlation.md),
+  because the wake made that item's misclassification frequent (six of ten
+  churn runs) on exactly the path it speeds up.
 
 - Sibling: [Coalesce wire traffic into fewer radio wakeups](engine-message-coalescing.md)
   (the pacing this item leaves intact); [Only tell a peer about the groups you both belong to](engine-scope-digests-to-shared-groups.md)
