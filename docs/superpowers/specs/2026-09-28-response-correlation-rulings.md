@@ -140,6 +140,21 @@ as written here, not ruling 1's literal text.
   next, must still be recognised as one (Codex round 4). Together: an
   answered pull's authors come from the answer, an unanswered pull's from
   the mark it left outstanding; both join the page's.
+- *A response answers as much of the pull as it accounts for (Codex round 5;
+  supersedes the "retire on any wanted author" reading above).* A pull for
+  two authors, and the peer's push of the first at exactly `since + 1`,
+  would otherwise retire the whole pull and turn its real answer — with the
+  second author and a floor — into a push, every time the first author
+  wrote. So: the mark retires only when every author the pull was for is
+  accounted for (carried, or floored past what we hold; an empty response
+  still answers), and narrows to the rest otherwise. The round trip is
+  measured to the response that completes the pull. For paging, the ask has
+  two sets — what the pull is *for* (all must be accounted for) and what its
+  pages were *carrying* (recognised as the drain going on, not required,
+  because whether a page cut an author's run short is the responder's to
+  know). A continuation's ask is (what the page left unaccounted for, what
+  the page carried), joined with any mark still outstanding. The Dart half
+  takes the two-set ask as written here.
 - *Known limit, until ruling 3.* A peer whose history is truncated at the
   front and that reports no floor answers above everything asked, so by
   content it is indistinguishable from a push: no stall is recorded, no

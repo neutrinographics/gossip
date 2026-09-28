@@ -127,3 +127,11 @@ there is no hub to come to a phone — has the same shape between every pair.
   next under the same run, which would otherwise be cut short by an interval
   read for its predecessor (one early tick). The Dart half carries the same
   three-part binding.
+- *The wait is recorded and taken in one run (Codex round 3, answered late).*
+  A hop between recording the wait's end and starting the timer makes every
+  recorded end earlier than the timer's by that hop, and a wake near the
+  end would decline a wait with longer to go. The Kotlin adapter starts the
+  wait's continuation undispatched, so it runs on the caller up to the
+  delay's own suspension. A `nextDelay` of no time at all is a scheduling
+  failure like one that throws (a loop taken at its word would spin). The
+  Dart half: arm the timer and record its end in the same synchronous step.
