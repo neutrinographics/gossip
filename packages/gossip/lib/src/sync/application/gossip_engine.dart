@@ -1510,7 +1510,7 @@ class GossipEngine {
     );
     final floor = _reportableFloor(request, fullFloor);
 
-    final (fitted, hasMore) = _fitDeltaToBudget(request, delta);
+    final (fitted, hasMore) = _fitDeltaToBudget(request, delta, floor: floor);
     // Serving data back to a puller is news; an empty response (nothing to
     // give) is not.
     if (fitted.isNotEmpty) _recordNews();
@@ -1560,10 +1560,14 @@ class GossipEngine {
   /// NOT set hasMore — continuing would make no progress and loop forever.
   (List<LogEntry>, bool) _fitDeltaToBudget(
     DeltaRequest request,
-    List<LogEntry> delta,
-  ) {
+    List<LogEntry> delta, {
+    required VersionVector floor,
+  }) {
     if (delta.isEmpty) return (delta, false);
 
+    // The empty answer is measured as it will go out — naming the request
+    // and reporting the floor — because the budget must hold for the frame
+    // the peer receives, not for a lighter one.
     final baseSize = _codec
         .encode(
           DeltaResponse(
@@ -1571,6 +1575,8 @@ class GossipEngine {
             channelId: request.channelId,
             streamId: request.streamId,
             entries: const [],
+            floor: floor,
+            inReplyTo: request.requestId,
           ),
         )
         .length;

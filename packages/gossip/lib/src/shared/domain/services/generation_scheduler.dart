@@ -138,16 +138,11 @@ class GenerationScheduler {
     final nowMs = timePort.monotonicMs;
     // The readings were about one wait of one run. A stop and a start in
     // between — [nextDelay] is the caller's own code — make them about
-    // nothing, the same test a stale continuation fails; so does that wait
-    // ending and the tick arming the next under the same run, since a
-    // reading taken for a wait that is over decides nothing about the one
-    // that followed it.
-    // The readings were about one wait of one run. A stop and a start in
-    // between make them about nothing (the number moved; pinned). The wait
-    // end is checked too, as the Kotlin twin does, where a reading can age
-    // across threads while the tick arms the next wait; in one isolate the
-    // read and this decision are one synchronous run, so that clause cannot
-    // differ here and is parity, not a reachable case.
+    // nothing (the number moved; pinned). The wait end is checked too, as
+    // the Kotlin twin does, where a reading can age across threads while the
+    // tick arms the next wait; in one isolate the read and this decision are
+    // one synchronous run, so that clause cannot differ here and is parity,
+    // not a reachable case.
     if (_state.number != generation || _state.waitEndsAtMs != waitEndsAtMs) {
       return;
     }

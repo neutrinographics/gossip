@@ -7,6 +7,7 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/sync/domain/messages/delta_request.dart';
+import 'package:gossip/src/sync/domain/value_objects/request_id.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:test/test.dart';
 
@@ -134,5 +135,28 @@ void main() {
         expect(response.hasMore, isFalse);
       },
     );
+
+    test('the empty answer for a stream we do not hold still names the '
+        'request', () async {
+      final h = GossipEngineTestHarness();
+      final peer = h.addPeer('peer1');
+      h.createChannel('ours', streamIds: ['s1']);
+      final name = RequestId('ask-1');
+
+      final response = await h.engine.handleDeltaRequest(
+        DeltaRequest(
+          sender: peer.id,
+          channelId: otherChannel,
+          streamId: streamId,
+          since: VersionVector.empty,
+          requestId: name,
+        ),
+      );
+
+      // Naming it is what lets the requester retire the pull at once rather
+      // than wait out its deadline for an answer that will never carry more.
+      expect(response.entries, isEmpty);
+      expect(response.inReplyTo, name);
+    });
   });
 }
