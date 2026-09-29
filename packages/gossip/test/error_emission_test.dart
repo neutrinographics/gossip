@@ -69,6 +69,9 @@ class NoOpTimePort implements TimePort {
   int get nowMs => 0;
 
   @override
+  int get monotonicMs => 0;
+
+  @override
   TimerHandle schedulePeriodic(Duration interval, void Function() callback) {
     return _NoOpTimerHandle();
   }

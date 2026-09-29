@@ -7,6 +7,7 @@ library;
 
 // Value objects
 export 'domain/value_objects/channel_id.dart';
+export 'domain/value_objects/generation.dart';
 export 'domain/value_objects/hlc.dart';
 export 'domain/value_objects/log_entry.dart';
 export 'domain/value_objects/log_entry_id.dart';
@@ -35,6 +36,7 @@ export 'domain/interfaces/time_port.dart';
 // Services
 export 'domain/services/generation_scheduler.dart';
 export 'domain/services/jitter.dart';
+export 'domain/services/loop_generation.dart';
 export 'domain/services/keyed_task_chain.dart';
 export 'domain/services/quiescence_pacer.dart';
 export 'domain/services/rtt_tracker.dart';
