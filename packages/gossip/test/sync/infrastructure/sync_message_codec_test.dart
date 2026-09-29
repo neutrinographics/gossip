@@ -501,7 +501,8 @@ void main() {
       test('maxEntryPayloadForBudget-sized payload fits the budget (v1)', () {
         // v1 is CoordinatorConfig's default dialect
         // (coordinator_wire_version_test.dart pins the resulting cap's
-        // arithmetic — 7552 bytes at the default 30KB budget — but nothing
+        // arithmetic — 7532 bytes at the default 30KB budget, after
+        // subtracting the 79-byte reply-identity allowance — but nothing
         // proves an entry at that cap actually FITS the budget once
         // encoded: v1's worst-case int-array payload spends 4 chars per
         // byte (`"255,"`), not the 3/4 base64 ratio v2 uses).
