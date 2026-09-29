@@ -519,6 +519,50 @@ void main() {
       );
     });
 
+    test('the name a pull carries on the wire is the name the engine '
+        'recorded', () async {
+      final port = _ScriptedPort();
+      final h = GossipEngineTestHarness(messagePort: port);
+      final peer = h.addPeer('peer1');
+      h.createChannel('ch1', streamIds: ['s1']);
+      h.startListening();
+      h.engine.start();
+      addTearDown(() async {
+        h.engine.stop();
+        h.stopListening();
+        await port.close();
+      });
+
+      await h.engine.performGossipRound();
+      await h.flush(3);
+      port.deliver(
+        peer.id,
+        h.codec.encode(digestResponseOf(peer.id, VersionVector({authorA: 2}))),
+      );
+      await h.flush(3);
+      final onWire = port.decoded(h.codec).whereType<DeltaRequest>().single;
+      expect(h.engine.outstandingPullCount, 1);
+
+      // The only proof that the frame's name is the recorded one is that an
+      // answer echoing it is recognised: a frame minted under a second name
+      // would make this answer an unknown reference, and the pull would
+      // stay owed.
+      port.deliver(
+        peer.id,
+        h.codec.encode(
+          responseOf(peer.id, [
+            entryOf(authorA, 1),
+          ], inReplyTo: onWire.requestId),
+        ),
+      );
+      await h.flush(3);
+      expect(
+        h.engine.outstandingPullCount,
+        0,
+        reason: 'the answer named the pull the engine recorded',
+      );
+    });
+
     test('a continuation the transport refuses is taken back, and a pull to '
         'another stream of the same peer is untouched', () async {
       final port = _ScriptedPort();

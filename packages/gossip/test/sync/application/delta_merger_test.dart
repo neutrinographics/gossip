@@ -129,7 +129,14 @@ void main() {
         newEntriesMergedCalls.add(null);
       },
       onContinuationIssued:
-          (peer, channelId, streamId, since, wanted, carrying) {
+          (
+            peer,
+            channelId,
+            streamId,
+            since, {
+            required wanted,
+            required carrying,
+          }) {
             callOrder.add('onContinuationIssued');
             // Stands in for the engine's issue transition: it mints an
             // identity and answers with the request, which is all the

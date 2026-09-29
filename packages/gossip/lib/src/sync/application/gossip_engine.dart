@@ -348,7 +348,14 @@ class GossipEngine {
       // A continuation is owed rather than planned, so it passes no gate:
       // the peer is mid-answer, and the rest of its page is asked for once.
       onContinuationIssued:
-          (peer, channelId, streamId, since, wanted, carrying) {
+          (
+            peer,
+            channelId,
+            streamId,
+            since, {
+            required wanted,
+            required carrying,
+          }) {
             final issued = OutstandingPullTracker.issue(
               _pulls,
               peer: peer,

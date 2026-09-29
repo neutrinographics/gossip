@@ -314,8 +314,8 @@ class DeltaMerger {
         response.channelId,
         response.streamId,
         since,
-        wanted,
-        carrying,
+        wanted: wanted,
+        carrying: carrying,
       ),
       mergedNewEntries: true,
     );
@@ -521,10 +521,10 @@ typedef ContinuationIssuer =
       NodeId peer,
       ChannelId channelId,
       StreamId streamId,
-      VersionVector since,
-      Set<NodeId> wanted,
-      Set<NodeId> carrying,
-    );
+      VersionVector since, {
+      required Set<NodeId> wanted,
+      required Set<NodeId> carrying,
+    });
 
 /// A per-author sequence hole found while filtering a delta response.
 ///
