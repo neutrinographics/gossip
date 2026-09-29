@@ -1,4 +1,4 @@
-import 'dart:convert';
+import 'package:gossip/src/shared/domain/value_objects/identifiers.dart';
 
 /// The identity of one pull, minted by the node that issues it and
 /// meaningless to anyone else: a peer echoes it back, so an arriving
@@ -10,16 +10,16 @@ import 'dart:convert';
 /// what lets a requester change how it mints ids without any peer noticing.
 ///
 /// An identifier like the node, channel and stream ids it travels beside,
-/// under the same four-clause rule the Kotlin twin's `requireIdentifier`
-/// applies to all of them: non-blank, well-formed Unicode, nothing JSON would
-/// escape, and at most [maxIdentifierBytes]. A responder echoes whatever it
+/// under the four-clause rule [Identifiers.require] states once: non-blank,
+/// well-formed Unicode, nothing JSON would escape, and at most
+/// [maxIdentifierBytes]. A responder echoes whatever it
 /// was sent, so an unbounded id would be an unbounded cost on every answer;
 /// bounded, it is a cost each wire dialect subtracts from the entry payload it
 /// can carry. One a peer sends outside the rule is a malformed frame, as any
 /// other identifier would be.
 class RequestId {
   /// The identifier bound, in UTF-8 bytes — what an echo can cost at most.
-  static const int maxIdentifierBytes = 64;
+  static const int maxIdentifierBytes = Identifiers.maxBytes;
 
   /// The identifier itself, as it travels on the wire.
   final String value;
@@ -31,42 +31,7 @@ class RequestId {
   /// backslash — they cost more on the wire than they weigh), or exceeds
   /// [maxIdentifierBytes].
   RequestId(this.value) {
-    if (value.trim().isEmpty) {
-      throw ArgumentError.value(
-        value,
-        'value',
-        'RequestId cannot be empty or whitespace',
-      );
-    }
-    // A lone surrogate has no UTF-8 encoding: the encoder substitutes for it,
-    // so two ids that differ here would reach the wire as one, weigh the same
-    // and compare equal by bytes — an echo could then name the wrong request.
-    if (!_isWellFormedUtf16(value)) {
-      throw ArgumentError.value(
-        value,
-        'value',
-        'RequestId must be well-formed Unicode (an unpaired surrogate has no '
-            'UTF-8 encoding)',
-      );
-    }
-    if (value.runes.any(
-      (rune) => rune < 0x20 || rune == 0x22 || rune == 0x5C,
-    )) {
-      throw ArgumentError.value(
-        value,
-        'value',
-        'RequestId must not contain control characters, quotes or backslashes',
-      );
-    }
-    final bytes = utf8.encode(value).length;
-    if (bytes > maxIdentifierBytes) {
-      throw ArgumentError.value(
-        value,
-        'value',
-        'RequestId must be at most $maxIdentifierBytes UTF-8 bytes, '
-            'was $bytes',
-      );
-    }
+    Identifiers.require(value, what: 'RequestId');
   }
 
   /// An id unique among one requester's requests in flight: the issue
@@ -90,21 +55,4 @@ class RequestId {
 
   @override
   String toString() => 'RequestId($value)';
-}
-
-/// Whether every surrogate code unit in [value] is half of a proper pair.
-bool _isWellFormedUtf16(String value) {
-  for (var i = 0; i < value.length; i++) {
-    final unit = value.codeUnitAt(i);
-    final isHigh = unit >= 0xD800 && unit <= 0xDBFF;
-    final isLow = unit >= 0xDC00 && unit <= 0xDFFF;
-    if (isLow) return false;
-    if (isHigh) {
-      if (i + 1 == value.length) return false;
-      final next = value.codeUnitAt(i + 1);
-      if (next < 0xDC00 || next > 0xDFFF) return false;
-      i++;
-    }
-  }
-  return true;
 }

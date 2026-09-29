@@ -87,9 +87,10 @@ abstract final class LegacyCorrelation {
   /// Oldest first because a response can only be the answer to something
   /// already asked, and the older request is the one whose answer is overdue.
   ///
-  /// The round trip is sampled only from a request this response accounts for
-  /// in full: a partial answer, and a page whose remainder is still coming,
-  /// measure nothing yet.
+  /// The round trip is sampled from a request this response accounts for in
+  /// full — including a page that says more is coming, because a request is
+  /// measured to its own answer and the rest of the drain is asked for by a
+  /// continuation with its own clock; a partial answer measures nothing yet.
   ///
   /// One step rather than a read and a later write, because which request a
   /// response answers and what becomes of that request are the same decision.

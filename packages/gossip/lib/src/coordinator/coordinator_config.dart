@@ -101,6 +101,10 @@ class CoordinatorConfig {
   /// Explicit gossip round interval. When null (default), `GossipEngine`
   /// computes the interval adaptively from per-peer RTT, bounded to
   /// [100ms, 5s]. When non-null, the engine uses this value verbatim.
+  ///
+  /// Must be positive. A zero or negative interval is a scheduling failure:
+  /// the round loop stops and reports it through the error callback rather
+  /// than spinning, as the Kotlin twin does.
   final Duration? gossipInterval;
 
   /// Explicit probe interval. When null (default), `FailureDetector`

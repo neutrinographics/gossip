@@ -233,24 +233,62 @@ class SyncMessageCodec implements MessageCodec {
   }
 
   DeltaRequest _decodeDeltaRequest(Map<String, dynamic> json) {
-    final requestIdJson = json['requestId'] as String?;
+    final channelId = json['channelId'] as String;
+    final streamId = json['streamId'] as String;
     return DeltaRequest(
       sender: NodeId(json['sender'] as String),
-      channelId: ChannelId(json['channelId'] as String),
-      streamId: StreamId(json['streamId'] as String),
+      channelId: ChannelId(channelId),
+      streamId: StreamId(streamId),
       since: _decodeVersionVector(json['since'] as Map<String, dynamic>),
       // Absent on a requester that mints none → null.
-      requestId: requestIdJson == null ? null : RequestId(requestIdJson),
+      requestId: _readReference(
+        json['requestId'] ?? json['requestIds'],
+        channelId: channelId,
+        streamId: streamId,
+      ),
     );
+  }
+
+  /// The request a frame names, in either dialect's shape.
+  ///
+  /// Dart's dialects carry one channel and stream per frame and name the
+  /// request flat (`"requestId": "<id>"`, `"inReplyTo": "<id>"`). The Kotlin
+  /// twin's v1 batches streams per frame and names them under the same keys
+  /// as `{"<channel>": {"<stream>": "<id>"}}` (its requests under
+  /// `requestIds`). Reading both keeps the additive-key promise true across
+  /// the twins: a frame from the other dialect is an answer with a name, not
+  /// a corrupt frame. A batched shape that names no request for this frame's
+  /// stream names none; any other shape is malformed.
+  RequestId? _readReference(
+    Object? json, {
+    required String channelId,
+    required String streamId,
+  }) {
+    switch (json) {
+      case null:
+        return null;
+      case String id:
+        return RequestId(id);
+      case Map<String, dynamic> byChannel:
+        final byStream = byChannel[channelId] as Map<String, dynamic>?;
+        final id = byStream?[streamId] as String?;
+        return id == null ? null : RequestId(id);
+      default:
+        throw FormatException(
+          'a request reference must be a string or a channel→stream map, '
+          'was ${json.runtimeType}',
+        );
+    }
   }
 
   DeltaResponse _decodeDeltaResponse(Map<String, dynamic> json) {
     final floorJson = json['floor'] as Map<String, dynamic>?;
-    final inReplyToJson = json['inReplyTo'] as String?;
+    final channelId = json['channelId'] as String;
+    final streamId = json['streamId'] as String;
     return DeltaResponse(
       sender: NodeId(json['sender'] as String),
-      channelId: ChannelId(json['channelId'] as String),
-      streamId: StreamId(json['streamId'] as String),
+      channelId: ChannelId(channelId),
+      streamId: StreamId(streamId),
       entries: _decodeLogEntries(json['entries'] as List),
       // Absent on legacy senders → defaults to false (no continuation).
       hasMore: json['hasMore'] as bool? ?? false,
@@ -259,7 +297,11 @@ class SyncMessageCodec implements MessageCodec {
           ? VersionVector.empty
           : _decodeVersionVector(floorJson),
       // Absent on a push, or a legacy sender → null.
-      inReplyTo: inReplyToJson == null ? null : RequestId(inReplyToJson),
+      inReplyTo: _readReference(
+        json['inReplyTo'],
+        channelId: channelId,
+        streamId: streamId,
+      ),
     );
   }
 

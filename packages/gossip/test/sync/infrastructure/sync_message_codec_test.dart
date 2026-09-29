@@ -745,6 +745,73 @@ void main() {
           expect(decoded.inReplyTo, equals(RequestId('abc-1')));
         });
 
+        test('$version DeltaResponse decode reads the Kotlin twin\'s batched '
+            'inReplyTo shape for this frame\'s stream', () {
+          final frame = rawFrame(version, WireTypes.deltaResponse, {
+            'sender': 'peer2',
+            'channelId': 'ch1',
+            'streamId': 's1',
+            'entries': <dynamic>[],
+            'inReplyTo': {
+              'ch1': {'s1': 'abc-1', 's2': 'other'},
+              'ch9': {'s1': 'elsewhere'},
+            },
+          });
+
+          final decoded = dialectCodec.decode(frame) as DeltaResponse;
+
+          expect(decoded.inReplyTo, equals(RequestId('abc-1')));
+        });
+
+        test('$version DeltaRequest decode reads the Kotlin twin\'s batched '
+            'requestIds shape for this frame\'s stream', () {
+          final frame = rawFrame(version, WireTypes.deltaRequest, {
+            'sender': 'peer1',
+            'channelId': 'ch1',
+            'streamId': 's1',
+            'since': <String, dynamic>{},
+            'requestIds': {
+              'ch1': {'s1': 'abc-1'},
+            },
+          });
+
+          final decoded = dialectCodec.decode(frame) as DeltaRequest;
+
+          expect(decoded.requestId, equals(RequestId('abc-1')));
+        });
+
+        test('$version a batched inReplyTo that names no request for this '
+            'frame\'s stream names none', () {
+          final frame = rawFrame(version, WireTypes.deltaResponse, {
+            'sender': 'peer2',
+            'channelId': 'ch1',
+            'streamId': 's1',
+            'entries': <dynamic>[],
+            'inReplyTo': {
+              'ch1': {'s2': 'other'},
+            },
+          });
+
+          final decoded = dialectCodec.decode(frame) as DeltaResponse;
+
+          expect(decoded.inReplyTo, isNull);
+        });
+
+        test(
+          '$version a reference of any other shape is a malformed frame',
+          () {
+            final frame = rawFrame(version, WireTypes.deltaResponse, {
+              'sender': 'peer2',
+              'channelId': 'ch1',
+              'streamId': 's1',
+              'entries': <dynamic>[],
+              'inReplyTo': 42,
+            });
+
+            expect(() => dialectCodec.decode(frame), throwsFormatException);
+          },
+        );
+
         test('$version decode rejects a DeltaRequest whose requestId exceeds '
             'the identifier bound (the codec\'s existing malformed-frame '
             'path)', () {
