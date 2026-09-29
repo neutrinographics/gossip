@@ -215,3 +215,14 @@ correlate. Segregated so that deleting it is deleting one file and one call.
   evidence, and a long-expired request is what a push is likeliest to
   resemble by accident; a reference is honoured whatever its age, because
   an id is proof.
+- *A legacy drain's next page is recognised by what the page before it
+  carried (corrects ruling 4's "nothing else of the bridge is kept").* A
+  peer that answers by content pages a pull as it likes, so its next page may
+  continue an author already accounted for rather than open one still owed.
+  The bridge's second set was about this, not about the collisions the
+  re-model removed, and it stays for the legacy rule alone: a continuation
+  records the authors the page before it carried, and a page carrying one of
+  them is the drain going on — recognised, not required, so a final page that
+  does not carry it still completes. Empty on a planned pull, never read for
+  a peer that answers by reference, deleted with the rule. The Dart half
+  carries it the same way.
