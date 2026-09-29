@@ -57,6 +57,11 @@ echo identities until the app's pin moves. It is deleted with the re-model.
   deletion criterion's counter, the bridge's surface deleted and pinned
   retired. Deletion criterion (ruling 6) and its reading caveat are on the
   register row "The transitional content rule and its deletion".
+- First observation in the field (opendoor-api PR #33 validation, 2026-09-29):
+  the server on c8dde6f logged `answers without a reference; correlated by
+  content (legacy)` exactly once per phone per connection for two phones on
+  the current app pin, and re-logged it on a reconnect — the counter behaves
+  as the criterion needs.
 - Bridge rulings, approved 2026-09-28: [A delta response answers one pull, or none — rulings](../superpowers/specs/2026-09-28-response-correlation-rulings.md) — raised by the round-wake fix, whose Task 3 measured the misclassification at six of ten churn runs with the wake and none without.
 - Ruling 1 (classify by content) landed in the Kotlin library on the
   round-wake branch (gossip-kt PR #17, 269f790): the pull mark carries the vector it

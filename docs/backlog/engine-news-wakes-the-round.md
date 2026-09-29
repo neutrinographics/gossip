@@ -67,6 +67,10 @@ phones before the Dart half ships.
   (the other cost measured in the same run).
 - Evidence: the opendoor-api live-device validation of the post-remediation
   bump (PR #32, 2026-09-27) — the server log's relay timelines.
+- Live pin met: the bump carrying the Kotlin half (opendoor-api PR #33,
+  validated 2026-09-29 with the same two phones) — presence within about a
+  second both ways after a quiet minute, where PR #32 had measured 7.1 s and
+  8.5 s; the server's pacing snapped from 30 s to ~0.5 s on the burst.
 - Both libraries share the shape; the scheduler is a port with an adapter on
   the Kotlin side since the architecture remediation (batch E), which is where
   the wake belongs.
