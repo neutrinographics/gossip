@@ -10,12 +10,13 @@ import 'dart:convert';
 /// what lets a requester change how it mints ids without any peer noticing.
 ///
 /// An identifier like the node, channel and stream ids it travels beside,
-/// under the same rule as the Kotlin twin applies to all of them: at most
-/// [maxIdentifierBytes], and nothing JSON would escape. A responder echoes
-/// whatever it was sent, so an unbounded id would be an unbounded cost on
-/// every answer; bounded, it is a cost each wire dialect subtracts from the
-/// entry payload it can carry. One a peer sends outside the rule is a
-/// malformed frame, as any other identifier would be.
+/// under the same four-clause rule the Kotlin twin's `requireIdentifier`
+/// applies to all of them: non-blank, well-formed Unicode, nothing JSON would
+/// escape, and at most [maxIdentifierBytes]. A responder echoes whatever it
+/// was sent, so an unbounded id would be an unbounded cost on every answer;
+/// bounded, it is a cost each wire dialect subtracts from the entry payload it
+/// can carry. One a peer sends outside the rule is a malformed frame, as any
+/// other identifier would be.
 class RequestId {
   /// The identifier bound, in UTF-8 bytes — what an echo can cost at most.
   static const int maxIdentifierBytes = 64;
@@ -25,15 +26,27 @@ class RequestId {
 
   /// Creates a [RequestId] from [value].
   ///
-  /// Throws [ArgumentError] when [value] is blank, carries a character JSON
-  /// escapes (a control character, a quote or a backslash — they cost more
-  /// on the wire than they weigh), or exceeds [maxIdentifierBytes].
+  /// Throws [ArgumentError] when [value] is blank, is not well-formed Unicode,
+  /// carries a character JSON escapes (a control character, a quote or a
+  /// backslash — they cost more on the wire than they weigh), or exceeds
+  /// [maxIdentifierBytes].
   RequestId(this.value) {
     if (value.trim().isEmpty) {
       throw ArgumentError.value(
         value,
         'value',
         'RequestId cannot be empty or whitespace',
+      );
+    }
+    // A lone surrogate has no UTF-8 encoding: the encoder substitutes for it,
+    // so two ids that differ here would reach the wire as one, weigh the same
+    // and compare equal by bytes — an echo could then name the wrong request.
+    if (!_isWellFormedUtf16(value)) {
+      throw ArgumentError.value(
+        value,
+        'value',
+        'RequestId must be well-formed Unicode (an unpaired surrogate has no '
+            'UTF-8 encoding)',
       );
     }
     if (value.runes.any(
@@ -77,4 +90,21 @@ class RequestId {
 
   @override
   String toString() => 'RequestId($value)';
+}
+
+/// Whether every surrogate code unit in [value] is half of a proper pair.
+bool _isWellFormedUtf16(String value) {
+  for (var i = 0; i < value.length; i++) {
+    final unit = value.codeUnitAt(i);
+    final isHigh = unit >= 0xD800 && unit <= 0xDBFF;
+    final isLow = unit >= 0xDC00 && unit <= 0xDFFF;
+    if (isLow) return false;
+    if (isHigh) {
+      if (i + 1 == value.length) return false;
+      final next = value.codeUnitAt(i + 1);
+      if (next < 0xDC00 || next > 0xDFFF) return false;
+      i++;
+    }
+  }
+  return true;
 }

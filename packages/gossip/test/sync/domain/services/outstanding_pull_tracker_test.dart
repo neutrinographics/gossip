@@ -79,12 +79,13 @@ void main() {
     VersionVector floor = VersionVector.empty,
     bool hasMore = false,
     StreamId? forStream,
+    ChannelId? forChannel,
     required int nowMs,
   }) => OutstandingPullTracker.answer(
     pulls,
     sender: sender ?? peer,
     inReplyTo: inReplyTo,
-    channel: channel,
+    channel: forChannel ?? channel,
     stream: forStream ?? stream,
     firstByAuthor: firstByAuthor,
     floor: floor,
@@ -499,6 +500,51 @@ void main() {
       expect(elsewhere.state, same(issued.state));
     });
 
+    test('a reference from the right peer for another channel is inert', () {
+      final issued = planned(OutstandingPulls.initial, nowMs: 0);
+
+      final elsewhere = answer(
+        issued.state,
+        inReplyTo: issued.request!.id,
+        forChannel: otherChannel,
+        firstByAuthor: {authorA: 6},
+        nowMs: 100,
+      );
+
+      expect(
+        elsewhere.correlated.answered,
+        isNull,
+        reason: 'the request asked about another channel',
+      );
+      expect(elsewhere.correlated.learned, isNull);
+      expect(elsewhere.state, same(issued.state));
+    });
+
+    test('a reference is honoured whatever the request\'s age', () {
+      final issued = planned(OutstandingPulls.initial, nowMs: 0);
+      final wellPastTheDeadline =
+          OutstandingPullTracker.effectiveTimeout(issued.state).inMilliseconds *
+          10;
+
+      final settled = answer(
+        issued.state,
+        inReplyTo: issued.request!.id,
+        nowMs: wellPastTheDeadline,
+      );
+
+      expect(
+        settled.correlated.answered!.elapsedMs,
+        equals(wellPastTheDeadline),
+        reason: 'an id is proof, so no deadline is consulted',
+      );
+      expect(settled.state.requests, isEmpty);
+      expect(
+        settled.state.sampleCount,
+        equals(1),
+        reason: 'the round trip it measures is real, however long',
+      );
+    });
+
     test('once a peer has answered by reference, a response naming nothing is '
         'a push', () {
       final plan = planned(OutstandingPulls.initial, nowMs: 0);
@@ -763,6 +809,7 @@ void main() {
             (p) =>
                 answer(p, firstByAuthor: beginningWhereAsked, nowMs: 100).state,
           ),
+          (one, (p) => OutstandingPullTracker.sampled(p, 500)),
           (one, OutstandingPullTracker.clearAll),
           (one, (p) => OutstandingPullTracker.clearForPeer(p, peer)),
           (one, (p) => OutstandingPullTracker.clearForChannel(p, channel)),

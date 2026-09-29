@@ -21,6 +21,7 @@ void main() {
   final stream = StreamId('s');
   final authorA = NodeId('author-a');
   final authorB = NodeId('author-b');
+  final authorC = NodeId('author-c');
 
   ({OutstandingPulls state, PullRequest request}) issue(
     OutstandingPulls pulls, {
@@ -243,6 +244,36 @@ void main() {
       expect(settled.state, same(pulls));
     });
 
+    test('a push of an author the live request was not for leaves it '
+        'outstanding', () {
+      // The racing push a mesh makes commonest: the sender's own newest
+      // entry, beginning exactly where we hold that author, against a pull
+      // that never asked about it.
+      final issued = issue(
+        OutstandingPulls.initial,
+        since: VersionVector({authorA: 5, authorB: 2}),
+        wanted: {authorA},
+        nowMs: 0,
+      );
+
+      final settled = answer(
+        issued.state,
+        firstByAuthor: {authorB: 3},
+        nowMs: 100,
+      );
+
+      expect(settled.answered, isNull);
+      expect(
+        settled.state.requests.keys,
+        equals([issued.request.id]),
+        reason: 'the pull is still owed, and still for A',
+      );
+      expect(
+        settled.state.requests[issued.request.id]!.wanted,
+        equals({authorA}),
+      );
+    });
+
     test('an empty response answers the oldest request to that key', () {
       final since = VersionVector({authorA: 5});
       final older = issue(
@@ -462,6 +493,32 @@ void main() {
         settled.state.sampleCount,
         equals(0),
         reason: 'the round trip is measured to the response that completes it',
+      );
+    });
+
+    test('narrowing a continuation keeps what the page before it was '
+        'carrying', () {
+      // The next page of a legacy drain is recognised by what the page before
+      // it carried, so a narrowed continuation that forgot its carried author
+      // would stop recognising its own drain.
+      final continuation = issue(
+        OutstandingPulls.initial,
+        since: VersionVector({authorA: 2}),
+        wanted: {authorB, authorC},
+        carrying: {authorA},
+        nowMs: 0,
+      );
+
+      final settled = answer(
+        continuation.state,
+        firstByAuthor: {authorB: 1},
+        nowMs: 100,
+      );
+
+      expect(settled.answered!.remaining, equals({authorC}));
+      expect(
+        settled.state.requests[continuation.request.id]!.carrying,
+        equals({authorA}),
       );
     });
 

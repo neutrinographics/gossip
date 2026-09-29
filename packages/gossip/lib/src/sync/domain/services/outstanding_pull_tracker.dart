@@ -83,24 +83,14 @@ abstract final class OutstandingPullTracker {
     required ChannelId channel,
     required StreamId stream,
     required int nowMs,
-  }) => _live(
-    pulls,
-    peer: peer,
-    channel: channel,
-    stream: stream,
-    nowMs: nowMs,
-  ).isNotEmpty;
+  }) => _live(pulls, nowMs: nowMs, key: (peer, channel, stream)).isNotEmpty;
 
   /// How many requests are in flight and still honoured, across every peer —
   /// what a caller watching for quiescence reads. A request past the deadline
   /// is dead rather than "syncing…", so counting it would wedge that signal
   /// until the next pull of its stream is planned.
-  static int outstandingCount(OutstandingPulls pulls, {required int nowMs}) {
-    final timeoutMs = effectiveTimeout(pulls).inMilliseconds;
-    return pulls.requests.values
-        .where((request) => nowMs - request.issuedAtMs < timeoutMs)
-        .length;
-  }
+  static int outstandingCount(OutstandingPulls pulls, {required int nowMs}) =>
+      _live(pulls, nowMs: nowMs).length;
 
   /// Plans a pull of [stream] from [peer] and issues it in ONE step — the
   /// dedup gate. Answers no request, and the value it was given, while a pull
@@ -365,24 +355,27 @@ abstract final class OutstandingPullTracker {
     );
   }
 
-  /// The requests to one peer for one stream still within the deadline.
-  static List<PullRequest> _live(
+  /// The requests still honoured: every one of them, or those to one peer for
+  /// one stream when [key] names it.
+  ///
+  /// The deadline boundary lives here alone — a request is honoured while
+  /// less than the deadline has passed, so one exactly at it is already
+  /// stale, and both the planner's gate and the quiescence count read that
+  /// one rule.
+  static Iterable<PullRequest> _live(
     OutstandingPulls pulls, {
-    required NodeId peer,
-    required ChannelId channel,
-    required StreamId stream,
     required int nowMs,
+    (NodeId, ChannelId, StreamId)? key,
   }) {
     final timeoutMs = effectiveTimeout(pulls).inMilliseconds;
-    return pulls.requests.values
-        .where(
-          (request) =>
-              request.peer == peer &&
-              request.channelId == channel &&
-              request.streamId == stream &&
-              nowMs - request.issuedAtMs < timeoutMs,
-        )
-        .toList(growable: false);
+    return pulls.requests.values.where(
+      (request) =>
+          nowMs - request.issuedAtMs < timeoutMs &&
+          (key == null ||
+              (request.peer == key.$1 &&
+                  request.channelId == key.$2 &&
+                  request.streamId == key.$3)),
+    );
   }
 
   static const Correlated _nothingSettled = Correlated(

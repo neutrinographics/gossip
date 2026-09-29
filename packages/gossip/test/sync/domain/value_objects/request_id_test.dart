@@ -42,10 +42,28 @@ void main() {
     });
 
     test('the bound is UTF-8 bytes, not characters', () {
-      // Each of these weighs three bytes, so 22 of them fit and 22 plus one
-      // ASCII character does not — a character count would accept both.
+      // Each of these weighs three bytes, so 21 of them fit (63 bytes) and 22
+      // do not (66) — a character count would accept both, being far under 64.
       expect(RequestId('☃' * 21).value.length, equals(21));
       expect(() => RequestId('☃' * 22), throwsArgumentError);
+    });
+
+    test('an id that is not well-formed Unicode is refused', () {
+      // A lone surrogate has no UTF-8 encoding: the encoder substitutes for
+      // it, so two ids differing only there would reach the wire as one.
+      expect(
+        () => RequestId('req-${String.fromCharCode(0xD83D)}'),
+        throwsArgumentError,
+      );
+      expect(
+        () => RequestId('req-${String.fromCharCode(0xDE00)}'),
+        throwsArgumentError,
+      );
+      expect(
+        RequestId('req-${String.fromCharCodes([0xD83D, 0xDE00])}').value.length,
+        equals(6),
+        reason: 'a proper surrogate pair is one character and is accepted',
+      );
     });
 
     test('an id JSON would escape is refused', () {
