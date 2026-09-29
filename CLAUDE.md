@@ -93,7 +93,8 @@ Synchronizes event streams across devices using anti-entropy gossip protocol.
 
 **Key components:**
 - `Coordinator` (`coordinator/`): Main entry point, manages sync lifecycle
-- `GossipEngine` (`sync/application/`): Gossip round scheduling, digest/delta exchange
+- `GossipEngine` (`sync/application/`): Gossip round scheduling, digest/delta exchange. News (a merge, a local write, a pull in either direction, a peer change) resets the pace and wakes the sleeping round through the scheduler (`GenerationScheduler`, one `Generation` state moved only by `LoopGeneration`'s pure transitions)
+- `OutstandingPulls` (aggregate in `sync/domain/aggregates/`): the pulls in flight, each a `PullRequest` with its own `RequestId`; a `DeltaRequest` carries `requestId` and an answer echoes it as `inReplyTo`, so a response is correlated by reference. `LegacyCorrelation` (`sync/domain/services/`) is the transitional content rule for a peer that has never answered by reference — one file, one call, deleted when the fleet correlates by reference
 - `FailureDetector` (`membership/application/`): probe-based failure detection for peer health
 - `Channel` (aggregate in `sync/domain/aggregates/`, facade in `coordinator/`): Sync group with membership
 - `HlcClock` (`sync/domain/services/`): Hybrid logical clock for causal ordering

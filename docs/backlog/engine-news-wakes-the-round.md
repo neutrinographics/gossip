@@ -61,6 +61,13 @@ phones before the Dart half ships.
   content rule from [the correlation item](engine-response-correlation.md),
   because the wake made that item's misclassification frequent (six of ten
   churn runs) on exactly the path it speeds up.
+- Dart half: landed on `feature/dart-round-wake-identity` (2026-09-29; PR
+  pending) — the same pure rule on the generation value, the wait's end on
+  a `Stopwatch` reading, the scheduler's one timer state moved only by that
+  rule's transitions, and the seven news sites checked against kt's seven
+  (parity; Dart's one extra site is a register row). It carries the
+  pull-identity re-model from [the correlation item](engine-response-correlation.md)
+  directly, never the bridge.
 
 - Sibling: [Coalesce wire traffic into fewer radio wakeups](engine-message-coalescing.md)
   (the pacing this item leaves intact); [Only tell a peer about the groups you both belong to](engine-scope-digests-to-shared-groups.md)
