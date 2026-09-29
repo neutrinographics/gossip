@@ -1,6 +1,6 @@
 # News wakes a sleeping gossip round — rulings
 
-**Status:** approved 2026-09-27 (see Review outcome); Kotlin half merged as gossip-kt PR #17 (e78c20a, 2026-09-29); Dart half landed on `feature/dart-round-wake-identity` (gossip PR #17, 2026-09-29) with the pull-identity re-model. **Item:** [Wake a sleeping gossip round when there is news](../backlog/engine-news-wakes-the-round.md) (High, confirmed 2026-09-27). **Applies to:** both twins, Kotlin first.
+**Status:** approved 2026-09-27 (see Review outcome); Kotlin half merged as gossip-kt PR #17 (e78c20a, 2026-09-29); Dart half merged as gossip PR #17 (96a422f, 2026-09-29) with the pull-identity re-model. **Item:** [Wake a sleeping gossip round when there is news](../backlog/engine-news-wakes-the-round.md) (High, confirmed 2026-09-27). **Applies to:** both twins, Kotlin first.
 
 ## The finding, restated
 
