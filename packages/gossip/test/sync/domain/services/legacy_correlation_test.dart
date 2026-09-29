@@ -57,6 +57,7 @@ void main() {
     Map<NodeId, int> firstByAuthor = const {},
     VersionVector floor = VersionVector.empty,
     bool hasMore = false,
+    bool marksPartialPages = true,
     required int nowMs,
   }) => LegacyCorrelation.answer(
     pulls,
@@ -66,6 +67,7 @@ void main() {
     firstByAuthor: firstByAuthor,
     floor: floor,
     hasMore: hasMore,
+    marksPartialPages: marksPartialPages,
     nowMs: nowMs,
   );
 
@@ -493,6 +495,40 @@ void main() {
         settled.state.sampleCount,
         equals(0),
         reason: 'the round trip is measured to the response that completes it',
+      );
+    });
+
+    test('where the dialect cannot mark a page partial, a partial answer is '
+        'the whole answer: the request is retired and the next round asks '
+        'for the rest', () {
+      final issued = issue(
+        OutstandingPulls.initial,
+        since: VersionVector({authorA: 5, authorB: 2}),
+        wanted: {authorA, authorB},
+        nowMs: 0,
+      );
+
+      final settled = answer(
+        issued.state,
+        firstByAuthor: {authorA: 6},
+        marksPartialPages: false,
+        nowMs: 100,
+      );
+
+      expect(
+        settled.state.requests,
+        isEmpty,
+        reason: 'the peer will send nothing more for this request',
+      );
+      expect(
+        settled.answered!.remaining,
+        equals({authorB}),
+        reason: 'what the answer left out is still truthfully reported',
+      );
+      expect(
+        settled.state.sampleCount,
+        equals(1),
+        reason: 'the response is the whole round trip of this request',
       );
     });
 

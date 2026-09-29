@@ -1673,6 +1673,7 @@ class GossipEngine {
       firstByAuthor: response.firstByAuthor,
       floor: response.floor,
       hasMore: response.hasMore,
+      marksPartialPages: response.marksPartialPages,
       nowMs: settledAtMs,
     );
     _pulls = settled.state;

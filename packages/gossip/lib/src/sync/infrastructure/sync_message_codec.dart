@@ -74,7 +74,14 @@ class SyncMessageCodec implements MessageCodec {
       }
       return null;
     }
-    return _decodeMessageData(messageType, bytes.sublist(offset + 1));
+    // The frame's own dialect, not this codec's: a prefixed frame is v2, an
+    // unprefixed one v1, whichever version this node emits.
+    final dialect = offset == 0 ? WireVersion.v1 : WireVersion.v2;
+    return _decodeMessageData(
+      messageType,
+      bytes.sublist(offset + 1),
+      dialect: dialect,
+    );
   }
 
   int _getMessageType(ProtocolMessage message) {
@@ -201,7 +208,11 @@ class SyncMessageCodec implements MessageCodec {
     };
   }
 
-  ProtocolMessage _decodeMessageData(int messageType, Uint8List data) {
+  ProtocolMessage _decodeMessageData(
+    int messageType,
+    Uint8List data, {
+    required WireVersion dialect,
+  }) {
     final json = jsonDecode(utf8.decode(data)) as Map<String, dynamic>;
 
     switch (messageType) {
@@ -212,7 +223,7 @@ class SyncMessageCodec implements MessageCodec {
       case WireTypes.deltaRequest:
         return _decodeDeltaRequest(json);
       case WireTypes.deltaResponse:
-        return _decodeDeltaResponse(json);
+        return _decodeDeltaResponse(json, dialect: dialect);
       default:
         throw ArgumentError('Unknown message type: $messageType');
     }
@@ -281,7 +292,10 @@ class SyncMessageCodec implements MessageCodec {
     }
   }
 
-  DeltaResponse _decodeDeltaResponse(Map<String, dynamic> json) {
+  DeltaResponse _decodeDeltaResponse(
+    Map<String, dynamic> json, {
+    required WireVersion dialect,
+  }) {
     final floorJson = json['floor'] as Map<String, dynamic>?;
     final channelId = json['channelId'] as String;
     final streamId = json['streamId'] as String;
@@ -302,6 +316,8 @@ class SyncMessageCodec implements MessageCodec {
         channelId: channelId,
         streamId: streamId,
       ),
+      // v1 has no hasMore, so its answer is whole by construction.
+      marksPartialPages: dialect == WireVersion.v2,
     );
   }
 

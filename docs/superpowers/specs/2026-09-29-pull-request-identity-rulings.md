@@ -262,6 +262,18 @@ correlate. Segregated so that deleting it is deleting one file and one call.
   `Identifiers.kt` shape) and `RequestId` applies it; the register's
   identifier-bound flow-back for `NodeId`, `ChannelId` and `StreamId` is now
   three call sites, not a re-implementation.
+- *A partial legacy answer narrows a request only where the dialect can mark
+  a page partial (corrects ruling 4's "leaves the rest of it outstanding" for
+  v1).* v1 frames carry no `hasMore`, so a v1 responder that pages a
+  multi-author backlog sends one page per request and relies on later rounds
+  for the rest. Narrowing such a request and holding it open suppressed the
+  next round's pull for that peer and stream until the deadline, on every
+  page. The decoder now records on the response whether its frame's dialect
+  can mark a page partial; where it cannot, a content-correlated answer is
+  the whole of that request's answer — retired, sampled — and the next
+  digest asks for the remainder. On v2 nothing changes. The Kotlin twin has
+  the same latent rule for legacy phones over v1-kt (a kt flow-back row on
+  the register). Found by Codex on gossip PR #17.
 - *A non-positive interval is a scheduling failure on Dart too.* The old
   Dart loop spun on a zero `gossipInterval`; on the woken scheduler it is the
   same failure as on kt — the loop stops and reports through the error

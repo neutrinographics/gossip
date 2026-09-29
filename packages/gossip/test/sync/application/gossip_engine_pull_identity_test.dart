@@ -60,6 +60,7 @@ void main() {
     bool hasMore = false,
     VersionVector floor = VersionVector.empty,
     RequestId? inReplyTo,
+    bool marksPartialPages = true,
   }) => DeltaResponse(
     sender: sender,
     channelId: channelId,
@@ -67,6 +68,7 @@ void main() {
     entries: entries,
     hasMore: hasMore,
     floor: floor,
+    marksPartialPages: marksPartialPages,
     inReplyTo: inReplyTo,
   );
 
@@ -293,6 +295,34 @@ void main() {
       );
       expect((await h.entryRepository.getAll(channelId, streamId)).length, 6);
     });
+  });
+
+  test('over a dialect that cannot mark a page partial, a legacy peer\'s '
+      'partial page retires the pull so the next round can ask for the '
+      'rest', () async {
+    final h = GossipEngineTestHarness();
+    final peer = h.addPeer('peer1');
+    h.createChannel('ch1', streamIds: ['s1']);
+
+    await h.armPull(
+      peer,
+      channelId: channelId,
+      streamId: streamId,
+      peerVersion: VersionVector({authorA: 20, authorB: 20}),
+    );
+
+    // A v1 page: author A only, and no way to say B is still coming.
+    await h.engine.handleDeltaResponse(
+      responseOf(peer.id, [entryOf(authorA, 1)], marksPartialPages: false),
+    );
+
+    expect(
+      h.engine.outstandingPullCount,
+      0,
+      reason:
+          'the peer relies on later rounds for B; holding the pull open '
+          'would suppress that round\'s request until the deadline',
+    );
   });
 
   group('a peer that names the request it answers', () {

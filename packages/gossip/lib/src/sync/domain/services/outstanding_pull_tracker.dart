@@ -209,6 +209,7 @@ abstract final class OutstandingPullTracker {
     required Map<NodeId, int> firstByAuthor,
     required VersionVector floor,
     required bool hasMore,
+    bool marksPartialPages = true,
     required int nowMs,
   }) {
     if (inReplyTo != null) {
@@ -233,6 +234,7 @@ abstract final class OutstandingPullTracker {
       firstByAuthor: firstByAuthor,
       floor: floor,
       hasMore: hasMore,
+      marksPartialPages: marksPartialPages,
       nowMs: nowMs,
     );
     final answered = settled.answered;

@@ -87,10 +87,19 @@ abstract final class LegacyCorrelation {
   /// Oldest first because a response can only be the answer to something
   /// already asked, and the older request is the one whose answer is overdue.
   ///
+  /// A partial answer narrows the request to what is still owed only where
+  /// the peer's dialect can mark a page partial ([marksPartialPages]): the
+  /// rest is then still this request's to receive. Where it cannot (v1), the
+  /// response is the whole of what this request will get — the peer relies on
+  /// later rounds for the rest — so the request is retired and the next
+  /// round's digest asks for the remainder; holding it open would suppress
+  /// that pull until the deadline for a remainder nobody will send.
+  ///
   /// The round trip is sampled from a request this response accounts for in
   /// full — including a page that says more is coming, because a request is
   /// measured to its own answer and the rest of the drain is asked for by a
-  /// continuation with its own clock; a partial answer measures nothing yet.
+  /// continuation with its own clock; a partial answer that leaves the
+  /// request open measures nothing yet.
   ///
   /// One step rather than a read and a later write, because which request a
   /// response answers and what becomes of that request are the same decision.
@@ -103,6 +112,7 @@ abstract final class LegacyCorrelation {
     required VersionVector floor,
     required bool hasMore,
     required int nowMs,
+    bool marksPartialPages = true,
   }) {
     final answered = _candidate(
       pulls,
@@ -119,12 +129,13 @@ abstract final class LegacyCorrelation {
         ? const <NodeId>{}
         : answered.wanted.difference(addressed(answered, firstByAuthor, floor));
     final elapsedMs = nowMs - answered.issuedAtMs;
-    final requests = remaining.isEmpty || hasMore
+    final whole = remaining.isEmpty || !marksPartialPages;
+    final requests = whole || hasMore
         ? ({...pulls.requests}..remove(answered.id))
         : ({...pulls.requests}..[answered.id] = answered.narrowedTo(remaining));
     final settled = pulls.copyWith(requests: requests);
     return (
-      state: remaining.isEmpty
+      state: whole
           ? OutstandingPullTracker.sampled(settled, elapsedMs)
           : settled,
       answered: AnsweredPull(elapsedMs: elapsedMs, remaining: remaining),

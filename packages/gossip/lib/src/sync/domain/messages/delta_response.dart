@@ -61,6 +61,16 @@ class DeltaResponse extends ProtocolMessage {
   /// carries. Null on a push — a response nobody asked for.
   final RequestId? inReplyTo;
 
+  /// Whether the sender's dialect can mark a page as partial ([hasMore]).
+  ///
+  /// v1 carries no such mark, so on v1 a response is the whole of what its
+  /// request will get and the rest of a backlog is for the next round to ask;
+  /// a correlation that would otherwise hold a request open for the rest of a
+  /// page must not, or the next round's pull is suppressed for a remainder
+  /// nobody will send. Set by the decoder from the frame's dialect; a response
+  /// built locally is the domain's own, complete shape.
+  final bool marksPartialPages;
+
   const DeltaResponse({
     required NodeId sender,
     required this.channelId,
@@ -69,6 +79,7 @@ class DeltaResponse extends ProtocolMessage {
     this.hasMore = false,
     this.floor = VersionVector.empty,
     this.inReplyTo,
+    this.marksPartialPages = true,
   }) : super(sender);
 
   /// Where this response begins, per author: the lowest sequence it holds

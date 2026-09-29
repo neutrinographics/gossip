@@ -797,6 +797,24 @@ void main() {
           expect(decoded.inReplyTo, isNull);
         });
 
+        test('$version DeltaResponse decodes with the dialect\'s ability to '
+            'mark a page partial', () {
+          final frame = rawFrame(version, WireTypes.deltaResponse, {
+            'sender': 'peer2',
+            'channelId': 'ch1',
+            'streamId': 's1',
+            'entries': <dynamic>[],
+          });
+
+          final decoded = dialectCodec.decode(frame) as DeltaResponse;
+
+          expect(
+            decoded.marksPartialPages,
+            version == WireVersion.v2,
+            reason: 'v1 carries no hasMore, so its answers are whole',
+          );
+        });
+
         test(
           '$version a reference of any other shape is a malformed frame',
           () {
