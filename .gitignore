@@ -23,3 +23,6 @@ coverage/
 Thumbs.db
 /logs
 .claude/settings.local.json
+
+# Superpowers worktrees
+.worktrees/
