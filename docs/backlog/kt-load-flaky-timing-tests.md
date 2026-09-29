@@ -53,6 +53,17 @@ give the real-timeout one a generous bound and a positive signal to wait
 for rather than a fixed sleep. Confirm by running the full suite several
 times under load.
 
+## Sightings since
+
+- 2026-09-29 (gossip-kt `feature/pull-identity`): `StalledRangeSuppressionTest`
+  "a stalled range is requested once, then suppressed, then probed on the
+  backoff cadence" failed once in a filtered run alongside the engine tests
+  ("exactly one request asks for the range before suppression: expected 1,
+  was 0") and passed three of three alone and in every full gate before and
+  after. The first exchange did not happen within the three rounds the test
+  allows under load — the same shape as the churn sighting: a round budget
+  that real dispatchers can miss.
+
 ## Related
 
 - During batch D (2026-09-24/25) the reactive-push pair tripped in three of
