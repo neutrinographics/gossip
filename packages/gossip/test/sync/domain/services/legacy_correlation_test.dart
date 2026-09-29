@@ -527,8 +527,8 @@ void main() {
       );
       expect(
         settled.state.sampleCount,
-        equals(1),
-        reason: 'the response is the whole round trip of this request',
+        equals(0),
+        reason: 'shown to be the answer only in part, so not measured',
       );
     });
 

@@ -95,11 +95,16 @@ abstract final class LegacyCorrelation {
   /// round's digest asks for the remainder; holding it open would suppress
   /// that pull until the deadline for a remainder nobody will send.
   ///
-  /// The round trip is sampled from a request this response accounts for in
-  /// full — including a page that says more is coming, because a request is
-  /// measured to its own answer and the rest of the drain is asked for by a
-  /// continuation with its own clock; a partial answer that leaves the
-  /// request open measures nothing yet.
+  /// The round trip is sampled only from a request this response accounts for
+  /// in full — including a page that says more is coming, because a request
+  /// is measured to its own answer and the rest of the drain is asked for by
+  /// a continuation with its own clock. A partial answer measures nothing:
+  /// one that leaves the request open is not yet the answer, and one that
+  /// retires it because the dialect could promise no more has been shown to
+  /// be the answer only in part — content judged it, and the racing push this
+  /// rule exists to survive is exactly what a partial match can be. The
+  /// deadline is derived from these samples, so a false short one is a cost
+  /// the rule does not take.
   ///
   /// One step rather than a read and a later write, because which request a
   /// response answers and what becomes of that request are the same decision.
@@ -135,7 +140,7 @@ abstract final class LegacyCorrelation {
         : ({...pulls.requests}..[answered.id] = answered.narrowedTo(remaining));
     final settled = pulls.copyWith(requests: requests);
     return (
-      state: whole
+      state: remaining.isEmpty
           ? OutstandingPullTracker.sampled(settled, elapsedMs)
           : settled,
       answered: AnsweredPull(elapsedMs: elapsedMs, remaining: remaining),

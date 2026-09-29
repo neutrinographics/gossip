@@ -61,7 +61,7 @@ class DeltaResponse extends ProtocolMessage {
   /// carries. Null on a push — a response nobody asked for.
   final RequestId? inReplyTo;
 
-  /// Whether the sender's dialect can mark a page as partial ([hasMore]).
+  /// Whether the frame's dialect can mark a page as partial ([hasMore]).
   ///
   /// v1 carries no such mark, so on v1 a response is the whole of what its
   /// request will get and the rest of a backlog is for the next round to ask;
