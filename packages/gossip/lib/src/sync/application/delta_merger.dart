@@ -11,16 +11,17 @@ import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/sync/domain/interfaces/entry_repository.dart';
-import 'package:gossip/src/sync/domain/messages/delta_request.dart';
+import 'package:gossip/src/sync/domain/entities/pull_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/aggregates/stalled_range_registry.dart';
 import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
+import 'package:gossip/src/sync/domain/value_objects/answered_pull.dart';
 
 /// Owns `GossipEngine`'s delta-merge pipeline: filtering a [DeltaResponse]
 /// down to the per-author contiguous prefix it can safely apply, appending
-/// it, advancing the local HLC, and deciding whether a continuation
-/// [DeltaRequest] is owed, plus the contiguity guard and gap-reporting
-/// state that pipeline depends on.
+/// it, advancing the local HLC, and deciding whether a continuation pull is
+/// owed, plus the contiguity guard and gap-reporting state that pipeline
+/// depends on.
 ///
 /// Pulled out of `GossipEngine`, which interleaved this filtering/merge
 /// logic with digest/delta message dispatch and pull-request bookkeeping —
@@ -31,23 +32,27 @@ import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
 ///
 /// `GossipEngine` still owns the ingestion guard (whether a response's
 /// channel/stream is one we actually have — it reads engine-owned channel
-/// state) and pull-request dedup (`PendingPullTracker`). This class
-/// notifies the engine of two engine-owned side effects via the
-/// `onNewEntriesMerged` and `onContinuationIssued` constructor callbacks —
-/// not by exposing them as return-value fields the engine reacts to after
-/// [merge] returns — because both must fire at a specific point *inside*
-/// the per-stream serialized merge body:
+/// state) and the pulls in flight. This class notifies the engine of two
+/// engine-owned side effects via the `onNewEntriesMerged` and
+/// `onContinuationIssued` constructor callbacks — not by exposing them as
+/// return-value fields the engine reacts to after [merge] returns — because
+/// both must fire at a specific point *inside* the per-stream serialized
+/// merge body:
 /// - `onNewEntriesMerged` must fire before `onEntriesMerged` is awaited, so
 ///   the batch counter and news flag reflect a merge before any downstream
 ///   listener is notified of it.
 /// - `onContinuationIssued` must fire synchronously, still inside the
-///   chained merge task, before the continuation is returned — re-arming
-///   the pull tracker's pending flag from outside the chain would add a
-///   Future-chaining hop that a concurrently in-flight message for the
-///   same (peer, channel, stream) could interleave into.
+///   chained merge task, before the continuation is returned — it is handed
+///   what the continuation asks from and what it is for, and answers with
+///   the request the engine issued. Recording a request in flight from
+///   outside the chain would add a Future-chaining hop that a concurrently
+///   in-flight message for the same stream could interleave into.
+///
+/// The continuation itself is returned, never sent: transmission is the
+/// engine's seam, where a refused send takes the request back by its own
+/// identity and a successful one consumes the probe window.
 class DeltaMerger {
   DeltaMerger({
-    required NodeId localNode,
     required EntryRepository entryRepository,
     HlcClock? hlcClock,
     required LocalNodeRepository localNodeRepository,
@@ -55,12 +60,10 @@ class DeltaMerger {
     ErrorCallback? onError,
     LogCallback? onLog,
     required void Function() onNewEntriesMerged,
-    required void Function(NodeId peer, ChannelId channelId, StreamId streamId)
-    onContinuationIssued,
+    required ContinuationIssuer onContinuationIssued,
     required StalledRangeRegistry stalledRanges,
     required TimePort timePort,
-  }) : _localNode = localNode,
-       _entryRepository = entryRepository,
+  }) : _entryRepository = entryRepository,
        _hlcClock = hlcClock,
        _localNodeRepository = localNodeRepository,
        _onEntriesMerged = onEntriesMerged,
@@ -71,7 +74,6 @@ class DeltaMerger {
        _stalledRanges = stalledRanges,
        _timePort = timePort;
 
-  final NodeId _localNode;
   final EntryRepository _entryRepository;
   final HlcClock? _hlcClock;
   final LocalNodeRepository _localNodeRepository;
@@ -79,8 +81,7 @@ class DeltaMerger {
   final ErrorCallback? _onError;
   final LogCallback? _onLog;
   final void Function() _onNewEntriesMerged;
-  final void Function(NodeId peer, ChannelId channelId, StreamId streamId)
-  _onContinuationIssued;
+  final ContinuationIssuer _onContinuationIssued;
 
   /// Shared with the engine: the merger records solicited gaps here and
   /// shapes its continuation requests with it, so a multi-chunk drain
@@ -119,26 +120,30 @@ class DeltaMerger {
   /// Failure isolation between chained merges is [KeyedTaskChain]'s
   /// contract, not reimplemented here.
   ///
-  /// [solicited] gates floor adoption and gap severity: true when this
-  /// response answers a request the caller was tracking (a live entry in
-  /// its pull tracker), false for an unsolicited push. The caller decides
-  /// this — a peer's own claim can't be trusted for it — and passes it in
-  /// rather than this class reaching into pull-tracking state.
-  Future<({DeltaRequest? continuation, bool mergedNewEntries})> merge(
+  /// [answered] is the pull this response answered, null when it answered
+  /// none. It gates floor adoption, gap severity and whether there is a
+  /// continuation at all, and says what the pull was still for. The caller
+  /// decides it — a peer's own claim can't be trusted for it — and passes it
+  /// in rather than this class reaching into the pulls in flight.
+  Future<({PullRequest? continuation, bool mergedNewEntries})> merge(
     DeltaResponse response, {
-    required bool solicited,
+    required AnsweredPull? answered,
   }) {
     final chainKey = (response.channelId, response.streamId);
     return _mergeChain.enqueue(
       chainKey,
-      () => _mergeInner(response, solicited: solicited),
+      () => _mergeInner(response, answered: answered),
     );
   }
 
-  Future<({DeltaRequest? continuation, bool mergedNewEntries})> _mergeInner(
+  Future<({PullRequest? continuation, bool mergedNewEntries})> _mergeInner(
     DeltaResponse response, {
-    required bool solicited,
+    required AnsweredPull? answered,
   }) async {
+    // Solicited means: this response answered a pull of ours, which the
+    // engine settled against the requests it has in flight before calling
+    // here.
+    final solicited = answered != null;
     // A solicited response may carry the sender's compaction floor: the
     // range below it was pruned by retention and is unobtainable, so adopt
     // it as truncated history (raising our high-water mark and our own
@@ -244,42 +249,76 @@ class DeltaMerger {
       containsOutOfOrderEntries,
     );
 
-    if (response.hasMore) {
-      // Continue draining from the same peer at our advanced version.
-      final advanced = await _entryRepository.getVersionVector(
-        response.channelId,
-        response.streamId,
+    if (!response.hasMore) return (continuation: null, mergedNewEntries: true);
+
+    // Only a response that answered a request of ours is continued: a page
+    // nobody asked for is merged as the push it is, and what remains of it
+    // is pulled by whatever the next digest exchange plans, like anything
+    // else. Continuing it instead would put a request on the wire for a
+    // stream this node had not decided to pull.
+    if (answered == null) {
+      _log(
+        LogLevel.trace,
+        'a page for ${response.channelId}/${response.streamId} from '
+        '${response.sender} claims more but answered no pull of ours; the '
+        'next digest exchange plans what is left',
       );
-      // Re-arms the pull tracker's pending flag synchronously, still
-      // inside this chained merge, right before returning the
-      // continuation (see this class's doc for why the timing matters).
-      _onContinuationIssued(
+      return (continuation: null, mergedNewEntries: true);
+    }
+
+    // The continuation is still for what this page left owed, and carries
+    // what this page carried: which of them the next page opens with, and
+    // whether an author's run was cut here or was complete, is the
+    // responder's to know, so a page continuing a carried author is
+    // recognised without being required.
+    final wanted = answered.remaining;
+    final carrying = response.firstByAuthor.keys.toSet();
+    if (wanted.isEmpty && carrying.isEmpty) {
+      // Only a page with no entries at all, which cannot reach here:
+      // [_mergeInner] answers such a response above, before anything is
+      // applied. Stated as the backstop it is, because a request for no
+      // author is not a request and constructing one would throw out of an
+      // inbound-message handler.
+      _log(
+        LogLevel.debug,
+        'not continuing an answer for ${response.channelId}/'
+        '${response.streamId} from ${response.sender}: it claims more but '
+        'is for no author',
+      );
+      return (continuation: null, mergedNewEntries: true);
+    }
+
+    // Continue draining from the same peer at our advanced version. No
+    // digest ceiling mid-drain; the stored advertised maximum suffices, and
+    // staleness self-corrects through the probe cycle. Any probe this
+    // leaves unshaped is marked at the engine's send seam, which every
+    // continuation passes through — never here, where transmission hasn't
+    // happened yet.
+    final advanced = await _entryRepository.getVersionVector(
+      response.channelId,
+      response.streamId,
+    );
+    final since = _stalledRanges.shapeSince(
+      response.sender,
+      response.channelId,
+      response.streamId,
+      advanced,
+      nowMs: _timePort.nowMs,
+    );
+    // Issues the continuation synchronously, still inside this chained
+    // merge, right before returning it (see this class's doc for why the
+    // timing matters).
+    return (
+      continuation: _onContinuationIssued(
         response.sender,
         response.channelId,
         response.streamId,
-      );
-      return (
-        continuation: DeltaRequest(
-          sender: _localNode,
-          channelId: response.channelId,
-          streamId: response.streamId,
-          // No digest ceiling mid-drain; the stored advertised maximum
-          // suffices, and staleness self-corrects through the probe cycle.
-          // Any probe this leaves unshaped is marked at the engine's send
-          // seam, which every continuation passes through — never here,
-          // where transmission hasn't happened yet.
-          since: _stalledRanges.shapeSince(
-            response.sender,
-            response.channelId,
-            response.streamId,
-            advanced,
-            nowMs: _timePort.nowMs,
-          ),
-        ),
-        mergedNewEntries: true,
-      );
-    }
-    return (continuation: null, mergedNewEntries: true);
+        since,
+        wanted,
+        carrying,
+      ),
+      mergedNewEntries: true,
+    );
   }
 
   /// Selects the entries that can be applied without leaving a per-author
@@ -468,6 +507,24 @@ class DeltaMerger {
     _reportedGaps.removeWhere((key) => key.$1 == peer);
   }
 }
+
+/// How the merger asks its owner to issue the continuation a page is owed:
+/// it is handed whom to ask, what the continuation asks from, what it is
+/// still for and what the page before it carried, and answers with the
+/// request the owner recorded as in flight.
+///
+/// A function rather than a returned description because the request must be
+/// recorded inside the merge's serialized span — see [DeltaMerger]'s doc —
+/// while putting it on the wire stays the owner's.
+typedef ContinuationIssuer =
+    PullRequest Function(
+      NodeId peer,
+      ChannelId channelId,
+      StreamId streamId,
+      VersionVector since,
+      Set<NodeId> wanted,
+      Set<NodeId> carrying,
+    );
 
 /// A per-author sequence hole found while filtering a delta response.
 ///

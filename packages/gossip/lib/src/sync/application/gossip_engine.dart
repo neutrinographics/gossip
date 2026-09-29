@@ -7,7 +7,10 @@ import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
 import 'package:gossip/src/sync/domain/services/gossip_timing_policy.dart';
 import 'package:gossip/src/shared/domain/services/generation_scheduler.dart';
 import 'package:gossip/src/shared/domain/services/jitter.dart';
-import 'package:gossip/src/sync/domain/services/pending_pull_tracker.dart';
+import 'package:gossip/src/sync/domain/aggregates/outstanding_pulls.dart';
+import 'package:gossip/src/sync/domain/entities/pull_request.dart';
+import 'package:gossip/src/sync/domain/services/outstanding_pull_tracker.dart';
+import 'package:gossip/src/sync/domain/value_objects/correlation.dart';
 import 'package:gossip/src/sync/domain/aggregates/stalled_range_registry.dart';
 
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
@@ -42,9 +45,10 @@ import 'package:gossip/src/sync/application/reactive_pusher.dart';
 ///
 /// Five extracted collaborators own specialized concerns this class
 /// orchestrates but no longer implements directly: [GossipTimingPolicy]
-/// (round-interval pacing), [PendingPullTracker] (pull dedup and adaptive
-/// timeout), [DigestBudgeter] (digest byte-budgeting), [ReactivePusher]
-/// (push debounce), and [DeltaMerger] (the delta-merge pipeline).
+/// (round-interval pacing), [OutstandingPullTracker] (the transitions over
+/// the pulls in flight — planning, correlation and the adaptive deadline),
+/// [DigestBudgeter] (digest byte-budgeting), [ReactivePusher] (push
+/// debounce), and [DeltaMerger] (the delta-merge pipeline).
 ///
 /// ## Anti-Entropy Protocol (4 Steps)
 ///
@@ -247,13 +251,18 @@ class GossipEngine {
     _scheduler.wake();
   }
 
-  /// Owns pull-request dedup (at most one outstanding DeltaRequest per
-  /// (peer, channel, stream) at a time) and the adaptive per-request
-  /// timeout derived from observed delta round-trip time. See
-  /// [PendingPullTracker] for the per-peer keying rationale, the
-  /// RFC-6298 timeout formula, and why a BLE page-transmit signal can't
-  /// come from ping-based RTT.
-  late final PendingPullTracker _pendingPullTracker;
+  /// Every pull of ours awaiting an answer, with what judges an arriving
+  /// response: how each peer names the request it answers, and the
+  /// round-trip evidence behind the staleness deadline. One immutable value
+  /// in one field, replaced whole by each transition — see
+  /// [OutstandingPullTracker] for the planner's gate, the RFC-6298
+  /// deadline, and why correlation is by identity rather than content.
+  ///
+  /// Never read and written across an `await`: the incoming-message
+  /// listener does not await its handlers, so two responses for one stream
+  /// interleave at every suspension point, and a transition split around
+  /// one would write back a value decided before the other's.
+  OutstandingPulls _pulls = OutstandingPulls.initial;
 
   /// Stalled author ranges per peer — shapes outgoing pull requests so a
   /// range a peer already failed to supply is not re-requested at full
@@ -263,11 +272,12 @@ class GossipEngine {
 
   /// Owns the delta-merge pipeline: filtering a [DeltaResponse] to its
   /// per-author contiguous prefix, applying it, advancing the HLC, and
-  /// deciding on a continuation request. See [DeltaMerger] for why it's
-  /// notified of this engine's batch-count/news bookkeeping and
-  /// pull-tracker re-arming via injected callbacks rather than reacting to
-  /// its return value after [handleDeltaResponse] awaits it — both must
-  /// fire at a specific point inside the per-stream serialized merge body.
+  /// shaping the continuation a page is owed. See [DeltaMerger] for why
+  /// it's notified of this engine's batch-count/news bookkeeping and asks
+  /// it to issue that continuation via injected callbacks rather than
+  /// through its return value after [handleDeltaResponse] awaits it — both
+  /// must happen at a specific point inside the per-stream serialized merge
+  /// body.
   late final DeltaMerger _merger;
 
   /// Monotonic count of delta batches that merged at least one new entry.
@@ -313,21 +323,13 @@ class GossipEngine {
        _hlcClock = hlcClock,
        _localNodeRepository = localNodeRepository,
        _random = random ?? Random() {
-    // Needs nothing but the `timePort` parameter, so it could live in the
-    // initializer list — built here instead, grouped with this
-    // constructor's other extracted domain-service collaborators
-    // ([_timing], [_digestBudgeter]) for one discoverable construction
-    // site rather than splitting collaborators across the initializer
-    // list and the body.
-    _pendingPullTracker = PendingPullTracker(timePort: timePort);
     _stalledRanges = stalledRanges ?? StalledRangeRegistry();
-    // Built here, after `_pendingPullTracker` (its `onContinuationIssued`
-    // wiring below calls into it) and after `_hlcClock`/
-    // `_localNodeRepository` are assigned by the initializer list —
-    // mirroring the other extracted collaborators' body-construction
-    // rationale above.
+    // Built here, after `_hlcClock`/`_localNodeRepository` are assigned by
+    // the initializer list — grouped with this constructor's other
+    // extracted collaborators ([_timing], [_digestBudgeter]) for one
+    // discoverable construction site rather than splitting them across the
+    // initializer list and the body.
     _merger = DeltaMerger(
-      localNode: localNode,
       entryRepository: entryRepository,
       hlcClock: _hlcClock,
       localNodeRepository: _localNodeRepository,
@@ -340,13 +342,26 @@ class GossipEngine {
         _mergedBatchCount++;
         _recordNews();
       },
-      // Re-arms the pending-pull flag from inside the merger's chained
-      // merge body, before the continuation is returned — see
-      // [DeltaMerger]'s doc for why this must happen synchronously there
-      // rather than after [merge] returns.
-      onContinuationIssued: (peer, channelId, streamId) {
-        _pendingPullTracker.markContinuation(peer, channelId, streamId);
-      },
+      // Issues the continuation from inside the merger's chained merge
+      // body, before it is returned — see [DeltaMerger]'s doc for why this
+      // must happen synchronously there rather than after [merge] returns.
+      // A continuation is owed rather than planned, so it passes no gate:
+      // the peer is mid-answer, and the rest of its page is asked for once.
+      onContinuationIssued:
+          (peer, channelId, streamId, since, wanted, carrying) {
+            final issued = OutstandingPullTracker.issue(
+              _pulls,
+              peer: peer,
+              channel: channelId,
+              stream: streamId,
+              since: since,
+              wanted: wanted,
+              nowMs: timePort.nowMs,
+              carrying: carrying,
+            );
+            _pulls = issued.state;
+            return issued.request;
+          },
       stalledRanges: _stalledRanges,
       timePort: timePort,
     );
@@ -467,20 +482,20 @@ class GossipEngine {
   /// facade) never reach through this engine into its own port.
   int get transportBacklog => messagePort.totalPendingSendCount;
 
-  /// How long a pending delta request is honoured before it is considered
-  /// stale and a replacement may be issued. Delegates to
-  /// [_pendingPullTracker] — see [PendingPullTracker.effectiveTimeout] for
-  /// the adaptive RFC-6298 formula, its clamping, and the cold-start
-  /// default.
+  /// How long a pull is honoured before it is considered stale and the
+  /// stream may be pulled again — see
+  /// [OutstandingPullTracker.effectiveTimeout] for the adaptive RFC-6298
+  /// formula, its clamping, and the cold-start default.
   Duration get effectivePendingRequestTimeout =>
-      _pendingPullTracker.effectiveTimeout;
+      OutstandingPullTracker.effectiveTimeout(_pulls);
 
   /// Number of delta requests currently in flight (pulls we are awaiting a
   /// response for). A coarse "am I mid-sync?" signal for applications:
-  /// non-zero means we are actively pulling data from a peer. Delegates to
-  /// [_pendingPullTracker] — see [PendingPullTracker.outstandingCount] for
-  /// the expiry-exclusion rationale.
-  int get outstandingPullCount => _pendingPullTracker.outstandingCount;
+  /// non-zero means we are actively pulling data from a peer. See
+  /// [OutstandingPullTracker.outstandingCount] for why a request past the
+  /// deadline is not counted.
+  int get outstandingPullCount =>
+      OutstandingPullTracker.outstandingCount(_pulls, nowMs: timePort.nowMs);
 
   /// Monotonic count of delta batches that merged at least one new entry
   /// since construction. Poll it to detect recent sync activity: a value
@@ -515,10 +530,10 @@ class GossipEngine {
     // Drop any buffered reactive push — the periodic anti-entropy loop is
     // also stopping, and a stale delay callback checks the generation.
     _pusher.invalidateAndClear();
-    // Drop outstanding delta-request flags: while stopped we don't ingest
-    // responses, so a resumed engine should be free to re-request
-    // immediately rather than waiting out the pending-request timeout.
-    _pendingPullTracker.clearAll();
+    // Drop the pulls in flight: while stopped we don't ingest responses, so
+    // a resumed engine should be free to re-request immediately rather than
+    // waiting out the deadline.
+    _pulls = OutstandingPullTracker.clearAll(_pulls);
     // A restart is a fresh diagnosis window for persistent gaps.
     _merger.clearReportedGaps();
     // ... and for stalled ranges.
@@ -1015,7 +1030,7 @@ class GossipEngine {
   ///
   /// Returns true on success. Send failures are emitted via [ErrorCallback]
   /// and reported as false so callers can roll back optimistic state
-  /// (e.g. the pending-delta-request flag).
+  /// (e.g. taking back a pull the peer never received).
   Future<bool> _sendMessage(NodeId recipient, ProtocolMessage message) async {
     final bytes = _codec.encode(message);
     _logOutgoingMessage(recipient, message, bytes.length);
@@ -1203,27 +1218,41 @@ class GossipEngine {
   /// Handles digest response from a peer (Step 3).
   ///
   /// Compares peer's version vectors with ours to identify entries we're
-  /// missing. Generates [DeltaRequest] only for streams where the peer has
-  /// entries we don't have (i.e., where our version does not dominate theirs).
+  /// missing, and issues a [PullRequest] only for streams where the peer is
+  /// ahead on some author. The caller puts them on the wire
+  /// ([_sendDeltaRequests]); they are in flight from here.
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
-  Future<List<DeltaRequest>> handleDigestResponse(DigestResponse response) {
+  Future<List<PullRequest>> handleDigestResponse(DigestResponse response) {
     return _computeDeltaRequests(response.sender, response.digests);
   }
 
-  /// Sends the given [requests] to [recipient], releasing the pending flag
-  /// for any that fail to transmit (the peer can never answer a request it
-  /// didn't receive, so holding the flag would block re-requesting for the
-  /// full timeout).
+  /// Puts the given [requests] on the wire to [recipient], each naming
+  /// itself so the answer can name it back, and taking back by its own
+  /// identity any the transport refused — a peer can never answer a request
+  /// it did not receive, and holding it would block re-requesting that
+  /// stream for the full deadline.
+  ///
+  /// The one place a pull of ours becomes a frame: everything upstream
+  /// decides *what* to ask, and does so by issuing a [PullRequest].
   Future<void> _sendDeltaRequests(
     NodeId recipient,
-    List<DeltaRequest> requests,
+    List<PullRequest> requests,
   ) async {
     // Initiating a pull is news: we're actively chasing entries we're
     // missing, so the round is not quiet.
     if (requests.isNotEmpty) _recordNews();
     for (final request in requests) {
-      final sent = await _sendMessage(recipient, request);
+      final sent = await _sendMessage(
+        recipient,
+        DeltaRequest(
+          sender: localNode,
+          channelId: request.channelId,
+          streamId: request.streamId,
+          since: request.since,
+          requestId: request.id,
+        ),
+      );
       if (sent) {
         // A transmitted request IS the probe for any stalled range whose
         // window it left unshaped: re-arm at doubled backoff now, so a
@@ -1237,28 +1266,23 @@ class GossipEngine {
           timePort.nowMs,
         );
       } else {
-        _pendingPullTracker.release(
-          recipient,
-          request.channelId,
-          request.streamId,
-        );
+        _pulls = OutstandingPullTracker.release(_pulls, request.id);
       }
     }
   }
 
   /// Compares a peer's advertised [peerDigests] against our own state and
-  /// returns the [DeltaRequest]s needed to pull entries we are missing.
+  /// issues the pulls needed to fetch entries we are missing.
   ///
   /// Shared by both directions of anti-entropy: the DigestResponse path
   /// (we initiated; pull from the responder) and the DigestRequest path
   /// (they initiated; reciprocate using the digests they already sent us,
-  /// i.e. push-pull). Streams with a non-expired pending request are
-  /// skipped for dedup.
-  Future<List<DeltaRequest>> _computeDeltaRequests(
+  /// i.e. push-pull). Streams with a pull already in flight are skipped.
+  Future<List<PullRequest>> _computeDeltaRequests(
     NodeId peer,
     List<ChannelDigest> peerDigests,
   ) async {
-    final deltaRequests = <DeltaRequest>[];
+    final deltaRequests = <PullRequest>[];
 
     for (final channelDigest in peerDigests) {
       final channel = _channels[channelDigest.channelId];
@@ -1287,11 +1311,11 @@ class GossipEngine {
     return deltaRequests;
   }
 
-  /// Evaluates one peer [StreamDigest] against our local state and returns
-  /// the [DeltaRequest] needed to pull what we're missing — or null when
-  /// the stream is skipped (not created locally, or a pull is already
-  /// pending) or our version already dominates the peer's.
-  Future<DeltaRequest?> _evaluateStreamDigest(
+  /// Evaluates one peer [StreamDigest] against our local state and issues
+  /// the pull that fetches what we're missing — or null when the stream is
+  /// skipped (not created locally, or a pull to this peer for it is already
+  /// in flight) or the digest shows nothing we are behind on.
+  Future<PullRequest?> _evaluateStreamDigest(
     NodeId peer,
     ChannelId channelId,
     StreamDigest streamDigest,
@@ -1319,11 +1343,17 @@ class GossipEngine {
       return null;
     }
 
-    // Dedup gate: skip if a non-expired pull to THIS peer for this
-    // stream is already pending. A single synchronous call — see
-    // [PendingPullTracker.tryMark] for why the check and the mark
-    // must happen together, with no `await` between them.
-    if (!_pendingPullTracker.tryMark(peer, channelId, streamDigest.streamId)) {
+    // Cheap gate first: a pull to THIS peer for this stream is already in
+    // flight and still honoured, so there is nothing to decide and no
+    // storage to read. Asking again below — where the request is actually
+    // issued — is what makes the gate hold across the shaping that follows.
+    if (OutstandingPullTracker.isOutstanding(
+      _pulls,
+      peer: peer,
+      channel: channelId,
+      stream: streamDigest.streamId,
+      nowMs: timePort.nowMs,
+    )) {
       return null;
     }
 
@@ -1353,22 +1383,36 @@ class GossipEngine {
       nowMs: timePort.nowMs,
     );
 
-    // Only request delta if peer has entries we don't have — judged on the
-    // shaped vector, so a peer whose only surplus is a stalled range gets
-    // no request at all.
-    if (!since.dominates(streamDigest.version)) {
-      return DeltaRequest(
-        sender: localNode,
-        channelId: channelId,
-        streamId: streamDigest.streamId,
-        since: since,
-      );
-    } else {
-      // Nothing to request after all — release the flag.
-      _pendingPullTracker.release(peer, channelId, streamDigest.streamId);
-      return null;
-    }
+    // What this pull would be for: the authors the peer's digest shows it
+    // ahead on, judged against the shaped vector — so a peer whose only
+    // surplus is a stalled range is ahead on nobody, and nothing is issued.
+    final wanted = _authorsAhead(streamDigest.version, since);
+    if (wanted.isEmpty) return null;
+
+    // Issue in ONE synchronous step, re-asking the gate as it goes: the
+    // shaping above suspends, so a second digest for this key can have
+    // issued in the meantime — whichever reaches here first issues, and
+    // gates the other. One request either way.
+    final issued = OutstandingPullTracker.issueUnlessOutstanding(
+      _pulls,
+      peer: peer,
+      channel: channelId,
+      stream: streamDigest.streamId,
+      since: since,
+      wanted: wanted,
+      nowMs: timePort.nowMs,
+    );
+    _pulls = issued.state;
+    return issued.request;
   }
+
+  /// The authors [theirVersion] holds beyond [since] — what a pull shaped
+  /// from [since] is for.
+  Set<NodeId> _authorsAhead(VersionVector theirVersion, VersionVector since) =>
+      theirVersion.entries.entries
+          .where((author) => author.value > since[author.key])
+          .map((author) => author.key)
+          .toSet();
 
   /// Adopts the peer's claimed authorship watermark as our sequence floor
   /// when it exceeds ours, and returns the (possibly refreshed) version
@@ -1418,6 +1462,14 @@ class GossipEngine {
   /// vector never develops holes. The requester obtains the remainder in
   /// subsequent anti-entropy rounds as its version vector advances.
   ///
+  /// The answer names the request it answers, whenever the requester gave
+  /// it a name: that is what lets the requester recognise the answer
+  /// without guessing from what it carries. A requester on a pin that names
+  /// none gets an answer that names none, and correlates it as it always
+  /// did. An empty answer for a stream we do not hold names it too — it is
+  /// still that request's answer, and naming it retires the request at once
+  /// instead of leaving the requester to wait out its deadline.
+  ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
   Future<DeltaResponse> handleDeltaRequest(DeltaRequest request) async {
     // Serve only channels/streams this node actually has (mirrors the
@@ -1435,6 +1487,7 @@ class GossipEngine {
         channelId: request.channelId,
         streamId: request.streamId,
         entries: const [],
+        inReplyTo: request.requestId,
       );
     }
 
@@ -1461,6 +1514,7 @@ class GossipEngine {
       entries: fitted,
       hasMore: hasMore,
       floor: floor,
+      inReplyTo: request.requestId,
     );
   }
 
@@ -1561,13 +1615,13 @@ class GossipEngine {
   /// received entries. Exposed as public for testing; production callers
   /// reach it via [_handleIncomingMessage].
   ///
-  /// Returns a continuation [DeltaRequest] (for the dispatcher to send) when
-  /// the sender truncated the response to the size budget
-  /// ([DeltaResponse.hasMore]) AND we applied new entries — draining a
-  /// backlog at link speed instead of one page per periodic round. Returns
-  /// null otherwise (no more, or no progress — the latter guards against an
-  /// infinite continuation loop).
-  Future<DeltaRequest?> handleDeltaResponse(DeltaResponse response) async {
+  /// Returns the continuation pull (for the dispatcher to send) when the
+  /// response answered a pull of ours, the sender truncated it to the size
+  /// budget ([DeltaResponse.hasMore]) AND we applied new entries — draining
+  /// a backlog at link speed instead of one page per periodic round.
+  /// Returns null otherwise (a page nobody asked for, no more, or no
+  /// progress — the last guards against an infinite continuation loop).
+  Future<PullRequest?> handleDeltaResponse(DeltaResponse response) async {
     // Ingest only channels/streams this node actually has. Reactive pushes
     // fan out to every reachable peer, so receiving data for a channel we
     // never joined is routine — silently storing it would accumulate
@@ -1586,29 +1640,66 @@ class GossipEngine {
       return null;
     }
 
-    // If this response answers a request we were tracking, [complete]
-    // removes it and feeds the elapsed time to the adaptive-timeout
-    // estimator as an RTT sample (dominated by page transmit time) — see
-    // [PendingPullTracker.complete]. Whether we were tracking it is also
-    // what "solicited" means to [DeltaMerger.merge]: a peer's own claim
-    // can't be trusted for that, only our own pending-pull state can.
-    final elapsed = _pendingPullTracker.complete(
-      response.sender,
-      response.channelId,
-      response.streamId,
+    // Which request of ours this response answers, if any: settled against
+    // what we have in flight, never against the sender's own claim. A
+    // response that names one of our requests is that request's answer; one
+    // that names none is judged by content only while the sender has never
+    // named one, and is a push after that. Where it is an answer, the
+    // request is retired and its own elapsed time feeds the deadline.
+    //
+    // The reading is taken before the step, and the step decides and
+    // changes at once, with no `await` between reading `_pulls` and writing
+    // it back.
+    final settledAtMs = timePort.nowMs;
+    final settled = OutstandingPullTracker.answer(
+      _pulls,
+      sender: response.sender,
+      inReplyTo: response.inReplyTo,
+      channel: response.channelId,
+      stream: response.streamId,
+      firstByAuthor: response.firstByAuthor,
+      floor: response.floor,
+      hasMore: response.hasMore,
+      nowMs: settledAtMs,
     );
-    final result = await _merger.merge(response, solicited: elapsed != null);
+    _pulls = settled.state;
+    // How a peer answers is worth saying once, per peer: it is how a
+    // deployment sees which of its nodes still correlate by content, which
+    // is the criterion for retiring that rule.
+    switch (settled.correlated.learned) {
+      case Correlation.byReference:
+        _log(
+          LogLevel.info,
+          'peer ${_shortId(response.sender.value)} answers by reference',
+        );
+      case Correlation.legacy:
+        _log(
+          LogLevel.info,
+          'peer ${_shortId(response.sender.value)} answers without a '
+          'reference; correlated by content (legacy)',
+        );
+      case Correlation.unknown:
+      case null:
+        break;
+    }
+
+    final result = await _merger.merge(
+      response,
+      answered: settled.correlated.answered,
+    );
     return result.continuation;
   }
 
-  /// Clears pending delta requests addressed to [peer].
+  /// Forgets [peer]: the pulls addressed to it and how it answered them.
   ///
-  /// Called when a peer is removed: its in-flight pulls can never complete,
-  /// so leaving them would block re-requesting after a fast reconnect and
-  /// hold [outstandingPullCount] above zero until expiry.
+  /// Called when a peer is removed: its in-flight pulls can never be
+  /// answered, so leaving them would block re-requesting after a fast
+  /// reconnect and hold [outstandingPullCount] above zero until they expire.
+  /// How it answered is a fact about a peer we no longer have; its next
+  /// named answer teaches it again.
   void clearPendingRequestsForPeer(NodeId peer) {
     _recordNews();
-    _pendingPullTracker.clearForPeer(peer);
+    _pulls = OutstandingPullTracker.clearForPeer(_pulls, peer);
     _merger.clearReportedGapsForPeer(peer);
     _stalledRanges.clearForPeer(peer);
   }

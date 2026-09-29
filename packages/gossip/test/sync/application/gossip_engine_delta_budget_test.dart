@@ -208,7 +208,9 @@ void main() {
         expect(
           totalRequests,
           equals(1),
-          reason: 'the pending flag must dedup interleaved digest handling',
+          reason:
+              'a pull already in flight must dedup interleaved digest '
+              'handling',
         );
       },
     );

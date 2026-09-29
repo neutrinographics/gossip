@@ -23,10 +23,14 @@ import 'package:gossip/src/shared/domain/interfaces/message_port.dart';
 import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository.dart';
 import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
 import 'package:gossip/src/sync/application/gossip_engine.dart';
+import 'package:gossip/src/sync/domain/entities/pull_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/messages/digest_request.dart';
+import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
+import 'package:gossip/src/sync/domain/value_objects/request_id.dart';
+import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:gossip/src/sync/infrastructure/membership_peer_directory.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
@@ -89,6 +93,10 @@ class GossipEngineTestHarness {
   final List<SyncError> errors;
   final List<MergedEntriesRecord> mergedEntries;
 
+  /// Every line the engine logged, as `level: message` — what pins the
+  /// once-per-peer facts the engine reports rather than acts on.
+  final List<String> logs;
+
   final Map<ChannelId, ChannelAggregate> _channels = {};
   final List<GossipTestPeer> _peers = [];
 
@@ -104,6 +112,7 @@ class GossipEngineTestHarness {
     required this.hlcClock,
     required this.errors,
     required this.mergedEntries,
+    required this.logs,
   });
 
   /// Creates a harness with the given configuration.
@@ -137,6 +146,7 @@ class GossipEngineTestHarness {
     final entryRepository = InMemoryEntryRepository();
     final errors = <SyncError>[];
     final mergedEntries = <MergedEntriesRecord>[];
+    final logs = <String>[];
     final codec = SyncMessageCodec(wireVersion: wireVersion);
 
     HlcClock? hlcClock;
@@ -153,6 +163,7 @@ class GossipEngineTestHarness {
       messagePort: messagePort ?? localPort,
       localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
       onError: errors.add,
+      onLog: (level, message, [error, stack]) => logs.add('$level: $message'),
       onEntriesMerged:
           onEntriesMerged ??
           (channelId, streamId, entries, containsOutOfOrderEntries) async {
@@ -185,6 +196,7 @@ class GossipEngineTestHarness {
       hlcClock: hlcClock,
       errors: errors,
       mergedEntries: mergedEntries,
+      logs: logs,
     );
   }
 
@@ -368,6 +380,7 @@ class GossipEngineTestHarness {
     required List<LogEntry> entries,
     bool hasMore = false,
     VersionVector floor = VersionVector.empty,
+    RequestId? inReplyTo,
   }) async {
     engine.startListening(Map.of(_channels));
     final response = DeltaResponse(
@@ -377,6 +390,7 @@ class GossipEngineTestHarness {
       entries: entries,
       hasMore: hasMore,
       floor: floor,
+      inReplyTo: inReplyTo,
     );
     await from.port.send(localNode, codec.encode(response));
     await flush(3);
@@ -398,6 +412,7 @@ class GossipEngineTestHarness {
     required ChannelId channelId,
     required StreamId streamId,
     VersionVector? since,
+    RequestId? requestId,
   }) async {
     engine.startListening(Map.of(_channels));
     final request = DeltaRequest(
@@ -405,6 +420,7 @@ class GossipEngineTestHarness {
       channelId: channelId,
       streamId: streamId,
       since: since ?? VersionVector.empty,
+      requestId: requestId,
     );
     await from.port.send(localNode, codec.encode(request));
     await flush(3);
@@ -429,6 +445,33 @@ class GossipEngineTestHarness {
     final request = DigestRequest(sender: from.id, digests: digests);
     await from.port.send(localNode, codec.encode(request));
     await flush(3);
+  }
+
+  /// Arms a real pull to [peer] for one stream by handing [engine] a digest
+  /// that shows the peer ahead, and answers with the request it issued —
+  /// what the engine put in flight, whose identity a peer's answer names.
+  ///
+  /// Goes through the real planner rather than reaching into the engine's
+  /// pull state, so the request under test is the one production would have
+  /// issued. Nothing is sent: the caller decides what answer arrives.
+  Future<PullRequest> armPull(
+    GossipTestPeer peer, {
+    required ChannelId channelId,
+    required StreamId streamId,
+    required VersionVector peerVersion,
+  }) async {
+    final issued = await engine.handleDigestResponse(
+      DigestResponse(
+        sender: peer.id,
+        digests: [
+          ChannelDigest(
+            channelId: channelId,
+            streams: [StreamDigest(streamId: streamId, version: peerVersion)],
+          ),
+        ],
+      ),
+    );
+    return issued.single;
   }
 
   // Time helpers

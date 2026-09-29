@@ -124,7 +124,7 @@ void main() {
       final peer = h.addPeer('peer1');
       h.createChannel('ch1', streamIds: ['s1']);
 
-      // Arm the pending pull (the response below is solicited).
+      // Issue the pull the response below answers.
       await h.engine.handleDigestResponse(digestFrom(peer.id));
 
       await h.engine.handleDeltaResponse(
@@ -170,7 +170,7 @@ void main() {
       final peer = h.addPeer('peer1');
       h.createChannel('ch1', streamIds: ['s1']);
 
-      // No pending pull: an unsolicited push claiming a floor must not be
+      // Nothing in flight: an unsolicited push claiming a floor must not be
       // able to make us skip history (we never asked this peer).
       await h.engine.handleDeltaResponse(
         DeltaResponse(
@@ -420,7 +420,7 @@ void main() {
 
         // Requester learns the (pre-compaction) responder state and issues
         // a DeltaRequest since {} — this is the "stage digest exchange"
-        // step; handleDigestResponse both arms the pending pull AND
+        // step; handleDigestResponse both issues the pull AND
         // returns the DeltaRequest we'd send.
         final deltaRequests = await joinerH.engine.handleDigestResponse(
           digestFrom(resp.id, VersionVector({authorA: 5})),
@@ -439,7 +439,13 @@ void main() {
         );
 
         final response = await responder.engine.handleDeltaRequest(
-          inFlightRequest,
+          DeltaRequest(
+            sender: joinerH.localNode,
+            channelId: inFlightRequest.channelId,
+            streamId: inFlightRequest.streamId,
+            since: inFlightRequest.since,
+            requestId: inFlightRequest.id,
+          ),
         );
 
         expect(
@@ -478,7 +484,7 @@ void main() {
         // No pending-request wedge: a follow-up round (a fresh digest
         // advertising new responder history) must be able to issue a NEW
         // DeltaRequest immediately, not be silently swallowed by a stale
-        // dedup flag left over from the raced exchange.
+        // pull left in flight by the raced exchange.
         await responder.entryRepository.append(
           channelId,
           streamId,

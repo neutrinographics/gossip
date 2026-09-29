@@ -6,10 +6,9 @@ import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
+import 'package:gossip/src/sync/domain/entities/pull_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
-import 'package:gossip/src/sync/domain/messages/digest_response.dart';
-import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
-import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
+import 'package:gossip/src/sync/domain/value_objects/request_id.dart';
 import 'package:test/test.dart';
 
 import 'gossip_engine_test_harness.dart';
@@ -27,12 +26,14 @@ void main() {
     payload: Uint8List.fromList([seq]),
   );
 
-  DeltaResponse deltaOf(List<LogEntry> entries) => DeltaResponse(
-    sender: NodeId('peer1'),
-    channelId: channelId,
-    streamId: streamId,
-    entries: entries,
-  );
+  DeltaResponse deltaOf(List<LogEntry> entries, {RequestId? inReplyTo}) =>
+      DeltaResponse(
+        sender: NodeId('peer1'),
+        channelId: channelId,
+        streamId: streamId,
+        entries: entries,
+        inReplyTo: inReplyTo,
+      );
 
   Future<GossipEngineTestHarness> harnessAt(Map<NodeId, int> versions) async {
     final h = GossipEngineTestHarness();
@@ -85,36 +86,28 @@ void main() {
       expect(all.map((e) => e.sequence), equals([1, 2, 3, 4, 5, 6]));
     });
 
-    test('a gapped SOLICITED response emits a diagnosable error — once per '
-        'gap, not per round', () async {
+    test('a gapped ANSWER emits a diagnosable error — once per gap, not per '
+        'round', () async {
       final h = await harnessAt({authorA: 5});
       final peer = h.addPeer('peer1');
 
-      // Arm a pending pull to peer1 (so the delta response is solicited).
-      Future<void> solicit() => h.engine.handleDigestResponse(
-        DigestResponse(
-          sender: peer.id,
-          digests: [
-            ChannelDigest(
-              channelId: channelId,
-              streams: [
-                StreamDigest(
-                  streamId: streamId,
-                  version: VersionVector({authorA: 20}),
-                ),
-              ],
-            ),
-          ],
-        ),
+      // The answer names the request, so it IS the answer whatever it
+      // carries: the responder compacted 6-10 and begins at 11, everything
+      // is dropped, and the hole is a diagnosed stall — a silent drop here
+      // is the lockout symptom this guards against.
+      Future<PullRequest> solicit() => h.armPull(
+        peer,
+        channelId: channelId,
+        streamId: streamId,
+        peerVersion: VersionVector({authorA: 20}),
       );
 
-      await solicit();
-      // The responder answers with a hole where we need data (it
-      // compacted 6-10): everything is dropped, and the gap must be
-      // reported — a silent drop here is the lockout symptom this guards
-      // against.
+      final first = await solicit();
       await h.engine.handleDeltaResponse(
-        deltaOf([entryOf(authorA, 11, 2011), entryOf(authorA, 12, 2012)]),
+        deltaOf([
+          entryOf(authorA, 11, 2011),
+          entryOf(authorA, 12, 2012),
+        ], inReplyTo: first.id),
       );
 
       expect(h.mergedEntries, isEmpty);
@@ -122,11 +115,17 @@ void main() {
       expect(h.errors.single.message, contains('6'));
       expect(h.errors.single.message, contains('11'));
 
-      // The identical exchange repeats every round while the condition
-      // persists — the error must not repeat with it.
-      await solicit();
+      // The identical exchange repeats while the condition persists — the
+      // error must not repeat with it. The probe window has to reopen for
+      // the stall's range to be asked for again at all (the suppression's
+      // own rule), so wait it out first.
+      await h.timePort.advance(const Duration(seconds: 31));
+      final second = await solicit();
       await h.engine.handleDeltaResponse(
-        deltaOf([entryOf(authorA, 11, 2011), entryOf(authorA, 12, 2012)]),
+        deltaOf([
+          entryOf(authorA, 11, 2011),
+          entryOf(authorA, 12, 2012),
+        ], inReplyTo: second.id),
       );
       expect(h.errors, hasLength(1), reason: 'same gap reported once');
     });
@@ -134,14 +133,30 @@ void main() {
     test('a gapped UNSOLICITED push is dropped without emitting an error — '
         'lagging behind a reactive push is routine', () async {
       final h = await harnessAt({authorA: 5});
-      h.addPeer('peer1');
+      final peer = h.addPeer('peer1');
 
-      // No pending pull: this is a reactive push of the writer's newest
-      // entry while we are still behind. Anti-entropy will catch us up.
+      // A pull IS in flight to this peer, and the push begins above where
+      // it asked — the case the content rule could only guess at. Naming
+      // no request while a pull is outstanding is judged by content here
+      // (this peer has never named one), and a response that begins in no
+      // author's asked-for place answers nothing: a reactive push of the
+      // writer's newest entry while we are still behind. Anti-entropy
+      // catches us up.
+      await h.armPull(
+        peer,
+        channelId: channelId,
+        streamId: streamId,
+        peerVersion: VersionVector({authorA: 20}),
+      );
       await h.engine.handleDeltaResponse(deltaOf([entryOf(authorA, 11, 2011)]));
 
       expect(h.mergedEntries, isEmpty);
       expect(h.errors, isEmpty);
+      expect(
+        h.engine.outstandingPullCount,
+        equals(1),
+        reason: 'the pull it did not answer is still owed',
+      );
     });
 
     test('overlapping delta responses for one stream merge cleanly — no '

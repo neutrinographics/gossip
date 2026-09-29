@@ -120,7 +120,9 @@ void main() {
       expect(
         h.engine.outstandingPullCount,
         0,
-        reason: 'the dedup flag must be released, not leaked',
+        reason:
+            'a pull that is for no author is not issued at all — nothing '
+            'to leak',
       );
     },
   );

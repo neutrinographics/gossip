@@ -70,4 +70,22 @@ class DeltaResponse extends ProtocolMessage {
     this.floor = VersionVector.empty,
     this.inReplyTo,
   }) : super(sender);
+
+  /// Where this response begins, per author: the lowest sequence it holds
+  /// for each author it carries.
+  ///
+  /// Only a peer that names no request is judged by this — it is the
+  /// evidence the transitional content rule weighs against what our
+  /// outstanding requests asked from. Derived rather than stored: it is a
+  /// reading of [entries], never something a sender asserts.
+  Map<NodeId, int> get firstByAuthor {
+    final first = <NodeId, int>{};
+    for (final entry in entries) {
+      final held = first[entry.author];
+      if (held == null || entry.sequence < held) {
+        first[entry.author] = entry.sequence;
+      }
+    }
+    return first;
+  }
 }
