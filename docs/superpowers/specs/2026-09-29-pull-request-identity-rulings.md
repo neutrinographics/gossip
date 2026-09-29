@@ -191,3 +191,27 @@ correlate. Segregated so that deleting it is deleting one file and one call.
 ## Review outcome
 
 **Approved (owner, 2026-09-29)** as proposed. Kotlin plan follows in gossip-kt `docs/superpowers/plans/`.
+
+**Precisions from the Kotlin half (gossip-kt PR #18, 2026-09-29).**
+
+- *A request identity is an identifier.* It takes the same rule as node,
+  channel and stream ids (at most 64 UTF-8 bytes; nothing JSON escapes), so
+  an echo can never be an unbounded cost, and one outside the rule is a
+  malformed frame like any other identifier. Minted ids are about twelve
+  characters.
+- *Each dialect pays for the identity it echoes.* The shared entry-envelope
+  allowance stays 512 bytes and stays shared; the reply identity's maximal
+  cost is subtracted per dialect before the expansion ratio — v1's batched
+  object costs 25 bytes plus three identifiers (217), v2's flat field 15
+  plus one (79). At the default 30 KiB budget the entry caps move from
+  7552/22656 to 7497/22596 bytes; an entry exactly at the old cap is now
+  refused at append. The Dart half derives the same caps the same way, so
+  the twins keep promising one cap (parity row on the register).
+- *A reference is honoured only for the peer and stream the request named.*
+  "Whatever it carries" (ruling 1) is about the entries; a peer echoing our
+  id on a response for another stream is a fault to be inert about, not a
+  reason to retire the request or adopt that stream's floor.
+- *A request past its deadline is no legacy candidate.* Content is
+  evidence, and a long-expired request is what a push is likeliest to
+  resemble by accident; a reference is honoured whatever its age, because
+  an id is proof.
