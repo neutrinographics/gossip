@@ -1,6 +1,6 @@
 # News wakes a sleeping gossip round — rulings
 
-**Status:** approved 2026-09-27 (see Review outcome); Kotlin half in review as gossip-kt PR #17 (2026-09-28). **Item:** [Wake a sleeping gossip round when there is news](../backlog/engine-news-wakes-the-round.md) (High, confirmed 2026-09-27). **Applies to:** both twins, Kotlin first.
+**Status:** approved 2026-09-27 (see Review outcome); Kotlin half merged as gossip-kt PR #17 (e78c20a, 2026-09-29). **Item:** [Wake a sleeping gossip round when there is news](../backlog/engine-news-wakes-the-round.md) (High, confirmed 2026-09-27). **Applies to:** both twins, Kotlin first.
 
 ## The finding, restated
 

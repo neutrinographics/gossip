@@ -54,7 +54,7 @@ phones before the Dart half ships.
 ## Related
 
 - Rulings, approved 2026-09-27: [News wakes a sleeping gossip round — rulings](../superpowers/specs/2026-09-27-round-wake-rulings.md).
-- Kotlin half: gossip-kt PR #17 (`feature/round-wake`, 2026-09-28). The
+- Kotlin half: gossip-kt PR #17, merged e78c20a on 2026-09-29. The
   shape it landed: the scheduler port can be woken, the decision is a pure
   rule on the generation value, the adapter holds one cell, and the engine's
   one news seam wakes the loop after resetting the pace. It carries the

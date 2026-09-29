@@ -32,17 +32,26 @@ once removes the whole class.
 
 ## Rough approach
 
-True correlation needs the response to name the request it answers — a
-request identifier echoed back, which is a wire-format addition (dialect
-material, designed for both libraries at once per the parity program's
-companion convention). Short of that, the pending-pull record could carry
-the requested vector and classify by content overlap — a heuristic worth
-weighing against its complexity. Decide deliberately; don't grow more
-heuristics piecemeal.
+The pending-pull bookkeeping is keyed by the *subject* of a request (which
+peer, which stream) when the thing with identity is the *request*. Every
+misclassification is a consequence: two requests to the same peer for the
+same stream cannot both be tracked, and a response can only be tied to a
+request by guessing from its content. The fix is a re-model, not a field: a
+pull becomes an entity with an identity the peer echoes back, the aggregate
+is the set of requests in flight, and "one outstanding pull per peer and
+stream" becomes a policy over that set instead of its key. A response that
+names a request is its answer whatever it carries; one that names none is a
+push. Peers that predate the identity are correlated by a minimal,
+explicitly transitional content rule until the fleet has moved.
+
+The content rule shipped first, as a bridge (gossip-kt PR #17), because the
+round-wake fix could not ship without correlation and the phones will not
+echo identities until the app's pin moves. It is deleted with the re-model.
 
 ## Related
 
-- Rulings, approved 2026-09-28: [A delta response answers one pull, or none — rulings](../superpowers/specs/2026-09-28-response-correlation-rulings.md) — raised by the round-wake fix, whose Task 3 measured the misclassification at six of ten churn runs with the wake and none without.
+- Re-model rulings, for review: [A pull is a request with identity — rulings](../superpowers/specs/2026-09-29-pull-request-identity-rulings.md) (2026-09-29).
+- Bridge rulings, approved 2026-09-28: [A delta response answers one pull, or none — rulings](../superpowers/specs/2026-09-28-response-correlation-rulings.md) — raised by the round-wake fix, whose Task 3 measured the misclassification at six of ten churn runs with the wake and none without.
 - Ruling 1 (classify by content) landed in the Kotlin library on the
   round-wake branch (gossip-kt PR #17, 269f790): the pull mark carries the vector it
   asked for, and a response retires it only when its content can be the
