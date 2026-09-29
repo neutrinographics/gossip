@@ -62,8 +62,8 @@ echo identities until the app's pin moves. It is deleted with the re-model.
   content (legacy)` exactly once per phone per connection for two phones on
   the current app pin, and re-logged it on a reconnect — the counter behaves
   as the criterion needs.
-- Dart half: landed on `feature/dart-round-wake-identity` (2026-09-29; PR
-  pending) — the same entity, aggregate, wire keys and by-reference
+- Dart half: landed on `feature/dart-round-wake-identity` (gossip PR #17,
+  2026-09-29) — the same entity, aggregate, wire keys and by-reference
   correlation, with `LegacyCorrelation` as one file and one call and the
   same once-per-peer INFO lines. Dart's v1 dialect is flat, so its reply
   identity costs 79 bytes and its entry cap is 7532 at 30 KiB (kt v1 7497;
