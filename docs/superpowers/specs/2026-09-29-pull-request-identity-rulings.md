@@ -246,3 +246,23 @@ correlate. Segregated so that deleting it is deleting one file and one call.
 - *Dart's channel removal does not reach the pull state* (pre-existing):
   `clearForChannel` is written and pinned but has no Dart caller; recorded
   on the register as a Dart flow-back, not fixed on this branch.
+- *One key, two shapes, read both.* The two dialects name a request under
+  the same keys in different shapes — Dart flat (`"inReplyTo": "<id>"`),
+  kt v1 batched (`"inReplyTo": {"<channel>": {"<stream>": "<id>"}}`, its
+  requests under `requestIds`). A decoder that reads only its own shape
+  turns the other twin's answer into a corrupt frame, which breaks the
+  additive-key promise the rulings rest on. Dart's decoder reads both, taking
+  the reference for the frame's own stream from a batched shape; a batched
+  shape that names nothing for that stream names none, and any other type is
+  malformed. kt's v1 decoder still rejects Dart's flat string — a kt flow-back
+  on the register; until it lands, the app's translator maps one shape to the
+  other, as it must anyway for the server.
+- *A request identity is the identifier rule, once.* The four-clause rule is
+  hoisted to `shared/domain/value_objects/identifiers.dart` (kt's
+  `Identifiers.kt` shape) and `RequestId` applies it; the register's
+  identifier-bound flow-back for `NodeId`, `ChannelId` and `StreamId` is now
+  three call sites, not a re-implementation.
+- *A non-positive interval is a scheduling failure on Dart too.* The old
+  Dart loop spun on a zero `gossipInterval`; on the woken scheduler it is the
+  same failure as on kt — the loop stops and reports through the error
+  callback. Documented on `CoordinatorConfig.gossipInterval`.
