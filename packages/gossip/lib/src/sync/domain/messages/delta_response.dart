@@ -5,6 +5,7 @@ import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
 import 'package:gossip/src/sync/domain/messages/delta_request.dart';
+import 'package:gossip/src/sync/domain/value_objects/request_id.dart';
 
 /// Response containing the requested missing entries.
 ///
@@ -55,6 +56,21 @@ class DeltaResponse extends ProtocolMessage {
   /// requester's position is serviceable (the common case).
   final VersionVector floor;
 
+  /// The request this response answers, echoed back so the requester can
+  /// retire it by reference instead of guessing from what the response
+  /// carries. Null on a push — a response nobody asked for.
+  final RequestId? inReplyTo;
+
+  /// Whether the sender's dialect can mark a page as partial ([hasMore]).
+  ///
+  /// v1 carries no such mark, so on v1 a response is the whole of what its
+  /// request will get and the rest of a backlog is for the next round to ask;
+  /// a correlation that would otherwise hold a request open for the rest of a
+  /// page must not, or the next round's pull is suppressed for a remainder
+  /// nobody will send. Set by the decoder from the frame's dialect; a response
+  /// built locally is the domain's own, complete shape.
+  final bool marksPartialPages;
+
   const DeltaResponse({
     required NodeId sender,
     required this.channelId,
@@ -62,5 +78,25 @@ class DeltaResponse extends ProtocolMessage {
     required this.entries,
     this.hasMore = false,
     this.floor = VersionVector.empty,
+    this.inReplyTo,
+    this.marksPartialPages = true,
   }) : super(sender);
+
+  /// Where this response begins, per author: the lowest sequence it holds
+  /// for each author it carries.
+  ///
+  /// Only a peer that names no request is judged by this — it is the
+  /// evidence the transitional content rule weighs against what our
+  /// outstanding requests asked from. Derived rather than stored: it is a
+  /// reading of [entries], never something a sender asserts.
+  Map<NodeId, int> get firstByAuthor {
+    final first = <NodeId, int>{};
+    for (final entry in entries) {
+      final held = first[entry.author];
+      if (held == null || entry.sequence < held) {
+        first[entry.author] = entry.sequence;
+      }
+    }
+    return first;
+  }
 }

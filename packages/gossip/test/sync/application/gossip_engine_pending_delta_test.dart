@@ -48,7 +48,7 @@ void main() {
         reqB,
         hasLength(1),
         reason:
-            'the pending request to peerA must not suppress requesting the '
+            'the pull in flight to peerA must not suppress requesting the '
             'same stream from peerB (per-peer keying)',
       );
 
@@ -68,7 +68,9 @@ void main() {
       expect(
         second,
         isEmpty,
-        reason: 'same-peer duplicate must remain deduped (pending flag)',
+        reason:
+            'same-peer duplicate must remain deduped — a pull to that '
+            'key is already in flight',
       );
 
       await h.dispose();
@@ -93,7 +95,7 @@ void main() {
       final a = h.addPeer('peerA');
       h.createChannel('ch1', streamIds: ['s1']);
 
-      // Issue a request (arms the pending flag at t0)...
+      // Issue a request (it goes in flight at t0)...
       final req = await h.engine.handleDigestResponse(digestFrom(a.id));
       expect(req, hasLength(1));
 

@@ -337,5 +337,39 @@ void main() {
         expect(victimCallCount, equals(0));
       });
     });
+
+    group('monotonicMs', () {
+      test('is the one simulated clock, so it moves with advance', () async {
+        final timer = InMemoryTimePort();
+
+        expect(timer.monotonicMs, equals(timer.nowMs));
+
+        await timer.advance(Duration(milliseconds: 250));
+
+        expect(timer.monotonicMs, equals(250));
+        expect(timer.monotonicMs, equals(timer.nowMs));
+      });
+
+      test('advanceTimeOnly moves the clock without resolving what waits on '
+          'it', () async {
+        final timer = InMemoryTimePort();
+        var completed = false;
+        // ignore: unawaited_futures -- the point is that it stays pending.
+        timer.delay(Duration(milliseconds: 100)).then((_) => completed = true);
+
+        // Time passing between a caller reading the clock and acting on the
+        // reading: the clock moves, nothing else does.
+        timer.advanceTimeOnly(Duration(milliseconds: 600));
+        await pumpEventQueue();
+
+        expect(timer.monotonicMs, equals(600));
+        expect(completed, isFalse);
+        expect(timer.pendingDelayCount, equals(1));
+
+        // And the wait is still there to be resolved by an advance.
+        await timer.advance(Duration.zero);
+        expect(completed, isTrue);
+      });
+    });
   });
 }

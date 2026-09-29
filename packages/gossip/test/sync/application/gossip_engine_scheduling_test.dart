@@ -23,6 +23,7 @@ import 'package:test/test.dart';
 import '../../support/failing_delay_time_port.dart';
 import '../../support/pump.dart';
 import '../../support/scripted_delay_time_port.dart';
+import '../../support/unjittered_random.dart';
 import 'gossip_engine_test_harness.dart';
 
 void main() {
@@ -225,6 +226,15 @@ void main() {
         //             write, IF the flag it's gated on got reset by the
         //             live failure. The fix under test is what makes this
         //             call happen at all.
+        //
+        // notifyLocalWrite's own recordNews() also calls the round loop's
+        // scheduler.wake() (news wakes the round) — an UnjitteredRandom
+        // keeps that a deterministic no-op here (call #1's armed wait and
+        // wake's fresh reading are both exactly `gossipInterval`, so
+        // "ends no later than fresh" holds and nothing is superseded),
+        // instead of a real Random racing whether wake's own rearm — a
+        // call this scenario never asked for — beats call #1's failure to
+        // land, and picking off which numbered call is which.
         final timePort = ScriptedDelayTimePort(failDelayCalls: {1});
         final localNode = NodeId('local');
         final peerId = NodeId('peer');
@@ -247,6 +257,7 @@ void main() {
           localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
           onError: errors.add,
           gossipInterval: const Duration(milliseconds: 100),
+          random: UnjitteredRandom(),
         );
 
         final received = <dynamic>[];

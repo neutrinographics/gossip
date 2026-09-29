@@ -210,11 +210,13 @@ void main() {
         final deltaRequests = await engine.handleDigestResponse(response);
 
         expect(deltaRequests, hasLength(1));
-        expect(deltaRequests[0].sender, equals(localNode));
+        expect(deltaRequests[0].peer, equals(peerNode));
         expect(deltaRequests[0].channelId, equals(channelId));
         expect(deltaRequests[0].streamId, equals(streamId));
         // Should request since OUR version (author1:1), not peer's
         expect(deltaRequests[0].since[author1], equals(1));
+        // ... and it is for the author the peer's digest showed it ahead on.
+        expect(deltaRequests[0].wanted, equals({author1}));
       },
     );
 
@@ -782,7 +784,7 @@ void main() {
         expect(secondRequests, isEmpty);
 
         // A pending request to a different peer for the same stream
-        // (pending flags are keyed per peer).
+        // (a pull records the peer it went to).
         final otherFirst = await engine.handleDigestResponse(otherResponse);
         expect(otherFirst, hasLength(1));
 

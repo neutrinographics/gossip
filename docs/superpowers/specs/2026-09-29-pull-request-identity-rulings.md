@@ -1,6 +1,6 @@
 # A pull is a request with identity — rulings
 
-**Status:** approved 2026-09-29 (see Review outcome); Kotlin half merged as gossip-kt PR #18 (c8dde6f, 2026-09-29). **Item:** [Correlate delta responses with the pulls that solicited them](../backlog/engine-response-correlation.md). **Supersedes:** ruling 3 of [A delta response answers one pull, or none](2026-09-28-response-correlation-rulings.md) as written there ("a request identifier, additively"); the bridge those rulings shipped (gossip-kt PR #17) stays until this lands on both twins and the fleet has moved. **Applies to:** both twins; Kotlin first; the Dart half of the round-wake fix implements this model directly and never carries the bridge in full.
+**Status:** approved 2026-09-29 (see Review outcome); Kotlin half merged as gossip-kt PR #18 (c8dde6f, 2026-09-29); Dart half landed on `feature/dart-round-wake-identity` (gossip PR #17, 2026-09-29). **Item:** [Correlate delta responses with the pulls that solicited them](../backlog/engine-response-correlation.md). **Supersedes:** ruling 3 of [A delta response answers one pull, or none](2026-09-28-response-correlation-rulings.md) as written there ("a request identifier, additively"); the bridge those rulings shipped (gossip-kt PR #17) stays until this lands on both twins and the fleet has moved. **Applies to:** both twins; Kotlin first; the Dart half of the round-wake fix implements this model directly and never carries the bridge in full.
 
 ## Why a re-model, not a field
 
@@ -205,8 +205,8 @@ correlate. Segregated so that deleting it is deleting one file and one call.
   object costs 25 bytes plus three identifiers (217), v2's flat field 15
   plus one (79). At the default 30 KiB budget the entry caps move from
   7552/22656 to 7497/22596 bytes; an entry exactly at the old cap is now
-  refused at append. The Dart half derives the same caps the same way, so
-  the twins keep promising one cap (parity row on the register).
+  refused at append. The Dart half derives its caps the same way — see the
+  Dart precision below.
 - *A reference is honoured only for the peer and stream the request named.*
   "Whatever it carries" (ruling 1) is about the entries; a peer echoing our
   id on a response for another stream is a fault to be inert about, not a
@@ -226,3 +226,55 @@ correlate. Segregated so that deleting it is deleting one file and one call.
   does not carry it still completes. Empty on a planned pull, never read for
   a peer that answers by reference, deleted with the rule. The Dart half
   carries it the same way.
+
+**Precisions from the Dart half (`feature/dart-round-wake-identity`, 2026-09-29).**
+
+- *One cap per dialect, not one across dialects.* Dart's v1 is flat, like
+  v2, so its reply identity costs 15 bytes plus one identifier (79) in both
+  versions and its entry caps are 7532/22596 at the default budget, against
+  kt v1's 7497. The twins promise the same rule, applied to what each
+  dialect actually echoes; the register's identity row carries the three
+  numbers.
+- *A pull for a stream the responder does not hold is answered empty, by
+  reference.* Dart's responder names the request on that empty answer, so
+  the requester retires the pull at once instead of waiting out its deadline;
+  kt sends nothing today (a kt flow-back row on the register).
+- *The wake's wait-end clause is parity, not a live path.* Dart runs in one
+  isolate, so a wake cannot pause between reading the clock and deciding;
+  the scheduler still checks that the state it read is the state it acts on,
+  for the same reason kt does, and the pin stands as documentation.
+- *Dart's channel removal does not reach the pull state* (pre-existing):
+  `clearForChannel` is written and pinned but has no Dart caller; recorded
+  on the register as a Dart flow-back, not fixed on this branch.
+- *One key, two shapes, read both.* The two dialects name a request under
+  the same keys in different shapes — Dart flat (`"inReplyTo": "<id>"`),
+  kt v1 batched (`"inReplyTo": {"<channel>": {"<stream>": "<id>"}}`, its
+  requests under `requestIds`). A decoder that reads only its own shape
+  turns the other twin's answer into a corrupt frame, which breaks the
+  additive-key promise the rulings rest on. Dart's decoder reads both, taking
+  the reference for the frame's own stream from a batched shape; a batched
+  shape that names nothing for that stream names none, and any other type is
+  malformed. kt's v1 decoder still rejects Dart's flat string — a kt flow-back
+  on the register; until it lands, the app's translator maps one shape to the
+  other, as it must anyway for the server.
+- *A request identity is the identifier rule, once.* The four-clause rule is
+  hoisted to `shared/domain/value_objects/identifiers.dart` (kt's
+  `Identifiers.kt` shape) and `RequestId` applies it; the register's
+  identifier-bound flow-back for `NodeId`, `ChannelId` and `StreamId` is now
+  three call sites, not a re-implementation.
+- *A partial legacy answer narrows a request only where the dialect can mark
+  a page partial (corrects ruling 4's "leaves the rest of it outstanding" for
+  v1).* v1 frames carry no `hasMore`, so a v1 responder that pages a
+  multi-author backlog sends one page per request and relies on later rounds
+  for the rest. Narrowing such a request and holding it open suppressed the
+  next round's pull for that peer and stream until the deadline, on every
+  page. The decoder now records on the response whether its frame's dialect
+  can mark a page partial; where it cannot, a content-correlated answer is
+  the whole of that request's answer — retired, sampled — and the next
+  digest asks for the remainder. On v2 nothing changes. The Kotlin twin has
+  the same latent rule for legacy phones over v1-kt (a kt flow-back row on
+  the register). Found by Codex on gossip PR #17.
+- *A non-positive interval is a scheduling failure on Dart too.* The old
+  Dart loop spun on a zero `gossipInterval`; on the woken scheduler it is the
+  same failure as on kt — the loop stops and reports through the error
+  callback. Documented on `CoordinatorConfig.gossipInterval`.

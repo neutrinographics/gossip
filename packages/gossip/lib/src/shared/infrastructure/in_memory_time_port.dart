@@ -74,6 +74,12 @@ class InMemoryTimePort implements TimePort {
   @override
   int get nowMs => _nowMs;
 
+  /// The same simulated clock as [nowMs]: with one clock there is no wall
+  /// correction to tell apart from elapsed time, which is exactly what makes
+  /// a test able to fake a correction by wrapping this port.
+  @override
+  int get monotonicMs => _nowMs;
+
   /// Schedules a periodic callback.
   ///
   /// [interval] must resolve to a positive whole millisecond count
@@ -198,6 +204,17 @@ class InMemoryTimePort implements TimePort {
 
     // Allow microtasks to run (important for async code to proceed)
     await Future.delayed(Duration.zero);
+  }
+
+  /// Moves the simulated clock forward without resolving anything waiting on
+  /// it — no delay completes, no periodic timer fires.
+  ///
+  /// For the one situation [advance] cannot express: time passing between the
+  /// moment a caller reads the clock and the moment it acts on that reading,
+  /// as code descheduled in between would experience it. Everything already
+  /// on the clock stays pending, at its own deadline, for a later [advance].
+  void advanceTimeOnly(Duration duration) {
+    _nowMs += duration.inMilliseconds;
   }
 
   /// Manually triggers all scheduled periodic callbacks exactly once each,

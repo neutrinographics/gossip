@@ -11,7 +11,10 @@ import 'package:gossip/src/shared/infrastructure/in_memory_local_node_repository
 import 'package:gossip/src/shared/infrastructure/in_memory_time_port.dart';
 import 'package:gossip/src/sync/application/delta_merger.dart';
 import 'package:gossip/src/sync/domain/aggregates/stalled_range_registry.dart';
+import 'package:gossip/src/sync/domain/entities/pull_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
+import 'package:gossip/src/sync/domain/value_objects/answered_pull.dart';
+import 'package:gossip/src/sync/domain/value_objects/request_id.dart';
 import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
 import 'package:gossip/src/shared/domain/services/time_source.dart';
 import 'package:gossip/src/sync/infrastructure/in_memory_entry_repository.dart';
@@ -34,6 +37,11 @@ void main() {
   final authorA = NodeId('author-a');
   final authorB = NodeId('author-b');
   final peer1 = NodeId('peer1');
+
+  /// A pull this response answered whole — what the engine hands the merger
+  /// for a response it settled against a request of ours. The elapsed
+  /// reading is the engine's business; nothing here reads it.
+  const answeredWhole = AnsweredPull(elapsedMs: 42, remaining: <NodeId>{});
 
   LogEntry entryOf(NodeId author, int seq, int tsMs) => LogEntry(
     author: author,
@@ -76,11 +84,11 @@ void main() {
     >
     mergedEntries,
     List<String> logs,
-    List<(NodeId, ChannelId, StreamId)> continuationsIssued,
+    List<PullRequest> continuationsIssued,
     List<void> newEntriesMergedCalls,
     List<String> callOrder,
   })
-  build({NodeId? localNode}) {
+  build() {
     final entryRepository = InMemoryEntryRepository();
     final timePort = InMemoryTimePort();
     final hlcClock = HlcClock(TimeSource(timePort));
@@ -96,12 +104,11 @@ void main() {
           })
         >[];
     final logs = <String>[];
-    final continuationsIssued = <(NodeId, ChannelId, StreamId)>[];
+    final continuationsIssued = <PullRequest>[];
     final newEntriesMergedCalls = <void>[];
     final callOrder = <String>[];
 
     final merger = DeltaMerger(
-      localNode: localNode ?? NodeId('local'),
       entryRepository: entryRepository,
       hlcClock: hlcClock,
       localNodeRepository: InMemoryLocalNodeRepository(),
@@ -121,10 +128,32 @@ void main() {
         callOrder.add('onNewEntriesMerged');
         newEntriesMergedCalls.add(null);
       },
-      onContinuationIssued: (peer, channelId, streamId) {
-        callOrder.add('onContinuationIssued');
-        continuationsIssued.add((peer, channelId, streamId));
-      },
+      onContinuationIssued:
+          (
+            peer,
+            channelId,
+            streamId,
+            since, {
+            required wanted,
+            required carrying,
+          }) {
+            callOrder.add('onContinuationIssued');
+            // Stands in for the engine's issue transition: it mints an
+            // identity and answers with the request, which is all the
+            // merger does with it.
+            final request = PullRequest(
+              id: RequestId('cont-${continuationsIssued.length}'),
+              peer: peer,
+              channelId: channelId,
+              streamId: streamId,
+              since: since,
+              wanted: wanted,
+              issuedAtMs: timePort.nowMs,
+              carrying: carrying,
+            );
+            continuationsIssued.add(request);
+            return request;
+          },
       stalledRanges: stalledRanges,
       timePort: timePort,
     );
@@ -150,7 +179,7 @@ void main() {
 
       final result = await h.merger.merge(
         deltaOf([entryOf(authorA, 1, 1001), entryOf(authorA, 2, 1002)]),
-        solicited: true,
+        answered: answeredWhole,
       );
 
       expect(result.mergedNewEntries, isTrue);
@@ -177,7 +206,7 @@ void main() {
             entryOf(authorA, 2, 1002),
             entryOf(authorA, 4, 1004), // gap at 3
           ]),
-          solicited: true,
+          answered: answeredWhole,
         );
 
         expect(result.mergedNewEntries, isTrue);
@@ -203,7 +232,7 @@ void main() {
 
       final result = await h.merger.merge(
         deltaOf([entryOf(authorA, 1, 1001)]), // already held
-        solicited: true,
+        answered: answeredWhole,
       );
 
       expect(result.mergedNewEntries, isFalse);
@@ -220,7 +249,7 @@ void main() {
         deltaOf([
           entryOf(authorA, 11, 1011),
         ], floor: VersionVector({authorA: 10})),
-        solicited: true,
+        answered: answeredWhole,
       );
 
       final vv = await h.entryRepository.getVersionVector(channelId, streamId);
@@ -238,7 +267,7 @@ void main() {
         deltaOf([
           entryOf(authorA, 11, 1011),
         ], floor: VersionVector({authorA: 10})),
-        solicited: false,
+        answered: null,
       );
 
       final vv = await h.entryRepository.getVersionVector(channelId, streamId);
@@ -259,7 +288,7 @@ void main() {
 
       await h.merger.merge(
         deltaOf([entryOf(authorA, 11, 1011)]),
-        solicited: true,
+        answered: answeredWhole,
       );
       expect(h.errors, hasLength(1));
       expect(h.errors.single.message, contains('11'));
@@ -267,7 +296,7 @@ void main() {
       // Same gap position again — must not re-report.
       await h.merger.merge(
         deltaOf([entryOf(authorA, 11, 1011)]),
-        solicited: true,
+        answered: answeredWhole,
       );
       expect(h.errors, hasLength(1), reason: 'same gap reported once');
     });
@@ -277,7 +306,7 @@ void main() {
 
       await h.merger.merge(
         deltaOf([entryOf(authorA, 11, 1011)]),
-        solicited: false,
+        answered: null,
       );
 
       expect(h.errors, isEmpty);
@@ -295,7 +324,7 @@ void main() {
 
         await h.merger.merge(
           deltaOf([entryOf(authorA, 11, 1011)]),
-          solicited: true,
+          answered: answeredWhole,
         );
         expect(h.errors, hasLength(1));
 
@@ -303,7 +332,7 @@ void main() {
 
         await h.merger.merge(
           deltaOf([entryOf(authorA, 11, 1011)]),
-          solicited: true,
+          answered: answeredWhole,
         );
         expect(h.errors, hasLength(2));
       },
@@ -318,11 +347,11 @@ void main() {
 
         await h.merger.merge(
           deltaOf([entryOf(authorA, 11, 1011)], sender: peerA),
-          solicited: true,
+          answered: answeredWhole,
         );
         await h.merger.merge(
           deltaOf([entryOf(authorB, 11, 1011)], sender: peerB),
-          solicited: true,
+          answered: answeredWhole,
         );
         expect(h.errors, hasLength(2));
 
@@ -331,11 +360,11 @@ void main() {
         // peerA's gap reports again; peerB's stays deduped.
         await h.merger.merge(
           deltaOf([entryOf(authorA, 11, 1011)], sender: peerA),
-          solicited: true,
+          answered: answeredWhole,
         );
         await h.merger.merge(
           deltaOf([entryOf(authorB, 11, 1011)], sender: peerB),
-          solicited: true,
+          answered: answeredWhole,
         );
         expect(h.errors, hasLength(3));
       },
@@ -350,14 +379,14 @@ void main() {
       // Gapped against empty vector: dropped, must not touch the clock.
       await h.merger.merge(
         deltaOf([entryOf(authorA, 5, 2000)]),
-        solicited: true,
+        answered: answeredWhole,
       );
       expect(h.hlcClock.current, equals(before));
 
       // Contiguous: accepted, must advance the clock.
       await h.merger.merge(
         deltaOf([entryOf(authorA, 1, 2000)]),
-        solicited: true,
+        answered: answeredWhole,
       );
       expect(h.hlcClock.current, isNot(equals(before)));
     });
@@ -365,26 +394,23 @@ void main() {
 
   group('DeltaMerger — continuation', () {
     test('hasMore + progress → continuation at the advanced vector', () async {
-      final h = build(localNode: NodeId('local'));
+      final h = build();
 
       final result = await h.merger.merge(
         deltaOf([
           entryOf(authorA, 1, 1001),
           entryOf(authorA, 2, 1002),
         ], hasMore: true),
-        solicited: true,
+        answered: answeredWhole,
       );
 
       expect(result.continuation, isNotNull);
       expect(result.continuation!.channelId, equals(channelId));
       expect(result.continuation!.streamId, equals(streamId));
       expect(result.continuation!.since[authorA], equals(2));
-      expect(result.continuation!.sender, equals(NodeId('local')));
+      expect(result.continuation!.peer, equals(peer1));
       expect(h.continuationsIssued, hasLength(1));
-      expect(
-        h.continuationsIssued.single,
-        equals((peer1, channelId, streamId)),
-      );
+      expect(h.continuationsIssued.single, same(result.continuation));
     });
 
     test('hasMore + no progress → null continuation', () async {
@@ -397,7 +423,7 @@ void main() {
 
       final result = await h.merger.merge(
         deltaOf([entryOf(authorA, 1, 1001)], hasMore: true), // duplicate
-        solicited: true,
+        answered: answeredWhole,
       );
 
       expect(
@@ -411,13 +437,61 @@ void main() {
       expect(h.continuationsIssued, isEmpty);
     });
 
+    test(
+      'a page nobody asked for claims more and is continued by nothing',
+      () async {
+        final h = build();
+
+        final result = await h.merger.merge(
+          deltaOf([
+            entryOf(authorA, 1, 1001),
+            entryOf(authorA, 2, 1002),
+          ], hasMore: true),
+          answered: null,
+        );
+
+        expect(result.mergedNewEntries, isTrue);
+        expect(
+          result.continuation,
+          isNull,
+          reason:
+              'a push is merged as the push it is; what is left of it is '
+              "planned by the next digest exchange, not by this node's "
+              'continuation of a request it never made',
+        );
+        expect(h.continuationsIssued, isEmpty);
+        expect(
+          h.logs.where((l) => l.contains('answered no pull of ours')),
+          hasLength(1),
+        );
+      },
+    );
+
+    test('an answer claiming more but carrying nothing takes no continuation '
+        'out and throws nothing', () async {
+      final h = build();
+
+      // The transitional content rule answers an empty response whole, so
+      // `remaining` is empty and the page carries no author either — a
+      // continuation would be a request for no author at all.
+      final result = await h.merger.merge(
+        deltaOf(const [], hasMore: true),
+        answered: answeredWhole,
+      );
+
+      expect(result.continuation, isNull);
+      expect(result.mergedNewEntries, isFalse);
+      expect(h.continuationsIssued, isEmpty);
+      expect(h.errors, isEmpty);
+    });
+
     test('callback order: onNewEntriesMerged fires before onEntriesMerged, '
         'which fires before onContinuationIssued', () async {
       final h = build();
 
       await h.merger.merge(
         deltaOf([entryOf(authorA, 1, 1001)], hasMore: true),
-        solicited: true,
+        answered: answeredWhole,
       );
 
       expect(
@@ -450,8 +524,8 @@ void main() {
       );
 
       final results = await Future.wait([
-        h.merger.merge(from(peerA, [1, 2, 3]), solicited: false),
-        h.merger.merge(from(peerB, [1, 2, 3, 4]), solicited: false),
+        h.merger.merge(from(peerA, [1, 2, 3]), answered: null),
+        h.merger.merge(from(peerB, [1, 2, 3, 4]), answered: null),
       ]);
 
       expect(h.errors, isEmpty);
@@ -486,7 +560,7 @@ void main() {
 
       await h.merger.merge(
         deltaOf([entryOf(authorA, 11, 2011), entryOf(authorA, 12, 2012)]),
-        solicited: true,
+        answered: answeredWhole,
       );
 
       final shaped = h.stalledRanges.shapeSince(
@@ -513,7 +587,10 @@ void main() {
         );
       }
 
-      await h.merger.merge(deltaOf([entryOf(authorA, 11, 2011)]), solicited: false);
+      await h.merger.merge(
+        deltaOf([entryOf(authorA, 11, 2011)]),
+        answered: null,
+      );
 
       final base = VersionVector({authorA: 5});
       expect(
@@ -554,7 +631,7 @@ void main() {
 
       final result = await h.merger.merge(
         deltaOf([entryOf(authorB, 1, 3001)], hasMore: true),
-        solicited: true,
+        answered: answeredWhole,
       );
 
       expect(result.continuation, isNotNull);

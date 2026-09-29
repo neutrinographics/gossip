@@ -12,6 +12,7 @@ import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
+import 'package:gossip/src/sync/domain/value_objects/request_id.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
@@ -73,7 +74,14 @@ class SyncMessageCodec implements MessageCodec {
       }
       return null;
     }
-    return _decodeMessageData(messageType, bytes.sublist(offset + 1));
+    // The frame's own dialect, not this codec's: a prefixed frame is v2, an
+    // unprefixed one v1, whichever version this node emits.
+    final dialect = offset == 0 ? WireVersion.v1 : WireVersion.v2;
+    return _decodeMessageData(
+      messageType,
+      bytes.sublist(offset + 1),
+      dialect: dialect,
+    );
   }
 
   int _getMessageType(ProtocolMessage message) {
@@ -104,6 +112,9 @@ class SyncMessageCodec implements MessageCodec {
       'channelId': message.channelId.value,
       'streamId': message.streamId.value,
       'since': versionVectorJson(message.since),
+      // Omitted when the requester mints none (the legacy shape); a
+      // responder that doesn't understand it ignores the unknown key.
+      if (message.requestId != null) 'requestId': message.requestId!.value,
     };
   }
 
@@ -162,7 +173,17 @@ class SyncMessageCodec implements MessageCodec {
   /// Conservative per-entry overhead in bytes: message envelope (sender,
   /// channelId, streamId) plus entry envelope (author, sequence, timestamp,
   /// JSON keys/punctuation). Sized for long node IDs and maximal HLC values.
+  /// Shared with the Kotlin twin, whose entry envelope is the same shape.
   static const int _entryEnvelopeOverhead = 512;
+
+  /// What an answer's identity costs at most, beyond the entry envelope:
+  /// `,"inReplyTo":"<id>"` with the id at [RequestId.maxIdentifierBytes] —
+  /// 15 bytes of punctuation plus one identifier. Both Dart dialects emit
+  /// this field flat (unlike the Kotlin twin's v1, which batches several
+  /// identifiers into one envelope and so pays more for the same fact), so
+  /// both dialects reserve the same allowance here before applying their
+  /// own expansion ratio.
+  static const int _replyIdentityOverhead = 15 + RequestId.maxIdentifierBytes;
 
   /// Largest entry payload (raw bytes) guaranteed to fit a [DeltaResponse]
   /// whose encoded size may not exceed [budgetBytes], under [version]'s
@@ -170,12 +191,16 @@ class SyncMessageCodec implements MessageCodec {
   ///
   /// Inverts the wire encoding for the given version — base64 (v2) turns 3
   /// payload bytes into 4 characters; the JSON int-array (v1) worst case
-  /// spends 4 characters per payload byte (`"255,"`) — and
-  /// [_entryEnvelopeOverhead] covers the JSON envelope. A payload larger
-  /// than this can never be synced under the given budget and version —
-  /// reject it at write time instead of livelocking at sync time.
+  /// spends 4 characters per payload byte (`"255,"`) — after
+  /// [_entryEnvelopeOverhead] and [_replyIdentityOverhead] are reserved
+  /// from the budget, whether or not a given message actually names a
+  /// request: the cap must hold for every message the budget admits, not
+  /// just unnamed ones. A payload larger than this can never be synced
+  /// under the given budget and version — reject it at write time instead
+  /// of livelocking at sync time.
   static int maxEntryPayloadForBudget(int budgetBytes, WireVersion version) {
-    final usable = budgetBytes - _entryEnvelopeOverhead;
+    final usable =
+        budgetBytes - _entryEnvelopeOverhead - _replyIdentityOverhead;
     if (usable <= 0) return 0;
     return switch (version) {
       WireVersion.v1 => usable ~/ 4,
@@ -183,7 +208,11 @@ class SyncMessageCodec implements MessageCodec {
     };
   }
 
-  ProtocolMessage _decodeMessageData(int messageType, Uint8List data) {
+  ProtocolMessage _decodeMessageData(
+    int messageType,
+    Uint8List data, {
+    required WireVersion dialect,
+  }) {
     final json = jsonDecode(utf8.decode(data)) as Map<String, dynamic>;
 
     switch (messageType) {
@@ -194,7 +223,7 @@ class SyncMessageCodec implements MessageCodec {
       case WireTypes.deltaRequest:
         return _decodeDeltaRequest(json);
       case WireTypes.deltaResponse:
-        return _decodeDeltaResponse(json);
+        return _decodeDeltaResponse(json, dialect: dialect);
       default:
         throw ArgumentError('Unknown message type: $messageType');
     }
@@ -215,20 +244,65 @@ class SyncMessageCodec implements MessageCodec {
   }
 
   DeltaRequest _decodeDeltaRequest(Map<String, dynamic> json) {
+    final channelId = json['channelId'] as String;
+    final streamId = json['streamId'] as String;
     return DeltaRequest(
       sender: NodeId(json['sender'] as String),
-      channelId: ChannelId(json['channelId'] as String),
-      streamId: StreamId(json['streamId'] as String),
+      channelId: ChannelId(channelId),
+      streamId: StreamId(streamId),
       since: _decodeVersionVector(json['since'] as Map<String, dynamic>),
+      // Absent on a requester that mints none → null.
+      requestId: _readReference(
+        json['requestId'] ?? json['requestIds'],
+        channelId: channelId,
+        streamId: streamId,
+      ),
     );
   }
 
-  DeltaResponse _decodeDeltaResponse(Map<String, dynamic> json) {
+  /// The request a frame names, in either dialect's shape.
+  ///
+  /// Dart's dialects carry one channel and stream per frame and name the
+  /// request flat (`"requestId": "<id>"`, `"inReplyTo": "<id>"`). The Kotlin
+  /// twin's v1 batches streams per frame and names them under the same keys
+  /// as `{"<channel>": {"<stream>": "<id>"}}` (its requests under
+  /// `requestIds`). Reading both keeps the additive-key promise true across
+  /// the twins: a frame from the other dialect is an answer with a name, not
+  /// a corrupt frame. A batched shape that names no request for this frame's
+  /// stream names none; any other shape is malformed.
+  RequestId? _readReference(
+    Object? json, {
+    required String channelId,
+    required String streamId,
+  }) {
+    switch (json) {
+      case null:
+        return null;
+      case String id:
+        return RequestId(id);
+      case Map<String, dynamic> byChannel:
+        final byStream = byChannel[channelId] as Map<String, dynamic>?;
+        final id = byStream?[streamId] as String?;
+        return id == null ? null : RequestId(id);
+      default:
+        throw FormatException(
+          'a request reference must be a string or a channel→stream map, '
+          'was ${json.runtimeType}',
+        );
+    }
+  }
+
+  DeltaResponse _decodeDeltaResponse(
+    Map<String, dynamic> json, {
+    required WireVersion dialect,
+  }) {
     final floorJson = json['floor'] as Map<String, dynamic>?;
+    final channelId = json['channelId'] as String;
+    final streamId = json['streamId'] as String;
     return DeltaResponse(
       sender: NodeId(json['sender'] as String),
-      channelId: ChannelId(json['channelId'] as String),
-      streamId: StreamId(json['streamId'] as String),
+      channelId: ChannelId(channelId),
+      streamId: StreamId(streamId),
       entries: _decodeLogEntries(json['entries'] as List),
       // Absent on legacy senders → defaults to false (no continuation).
       hasMore: json['hasMore'] as bool? ?? false,
@@ -236,6 +310,14 @@ class SyncMessageCodec implements MessageCodec {
       floor: floorJson == null
           ? VersionVector.empty
           : _decodeVersionVector(floorJson),
+      // Absent on a push, or a legacy sender → null.
+      inReplyTo: _readReference(
+        json['inReplyTo'],
+        channelId: channelId,
+        streamId: streamId,
+      ),
+      // v1 has no hasMore, so its answer is whole by construction.
+      marksPartialPages: dialect == WireVersion.v2,
     );
   }
 

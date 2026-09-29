@@ -80,18 +80,26 @@ void main() {
   });
 
   group('DeltaResponse continuation — receiver', () {
-    test('a truncated response returns a continuation DeltaRequest with the '
-        'advanced version vector', () async {
+    test('a truncated ANSWER returns a continuation with the advanced version '
+        'vector, and it is a request of its own', () async {
       final h = GossipEngineTestHarness();
+      final peer = h.addPeer('peer1');
       h.createChannel('ch1', streamIds: ['s1']);
+      final pull = await h.armPull(
+        peer,
+        channelId: channelId,
+        streamId: streamId,
+        peerVersion: VersionVector({authorA: 9}),
+      );
 
       final continuation = await h.engine.handleDeltaResponse(
         DeltaResponse(
-          sender: NodeId('peer1'),
+          sender: peer.id,
           channelId: channelId,
           streamId: streamId,
           entries: [entryOf(1, 1001), entryOf(2, 1002)],
           hasMore: true,
+          inReplyTo: pull.id,
         ),
       );
 
@@ -103,46 +111,99 @@ void main() {
         equals(2),
         reason: 'continuation must request entries after the applied prefix',
       );
+      expect(
+        continuation.id,
+        isNot(equals(pull.id)),
+        reason: 'a continuation is a request in its own right',
+      );
+      expect(
+        continuation.carrying,
+        equals({authorA}),
+        reason: 'it records what the page before it carried',
+      );
+      expect(
+        h.engine.outstandingPullCount,
+        equals(1),
+        reason: 'the answered pull is retired and the continuation is owed',
+      );
     });
 
-    test('a non-truncated response returns no continuation', () async {
+    test('a truncated page nobody asked for returns no continuation', () async {
       final h = GossipEngineTestHarness();
+      final peer = h.addPeer('peer1');
       h.createChannel('ch1', streamIds: ['s1']);
 
       final continuation = await h.engine.handleDeltaResponse(
         DeltaResponse(
-          sender: NodeId('peer1'),
+          sender: peer.id,
+          channelId: channelId,
+          streamId: streamId,
+          entries: [entryOf(1, 1001), entryOf(2, 1002)],
+          hasMore: true,
+        ),
+      );
+
+      expect(
+        continuation,
+        isNull,
+        reason:
+            'the entries are merged as the push they are; what is left of '
+            'them is planned by the next digest exchange',
+      );
+      expect(h.engine.outstandingPullCount, equals(0));
+    });
+
+    test('a non-truncated response returns no continuation', () async {
+      final h = GossipEngineTestHarness();
+      final peer = h.addPeer('peer1');
+      h.createChannel('ch1', streamIds: ['s1']);
+      final pull = await h.armPull(
+        peer,
+        channelId: channelId,
+        streamId: streamId,
+        peerVersion: VersionVector({authorA: 9}),
+      );
+
+      final continuation = await h.engine.handleDeltaResponse(
+        DeltaResponse(
+          sender: peer.id,
           channelId: channelId,
           streamId: streamId,
           entries: [entryOf(1, 1001)],
           hasMore: false,
+          inReplyTo: pull.id,
         ),
       );
 
       expect(continuation, isNull);
     });
 
-    test(
-      'a truncated response that applies nothing new returns no continuation '
-      '(no infinite loop)',
-      () async {
-        final h = GossipEngineTestHarness();
-        h.createChannel('ch1', streamIds: ['s1']);
-        await h.appendEntry(channelId, streamId, entryOf(1, 1001));
+    test('a truncated answer that applies nothing new returns no continuation '
+        '(no infinite loop)', () async {
+      final h = GossipEngineTestHarness();
+      final peer = h.addPeer('peer1');
+      h.createChannel('ch1', streamIds: ['s1']);
+      await h.appendEntry(channelId, streamId, entryOf(1, 1001));
+      final pull = await h.armPull(
+        peer,
+        channelId: channelId,
+        streamId: streamId,
+        peerVersion: VersionVector({authorA: 9}),
+      );
 
-        final continuation = await h.engine.handleDeltaResponse(
-          DeltaResponse(
-            sender: NodeId('peer1'),
-            channelId: channelId,
-            streamId: streamId,
-            entries: [entryOf(1, 1001)], // duplicate — no progress
-            hasMore: true,
-          ),
-        );
+      final continuation = await h.engine.handleDeltaResponse(
+        DeltaResponse(
+          sender: peer.id,
+          channelId: channelId,
+          streamId: streamId,
+          entries: [entryOf(1, 1001)], // duplicate — no progress
+          hasMore: true,
+          inReplyTo: pull.id,
+        ),
+      );
 
-        expect(continuation, isNull);
-      },
-    );
+      expect(continuation, isNull);
+    });
   });
 
   group('DeltaResponse continuation dispatch', () {
@@ -157,6 +218,13 @@ void main() {
       h.engine.start();
       final (messages, sub) = h.captureMessages(peer);
 
+      final pull = await h.armPull(
+        peer,
+        channelId: channelId,
+        streamId: streamId,
+        peerVersion: VersionVector({authorA: 9}),
+      );
+
       await peer.port.send(
         h.localNode,
         h.codec.encode(
@@ -166,6 +234,7 @@ void main() {
             streamId: streamId,
             entries: [entryOf(1, 1001), entryOf(2, 1002)],
             hasMore: true,
+            inReplyTo: pull.id,
           ),
         ),
       );
@@ -180,6 +249,12 @@ void main() {
             'than waiting for the periodic round to re-select the peer',
       );
       expect(reqs.single.since[authorA], equals(2));
+      expect(
+        reqs.single.requestId,
+        isNotNull,
+        reason: 'every pull we put on the wire names itself',
+      );
+      expect(reqs.single.requestId, isNot(equals(pull.id)));
 
       await sub.cancel();
       h.engine.stop();

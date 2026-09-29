@@ -62,6 +62,16 @@ echo identities until the app's pin moves. It is deleted with the re-model.
   content (legacy)` exactly once per phone per connection for two phones on
   the current app pin, and re-logged it on a reconnect — the counter behaves
   as the criterion needs.
+- Dart half: landed on `feature/dart-round-wake-identity` (gossip PR #17,
+  2026-09-29) — the same entity, aggregate, wire keys and by-reference
+  correlation, with `LegacyCorrelation` as one file and one call and the
+  same once-per-peer INFO lines. Dart's v1 dialect is flat, so its reply
+  identity costs 79 bytes and its entry cap is 7532 at 30 KiB (kt v1 7497;
+  both v2 22596) — the register's identity row states the caps per dialect.
+  Until OpenDoorApp's translator carries the two keys across the v1 bridge,
+  no phone's answer can reach the server by reference; that change is homed
+  to the app pin bump (register row "The app's translator must carry the
+  request identity").
 - Bridge rulings, approved 2026-09-28: [A delta response answers one pull, or none — rulings](../superpowers/specs/2026-09-28-response-correlation-rulings.md) — raised by the round-wake fix, whose Task 3 measured the misclassification at six of ten churn runs with the wake and none without.
 - Ruling 1 (classify by content) landed in the Kotlin library on the
   round-wake branch (gossip-kt PR #17, 269f790): the pull mark carries the vector it
@@ -70,8 +80,9 @@ echo identities until the app's pin moves. It is deleted with the re-model.
   pull was for; ten of ten churn runs clean with the wake. Known limit recorded in
   the rulings' Precisions: a peer truncated at the front that reports no
   compaction floor is indistinguishable from a push until the request id of
-  ruling 3 lands. The Dart half rides the Dart round-wake plan; the item
-  stays open until ruling 3 ships on both.
+  ruling 3 lands. The request id has since landed on both twins (the
+  re-model); the item stays open until the app pin carries it and the
+  legacy rule is deleted.
 - A second residual the content rule leaves for ruling 3: a response that
   lands in the moment between a pull being marked and its vector being
   recorded retires the mark on existence alone, so the request then goes

@@ -36,6 +36,9 @@ class ScriptedDelayTimePort implements TimePort {
   int get nowMs => inner.nowMs;
 
   @override
+  int get monotonicMs => inner.monotonicMs;
+
+  @override
   TimerHandle schedulePeriodic(Duration interval, void Function() callback) =>
       inner.schedulePeriodic(interval, callback);
 

@@ -28,8 +28,15 @@ class _RealTimerHandle implements TimerHandle {
 /// );
 /// ```
 class RealTimePort implements TimePort {
+  /// Runs for the life of this port, so [monotonicMs] is elapsed time and not
+  /// a calendar reading — the one clock a correction cannot touch.
+  final Stopwatch _sinceCreation = Stopwatch()..start();
+
   @override
   int get nowMs => DateTime.now().millisecondsSinceEpoch;
+
+  @override
+  int get monotonicMs => _sinceCreation.elapsedMilliseconds;
 
   @override
   TimerHandle schedulePeriodic(Duration interval, void Function() callback) {

@@ -3,6 +3,7 @@ import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
+import 'package:gossip/src/sync/domain/value_objects/request_id.dart';
 
 /// Request for missing entries in a specific stream.
 ///
@@ -34,10 +35,16 @@ class DeltaRequest extends ProtocolMessage {
   /// for each author. This efficiently identifies only the missing entries.
   final VersionVector since;
 
+  /// This request's identity, so a peer's answer can name it by reference
+  /// instead of being inferred from what it carries. Null when the
+  /// requester mints none.
+  final RequestId? requestId;
+
   const DeltaRequest({
     required NodeId sender,
     required this.channelId,
     required this.streamId,
     required this.since,
+    this.requestId,
   }) : super(sender);
 }

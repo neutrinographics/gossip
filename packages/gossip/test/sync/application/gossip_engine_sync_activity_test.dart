@@ -44,7 +44,7 @@ void main() {
 
       expect(h.engine.outstandingPullCount, equals(0));
 
-      // A digest showing the peer is ahead arms a pending pull.
+      // A digest showing the peer is ahead issues a pull.
       await h.engine.handleDigestResponse(digestFrom(peer.id));
       expect(h.engine.outstandingPullCount, equals(1));
 
@@ -60,7 +60,7 @@ void main() {
       expect(h.engine.outstandingPullCount, equals(0));
     });
 
-    test('outstandingPullCount excludes expired pending pulls', () async {
+    test('outstandingPullCount excludes pulls past the deadline', () async {
       final h = GossipEngineTestHarness();
       final peer = h.addPeer('peerA');
       h.createChannel('ch1', streamIds: ['s1']);

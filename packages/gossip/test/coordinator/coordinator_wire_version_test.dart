@@ -40,15 +40,23 @@ void main() {
     // 5): flipping wireVersion changes the max payload EventStream.append
     // accepts, not just the wire framing. Same budget, both versions, so
     // the ~3x gap is explicit in the suite rather than implied.
+    //
+    // Derivation (pull-request-identity rulings, "each dialect pays for
+    // the identity it echoes"): 30720 (30KB) - 512 (entry envelope) - 79
+    // (reply-identity allowance, 15 + RequestId.maxIdentifierBytes — both
+    // Dart dialects are flat, unlike the Kotlin twin's batched v1, so both
+    // pay the same 79 rather than kt's v1/v2 split of 217/79) = 30129
+    // usable bytes; v1 spends 4 chars/payload-byte (30129 ~/ 4 = 7532), v2
+    // spends 4 chars per 3 payload bytes (7532 * 3 = 22596).
     final budget = CoordinatorConfig.defaults.maxMessageBytes;
 
     expect(
       SyncMessageCodec.maxEntryPayloadForBudget(budget, WireVersion.v1),
-      equals(7552),
+      equals(7532),
     );
     expect(
       SyncMessageCodec.maxEntryPayloadForBudget(budget, WireVersion.v2),
-      equals(22656),
+      equals(22596),
     );
   });
 

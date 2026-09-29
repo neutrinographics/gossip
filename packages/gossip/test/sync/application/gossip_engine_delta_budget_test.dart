@@ -11,6 +11,7 @@ import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
+import 'package:gossip/src/sync/domain/value_objects/request_id.dart';
 import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:test/test.dart';
 
@@ -76,6 +77,38 @@ void main() {
         }
       },
     );
+
+    test('a named answer filled to the budget still fits it', () async {
+      final h = GossipEngineTestHarness(maxMessageBytes: 30 * 1024);
+      h.createChannel('ch1', streamIds: ['s1']);
+
+      // Entries small enough that the page fills to within one entry of the
+      // budget; the answer's own name is then what decides whether it fits.
+      for (var i = 1; i <= 600; i++) {
+        await h.appendEntry(
+          channelId,
+          streamId,
+          entryOf('author-a', i, 1000 + i, 8),
+        );
+      }
+
+      final response = await h.engine.handleDeltaRequest(
+        DeltaRequest(
+          sender: NodeId('peer1'),
+          channelId: channelId,
+          streamId: streamId,
+          since: VersionVector.empty,
+          requestId: RequestId('r' * RequestId.maxIdentifierBytes),
+        ),
+      );
+
+      expect(response.hasMore, isTrue, reason: 'the page must be a full one');
+      expect(
+        h.codec.encode(response).length,
+        lessThanOrEqualTo(30 * 1024),
+        reason: 'the answer is measured with the name it carries',
+      );
+    });
 
     test('truncated deltas converge over repeated request cycles', () async {
       final h = GossipEngineTestHarness(maxMessageBytes: 30 * 1024);
@@ -208,7 +241,9 @@ void main() {
         expect(
           totalRequests,
           equals(1),
-          reason: 'the pending flag must dedup interleaved digest handling',
+          reason:
+              'a pull already in flight must dedup interleaved digest '
+              'handling',
         );
       },
     );

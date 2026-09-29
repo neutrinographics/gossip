@@ -75,6 +75,18 @@ abstract class TimePort {
   /// In tests, returns simulated time controlled via `InMemoryTimePort.advance`.
   int get nowMs;
 
+  /// A reading on the same timeline this port's own waits run on: it moves
+  /// with elapsed time and with nothing else.
+  ///
+  /// Distinct from [nowMs] because a pending wait's end is judged against it.
+  /// A wall clock can be corrected while a wait is pending — making that wait
+  /// look already over, or longer than the timer knows it to be — so a
+  /// deadline compared on a corrected clock is a deadline about nothing.
+  ///
+  /// Comparable only against other readings from the same port instance; its
+  /// origin is arbitrary and carries no calendar meaning.
+  int get monotonicMs;
+
   /// Schedules a callback to run periodically.
   ///
   /// Returns a [TimerHandle] that can be used to cancel this specific timer.

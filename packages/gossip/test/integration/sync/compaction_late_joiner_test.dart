@@ -81,12 +81,21 @@ void main() {
     expect(result!.entriesRemoved, equals(3));
     expect(await network['a'].entryCount(channelId, streamId), equals(2));
 
-    // THEN B connects and starts.
+    // THEN B connects and starts. The link is tapped from the moment B
+    // joins — not after an untapped settle gap — so the "early" window
+    // below actually contains the catch-up exchange (news wakes the round,
+    // so that catch-up now completes well inside 30 rounds; measuring
+    // starting later would land after it had already quiesced, leaving
+    // nothing for the decay assertion to observe).
+    final counter = [0];
+    tapBoth(network, 'a', 'b', counter);
+
     await network.joinChannel('b', channelId, streamId, existingMembers: ['a']);
     await network.connect('a', 'b');
     await network['b'].start();
 
-    await network.runRounds(15);
+    await network.runRounds(30); // early window: the actual catch-up traffic
+    final earlyCount = counter[0];
 
     expect(
       await network.hasConverged(channelId, streamId, nodes: ['a', 'b']),
@@ -115,26 +124,40 @@ void main() {
 
     // Breaking floor adoption reintroduces a futile-resend loop: the
     // requester keeps re-asking for a range the responder can never
-    // serve again, so idle traffic never decays. Tap the link and
-    // confirm a later window is strictly quieter than an earlier one.
-    final counter = [0];
-    tapBoth(network, 'a', 'b', counter);
-
-    await network.runRounds(30); // early idle window
-    final earlyCount = counter[0];
+    // serve again, so idle traffic never decays. Confirm a later window is
+    // strictly quieter than the catch-up window above.
     await network.runRounds(60); // let backoff/quiescence take hold
     counter[0] = 0;
     await network.runRounds(30); // late idle window, same width
     final lateCount = counter[0];
 
+    // The catch-up burst above (earlyCount) makes `lateCount < earlyCount`
+    // pass for ANY constant per-round futile-resend rate r too
+    // (`burst + 30r` vs `30r`), which is not what "idle traffic decays"
+    // means to assert — it stops meaning anything once there is a real
+    // burst to be less than. So the actual guard is an ABSOLUTE bound on
+    // the late window: measured stable at 2 messages/30 rounds (the
+    // probe-only floor — no gossip traffic at all once converged and
+    // fully idle; deterministic over 8 repeated runs, no observed
+    // variance). 8 is 4x that floor: comfortable headroom for the real
+    // floor to sit a little higher on a slower CI box, while staying far
+    // below what a resumed futile-resend loop produces (proven by
+    // mutation in the report — forcing every round to re-request
+    // regardless of the shaped vector's dominance drives the late window
+    // into the hundreds, not single digits).
     expect(
       lateCount,
-      lessThan(earlyCount),
+      lessThanOrEqualTo(8),
       reason:
-          'the futile-resend-loop symptom must stay dead: idle '
-          'traffic decays after convergence instead of looping on an '
-          'unobtainable range',
+          'the futile-resend-loop symptom must stay dead: after '
+          'convergence the link carries only the probe-only floor, not a '
+          'sustained rate from re-asking for an unobtainable range',
     );
+    // Secondary sanity check: the deep-idle window is still quieter than
+    // the catch-up burst that preceded it (kept for readability, not load-
+    // bearing — the absolute bound above is what actually falsifies a
+    // reintroduced futile-resend loop).
+    expect(lateCount, lessThan(earlyCount));
   });
 
   test('transitive floor propagation: C joins via B only and never talks to A '
