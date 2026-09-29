@@ -3,9 +3,13 @@ import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
+import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
+import 'package:gossip/src/shared/infrastructure/in_memory_message_port.dart';
+import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'dart:typed_data';
 
 import 'gossip_engine_test_harness.dart';
+import '../../support/unjittered_random.dart';
 
 /// Two-tier pacing (spec 2026-08-20): quiet rounds stretch the adaptive
 /// interval toward the 30s ceiling; any news snaps it back to base.
@@ -176,6 +180,200 @@ void main() {
       expect(h.engine.effectiveGossipInterval, const Duration(seconds: 1));
       h.engine.stop();
     });
+  });
+
+  group('news wakes the round', () {
+    test('a merge wakes the round instead of waiting out the interval armed '
+        'before it', () async {
+      final h = GossipEngineTestHarness(
+        adaptiveTimingEnabled: true,
+        random: UnjitteredRandom(),
+      );
+      final peer = h.addPeer('peer1');
+      h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 100));
+      final channelId = ChannelId('ch');
+      final streamId = StreamId('s');
+      await h.createChannelWithStream(channelId, streamId);
+
+      // Delivers the merge from a node that is NOT a gossip partner, so
+      // the engine's next round has only [peer] to target — "another
+      // peer" (the ruling's phrase) is true by construction, not by a
+      // round-robin tiebreak this test would otherwise have to control.
+      final mergeSource = GossipTestPeer(
+        NodeId('merge-source'),
+        InMemoryMessagePort(NodeId('merge-source'), h.bus),
+      );
+
+      h.engine.start();
+      // Round 1 consumes start()'s own news flag — the pacer is not
+      // stretched by it.
+      await h.timePort.advance(h.engine.effectiveGossipInterval);
+      await pumpEventQueue();
+
+      // Several quiet rounds stretch the pacer well past the active
+      // cadence — the "pacer stretched by several quiet rounds" the
+      // ruling names.
+      for (var i = 0; i < 4; i++) {
+        await h.timePort.advance(h.engine.effectiveGossipInterval);
+        await pumpEventQueue();
+      }
+      expect(
+        h.engine.effectiveGossipInterval,
+        greaterThan(const Duration(milliseconds: 200)),
+        reason: 'setup must actually stretch the pacer before the merge',
+      );
+
+      final (messages, sub) = h.captureMessages(peer);
+
+      await h.deliverDeltaResponse(
+        from: mergeSource,
+        channelId: channelId,
+        streamId: streamId,
+        entries: [
+          LogEntry(
+            author: mergeSource.id,
+            sequence: 1,
+            timestamp: Hlc(1, 0),
+            payload: Uint8List.fromList([7]),
+          ),
+        ],
+      );
+
+      // Just short of the active interval (200ms): the merge must not
+      // have produced a round yet — the woken wait is the active
+      // interval, not instant.
+      await h.timePort.advance(const Duration(milliseconds: 199));
+      await pumpEventQueue();
+      expect(messages.whereType<DigestRequest>(), isEmpty);
+
+      // The remaining 1ms crosses the active interval.
+      await h.timePort.advance(const Duration(milliseconds: 1));
+      await pumpEventQueue();
+      expect(
+        messages.whereType<DigestRequest>(),
+        isNotEmpty,
+        reason:
+            'the merge must wake the round: the next DigestRequest to '
+            'another peer goes out within the active interval of the '
+            'merge, not the stretched interval that was pending',
+      );
+
+      await sub.cancel();
+      h.engine.stop();
+    });
+
+    test('a local write wakes the round instead of waiting out the interval '
+        'armed before it', () async {
+      final h = GossipEngineTestHarness(
+        adaptiveTimingEnabled: true,
+        random: UnjitteredRandom(),
+      );
+      final peer = h.addPeer('peer1');
+      h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 100));
+
+      h.engine.start();
+      await h.timePort.advance(h.engine.effectiveGossipInterval);
+      await pumpEventQueue();
+      for (var i = 0; i < 4; i++) {
+        await h.timePort.advance(h.engine.effectiveGossipInterval);
+        await pumpEventQueue();
+      }
+      expect(
+        h.engine.effectiveGossipInterval,
+        greaterThan(const Duration(milliseconds: 200)),
+        reason: 'setup must actually stretch the pacer before the write',
+      );
+
+      final (messages, sub) = h.captureMessages(peer);
+
+      h.engine.notifyLocalWrite(
+        ChannelId('ch'),
+        StreamId('s'),
+        LogEntry(
+          author: h.localNode,
+          sequence: 1,
+          timestamp: Hlc(1, 0),
+          payload: Uint8List.fromList([1]),
+        ),
+      );
+
+      await h.timePort.advance(const Duration(milliseconds: 199));
+      await pumpEventQueue();
+      expect(messages.whereType<DigestRequest>(), isEmpty);
+
+      await h.timePort.advance(const Duration(milliseconds: 1));
+      await pumpEventQueue();
+      expect(
+        messages.whereType<DigestRequest>(),
+        isNotEmpty,
+        reason:
+            'the local write must wake the round: the next DigestRequest '
+            'goes out within the active interval of the write, not the '
+            'stretched interval that was pending',
+      );
+
+      await sub.cancel();
+      h.engine.stop();
+    });
+
+    test(
+      'at the active cadence a minute holds the rounds it always held',
+      () async {
+        // A non-jittering random and news on every cycle: the wake this
+        // triggers each round must find the pending wait already no longer
+        // than a fresh one and leave it alone — a busy room must not round
+        // faster than its own cadence just because it keeps getting news.
+        final h = GossipEngineTestHarness(
+          adaptiveTimingEnabled: true,
+          random: UnjitteredRandom(),
+        );
+        final peer = h.addPeer('peer1');
+        h.peerRegistry.recordPeerRtt(
+          peer.id,
+          const Duration(milliseconds: 125),
+        );
+        expect(
+          h.engine.effectiveGossipInterval,
+          const Duration(milliseconds: 250),
+        );
+
+        final (messages, sub) = h.captureMessages(peer);
+        h.engine.start();
+
+        const interval = Duration(milliseconds: 250);
+        const half = Duration(milliseconds: 125);
+        const oneMinute = Duration(minutes: 1);
+        final cycles = oneMinute.inMilliseconds ~/ interval.inMilliseconds;
+        for (var i = 0; i < cycles; i++) {
+          await h.timePort.advance(half);
+          await pumpEventQueue();
+          h.engine.notifyLocalWrite(
+            ChannelId('ch'),
+            StreamId('s'),
+            LogEntry(
+              author: h.localNode,
+              sequence: i + 1,
+              timestamp: Hlc(i + 1, 0),
+              payload: Uint8List.fromList([1]),
+            ),
+          );
+          await h.timePort.advance(half);
+          await pumpEventQueue();
+        }
+
+        expect(
+          messages.whereType<DigestRequest>().length,
+          equals(cycles),
+          reason:
+              'news every cycle must not add rounds beyond the cadence: '
+              'each wake finds a wait already no longer than the fresh one '
+              'and leaves it alone',
+        );
+
+        await sub.cancel();
+        h.engine.stop();
+      },
+    );
   });
 
   group('GossipEngine recency suppression', () {

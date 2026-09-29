@@ -236,10 +236,15 @@ class GossipEngine {
   bool _newsSinceLastRound = true;
 
   /// News: local append, merge, delta traffic either direction, or a
-  /// membership change. Resets the pacer and marks the round non-quiet.
+  /// membership change. Resets the pacer and marks the round non-quiet, then
+  /// wakes the round loop so a wait armed before the news doesn't have to be
+  /// slept out — see [GenerationScheduler.wake] for which waits that
+  /// actually cuts short. The only place this engine wakes the loop: the
+  /// probe loop belongs to a different scheduler entirely (untouched here).
   void _recordNews() {
     _newsSinceLastRound = true;
     _timing.news();
+    _scheduler.wake();
   }
 
   /// Owns pull-request dedup (at most one outstanding DeltaRequest per

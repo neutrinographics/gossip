@@ -81,12 +81,21 @@ void main() {
     expect(result!.entriesRemoved, equals(3));
     expect(await network['a'].entryCount(channelId, streamId), equals(2));
 
-    // THEN B connects and starts.
+    // THEN B connects and starts. The link is tapped from the moment B
+    // joins — not after an untapped settle gap — so the "early" window
+    // below actually contains the catch-up exchange (news wakes the round,
+    // so that catch-up now completes well inside 30 rounds; measuring
+    // starting later would land after it had already quiesced, leaving
+    // nothing for the decay assertion to observe).
+    final counter = [0];
+    tapBoth(network, 'a', 'b', counter);
+
     await network.joinChannel('b', channelId, streamId, existingMembers: ['a']);
     await network.connect('a', 'b');
     await network['b'].start();
 
-    await network.runRounds(15);
+    await network.runRounds(30); // early window: the actual catch-up traffic
+    final earlyCount = counter[0];
 
     expect(
       await network.hasConverged(channelId, streamId, nodes: ['a', 'b']),
@@ -115,13 +124,8 @@ void main() {
 
     // Breaking floor adoption reintroduces a futile-resend loop: the
     // requester keeps re-asking for a range the responder can never
-    // serve again, so idle traffic never decays. Tap the link and
-    // confirm a later window is strictly quieter than an earlier one.
-    final counter = [0];
-    tapBoth(network, 'a', 'b', counter);
-
-    await network.runRounds(30); // early idle window
-    final earlyCount = counter[0];
+    // serve again, so idle traffic never decays. Confirm a later window is
+    // strictly quieter than the catch-up window above.
     await network.runRounds(60); // let backoff/quiescence take hold
     counter[0] = 0;
     await network.runRounds(30); // late idle window, same width
