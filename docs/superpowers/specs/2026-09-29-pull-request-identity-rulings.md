@@ -270,8 +270,9 @@ correlate. Segregated so that deleting it is deleting one file and one call.
   next round's pull for that peer and stream until the deadline, on every
   page. The decoder now records on the response whether its frame's dialect
   can mark a page partial; where it cannot, a content-correlated answer is
-  the whole of that request's answer — retired, sampled — and the next
-  digest asks for the remainder. On v2 nothing changes. The Kotlin twin has
+  the whole of that request's answer — retired, but not measured, since
+  content showed it to be the answer only in part — and the next digest asks
+  for the remainder. On v2 nothing changes. The Kotlin twin has
   the same latent rule for legacy phones over v1-kt (a kt flow-back row on
   the register). Found by Codex on gossip PR #17.
 - *A non-positive interval is a scheduling failure on Dart too.* The old

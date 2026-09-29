@@ -14,6 +14,7 @@ import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/sync/domain/value_objects/request_id.dart';
 import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:test/test.dart';
 
@@ -322,6 +323,49 @@ void main() {
       reason:
           'the peer relies on later rounds for B; holding the pull open '
           'would suppress that round\'s request until the deadline',
+    );
+  });
+
+  test('a real v1 frame from a legacy peer carries no partial-page mark, so '
+      'its partial page retires the pull', () async {
+    final port = _ScriptedPort();
+    final h = GossipEngineTestHarness(
+      messagePort: port,
+      wireVersion: WireVersion.v1,
+    );
+    final peer = h.addPeer('peer1');
+    h.createChannel('ch1', streamIds: ['s1']);
+    h.startListening();
+    h.engine.start();
+    addTearDown(() async {
+      h.engine.stop();
+      h.stopListening();
+      await port.close();
+    });
+
+    await h.engine.performGossipRound();
+    await h.flush(3);
+    port.deliver(
+      peer.id,
+      h.codec.encode(
+        digestResponseOf(peer.id, VersionVector({authorA: 20, authorB: 20})),
+      ),
+    );
+    await h.flush(3);
+    expect(h.engine.outstandingPullCount, 1);
+
+    // Encoded on v1, the page cannot say B is still coming; decoded, it says
+    // so — the decoder's fact, not the test's.
+    port.deliver(
+      peer.id,
+      h.codec.encode(responseOf(peer.id, [entryOf(authorA, 1)])),
+    );
+    await h.flush(3);
+
+    expect(
+      h.engine.outstandingPullCount,
+      0,
+      reason: 'over v1 the page is the whole answer; the next round asks for B',
     );
   });
 
