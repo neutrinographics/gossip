@@ -142,6 +142,12 @@ class GenerationScheduler {
     // ending and the tick arming the next under the same run, since a
     // reading taken for a wait that is over decides nothing about the one
     // that followed it.
+    // The readings were about one wait of one run. A stop and a start in
+    // between make them about nothing (the number moved; pinned). The wait
+    // end is checked too, as the Kotlin twin does, where a reading can age
+    // across threads while the tick arms the next wait; in one isolate the
+    // read and this decision are one synchronous run, so that clause cannot
+    // differ here and is parity, not a reachable case.
     if (_state.number != generation || _state.waitEndsAtMs != waitEndsAtMs) {
       return;
     }

@@ -71,6 +71,8 @@ void main() {
       expect(LoopGeneration.start(given).state, isNot(same(given)));
       expect(LoopGeneration.stop(given), isNot(same(given)));
       expect(LoopGeneration.expire(given, given.number), isNot(same(given)));
+      expect(LoopGeneration.arm(given, endsAtMs: 1), isNot(same(given)));
+      expect(LoopGeneration.ticking(armed), isNot(same(armed)));
       expect(
         LoopGeneration.wake(armed, nowMs: 0, freshDelayMs: 250).state,
         isNot(same(armed)),

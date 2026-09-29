@@ -800,8 +800,132 @@ void main() {
       scheduler.stop();
     });
 
+    test('a wake whose readings belong to a run since replaced does nothing, '
+        'even when the replacement\'s wait ends at the same instant', () async {
+      // Arrange: the wake's interval read restarts the scheduler before
+      // answering, and the replacement arms a wait ending exactly when the
+      // original would have — so only the run's number tells the readings
+      // apart. A guard on the wait end alone would let this wake through.
+      final timePort = InMemoryTimePort();
+      var reads = 0;
+      var tickCount = 0;
+      late final GenerationScheduler scheduler;
+      scheduler = GenerationScheduler(
+        timePort: timePort,
+        nextDelay: () {
+          reads++;
+          switch (reads) {
+            case 1:
+              return const Duration(milliseconds: 1000); // ends at 1 000
+            case 2:
+              scheduler.stop();
+              scheduler.start(); // draw 3: the replacement's wait
+              return const Duration(milliseconds: 250); // the stale reading
+            case 3:
+              return const Duration(milliseconds: 900); // also ends at 1 000
+            default:
+              return const Duration(seconds: 30);
+          }
+        },
+        tick: () async => tickCount++,
+        onTickError: (error, stackTrace) => fail('unexpected: $error'),
+        onSchedulingError: (error, stackTrace) => fail('unexpected: $error'),
+      );
+
+      // Act
+      scheduler.start();
+      await timePort.advance(const Duration(milliseconds: 100));
+      await pumpEventQueue();
+      scheduler.wake();
+
+      await timePort.advance(const Duration(milliseconds: 250)); // to 350
+      await pumpEventQueue();
+      expect(tickCount, equals(0), reason: 'the stale reading arms nothing');
+
+      await timePort.advance(const Duration(milliseconds: 650)); // to 1 000
+      await pumpEventQueue();
+      expect(
+        tickCount,
+        equals(1),
+        reason: 'the replacement ticks once, when its own wait ends',
+      );
+      expect(scheduler.isRunning, isTrue);
+
+      scheduler.stop();
+    });
+
+    test('a failing nextDelay from a superseded run does not stop the run '
+        'that replaced it', () async {
+      // Arrange: the first run's interval read restarts the scheduler before
+      // throwing — a stale failure that must expire its own run only.
+      final timePort = InMemoryTimePort();
+      final schedulingErrors = <Object>[];
+      var reads = 0;
+      var tickCount = 0;
+      late final GenerationScheduler scheduler;
+      scheduler = GenerationScheduler(
+        timePort: timePort,
+        nextDelay: () {
+          reads++;
+          if (reads == 1) {
+            scheduler.stop();
+            scheduler.start(); // read 2: the replacement's interval
+            throw StateError('stale');
+          }
+          return const Duration(milliseconds: 100);
+        },
+        tick: () async => tickCount++,
+        onTickError: (error, stackTrace) => fail('unexpected: $error'),
+        onSchedulingError: (error, stackTrace) => schedulingErrors.add(error),
+      );
+
+      // Act
+      scheduler.start();
+      await pumpEventQueue();
+
+      // Assert
+      expect(schedulingErrors, hasLength(1), reason: 'still reported');
+      expect(scheduler.isRunning, isTrue, reason: 'the replacement stays live');
+      await timePort.advance(const Duration(milliseconds: 100));
+      await pumpEventQueue();
+      expect(tickCount, equals(1));
+
+      scheduler.stop();
+    });
+
+    test('a nextDelay that throws on the reschedule after a tick stops the '
+        'loop', () async {
+      // Arrange
+      final timePort = InMemoryTimePort();
+      final schedulingErrors = <Object>[];
+      var reads = 0;
+      var tickCount = 0;
+      final scheduler = GenerationScheduler(
+        timePort: timePort,
+        nextDelay: () {
+          reads++;
+          if (reads == 1) return const Duration(milliseconds: 100);
+          throw StateError('no interval');
+        },
+        tick: () async => tickCount++,
+        onTickError: (error, stackTrace) => fail('unexpected: $error'),
+        onSchedulingError: (error, stackTrace) => schedulingErrors.add(error),
+      );
+
+      // Act
+      scheduler.start();
+      await timePort.advance(const Duration(milliseconds: 100));
+      await pumpEventQueue();
+
+      // Assert
+      expect(tickCount, equals(1));
+      expect(schedulingErrors, hasLength(1));
+      expect(scheduler.isRunning, isFalse);
+      expect(timePort.pendingDelayCount, equals(0));
+    });
+
     test('a wake whose readings belong to a run since replaced does '
-        'nothing', () async {
+        'nothing when the replacement arms a longer wait', () async {
       // Arrange: the wake's interval read restarts the scheduler before
       // answering, with an interval shorter than the wait the new run arms —
       // a wake deciding on that reading would cut a wait short that its
