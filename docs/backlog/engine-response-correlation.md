@@ -51,7 +51,7 @@ echo identities until the app's pin moves. It is deleted with the re-model.
 ## Related
 
 - Re-model rulings, approved 2026-09-29: [A pull is a request with identity — rulings](../superpowers/specs/2026-09-29-pull-request-identity-rulings.md).
-- Kotlin half: gossip-kt PR #18 (`feature/pull-identity`, 2026-09-29) — the
+- Kotlin half: gossip-kt PR #18, merged c8dde6f on 2026-09-29 — the
   entity, the aggregate, the wire keys, the by-reference correlation, the
   transitional `LegacyCorrelation` with its once-per-peer INFO lines as the
   deletion criterion's counter, the bridge's surface deleted and pinned
