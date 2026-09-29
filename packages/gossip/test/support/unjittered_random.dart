@@ -2,14 +2,17 @@ import 'dart:math';
 
 /// A [Random] whose [nextDouble] always answers the jitter formula's exact
 /// midpoint, so `applyJitter` (see `shared/domain/services/jitter.dart`)
-/// returns its base [Duration] unchanged. The Dart mirror of gossip-kt's
-/// `UnjitteredRandom` — needed wherever a test asserts an exact scheduled
-/// duration, or an exact round count, rather than a jittered range.
+/// returns its base [Duration] unchanged — the Dart mirror of gossip-kt's
+/// `UnjitteredRandom`, but only for `nextDouble`: kt's also zeroes
+/// `nextBits`, making its `nextInt` constant too, where this one still
+/// delegates `nextInt`/`nextBool` to a real, seeded [Random]. Needed
+/// wherever a test asserts an exact scheduled duration, or an exact round
+/// count, rather than a jittered range.
 ///
-/// [nextInt] and [nextBool] still delegate to a real (seeded, so
-/// reproducible) [Random], for tests that also rely on those for
-/// tie-breaking (e.g. gossip partner selection) and don't care about that
-/// choice being fixed.
+/// [nextInt] and [nextBool] delegate to a real, seeded (so reproducible)
+/// [Random], for tests that also rely on those for tie-breaking (e.g.
+/// gossip partner selection): which candidate wins the tiebreak doesn't
+/// matter to those tests, only that the same one wins every run.
 class UnjitteredRandom implements Random {
   final Random _inner = Random(7);
 

@@ -270,6 +270,9 @@ void main() {
       );
       final peer = h.addPeer('peer1');
       h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 100));
+      final channelId = ChannelId('ch');
+      final streamId = StreamId('s');
+      await h.createChannelWithStream(channelId, streamId);
 
       h.engine.start();
       await h.timePort.advance(h.engine.effectiveGossipInterval);
@@ -287,8 +290,8 @@ void main() {
       final (messages, sub) = h.captureMessages(peer);
 
       h.engine.notifyLocalWrite(
-        ChannelId('ch'),
-        StreamId('s'),
+        channelId,
+        streamId,
         LogEntry(
           author: h.localNode,
           sequence: 1,
@@ -332,6 +335,9 @@ void main() {
           peer.id,
           const Duration(milliseconds: 125),
         );
+        final channelId = ChannelId('ch');
+        final streamId = StreamId('s');
+        await h.createChannelWithStream(channelId, streamId);
         expect(
           h.engine.effectiveGossipInterval,
           const Duration(milliseconds: 250),
@@ -348,8 +354,8 @@ void main() {
           await h.timePort.advance(half);
           await pumpEventQueue();
           h.engine.notifyLocalWrite(
-            ChannelId('ch'),
-            StreamId('s'),
+            channelId,
+            streamId,
             LogEntry(
               author: h.localNode,
               sequence: i + 1,
@@ -367,7 +373,10 @@ void main() {
           reason:
               'news every cycle must not add rounds beyond the cadence: '
               'each wake finds a wait already no longer than the fresh one '
-              'and leaves it alone',
+              'and leaves it alone — and equals (not just lessThanOrEqualTo) '
+              'also catches the opposite regression: an unconditional '
+              'wake-driven re-arm at the midpoint would push every round '
+              'out to +375ms and yield fewer than $cycles',
         );
 
         await sub.cancel();
