@@ -1,6 +1,6 @@
 # A pull is a request with identity — rulings
 
-**Status:** proposed 2026-09-29, for the owner's review. **Item:** [Correlate delta responses with the pulls that solicited them](../backlog/engine-response-correlation.md). **Supersedes:** ruling 3 of [A delta response answers one pull, or none](2026-09-28-response-correlation-rulings.md) as written there ("a request identifier, additively"); the bridge those rulings shipped (gossip-kt PR #17) stays until this lands on both twins and the fleet has moved. **Applies to:** both twins; Kotlin first; the Dart half of the round-wake fix implements this model directly and never carries the bridge in full.
+**Status:** approved 2026-09-29 (see Review outcome). **Item:** [Correlate delta responses with the pulls that solicited them](../backlog/engine-response-correlation.md). **Supersedes:** ruling 3 of [A delta response answers one pull, or none](2026-09-28-response-correlation-rulings.md) as written there ("a request identifier, additively"); the bridge those rulings shipped (gossip-kt PR #17) stays until this lands on both twins and the fleet has moved. **Applies to:** both twins; Kotlin first; the Dart half of the round-wake fix implements this model directly and never carries the bridge in full.
 
 ## Why a re-model, not a field
 
@@ -190,4 +190,4 @@ correlate. Segregated so that deleting it is deleting one file and one call.
 
 ## Review outcome
 
-_Pending the owner's review._
+**Approved (owner, 2026-09-29)** as proposed. Kotlin plan follows in gossip-kt `docs/superpowers/plans/`.
