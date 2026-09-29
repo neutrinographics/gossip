@@ -16,6 +16,7 @@ import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
+import 'package:gossip/src/sync/domain/value_objects/request_id.dart';
 import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 
@@ -42,6 +43,26 @@ Uint8List deltaResponseFrameWithPayload(List<int> payload) {
     WireTypes.deltaResponse,
     ...utf8.encode(jsonEncode(json)),
   ]);
+}
+
+/// Builds a raw frame for [messageType] under [version] from a hand-built
+/// JSON body — used to probe the tolerant decoder against a wire shape no
+/// encoder in this codebase emits (e.g. an explicit legacy-envelope key),
+/// independent of whichever version this codec itself emits.
+Uint8List rawFrame(
+  WireVersion version,
+  int messageType,
+  Map<String, dynamic> json,
+) {
+  final body = utf8.encode(jsonEncode(json));
+  return switch (version) {
+    WireVersion.v1 => Uint8List.fromList([messageType, ...body]),
+    WireVersion.v2 => Uint8List.fromList([
+      WireTypes.markerV2,
+      messageType,
+      ...body,
+    ]),
+  };
 }
 
 void main() {
@@ -522,6 +543,72 @@ void main() {
         expect(overMax.length, lessThanOrEqualTo(budget));
       });
 
+      for (final budget in [30 * 1024, 4 * 1024, 1 * 1024]) {
+        test('a maximal-id-named DeltaResponse fits the $budget-byte budget '
+            '(v2)', () {
+          final v2Codec = SyncMessageCodec(wireVersion: WireVersion.v2);
+          final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(
+            budget,
+            WireVersion.v2,
+          );
+
+          final encoded = v2Codec.encode(
+            DeltaResponse(
+              sender: NodeId('peer2'),
+              channelId: ChannelId('ch1'),
+              streamId: StreamId('s1'),
+              entries: [
+                LogEntry(
+                  author: NodeId('a' * 64), // longer than a UUID
+                  sequence: 1 << 40,
+                  timestamp: Hlc(281474976710655, 65535), // max HLC fields
+                  payload: Uint8List.fromList(
+                    List.generate(maxPayload, (i) => i % 256),
+                  ),
+                ),
+              ],
+              // Names the request with the costliest possible id — the
+              // allowance maxEntryPayloadForBudget reserves must actually
+              // cover it.
+              inReplyTo: RequestId('r' * RequestId.maxIdentifierBytes),
+            ),
+          );
+
+          expect(encoded.length, lessThanOrEqualTo(budget));
+        });
+
+        test('a maximal-id-named DeltaResponse fits the $budget-byte budget '
+            '(v1)', () {
+          final v1Codec = SyncMessageCodec(wireVersion: WireVersion.v1);
+          final maxPayload = SyncMessageCodec.maxEntryPayloadForBudget(
+            budget,
+            WireVersion.v1,
+          );
+
+          final encoded = v1Codec.encode(
+            DeltaResponse(
+              sender: NodeId('peer2'),
+              channelId: ChannelId('ch1'),
+              streamId: StreamId('s1'),
+              entries: [
+                LogEntry(
+                  author: NodeId('a' * 64), // longer than a UUID
+                  sequence: 1 << 40,
+                  timestamp: Hlc(281474976710655, 65535), // max HLC fields
+                  // All-0xFF payload bytes: every int-list element is
+                  // "255," (4 chars), v1's worst case.
+                  payload: Uint8List(maxPayload)
+                    ..fillRange(0, maxPayload, 0xFF),
+                ),
+              ],
+              inReplyTo: RequestId('r' * RequestId.maxIdentifierBytes),
+            ),
+          );
+
+          expect(encoded.length, lessThanOrEqualTo(budget));
+        });
+      }
+
       test(
         'rejects legacy payload bytes outside 0-255 instead of truncating',
         () {
@@ -550,6 +637,147 @@ void main() {
           );
         },
       );
+    });
+
+    group('request identity (requestId / inReplyTo)', () {
+      // Both fields are additive JSON keys, tested identically on both
+      // dialects: Dart's v1 is flat per-(channel, stream) like v2 (unlike
+      // the Kotlin twin's batched v1), so requestId/inReplyTo take the
+      // same shape on both.
+      for (final version in WireVersion.values) {
+        final dialectCodec = SyncMessageCodec(wireVersion: version);
+
+        test('$version DeltaRequest requestId round-trips', () {
+          final requestId = RequestId('req-1');
+          final request = DeltaRequest(
+            sender: NodeId('peer1'),
+            channelId: ChannelId('ch1'),
+            streamId: StreamId('s1'),
+            since: VersionVector.empty,
+            requestId: requestId,
+          );
+
+          final decoded =
+              dialectCodec.decode(dialectCodec.encode(request)) as DeltaRequest;
+
+          expect(decoded.requestId, equals(requestId));
+        });
+
+        test('$version DeltaRequest without a requestId emits no requestId '
+            'key and decodes to null', () {
+          final request = DeltaRequest(
+            sender: NodeId('peer1'),
+            channelId: ChannelId('ch1'),
+            streamId: StreamId('s1'),
+            since: VersionVector.empty,
+          );
+
+          final encoded = dialectCodec.encode(request);
+          final json = jsonOf(encoded);
+          final decoded = dialectCodec.decode(encoded) as DeltaRequest;
+
+          expect(json.containsKey('requestId'), isFalse, reason: '$json');
+          expect(decoded.requestId, isNull);
+        });
+
+        test('$version DeltaRequest decode accepts an explicit requestId '
+            'field (tolerance)', () {
+          final frame = rawFrame(version, WireTypes.deltaRequest, {
+            'sender': 'peer1',
+            'channelId': 'ch1',
+            'streamId': 's1',
+            'since': <String, dynamic>{},
+            'requestId': 'abc-1',
+          });
+
+          final decoded = dialectCodec.decode(frame) as DeltaRequest;
+
+          expect(decoded.requestId, equals(RequestId('abc-1')));
+        });
+
+        test('$version DeltaResponse inReplyTo round-trips', () {
+          final requestId = RequestId('req-1');
+          final response = DeltaResponse(
+            sender: NodeId('peer2'),
+            channelId: ChannelId('ch1'),
+            streamId: StreamId('s1'),
+            entries: const [],
+            inReplyTo: requestId,
+          );
+
+          final decoded =
+              dialectCodec.decode(dialectCodec.encode(response))
+                  as DeltaResponse;
+
+          expect(decoded.inReplyTo, equals(requestId));
+        });
+
+        test('$version push DeltaResponse (inReplyTo null) emits no '
+            'inReplyTo key and decodes to null', () {
+          final push = DeltaResponse(
+            sender: NodeId('peer2'),
+            channelId: ChannelId('ch1'),
+            streamId: StreamId('s1'),
+            entries: const [],
+          );
+
+          final encoded = dialectCodec.encode(push);
+          final json = jsonOf(encoded);
+          final decoded = dialectCodec.decode(encoded) as DeltaResponse;
+
+          expect(json.containsKey('inReplyTo'), isFalse, reason: '$json');
+          expect(decoded.inReplyTo, isNull);
+        });
+
+        test('$version DeltaResponse decode accepts an explicit inReplyTo '
+            'field (tolerance)', () {
+          final frame = rawFrame(version, WireTypes.deltaResponse, {
+            'sender': 'peer2',
+            'channelId': 'ch1',
+            'streamId': 's1',
+            'entries': <dynamic>[],
+            'inReplyTo': 'abc-1',
+          });
+
+          final decoded = dialectCodec.decode(frame) as DeltaResponse;
+
+          expect(decoded.inReplyTo, equals(RequestId('abc-1')));
+        });
+
+        test('$version decode rejects a DeltaRequest whose requestId exceeds '
+            'the identifier bound (the codec\'s existing malformed-frame '
+            'path)', () {
+          final frame = rawFrame(version, WireTypes.deltaRequest, {
+            'sender': 'peer1',
+            'channelId': 'ch1',
+            'streamId': 's1',
+            'since': <String, dynamic>{},
+            'requestId': 'r' * (RequestId.maxIdentifierBytes + 1),
+          });
+
+          expect(
+            () => dialectCodec.decode(frame),
+            throwsArgumentError,
+            reason:
+                'an over-long identifier is corruption, the same as any '
+                'other malformed identifier field',
+          );
+        });
+
+        test('$version decode rejects a DeltaResponse whose inReplyTo exceeds '
+            'the identifier bound (the codec\'s existing malformed-frame '
+            'path)', () {
+          final frame = rawFrame(version, WireTypes.deltaResponse, {
+            'sender': 'peer2',
+            'channelId': 'ch1',
+            'streamId': 's1',
+            'entries': <dynamic>[],
+            'inReplyTo': 'r' * (RequestId.maxIdentifierBytes + 1),
+          });
+
+          expect(() => dialectCodec.decode(frame), throwsArgumentError);
+        });
+      }
     });
 
     group('v1 emission wire pinning', () {

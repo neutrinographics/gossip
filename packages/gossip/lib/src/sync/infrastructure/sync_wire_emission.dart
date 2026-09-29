@@ -69,6 +69,9 @@ class SyncEmissionV1 with _JsonEncodedEntrySize implements SyncWireEmission {
     // decoders ignore unknown keys.
     if (message.floor.entries.isNotEmpty)
       'floor': versionVectorJson(message.floor),
+    // Omitted on a push (the common case on old fleets, before every peer
+    // echoes references); legacy decoders ignore unknown keys.
+    if (message.inReplyTo != null) 'inReplyTo': message.inReplyTo!.value,
   };
 
   @override
@@ -101,6 +104,8 @@ class SyncEmissionV2 with _JsonEncodedEntrySize implements SyncWireEmission {
     'hasMore': message.hasMore,
     if (message.floor.entries.isNotEmpty)
       'floor': versionVectorJson(message.floor),
+    // Omitted on a push — a response nobody asked for.
+    if (message.inReplyTo != null) 'inReplyTo': message.inReplyTo!.value,
   };
 
   @override

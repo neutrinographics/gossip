@@ -5,6 +5,7 @@ import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/version_vector.dart';
 import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
 import 'package:gossip/src/sync/domain/messages/delta_request.dart';
+import 'package:gossip/src/sync/domain/value_objects/request_id.dart';
 
 /// Response containing the requested missing entries.
 ///
@@ -55,6 +56,11 @@ class DeltaResponse extends ProtocolMessage {
   /// requester's position is serviceable (the common case).
   final VersionVector floor;
 
+  /// The request this response answers, echoed back so the requester can
+  /// retire it by reference instead of guessing from what the response
+  /// carries. Null on a push — a response nobody asked for.
+  final RequestId? inReplyTo;
+
   const DeltaResponse({
     required NodeId sender,
     required this.channelId,
@@ -62,5 +68,6 @@ class DeltaResponse extends ProtocolMessage {
     required this.entries,
     this.hasMore = false,
     this.floor = VersionVector.empty,
+    this.inReplyTo,
   }) : super(sender);
 }

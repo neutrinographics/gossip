@@ -12,6 +12,7 @@ import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/domain/messages/digest_response.dart';
 import 'package:gossip/src/sync/domain/messages/delta_request.dart';
 import 'package:gossip/src/sync/domain/messages/delta_response.dart';
+import 'package:gossip/src/sync/domain/value_objects/request_id.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
@@ -104,6 +105,9 @@ class SyncMessageCodec implements MessageCodec {
       'channelId': message.channelId.value,
       'streamId': message.streamId.value,
       'since': versionVectorJson(message.since),
+      // Omitted when the requester mints none (the legacy shape); a
+      // responder that doesn't understand it ignores the unknown key.
+      if (message.requestId != null) 'requestId': message.requestId!.value,
     };
   }
 
@@ -162,7 +166,17 @@ class SyncMessageCodec implements MessageCodec {
   /// Conservative per-entry overhead in bytes: message envelope (sender,
   /// channelId, streamId) plus entry envelope (author, sequence, timestamp,
   /// JSON keys/punctuation). Sized for long node IDs and maximal HLC values.
+  /// Shared with the Kotlin twin, whose entry envelope is the same shape.
   static const int _entryEnvelopeOverhead = 512;
+
+  /// What an answer's identity costs at most, beyond the entry envelope:
+  /// `,"inReplyTo":"<id>"` with the id at [RequestId.maxIdentifierBytes] —
+  /// 15 bytes of punctuation plus one identifier. Both Dart dialects emit
+  /// this field flat (unlike the Kotlin twin's v1, which batches several
+  /// identifiers into one envelope and so pays more for the same fact), so
+  /// both dialects reserve the same allowance here before applying their
+  /// own expansion ratio.
+  static const int _replyIdentityOverhead = 15 + RequestId.maxIdentifierBytes;
 
   /// Largest entry payload (raw bytes) guaranteed to fit a [DeltaResponse]
   /// whose encoded size may not exceed [budgetBytes], under [version]'s
@@ -170,12 +184,16 @@ class SyncMessageCodec implements MessageCodec {
   ///
   /// Inverts the wire encoding for the given version — base64 (v2) turns 3
   /// payload bytes into 4 characters; the JSON int-array (v1) worst case
-  /// spends 4 characters per payload byte (`"255,"`) — and
-  /// [_entryEnvelopeOverhead] covers the JSON envelope. A payload larger
-  /// than this can never be synced under the given budget and version —
-  /// reject it at write time instead of livelocking at sync time.
+  /// spends 4 characters per payload byte (`"255,"`) — after
+  /// [_entryEnvelopeOverhead] and [_replyIdentityOverhead] are reserved
+  /// from the budget, whether or not a given message actually names a
+  /// request: the cap must hold for every message the budget admits, not
+  /// just unnamed ones. A payload larger than this can never be synced
+  /// under the given budget and version — reject it at write time instead
+  /// of livelocking at sync time.
   static int maxEntryPayloadForBudget(int budgetBytes, WireVersion version) {
-    final usable = budgetBytes - _entryEnvelopeOverhead;
+    final usable =
+        budgetBytes - _entryEnvelopeOverhead - _replyIdentityOverhead;
     if (usable <= 0) return 0;
     return switch (version) {
       WireVersion.v1 => usable ~/ 4,
@@ -215,16 +233,20 @@ class SyncMessageCodec implements MessageCodec {
   }
 
   DeltaRequest _decodeDeltaRequest(Map<String, dynamic> json) {
+    final requestIdJson = json['requestId'] as String?;
     return DeltaRequest(
       sender: NodeId(json['sender'] as String),
       channelId: ChannelId(json['channelId'] as String),
       streamId: StreamId(json['streamId'] as String),
       since: _decodeVersionVector(json['since'] as Map<String, dynamic>),
+      // Absent on a requester that mints none → null.
+      requestId: requestIdJson == null ? null : RequestId(requestIdJson),
     );
   }
 
   DeltaResponse _decodeDeltaResponse(Map<String, dynamic> json) {
     final floorJson = json['floor'] as Map<String, dynamic>?;
+    final inReplyToJson = json['inReplyTo'] as String?;
     return DeltaResponse(
       sender: NodeId(json['sender'] as String),
       channelId: ChannelId(json['channelId'] as String),
@@ -236,6 +258,8 @@ class SyncMessageCodec implements MessageCodec {
       floor: floorJson == null
           ? VersionVector.empty
           : _decodeVersionVector(floorJson),
+      // Absent on a push, or a legacy sender → null.
+      inReplyTo: inReplyToJson == null ? null : RequestId(inReplyToJson),
     );
   }
 
