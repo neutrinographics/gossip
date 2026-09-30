@@ -86,20 +86,23 @@ cursor, the same job.
 The pipeline on the sending side is *scope, then budget, then send*; on the
 receiving side *learn, then answer or pull*. Each step has one home:
 
-| Piece | Layer | Dart | Kotlin |
-|---|---|---|---|
-| `PeerHoldings` + transitions | domain, value object | `sync/domain/value_objects/` | `sync/domain/values/` (exemption E1) |
-| `Announcement` field on `DigestRequest` | domain, message | `sync/domain/messages/` | `sync/domain/messages/` |
-| `DigestScoping`, `DigestAnswering` | domain, stateless services | `sync/domain/services/` | `sync/domain/services/` |
-| Announce budget + announcement cursor | application, mechanism | `DigestBudgeter` | the budgeter the port creates (phase-2 piece, pulled forward) |
-| Gathering version vectors, looking up held channels, learning holdings on receive, logging drops, sending | application, orchestration | `GossipEngine` | `GossipEngine` / `PullPlanner` |
-| Announcement ↔ `"streams": []` | infrastructure, codec | `SyncMessageCodec` (both emissions) | `SyncWireCommon` (both dialects) |
-| Announce budget value | composition root | `CoordinatorConfig` | the coordinator config |
+Same name, same layer, same sublayer on both twins, per the parity program;
+the two places the twins differ are cited to the register.
 
-The rules live in the two services and nowhere else; the engine and the
-planner orchestrate and hold the cell. The Kotlin port lands the rules as
-domain services from the start — not in `PullPlanner`, which stays the
-orchestrator it became in the architecture remediation's batch D.
+| Piece | Layer | Home (both twins) |
+|---|---|---|
+| `PeerHoldings` + transitions | domain, value object | `sync/domain/value_objects/` — kt `values/`, exemption E1 |
+| Announcement field on `DigestRequest` | domain, message | `sync/domain/messages/` |
+| `DigestScoping`, `DigestAnswering` | domain, stateless services | `sync/domain/services/` |
+| Announce budget + announcement cursor | application, mechanism | `DigestBudgeter` — new on kt, taking Dart's name as the register's *Pull planning's name* row already rules |
+| Gathering version vectors, looking up held channels, learning holdings on receive, logging drops, sending | application, orchestration | `GossipEngine` — on kt split with `PullPlanner` per that same register row (kt extracted planning; Dart's adoption is a recorded low flow-back, not this item's) |
+| Announcement ↔ `"streams": []` | infrastructure, codec | `SyncMessageCodec` and its per-version emitters — kt keeps the digest JSON helpers in `SyncWireCommon`, a layout difference no register row records yet; this item's docs pass adds the row |
+| Announce budget value | composition root | `CoordinatorConfig` |
+
+The rules live in the two services and nowhere else; the engine (and on
+kt the planner) orchestrates and holds the cell. The Kotlin port lands the
+rules as domain services from the start — not in `PullPlanner`, which
+stays the orchestrator it became in the architecture remediation's batch D.
 
 ## Rulings (proposed)
 
@@ -269,7 +272,8 @@ orchestrator it became in the architecture remediation's batch D.
 - **Kotlin companion item** for the port, per parity convention 1; the
   phase-2 item loses the three pieces this spec pulls forward.
 - **Divergence register:** the *Unknown-channel digests* row closes on the
-  Dart half.
+  Dart half; a new row records the codec layout difference (kt's
+  `SyncWireCommon` helpers vs Dart's helpers on the facade) with a verdict.
 
 ## Review outcome
 
