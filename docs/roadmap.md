@@ -185,11 +185,13 @@ purification batch merged):
    its answer names ([item](backlog/engine-response-correlation.md); gossip-kt
    PR #18, gossip PR #17/#18), with the content rule kept only as a
    transitional bridge for phones on the old pin and corrected for v1 on both
-   twins (gossip-kt PR #19; opendoor-api PR #34 / v60). **Remaining:** the
-   OpenDoorApp pin bump, whose translator must carry the request identity
-   across the v1 bridge or no phone can ever answer the server by reference;
-   then the bridge's deletion once the fleet has moved (criterion on the
-   divergence register).
+   twins (gossip-kt PR #19; opendoor-api PR #34 / v60). The OpenDoorApp pin
+   bump landed 2026-09-30 (PR #508): the translator carries the request
+   identity across the v1 bridge both ways, and the fleet pin is gossip main
+   1e0fcf6. **Remaining:** the live-device check of that build (the server
+   logging `answers by reference` for a phone; presence on the Nearby mesh
+   in ~1 s after a quiet minute), then the bridge's deletion once the fleet
+   has moved (criterion on the divergence register).
 10. **Digest scoping to shared groups** — the first of the two remaining
    performance items:
    [only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md).
@@ -260,7 +262,7 @@ detection. Seeded from the deferred follow-ups of the 2026-07 audits
 - ☐ **Medium** — [Cut redundant work on the message hot path](backlog/engine-hot-path-performance.md) · type-byte dispatch before decode, encode-once-send-many, checkpointed rebuilds, cache the GATT characteristic
 - ☐ **Medium** — [Per-peer send queues for the Nearby transport](backlog/engine-nearby-per-peer-queues.md) · one stalled endpoint currently head-of-line-blocks pings to every other peer; port the BLE transport's per-peer design
 - ☐ **Low** — [Eliminate head-of-line blocking on the Bluetooth transport](backlog/engine-ble-frame-multiplexing.md) · an urgent message can still wait out one in-flight transfer; frame multiplexing would remove even that
-- ◐ **Medium** — [Correlate delta responses with the pulls that solicited them](backlog/engine-response-correlation.md) · ruling 1 (classify by content) MERGED in gossip-kt PR #17 as a transitional bridge; the fix is a domain re-model around request identity — rulings APPROVED 2026-09-29 (specs/2026-09-29-pull-request-identity-rulings.md); Kotlin half MERGED (gossip-kt PR #18, c8dde6f, 2026-09-29); Dart half MERGED (gossip PR #17, 96a422f, 2026-09-29); kt flow-back for legacy answers over v1 MERGED (gossip-kt PR #19, 1ff5530) and DEPLOYED (opendoor-api PR #34, Heroku v60, 2026-09-29, live-validated with two phones); **NEXT** the app's translator carries `requestId`/`inReplyTo` across the v1 bridge + the pin bump; the legacy rule's deletion tracked on the register; the content rule is deleted when the fleet correlates by reference · "solicited" is matched per peer+stream, not per request, so a racing reactive push is misclassified as the pull's answer — misattributes the stall warning, the RTT sample, and (bounded, self-healing) stalled-range recording; true fix is a request id on the wire, dialect material
+- ◐ **Medium** — [Correlate delta responses with the pulls that solicited them](backlog/engine-response-correlation.md) · ruling 1 (classify by content) MERGED in gossip-kt PR #17 as a transitional bridge; the fix is a domain re-model around request identity — rulings APPROVED 2026-09-29 (specs/2026-09-29-pull-request-identity-rulings.md); Kotlin half MERGED (gossip-kt PR #18, c8dde6f, 2026-09-29); Dart half MERGED (gossip PR #17, 96a422f, 2026-09-29); kt flow-back for legacy answers over v1 MERGED (gossip-kt PR #19, 1ff5530) and DEPLOYED (opendoor-api PR #34, Heroku v60, 2026-09-29, live-validated with two phones); app translator carries `requestId`/`inReplyTo` across the v1 bridge + pin bump MERGED (OpenDoorApp PR #508, 2026-09-30); **NEXT** the live-device check of that build, then the fleet's move; the legacy rule's deletion tracked on the register — deleted from both twins when the server has logged no legacy-correlated peer for two weeks · "solicited" is matched per peer+stream, not per request, so a racing reactive push is misclassified as the pull's answer — misattributes the stall warning, the RTT sample, and (bounded, self-healing) stalled-range recording; true fix is a request id on the wire, dialect material
 - ☐ **Low** — [Bound the Bluetooth send-queue depth](backlog/engine-send-queue-depth-cap.md) · add a size ceiling so a slow/stalled link can't grow the outgoing queue without limit (backstop; the congestion gate already throttles in practice)
 - ☐ **Low** — [Revisit the failure-detection sensitivity thresholds](backlog/engine-swim-threshold-tuning.md) · measure and possibly tighten the 5/15 consecutive-miss thresholds now that fair-rotation probing and adaptive timeouts are in place — and re-measure once indirect checks are retired, since the thresholds were set with them
 - ☐ **Low** — [Best-effort pre-connect identity hash in the Android advertisement](backlog/engine-preconnect-adv-hash.md) · skip initiating a losing mutual connect on Android↔Android pairs; post-connect tie-break stays the backstop
