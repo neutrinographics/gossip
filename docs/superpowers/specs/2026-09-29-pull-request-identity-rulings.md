@@ -279,3 +279,27 @@ correlate. Segregated so that deleting it is deleting one file and one call.
   Dart loop spun on a zero `gossipInterval`; on the woken scheduler it is the
   same failure as on kt — the loop stops and reports through the error
   callback. Documented on `CoordinatorConfig.gossipInterval`.
+
+**Precision from the app pin's live check (OpenDoorApp PR #508, 2026-09-30;
+owner ruling, docs only).**
+
+- *Reading the deletion criterion's counter.* A peer that answers by
+  reference can still log the legacy line once per connection: the server
+  forgets how a peer answers when it disconnects, and a reactive push of the
+  peer's own first write after reconnecting carries no reference by design.
+  Where that push arrives a few milliseconds before the peer's named answer
+  to the pull for the same entries, the content rule — which exists for
+  exactly a reference-less response from a peer not yet known — matches it
+  and logs legacy; the named answer then logs by reference. Seen live with
+  two phones on the new build, 14–19 ms apart, on the first write after a
+  sleep/wake reconnect; on a first connection the named answer came first
+  and only by reference was logged. Sync is unharmed (the entries merge; the
+  pull is retired a few milliseconds early with a slightly short round-trip
+  sample, all of which dies with the rule). So the criterion in ruling 6 is
+  read per connection, not per line: **a peer counts as legacy for an
+  observation window only if it logged the legacy line and never the
+  by-reference line in that connection.** The alternatives — remembering a
+  peer's way of answering across its disconnects (shrinks the race to once
+  per phone per server process, does not remove it), or logging legacy only
+  on a second content match (unambiguous by construction, but misses an
+  old-build phone that is pulled once) — were declined.

@@ -70,8 +70,15 @@ echo identities until the app's pin moves. It is deleted with the re-model.
   The app's translator carries the two keys across the v1 bridge since
   OpenDoorApp PR #508 (2026-09-30, fleet pin gossip main 1e0fcf6; register
   row "The app's translator must carry the request identity"); the
-  live-device check of that build — the server logging `answers by
-  reference` for a phone — is still to run.
+  live-device check of that build ran 2026-09-30: two phones on the new
+  build logged `answers by reference` on first connection and never the
+  legacy line there. After a sleep/wake reconnect each logged the legacy
+  line and, 14–19 ms later, by reference: the phone's reference-less push
+  of its first write raced its named answer, and the server had forgotten
+  the peer on disconnect. The criterion's counter is therefore read per
+  connection — a peer is legacy only if it logged legacy and never by
+  reference in that connection (owner ruling 2026-09-30, on the rulings
+  spec and the register's legacy row).
 - Bridge rulings, approved 2026-09-28: [A delta response answers one pull, or none — rulings](../superpowers/specs/2026-09-28-response-correlation-rulings.md) — raised by the round-wake fix, whose Task 3 measured the misclassification at six of ten churn runs with the wake and none without.
 - Ruling 1 (classify by content) landed in the Kotlin library on the
   round-wake branch (gossip-kt PR #17, 269f790): the pull mark carries the vector it
