@@ -67,7 +67,7 @@ libraries and so a joint improvement if ever taken, not a flow-back: the
 reactive pusher owns *when* to push while the engine owns the sending on both
 sides; the retention policies sit under `sync/domain/services` on both sides
 beside the pure protocol services; and the gossip engine's constructor is as
-wide on both sides (kt takes twenty-one parameters), because both composition
+wide on both sides (kt takes twenty-three since digest scoping), because both composition
 roots wire every collaborator by hand.
 
 ## Open joint decisions
