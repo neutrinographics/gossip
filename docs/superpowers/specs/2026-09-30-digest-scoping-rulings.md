@@ -1,6 +1,6 @@
 # A digest names only what the peer holds — rulings
 
-**Status:** proposed 2026-09-30, revised the same day after the owner asked for a cohesion, coupling and DDD/CA review (see Review outcome); for owner review. **Item:** [Only tell a peer about the groups you both belong to](../backlog/engine-scope-digests-to-shared-groups.md) (roadmap focus item 10). **Applies to:** both twins; Kotlin first, because the bytes are the server's. **Pulls forward from wire-efficiency phase 2 for Kotlin:** request-scoped and dominance-filtered digest responses, and the byte-budgeted digest rotation — the design depends on them. Recency suppression stays in phase 2.
+**Status:** approved 2026-09-30 (see Review outcome), after a same-day cohesion, coupling and DDD/CA review the owner asked for. **Item:** [Only tell a peer about the groups you both belong to](../backlog/engine-scope-digests-to-shared-groups.md) (roadmap focus item 10). **Applies to:** both twins; Kotlin first, because the bytes are the server's. **Pulls forward from wire-efficiency phase 2 for Kotlin:** request-scoped and dominance-filtered digest responses, and the byte-budgeted digest rotation — the design depends on them. Recency suppression stays in phase 2.
 
 ## The finding, restated
 
@@ -295,4 +295,4 @@ in above:**
    — now placed per layer on both twins so the port cannot land a rule in
    `PullPlanner`.
 
-_Awaiting owner approval._
+**Approved (owner, 2026-09-30)** as revised. Kotlin plan follows in gossip-kt `docs/superpowers/plans/`.
