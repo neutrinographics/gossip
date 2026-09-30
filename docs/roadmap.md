@@ -199,7 +199,7 @@ purification batch merged):
    39ac41b): a request digests only the channels the peer has shown it
    holds and *announces* the rest under a 1 KB budget; a response answers
    what was named; no wire change. **Kotlin half open as gossip-kt PR #20**
-   (2026-09-30, 14 commits, 1448 tests, whole-branch review clean; a
+   (2026-09-30, 20 commits including the plan, 1453 tests; whole-branch, Codex and a DDD/CA + parity review all folded in — seven new register rows record the flow-backs; a
    41-channel hub's request fell 4386 → ~1000 bytes in the scenario).
    **Next:** the opendoor-api bump (one optional config value,
    `announceBudgetBytes`) + the tunnel re-measure against the 2026-09-29
