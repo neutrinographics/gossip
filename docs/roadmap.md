@@ -201,10 +201,15 @@ purification batch merged):
    what was named; no wire change. **Kotlin half MERGED as gossip-kt PR #20** (d902a61,
    2026-10-01; 24 commits including the plan, 1467 tests; whole-branch, Codex and a DDD/CA + parity review all folded in — seven new register rows record the flow-backs; a
    41-channel hub's request fell 4386 → ~1000 bytes in the scenario).
-   **Next:** the opendoor-api bump (one optional config value,
-   `announceBudgetBytes`) + the tunnel re-measure against the 2026-09-29
-   two-phone reading — the production win lands there, no app pin needed —
-   then the Dart half with the PR's hand-off list (canonical announcement
+   **Server bump open as opendoor-api PR #35** (2026-10-01, pin d902a61,
+   496 tests; live-validated through the tunnel with an Android holding all
+   32 channels and an iPhone holding 2: the iPhone costs the server
+   **100 KB/min out against ~2.2 MB/min on 2026-09-29, ~95 % less**; the
+   Android, which holds the server's whole set, still 776 KB/min because its
+   own unscoped request every round is the Dart half's to remove; a join
+   converged 0.4 s after the server created the channel; quiet minute 30 s /
+   3 KB; zero warnings). Merging it deploys it (Heroku auto-deploy). **Next:**
+   read the first production meeting on the bumped release, then the Dart half with the PR's hand-off list (canonical announcement
    vector, the cost-model separator check, per-peer announce cursor, the
    register rows, glossary, the disclosure and server-authorization items).
    Original brief: spec first (it needs an owner ruling before code). The biggest measured waste by far: the 2026-09-15 meeting
