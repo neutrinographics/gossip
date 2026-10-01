@@ -43,7 +43,9 @@ hardening; decide and document buffer-time vs flush-time on purpose.
 - Sibling: [Coalesce wire traffic into fewer radio wakeups](engine-message-coalescing.md).
 - Closest sibling: [Only tell a peer about the groups you both belong to](engine-scope-digests-to-shared-groups.md)
   — the same "does this peer share the data?" question, asked of the summary
-  exchange rather than of reactive pushes. A membership notion built for
-  either one should serve both.
+  exchange rather than of reactive pushes. That item built the notion first:
+  *holdings*, the channels a peer has shown it holds (on Kotlin since
+  gossip-kt PR #20, 2026-10-01; the Dart half follows). A push can be scoped
+  to the peers whose holdings include the channel.
 - When this lands, create its Kotlin port companion item in the same docs
   pass — [twin parity program](../parity.md), convention 1.

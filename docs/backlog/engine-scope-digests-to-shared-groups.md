@@ -100,5 +100,13 @@ doing on its own if the larger question stalls.
   nineteen distinct unknown group identifiers, twenty-two times each; the
   phone's own startup log confirmed the count as eighteen groups plus one
   personal channel.
-- When this lands, create its Kotlin port companion item in the same docs
-  pass — [twin parity program](../parity.md), convention 1.
+- Spec: [a digest names only what the peer holds — rulings](../superpowers/specs/2026-09-30-digest-scoping-rulings.md)
+  (approved 2026-09-30). Kotlin went first: gossip-kt PR #20 (d902a61),
+  in production as Heroku v61 via opendoor-api PR #35 (2026-10-01), live-validated
+  with a two-channel phone at ~100 KB/min out against ~2.2 MB/min before. The
+  Dart half is this item's remaining half; its worklist is the register's
+  digest-scoping rows ([twin divergences](kt-normalize-twin-divergences.md))
+  and the PR's hand-off list. Follow-ups it spawned:
+  [keyed-hash announcements](engine-announce-channels-by-keyed-hash.md),
+  [report an oversized digest once](engine-report-oversized-once.md),
+  [serve a phone only the channels its user may read](server-channel-authorization.md).

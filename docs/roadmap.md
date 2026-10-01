@@ -212,23 +212,18 @@ purification batch merged):
    per-phone figure at fan-out, then the Dart half with the PR's hand-off list (canonical announcement
    vector, the cost-model separator check, per-peer announce cursor, the
    register rows, glossary, the disclosure and server-authorization items).
-   Original brief: spec first (it needs an owner ruling before code). The biggest measured waste by far: the 2026-09-15 meeting
-   confirmed 710 KB out per phone per minute across up to seven phones,
-   ~97 % digests — the [v48 meeting](audits/2026-09-17-production-meeting-v48.md)
-   measured ~300 KB at the same phone counts but the
-   [v50 meeting](audits/2026-09-21-production-meeting-v50.md) was back at
-   ~700 KB with eight phones, so the digest share is to be
-   re-measured through the tunnel on the current release (v52 or later)
-   before this spec claims a saving
-   (the 2026-09-03 tunnel number was ~700 KB/min for one phone,
-   almost all 8 KB all-channel digests sent about once a second because
-   presence heartbeats keep the pacer at its floor (plus group and account
-   ids disclosed to unrelated peers). Both twins.
+   Measurement history (the item's brief asked for a tunnel re-measure
+   before claiming a saving — done 2026-09-29 pre-bump at ~2.2 MB per phone
+   per minute and 2026-10-01 post-bump at 100 KB for a two-channel phone):
+   the 2026-09-15 meeting read 710 KB out per phone per minute, ~97 %
+   digests; v48 ~300 KB; [v50](audits/2026-09-21-production-meeting-v50.md)
+   ~700 KB; v52 ~1 MB; v60 ~5 MB with two phones. Both twins; Kotlin went first.
 11. **Wire-efficiency phase 2** — the second: recency suppression (skip the
    round with a peer exchanged with moments ago — removes most of those
-   per-second digests outright), dominance-filtered and request-scoped
-   digest responses, the digest budgeter (same
-   [item](backlog/kt-port-wire-efficiency.md) as phase 1).
+   per-second digests outright). Its other three pieces — dominance-filtered
+   and request-scoped digest responses, and the digest budgeter — shipped on
+   Kotlin inside digest scoping (gossip-kt PR #20, 2026-10-01). Same
+   [item](backlog/kt-port-wire-efficiency.md) as phase 1.
 12. **Then** the [Dart minor-findings sweep](backlog/health-minor-findings-sweep.md)
     (two correctness latents), the
     [lifecycle batch follow-ups](backlog/kt-lifecycle-batch-follow-ups.md)
@@ -281,7 +276,9 @@ detection. Seeded from the deferred follow-ups of the 2026-07 audits
 - ☐ **Low** — [Bound the Bluetooth send-queue depth](backlog/engine-send-queue-depth-cap.md) · add a size ceiling so a slow/stalled link can't grow the outgoing queue without limit (backstop; the congestion gate already throttles in practice)
 - ☐ **Low** — [Revisit the failure-detection sensitivity thresholds](backlog/engine-swim-threshold-tuning.md) · measure and possibly tighten the 5/15 consecutive-miss thresholds now that fair-rotation probing and adaptive timeouts are in place — and re-measure once indirect checks are retired, since the thresholds were set with them
 - ☐ **Low** — [Best-effort pre-connect identity hash in the Android advertisement](backlog/engine-preconnect-adv-hash.md) · skip initiating a losing mutual connect on Android↔Android pairs; post-connect tie-break stays the backstop
-- ☐ **Medium** — [Send reactive pushes only to peers that share the data](backlog/engine-push-scoping.md) · scope push fan-out by channel membership + congestion-gate pushes and request bursts (2026-08 audit R6)
+- ☐ **Low** — [Name announced channels by a keyed hash, so a stranger learns nothing](backlog/engine-announce-channels-by-keyed-hash.md) · the disclosure half of digest scoping: an announcement still names a group in plain text to any peer that connects; the seam is one field and one codec mapping (spec 2026-09-30) — priority proposed, owner to set
+- ☐ **Low** — [Report an oversized digest once, not every round](backlog/engine-report-oversized-once.md) · a stream too large to digest at all is reported on every request and response to every peer each round, on both twins; once-per-position like the gap registry — priority proposed
+- ☐ **Medium** — [Send reactive pushes only to peers that share the data](backlog/engine-push-scoping.md) · holdings (digest scoping, kt since 2026-10-01) are the membership notion this needs; scope push fan-out by channel membership + congestion-gate pushes and request bursts (2026-08 audit R6)
 - ◐ **High** — [Wake a sleeping gossip round when there is news](backlog/engine-news-wakes-the-round.md) · Kotlin half MERGED (gossip-kt PR #17, e78c20a, 2026-09-29; carries the transitional content rule); server bump opendoor-api PR #33 MERGED fe8b9d1 with the Live pin MET (two phones, ~1 s presence after a quiet minute vs 7–9 s before, 2026-09-29); Dart half MERGED with the pull-identity re-model (gossip PR #17, merged 96a422f, 2026-09-29; follow-up PR #18, ce423e8); server on v60 carries both halves' rules; **NEXT** the app pin bump (OpenDoorApp backlog item `gossip-pin-bump-request-identity.md`) · a merge resets the pace but not the timer already sleeping, so the second hop of a presence change waits for the old round; measured 7–9 s after a quiet minute vs under 1 s when busy (two phones, 2026-09-27); owner-confirmed 2026-09-27: **High**, scheduled right after the post-remediation server bump deploys; Kotlin first (fixes the fleet), then the Dart twin for mesh sync, then the app pin
 - ◐ **Medium** — [Only tell a peer about the groups you both belong to](backlog/engine-scope-digests-to-shared-groups.md) · spec approved 2026-09-30, Kotlin half MERGED (gossip-kt PR #20, d902a61) and IN PRODUCTION as Heroku v61 (opendoor-api PR #35, 2026-10-01; a two-channel phone 100 KB/min against 2.2 MB); next read the first meeting on v61, then the Dart half; digests advertise every channel a node holds, including its own user channel; measured on a mixed Android/iOS pair as 19 unusable channel ids × 22 rounds (~6.4 KB/exchange), and in the 2026-09-15 meeting as ~97 % of 710 KB out per phone per minute (the v48 meeting of 2026-09-17 measured ~300 KB per phone, the v50 meeting of 2026-09-21 ~700 KB again, the v52 acceptance room of 2026-09-22 ~1 MB because the server now keeps up; digest share to be re-measured on v52; measured on the 2026-09-27 two-phone run: a phone's 2-channel digest is answered with all 36 channels, 14 KB, ~150 times a minute per phone = ~2 MB/min per phone; the 2026-09-29 two-phone run on v60 read the same ~2.2 MB/min per phone at a 240–800 ms interval, so the round-wake did not move it; **production, same day, two phones in a meeting: ~5 MB/min per phone, 9–10.5 MB/min out for the pair, ~37 KB per phone per round against the server's larger store**) — wasted airtime, log noise, and group/account ids disclosed to unrelated peers
 - ☐ **Medium** — [Coalesce wire traffic into fewer radio wakeups](backlog/engine-message-coalescing.md) · SRTT-scaled debounce, batched deltas, push-pull completion, transport hold window (2026-08 audit R7)
@@ -337,6 +334,7 @@ program because the fleet's health depends on them.
 - ☑ **Medium** — [Give the sync-check its own question to ask, instead of the engine's storage](backlog/server-sync-check-query-port.md) · **done 2026-09-21** (opendoor-api PR #26, merge 989fc15, released as Heroku v52 at 21:36 local: `StreamProgressQuery` port + one-row Postgres adapter, route no longer injects the engine's repository; validated with direct requests through the tunnel, one marks row per lookup, zero cache loads) · the open `/sync/check` route reaches the engine's sixteen-method storage port with caller-supplied names, and since the marks cache that is one process-wide lock and an unbounded table; one narrow query interface on Postgres, the route injects that (audit CA1-2 and the PR's automated review, 2026-09-21) — owner's call 2026-09-21: the next server PR after the inbound-queue one
 - ☐ **Low** — [Small follow-ups from the inbound-queue design audit](backlog/server-audit-follow-ups.md) · dyno-name guard for the one-process assumption, a real-cancellation test for the cache's guards, the cache's rule stated as the port's with an LSP test and named raise helpers, one aggregate statement for stream byte size, the flaky reconnect-chain WebSocket test
 - ☐ **High** — [Make the server's entry store keep the library's repository contract](backlog/server-entry-repository-contract.md) · found 2026-09-23 by running the published contract against the Postgres store during the item 9 bump: 4 of 36 cases fail on the compaction floor, and one is behavioural — the server raises its floor for claims at or below what it still holds, telling phones those entries are gone (the late-joiner lockout shape); High confirmed by the owner 2026-09-23; the contract subclass returns once fixed
+- ☐ **Medium** — [Serve a phone only the channels its user may read](backlog/server-channel-authorization.md) · the server answers a delta request or a sync-check for any channel id a phone names, with no membership check; scoping stopped volunteering ids, not serving them (found in the digest-scoping design) — priority proposed, owner to set
 - ☐ **Low** — [Log a phone's ping timeout as the disconnect it is, not as a handler failure](backlog/server-ping-timeout-logged-as-error.md) · every phone that sleeps or loses signal produces an ERROR with a stack trace ("Websocket handler failed … Ping timeout") beside the INFO disconnect it already logs; seen on the PR #33 validation 2026-09-29; owner asked for it to be tracked
 
 ## Kotlin port

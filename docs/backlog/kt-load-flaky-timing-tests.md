@@ -99,7 +99,10 @@ times under load.
   the batch touched no merge code. A fifth member of the list — and during
   batch G (2026-09-26) it failed in five of roughly ten full runs and passed
   in isolation every time, so it is now the most frequent flake in the suite
-  and the reason this item should move up.
+  and the reason this item should move up. Seen again on every implementer
+  run of gossip-kt PR #20 (2026-09-30/10-01): `a reactive push names no
+  request` and `a local write reaches peers as an unsolicited delta response`
+  (both `GossipEngineTest`, on `Dispatchers.Default`), passing on rerun.
 - The Dart side's adverse-network harness is the model for
   simulated-time-driven tests:
   [Simulate adverse network conditions in the test harness](testing-network-condition-simulation.md).

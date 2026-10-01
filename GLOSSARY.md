@@ -55,6 +55,16 @@ entries, and the anti-entropy protocol that keeps them converged.
   asked for again (doubling from 30 s to a 10 min cap); the probing request
   is simply an unshaped request, and a supplied range evicts the suppression.
 
+- **Holdings** — What a peer has shown it holds: the channels it has named
+  in its digests, requests and responses alike. Only a name is evidence (a
+  dominance-filtered response may omit a channel), so holdings only grow;
+  cleared with the peer, never persisted. Sync's fact, not membership's.
+- **Announcement** — A channel named to a peer without a digest: "I hold
+  this; if you do too, show me your digest." A request announces the
+  channels the peer has not shown it holds, under the announce budget; a
+  response never announces. On the wire it is a channel digest with an
+  empty stream list, read as an announcement only by the request decoder.
+
 ## membership
 
 The context that maintains the peer model and detects failures by direct

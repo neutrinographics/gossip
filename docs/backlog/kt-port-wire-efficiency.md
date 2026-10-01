@@ -51,9 +51,12 @@ makes a 30-second idle ceiling safe — without it a write could wait out
 the whole backoff), probe suppression by recent contact with the 2-minute
 cap, and the restored contact-recording seam it depends on. What remains
 for phase 2: recency suppression of gossip rounds (skip a peer exchanged
-with inside the current interval, with both-endpoint exchange recording),
-dominance-filtered and request-scoped digest responses, and the
-byte-budgeted digest rotation.
+with inside the current interval, with both-endpoint exchange recording).
+The other three pieces — dominance-filtered and request-scoped digest
+responses, and the byte-budgeted digest rotation — shipped on Kotlin inside
+[digest scoping](engine-scope-digests-to-shared-groups.md) (gossip-kt
+PR #20, 2026-10-01), whose rotation is by least-recently-sent item per peer
+rather than Dart's positional cursors (a flow-back, on the register).
 
 ## Related
 
