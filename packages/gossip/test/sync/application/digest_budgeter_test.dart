@@ -79,7 +79,8 @@ void main() {
       for (final s in d.streams) (d.channelId, s.streamId),
   ];
 
-  test('a digest set that fits the budget passes through unchanged', () {
+  test('a digest set that fits the budget passes through unchanged and '
+      'moves no rotation', () {
     final digests = [for (var i = 1; i <= 3; i++) channel(i, streams: 2)];
     final b = budgeter(30 * 1024);
 
@@ -89,6 +90,26 @@ void main() {
       expect(fitted.digests, equals(digests));
       expect(fitted.oversized, isEmpty);
     }
+  });
+
+  // One budgeter sees a list that fits whole, then a longer one that does
+  // not: had the whole fit stamped its items, the window would skip them.
+  test('a request that fits whole stamps nothing', () {
+    final b = budgeter(encodedSize(channels(1, 3)) + 5);
+
+    expect(b.fitRequest(scoped(channels(1, 2)), peerA).digests, hasLength(2));
+    final window = b.fitRequest(scoped(channels(1, 10)), peerA).digests;
+
+    expect(window.first.channelId, equals(ChannelId('channel-1')));
+  });
+
+  test('a response that fits whole stamps nothing', () {
+    final b = budgeter(encodedSize(channels(1, 3)) + 5);
+
+    expect(b.fitResponse(channels(1, 2), peerA).digests, hasLength(2));
+    final window = b.fitResponse(channels(1, 10), peerA).digests;
+
+    expect(window.first.channelId, equals(ChannelId('channel-1')));
   });
 
   test('an over-budget request selects a rotated window that wraps past the '
@@ -139,10 +160,6 @@ void main() {
       equals(pairs([digests[firstWindowLength]]).single),
       reason: 'a response must not have moved the request rotation',
     );
-
-    // A response that fits moves nothing.
-    final roomy = budgeter(30 * 1024);
-    expect(roomy.fitResponse(digests, peerA).digests, equals(digests));
   });
 
   // Codex, PR #20: engine-wide request/response cursors let alternating peers
@@ -325,21 +342,12 @@ void main() {
 
     expect(fitted.announced, equals(ids));
     expect(fitted.unannounceable, isEmpty);
-    // Stamped: with a budget for only the first, the next window starts
-    // after the three that went.
+    // Stamped: a never-sent id sorts before the three that went; with
+    // nothing stamped the list order would put the three first.
     final more = [...ids, announceId(4)];
-    final cost = encodedSize(const [], [ids.first]) - encodedSize(const []);
-    final next = DigestBudgeter(
-      codec: codec,
-      localNode: localNode,
-      maxMessageBytes: 30 * 1024,
-      announceBudgetBytes: cost,
-    );
-    next.fitRequest(scoped(const [], more), peerA);
     expect(
-      next.fitRequest(scoped(const [], more), peerA).announced,
-      equals([ids[1]]),
-      reason: 'the first window stamped ids.first',
+      b.fitRequest(scoped(const [], more), peerA).announced,
+      equals([announceId(4), ...ids]),
     );
   });
 
@@ -410,8 +418,7 @@ void main() {
     );
   });
 
-  test('an announce budget of zero never announces, reports nothing and '
-      'moves nothing', () {
+  test('an announce budget of zero never announces and reports nothing', () {
     final ids = [for (var i = 1; i <= 5; i++) announceId(i)];
     final b = budgeter(30 * 1024, announceBudgetBytes: 0);
 
@@ -434,17 +441,8 @@ void main() {
     expect(fitted.digests, equals(digests));
     expect(fitted.announced, isEmpty);
     expect(fitted.unannounceable, isEmpty);
-    final roomy = encodedSize(digests) + announceCost * 5 + 10;
-    final after = DigestBudgeter(
-      codec: codec,
-      localNode: localNode,
-      maxMessageBytes: budget,
-      announceBudgetBytes: 1024,
-    );
-    after.fitRequest(scoped(digests, ids), peerA);
-    expect(roomy, greaterThan(budget));
     expect(
-      after.fitRequest(scoped(const [], ids), peerA).announced.first,
+      b.fitRequest(scoped(const [], ids), peerA).announced.first,
       equals(ids.first),
       reason: 'nothing was stamped for the announcements',
     );

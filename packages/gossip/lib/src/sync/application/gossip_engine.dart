@@ -772,8 +772,8 @@ class GossipEngine {
   /// Builds a [DigestRequest] carrying this node's version vectors.
   ///
   /// Sends the full digest when it fits the transport budget (the common
-  /// case). When it doesn't, sends a byte-budgeted, round-robin-rotated
-  /// subset of streams so no message is oversized and every stream is
+  /// case). When it doesn't, sends a byte-budgeted subset of streams,
+  /// least recently sent to this peer first, so no message is oversized and every stream is
   /// covered across rounds — instead of a giant message the transport can
   /// never carry (which would livelock sync entirely). Budgeting itself
   /// is [_digestBudgeter]'s job; this method only generates the input and
