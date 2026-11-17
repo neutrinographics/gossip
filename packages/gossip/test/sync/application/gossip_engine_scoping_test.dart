@@ -623,25 +623,33 @@ void main() {
     });
 
     test('removing a peer forgets its holdings, so the next request announces '
-        'again', () async {
+        'again, and only that peer\'s', () async {
       final h = GossipEngineTestHarness(
         gossipInterval: const Duration(seconds: 100),
       );
-      final peer = h.addPeer('peer1');
+      final removed = h.addPeer('peer1');
+      final kept = h.addPeer('peer2');
       h.createChannel('channel-1', streamIds: ['s']);
       h.startListening();
       h.engine.start();
-      await h.peerHasShown(peer, [channel1]);
+      await h.peerHasShown(removed, [channel1]);
+      await h.peerHasShown(kept, [channel1]);
 
-      h.engine.clearPendingRequestsForPeer(peer.id);
-      final requests = await requestsAfter(
+      h.engine.clearPendingRequestsForPeer(removed.id);
+      final toRemoved = await requestsAfter(
         h,
-        peer,
-        () => h.engine.syncWithPeer(peer.id),
+        removed,
+        () => h.engine.syncWithPeer(removed.id),
+      );
+      final toKept = await requestsAfter(
+        h,
+        kept,
+        () => h.engine.syncWithPeer(kept.id),
       );
 
-      expect(requests.single.digests, isEmpty);
-      expect(requests.single.announced, [channel1]);
+      expect(toRemoved.single.digests, isEmpty);
+      expect(toRemoved.single.announced, [channel1]);
+      expect(toKept.single.digests.map((d) => d.channelId), [channel1]);
       h.engine.stop();
       h.stopListening();
     });
@@ -671,18 +679,32 @@ void main() {
     }
 
     test('removing a peer forgets its rotation, so announcements start '
-        'over', () async {
+        'over, and another peer\'s rotation is kept', () async {
       final h = hub();
-      final peer = h.addPeer('peer1');
+      final removed = h.addPeer('peer1');
+      final kept = h.addPeer('peer2');
       h.startListening();
       h.engine.start();
 
-      final first = await hubRequests(h, peer, 2);
-      h.engine.clearPendingRequestsForPeer(peer.id);
-      final again = await hubRequests(h, peer, 1);
+      final removedFirst = await hubRequests(h, removed, 2);
+      final keptFirst = await hubRequests(h, kept, 2);
+      h.engine.clearPendingRequestsForPeer(removed.id);
+      final removedAgain = await hubRequests(h, removed, 1);
+      final keptNext = await hubRequests(h, kept, 1);
 
-      expect(first[0].announced.first, isNot(first[1].announced.first));
-      expect(again.single.announced.first, first[0].announced.first);
+      expect(
+        removedFirst[0].announced.first,
+        isNot(removedFirst[1].announced.first),
+      );
+      expect(
+        removedAgain.single.announced.first,
+        removedFirst[0].announced.first,
+      );
+      expect(
+        keptNext.single.announced.first,
+        isNot(keptFirst[0].announced.first),
+        reason: 'the other peer\'s rotation must carry on, not restart',
+      );
       h.engine.stop();
       h.stopListening();
     });
@@ -691,23 +713,60 @@ void main() {
       'a stop forgets every peer\'s holdings and resets the rotation',
       () async {
         final h = hub();
-        final peer = h.addPeer('peer1');
+        final peerA = h.addPeer('peer1');
+        final peerB = h.addPeer('peer2');
         h.startListening();
         h.engine.start();
         final shown = ChannelId('hub-channel-${'0'.padLeft(24, '0')}');
-        await h.peerHasShown(peer, [shown]);
-        final before = await hubRequests(h, peer, 2);
-        expect(before.first.digests, isNotEmpty);
+        await h.peerHasShown(peerA, [shown]);
+        await h.peerHasShown(peerB, [shown]);
+        final beforeA = await hubRequests(h, peerA, 2);
+        final beforeB = await hubRequests(h, peerB, 1);
+        expect(beforeA.first.digests, isNotEmpty);
+        expect(beforeB.single.digests, isNotEmpty);
 
         h.engine.stop();
         h.engine.start();
-        final after = await hubRequests(h, peer, 1);
+        final afterA = await hubRequests(h, peerA, 1);
+        final afterB = await hubRequests(h, peerB, 1);
 
-        expect(after.single.digests, isEmpty);
-        expect(after.single.announced.first, shown);
+        expect(afterA.single.digests, isEmpty);
+        expect(afterB.single.digests, isEmpty);
+        expect(afterA.single.announced.first, shown);
+        expect(afterB.single.announced.first, shown);
         h.engine.stop();
         h.stopListening();
       },
     );
+
+    test('a channel created after first contact is announced on the very '
+        'next request', () async {
+      final h = GossipEngineTestHarness(
+        gossipInterval: const Duration(seconds: 100),
+      );
+      final peer = h.addPeer('peer1');
+      h.createChannel('channel-1', streamIds: ['s']);
+      h.startListening();
+      h.engine.start();
+      await h.peerHasShown(peer, [channel1]);
+      final first = await requestsAfter(
+        h,
+        peer,
+        () => h.engine.syncWithPeer(peer.id),
+      );
+      expect(first.single.announced, isEmpty);
+
+      h.createChannel('channel-2', streamIds: ['s']);
+      final next = await requestsAfter(
+        h,
+        peer,
+        () => h.engine.syncWithPeer(peer.id),
+      );
+
+      expect(next.single.digests.map((d) => d.channelId), [channel1]);
+      expect(next.single.announced, [channel2]);
+      h.engine.stop();
+      h.stopListening();
+    });
   });
 }

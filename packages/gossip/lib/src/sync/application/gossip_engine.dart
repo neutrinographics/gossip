@@ -61,11 +61,13 @@ import 'package:gossip/src/sync/application/reactive_pusher.dart';
 /// - Select the least-recently-synced reachable peer, filtered to exclude
 ///   congested peers and ones already gossiped with this interval, with a
 ///   random tiebreak among equally-stale peers (see [_selectGossipPartner])
-/// - Generate digests (version vectors) for all local channels/streams
+/// - Digest the channels the peer has shown it holds and announce the rest
+///   by id, under the announce budget (see [DigestScoping])
 /// - Send [DigestRequest] containing our sync state
 ///
 /// **Step 2: Digest Response**
-/// - Peer receives request, generates their own digests
+/// - Peer receives request, learns what the sender holds from every channel
+///   it names, and generates its own digests for the named channels it holds
 /// - Sends [DigestResponse] with their version vectors
 ///
 /// **Step 3: Delta Request**
@@ -85,8 +87,10 @@ import 'package:gossip/src/sync/application/reactive_pusher.dart';
 ///   interval — a few seconds at a ~1 s interval, longer on a slow BLE mesh
 ///   (fan-out is 1). Reactive push-on-write disseminates new *local* writes
 ///   faster than this periodic anti-entropy sweep.
-/// - **Bidirectional sync**: Each round reciprocates (push-pull), so a single
-///   exchange syncs in both directions.
+/// - **Bidirectional sync**: Each round reciprocates (push-pull) for the
+///   channels the request digests. A first exchange with a peer announces
+///   its channels and teaches holdings both ways, so reciprocation starts
+///   from the next exchange.
 /// - **Probabilistic, preconditioned guarantee**: peers converge *provided*
 ///   both created the same channel+stream locally (stream creation does not
 ///   propagate), each entry fits the delta budget, and digests fit the
@@ -686,7 +690,8 @@ class GossipEngine {
   ///    [SyncPartner.lastAntiEntropyMs])
   /// 2. Select the least-recently-gossiped uncongested candidate (bounded
   ///    coverage; random tiebreak) and mark it gossiped
-  /// 3. Generate digests for all channels via [generateDigest]
+  /// 3. Digest the channels the peer has shown it holds (via
+  ///    [generateDigest]) and announce the rest under the announce budget
   /// 4. Send [DigestRequest] to peer
   ///
   /// The peer will respond with their digests ([DigestResponse]), triggering
@@ -834,8 +839,10 @@ class GossipEngine {
   /// DigestRequest, rather than waiting for the random periodic round to
   /// select it. The gossip analogue of `FailureDetector.probeNewPeer`:
   /// called when a peer connects/reconnects so a fresh join or a healed
-  /// partition reconciles right away. With push-pull reciprocation the
-  /// single exchange syncs both directions. No-op when not running.
+  /// partition reconciles right away. Push-pull reciprocation covers the
+  /// channels the request digests; a first exchange only announces and
+  /// teaches holdings, so reciprocation starts from the next one. No-op when
+  /// not running.
   Future<void> syncWithPeer(NodeId peerId) async {
     if (!_scheduler.isRunning) return;
     _recordNews();
@@ -993,13 +1000,13 @@ class GossipEngine {
       'RECV DigestResponse from ${_shortId(sender.value)}: '
       '${response.digests.length} channels',
     );
-    // Pulling is active sync — a paused/listen-only engine serves but
-    // does not pull. Its names still teach holdings either way.
-    if (_scheduler.isRunning) {
-      await _sendDeltaRequests(sender, await handleDigestResponse(response));
-    } else {
-      _holdings = _holdings.learn(sender, response.namedChannels);
-    }
+    // Pulling is active sync — a paused/listen-only engine serves but does
+    // not pull; its names still teach holdings.
+    final pulls = await handleDigestResponse(
+      response,
+      pull: _scheduler.isRunning,
+    );
+    await _sendDeltaRequests(sender, pulls);
   }
 
   /// Handles an inbound [DeltaRequest] (Step 4): serves the entries the
@@ -1169,9 +1176,10 @@ class GossipEngine {
   /// Handles digest request from a peer (Step 2).
   ///
   /// Every channel the request names, digested or announced, teaches us what
-  /// the sender holds. We answer with our whole digest for each named channel
-  /// we hold, scoped and dominance-filtered by [DigestAnswering] and fitted
-  /// to the budget; a named channel we do not hold is dropped at debug.
+  /// the sender holds. We answer an announced channel we hold with our whole
+  /// digest, and a digested one scoped to the streams named and
+  /// dominance-filtered, both by [DigestAnswering] and fitted to the budget;
+  /// a named channel we do not hold is dropped at debug.
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
   Future<DigestResponse> handleDigestRequest(DigestRequest request) async {
@@ -1217,11 +1225,16 @@ class GossipEngine {
   /// Compares peer's version vectors with ours to identify entries we're
   /// missing, and issues a [PullRequest] only for streams where the peer is
   /// ahead on some author. The caller puts them on the wire
-  /// ([_sendDeltaRequests]); they are in flight from here.
+  /// ([_sendDeltaRequests]); they are in flight from here. Its names teach
+  /// holdings first; with [pull] false (a paused engine) nothing is pulled.
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
-  Future<List<PullRequest>> handleDigestResponse(DigestResponse response) {
+  Future<List<PullRequest>> handleDigestResponse(
+    DigestResponse response, {
+    bool pull = true,
+  }) async {
     _holdings = _holdings.learn(response.sender, response.namedChannels);
+    if (!pull) return const [];
     final held = _heldAmong(response.sender, response.namedChannels);
     final heldIds = {for (final c in held) c.id};
     return _computeDeltaRequests(response.sender, [
