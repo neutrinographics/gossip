@@ -149,6 +149,16 @@ void main() {
     'ack': Ack(sender: nodeB, sequence: 7),
     'pingreq': PingReq(sender: nodeA, sequence: 9, target: nodeB),
     'digestrequest': DigestRequest(sender: nodeA, digests: digestsFixture()),
+    // Pins the announcement wire shape: channel digests with an empty
+    // stream list after the digests (spec digest-scoping rulings).
+    'digestrequest-announced': DigestRequest(
+      sender: nodeA,
+      digests: digestsFixture(),
+      announced: [
+        ChannelId('channel-announced-1'),
+        ChannelId('channel-announced-2'),
+      ],
+    ),
     'digestresponse': DigestResponse(sender: nodeB, digests: digestsFixture()),
     // Three flat DeltaRequests, decomposing v1-kt's single batched
     // deltarequest.frame (ch-1/st-1, ch-1/st-2, ch-2/st-1) into the
@@ -218,6 +228,16 @@ void main() {
     'ack': Ack(sender: nodeB, sequence: 7),
     'pingreq': PingReq(sender: nodeA, sequence: 9, target: nodeB),
     'digestrequest': DigestRequest(sender: nodeA, digests: digestsFixture()),
+    // Pins the announcement wire shape: channel digests with an empty
+    // stream list after the digests (spec digest-scoping rulings).
+    'digestrequest-announced': DigestRequest(
+      sender: nodeA,
+      digests: digestsFixture(),
+      announced: [
+        ChannelId('channel-announced-1'),
+        ChannelId('channel-announced-2'),
+      ],
+    ),
     'digestresponse': DigestResponse(sender: nodeB, digests: digestsFixture()),
     'deltarequest': DeltaRequest(
       sender: nodeA,

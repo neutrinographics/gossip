@@ -24,6 +24,7 @@ import 'package:gossip/src/shared/domain/interfaces/time_port.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_port.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
 import 'package:gossip/src/sync/domain/interfaces/peer_directory.dart';
+import 'package:gossip/src/sync/domain/value_objects/peer_holdings.dart';
 import 'package:gossip/src/sync/domain/value_objects/sync_partner.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
 import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
@@ -36,6 +37,8 @@ import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/events/sync_events.dart';
 import 'package:gossip/src/sync/application/delta_merger.dart';
 import 'package:gossip/src/sync/application/digest_budgeter.dart';
+import 'package:gossip/src/sync/domain/services/digest_answering.dart';
+import 'package:gossip/src/sync/domain/services/digest_scoping.dart';
 import 'package:gossip/src/sync/application/reactive_pusher.dart';
 
 /// Protocol service implementing gossip-based anti-entropy synchronization.
@@ -58,11 +61,13 @@ import 'package:gossip/src/sync/application/reactive_pusher.dart';
 /// - Select the least-recently-synced reachable peer, filtered to exclude
 ///   congested peers and ones already gossiped with this interval, with a
 ///   random tiebreak among equally-stale peers (see [_selectGossipPartner])
-/// - Generate digests (version vectors) for all local channels/streams
+/// - Digest the channels the peer has shown it holds and announce the rest
+///   by id, under the announce budget (see [DigestScoping])
 /// - Send [DigestRequest] containing our sync state
 ///
 /// **Step 2: Digest Response**
-/// - Peer receives request, generates their own digests
+/// - Peer receives request, learns what the sender holds from every channel
+///   it names, and generates its own digests for the named channels it holds
 /// - Sends [DigestResponse] with their version vectors
 ///
 /// **Step 3: Delta Request**
@@ -82,8 +87,10 @@ import 'package:gossip/src/sync/application/reactive_pusher.dart';
 ///   interval — a few seconds at a ~1 s interval, longer on a slow BLE mesh
 ///   (fan-out is 1). Reactive push-on-write disseminates new *local* writes
 ///   faster than this periodic anti-entropy sweep.
-/// - **Bidirectional sync**: Each round reciprocates (push-pull), so a single
-///   exchange syncs in both directions.
+/// - **Bidirectional sync**: Each round reciprocates (push-pull) for the
+///   channels the request digests. A first exchange with a peer announces
+///   its channels and teaches holdings both ways, so reciprocation starts
+///   from the next exchange.
 /// - **Probabilistic, preconditioned guarantee**: peers converge *provided*
 ///   both created the same channel+stream locally (stream creation does not
 ///   propagate), each entry fits the delta budget, and digests fit the
@@ -170,6 +177,10 @@ class GossipEngine {
   /// so the two can't silently drift apart.
   static const int defaultMaxMessageBytes = 30 * 1024;
 
+  /// What a request may spend announcing channels the peer has not shown;
+  /// mirrors `CoordinatorConfig.announceBudgetBytes`.
+  static const int defaultAnnounceBudgetBytes = 1024;
+
   /// Codec for serializing/deserializing this context's (sync's) protocol
   /// messages.
   ///
@@ -182,17 +193,14 @@ class GossipEngine {
   /// null-check in [_handleIncomingMessage].
   final MessageCodec _codec;
 
-  /// Byte-budget helpers ([SyncMessageCodec.encodedEntrySize],
-  /// [SyncMessageCodec.encodedStreamDigestSize]) aren't part of the shared
-  /// [MessageCodec] seam — sizing entries/digests against the transport
-  /// limit is a sync-specific concern, not something membership's codec
-  /// needs. The gossip engine is a sync-context component, so its injected
-  /// codec is always a [SyncMessageCodec] in practice (`Coordinator` and
-  /// every test harness wire exactly that); this getter makes that
-  /// assumption explicit at its call sites instead of scattering casts —
-  /// [_fitDeltaToBudget]'s `encodedEntrySize` call, and constructing
-  /// [_digestBudgeter] (which needs the concrete type, not the shared
-  /// [MessageCodec] seam, for its own digest-sizing helpers).
+  /// [SyncMessageCodec.encodedEntrySize] isn't part of the shared
+  /// [MessageCodec] seam — sizing entries against the transport limit is a
+  /// sync-specific concern, not something membership's codec needs. The
+  /// gossip engine is a sync-context component, so its injected codec is
+  /// always a [SyncMessageCodec] in practice (`Coordinator` and every test
+  /// harness wire exactly that); this getter makes that assumption explicit
+  /// at its one call site, [_fitDeltaToBudget], instead of scattering casts.
+  /// The digest budgeter measures through the shared seam and needs no cast.
   SyncMessageCodec get _syncCodec => _codec as SyncMessageCodec;
 
   /// Random number generator for peer selection.
@@ -287,13 +295,19 @@ class GossipEngine {
 
   static const Duration _metricsWindow = Duration(seconds: 10);
 
-  /// Owns byte-budgeted digest windowing: fitting a digest request/response
-  /// to [maxMessageBytes] by selecting a round-robin rotated subset of
-  /// (channel, stream) digests when the full set doesn't fit, so no
-  /// message is oversized and every stream is covered across successive
-  /// rounds. See [DigestBudgeter] for the request/response cursor split
-  /// and the conservative cost model.
+  /// Owns byte-budgeted digest windowing: when a request or response does
+  /// not fit [maxMessageBytes], each of its three lists (request digests,
+  /// response digests, announcements) is cut to a per-peer
+  /// least-recently-sent window, so no message is oversized and every item
+  /// is covered across successive rounds. Announcements get their own
+  /// budget after the digests, and sizes are measured through the codec
+  /// seam. See [DigestBudgeter].
   late final DigestBudgeter _digestBudgeter;
+
+  /// What each peer has shown it holds: every channel it has named, in a
+  /// request or a response. A request digests only these and announces the
+  /// rest; forgotten with the peer, and on stop.
+  PeerHoldings _holdings = PeerHoldings.initial;
 
   /// Per-peer congestion threshold for backpressure.
   ///
@@ -318,6 +332,7 @@ class GossipEngine {
     Duration? gossipInterval,
     bool adaptiveTimingEnabled = false,
     this.maxMessageBytes = defaultMaxMessageBytes,
+    int announceBudgetBytes = defaultAnnounceBudgetBytes,
     StalledRangeRegistry? stalledRanges,
   }) : _codec = codec,
        _hlcClock = hlcClock,
@@ -382,14 +397,13 @@ class GossipEngine {
       staticInterval: gossipInterval,
       adaptiveEnabled: adaptiveTimingEnabled,
     );
-    // Needs the concrete SyncMessageCodec (its digest-sizing helpers aren't
-    // part of the shared MessageCodec seam) — built here, after `_codec` is
-    // assigned by the initializer list above, so `_syncCodec`'s cast is
-    // valid; same body-construction rationale as `_timing` above.
+    // Built here, after `_codec` is assigned by the initializer list above;
+    // same body-construction rationale as `_timing` above.
     _digestBudgeter = DigestBudgeter(
-      codec: _syncCodec,
+      codec: _codec,
       localNode: localNode,
       maxMessageBytes: maxMessageBytes,
+      announceBudgetBytes: announceBudgetBytes,
     );
     _scheduler = GenerationScheduler(
       timePort: timePort,
@@ -545,6 +559,10 @@ class GossipEngine {
     _merger.clearReportedGaps();
     // ... and for stalled ranges.
     _stalledRanges.clearAll();
+    // A restart re-learns what peers hold and restarts the announcement
+    // rotation, so a resumed engine does not carry a stale picture.
+    _holdings = PeerHoldings.initial;
+    _digestBudgeter.reset();
   }
 
   /// Reactive dissemination (rumor mongering): notify the engine of a local
@@ -673,7 +691,8 @@ class GossipEngine {
   ///    [SyncPartner.lastAntiEntropyMs])
   /// 2. Select the least-recently-gossiped uncongested candidate (bounded
   ///    coverage; random tiebreak) and mark it gossiped
-  /// 3. Generate digests for all channels via [generateDigest]
+  /// 3. Digest the channels the peer has shown it holds (via
+  ///    [generateDigest]) and announce the rest under the announce budget
   /// 4. Send [DigestRequest] to peer
   ///
   /// The peer will respond with their digests ([DigestResponse]), triggering
@@ -718,7 +737,10 @@ class GossipEngine {
     // Record that we're gossiping with this peer now, so the next rounds
     // prefer peers we haven't synced with recently (bounded coverage).
     peerDirectory.recordAntiEntropy(partner.nodeId, timePort.nowMs);
-    await _sendMessage(partner.nodeId, await _buildDigestRequest());
+    await _sendMessage(
+      partner.nodeId,
+      await _buildDigestRequest(partner.nodeId),
+    );
   }
 
   /// Filters [reachable] down to peers that are both uncongested
@@ -767,26 +789,37 @@ class GossipEngine {
     return stalest[_random.nextInt(stalest.length)];
   }
 
-  /// Builds a [DigestRequest] carrying this node's version vectors.
+  /// Builds the [DigestRequest] for [peer]: digests for the channels it has
+  /// shown it holds, announcements for the rest.
   ///
-  /// Sends the full digest when it fits the transport budget (the common
-  /// case). When it doesn't, sends a byte-budgeted, round-robin-rotated
-  /// subset of streams so no message is oversized and every stream is
-  /// covered across rounds — instead of a giant message the transport can
-  /// never carry (which would livelock sync entirely). Budgeting itself
-  /// is [_digestBudgeter]'s job; this method only generates the input and
-  /// renders any [OversizedDigest] diagnostics it reports.
-  Future<DigestRequest> _buildDigestRequest() async {
+  /// Scoping and fitting are [DigestScoping]'s and [_digestBudgeter]'s; this
+  /// method gathers the input and surfaces what the budgeter could not send,
+  /// since a drop nobody sees would never be fixed.
+  Future<DigestRequest> _buildDigestRequest(NodeId peer) async {
     final all = <ChannelDigest>[];
     for (final channel in _channels.values) {
       all.add(await generateDigest(channel));
     }
 
-    final (digests, oversized) = _digestBudgeter.fitRequest(all);
-    for (final o in oversized) {
+    final fitted = _digestBudgeter.fitRequest(
+      DigestScoping.scope(all, _holdings.of(peer)),
+      peer,
+    );
+    for (final o in fitted.oversized) {
       _emitError(_oversizedDigestError(o));
     }
-    return DigestRequest(sender: localNode, digests: digests);
+    for (final id in fitted.unannounceable) {
+      _log(
+        LogLevel.warning,
+        'cannot announce ${id.value}: its name alone exceeds '
+        'announceBudgetBytes=${_digestBudgeter.announceBudgetBytes}',
+      );
+    }
+    return DigestRequest(
+      sender: localNode,
+      digests: fitted.digests,
+      announced: fitted.announced,
+    );
   }
 
   /// Renders an [OversizedDigest] diagnostic (a stream whose digest alone
@@ -807,13 +840,15 @@ class GossipEngine {
   /// DigestRequest, rather than waiting for the random periodic round to
   /// select it. The gossip analogue of `FailureDetector.probeNewPeer`:
   /// called when a peer connects/reconnects so a fresh join or a healed
-  /// partition reconciles right away. With push-pull reciprocation the
-  /// single exchange syncs both directions. No-op when not running.
+  /// partition reconciles right away. Push-pull reciprocation covers the
+  /// channels the request digests; a first exchange only announces and
+  /// teaches holdings, so reciprocation starts from the next one. No-op when
+  /// not running.
   Future<void> syncWithPeer(NodeId peerId) async {
     if (!_scheduler.isRunning) return;
     _recordNews();
     try {
-      await _sendMessage(peerId, await _buildDigestRequest());
+      await _sendMessage(peerId, await _buildDigestRequest(peerId));
     } catch (e, st) {
       _emitError(
         PeerSyncError(
@@ -930,12 +965,12 @@ class GossipEngine {
     _log(
       LogLevel.trace,
       'RECV DigestRequest from ${_shortId(sender.value)}: '
-      '${request.digests.length} channels',
+      '${request.digests.length} channels + ${request.announced.length} announced',
     );
     // A reciprocated exchange is coverage for BOTH sides: record it
     // so our own selector/suppression see this peer as fresh.
     peerDirectory.recordAntiEntropy(sender, nowMs);
-    final response = await _handleDigestRequest(request);
+    final response = await handleDigestRequest(request);
     await _sendMessage(sender, response);
     // Push-pull: the request already carries the initiator's version
     // vectors, so reciprocate by pulling anything they advertised that
@@ -944,37 +979,18 @@ class GossipEngine {
     // gate it on running: a paused/listen-only engine still answers
     // digests (serves data) but must not initiate new pulls.
     if (_scheduler.isRunning) {
-      // A DigestRequest by design carries ALL the sender's channels, so
-      // ones we don't share are routine under partial channel overlap —
-      // filter them out here rather than letting _computeDeltaRequests
-      // emit a protocolError per non-shared channel per round. (On the
-      // DigestResponse path the digests are scoped to our own request,
-      // so an unknown channel there stays an anomaly worth reporting.)
-      final sharedDigests = _sharedDigests(request.digests);
+      // Only the digested channels we hold reciprocate: an announcement
+      // carries no version vectors, so it pulls nothing, and a channel we
+      // do not hold was already dropped at debug by [handleDigestRequest].
+      final held = [
+        for (final d in request.digests)
+          if (_channels.containsKey(d.channelId)) d,
+      ];
       await _sendDeltaRequests(
         sender,
-        await _computeDeltaRequests(sender, sharedDigests),
+        await _computeDeltaRequests(sender, held),
       );
     }
-  }
-
-  /// Filters [digests] down to the channels we're a member of, logging the
-  /// rest — a [DigestRequest] carries all of the sender's channels by
-  /// design, so one we don't share is routine, not an anomaly.
-  List<ChannelDigest> _sharedDigests(List<ChannelDigest> digests) {
-    final sharedDigests = <ChannelDigest>[];
-    for (final digest in digests) {
-      if (_channels.containsKey(digest.channelId)) {
-        sharedDigests.add(digest);
-      } else {
-        _log(
-          LogLevel.trace,
-          'ignoring reciprocal digest for non-shared channel '
-          '${digest.channelId}',
-        );
-      }
-    }
-    return sharedDigests;
   }
 
   /// Handles an inbound [DigestResponse] (Step 3): pulls anything it shows
@@ -985,12 +1001,13 @@ class GossipEngine {
       'RECV DigestResponse from ${_shortId(sender.value)}: '
       '${response.digests.length} channels',
     );
-    // Pulling is active sync — a paused/listen-only engine serves but
-    // does not pull. (A DigestResponse is only ever a reply to our own
-    // request, which we make only while running.)
-    if (_scheduler.isRunning) {
-      await _sendDeltaRequests(sender, await handleDigestResponse(response));
-    }
+    // Pulling is active sync — a paused/listen-only engine serves but does
+    // not pull; its names still teach holdings.
+    final pulls = await handleDigestResponse(
+      response,
+      pull: _scheduler.isRunning,
+    );
+    await _sendDeltaRequests(sender, pulls);
   }
 
   /// Handles an inbound [DeltaRequest] (Step 4): serves the entries the
@@ -1073,10 +1090,11 @@ class GossipEngine {
   ) {
     final recipientShort = _shortId(recipient.value);
     switch (message) {
-      case DigestRequest(:final digests):
+      case DigestRequest(:final digests, :final announced):
         _log(
           LogLevel.trace,
-          'SEND DigestRequest to $recipientShort: ${digests.length} channels ($size bytes)',
+          'SEND DigestRequest to $recipientShort: ${digests.length} channels '
+          '+ ${announced.length} announced ($size bytes)',
         );
       case DigestResponse(:final digests):
         _log(
@@ -1108,17 +1126,6 @@ class GossipEngine {
   /// Shortens an ID for logging (first 8 chars).
   String _shortId(String id) {
     return id.length > 8 ? id.substring(0, 8) : id;
-  }
-
-  /// Handle digest request using the current channel map.
-  Future<DigestResponse> _handleDigestRequest(DigestRequest request) {
-    final requestedChannels = request.digests
-        .map((d) => d.channelId)
-        .map((id) => _channels[id])
-        .whereType<ChannelAggregate>()
-        .toList();
-
-    return handleDigestRequest(request, requestedChannels);
   }
 
   /// Generates a digest (version vector summary) for a channel.
@@ -1169,57 +1176,49 @@ class GossipEngine {
 
   /// Handles digest request from a peer (Step 2).
   ///
-  /// Generates our own digests for the requested channels and returns them.
-  /// The peer initiated anti-entropy; we're responding with our sync state.
-  ///
-  /// Only generates digests for channels we're members of (present in
-  /// the [channels] parameter).
+  /// Every channel the request names, digested or announced, teaches us what
+  /// the sender holds. We answer an announced channel we hold with our whole
+  /// digest, and a digested one scoped to the streams named and
+  /// dominance-filtered, both by [DigestAnswering] and fitted to the budget;
+  /// a named channel we do not hold is dropped at debug.
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
-  Future<DigestResponse> handleDigestRequest(
-    DigestRequest request,
-    List<ChannelAggregate> channels,
-  ) async {
-    // Respond only for the (channel, stream) pairs the initiator asked about
-    // and that we also have, budgeted to the transport limit. Scoping the
-    // response to the request keeps it bounded — the initiator already
-    // budgeted/rotated the request, and our own version vectors may be
-    // larger, so the response is fitted independently by
-    // [_digestBudgeter.fitResponse], with its own rotation cursor so an
-    // over-budget response covers every stream across successive exchanges
-    // too, instead of truncating the same tail every time.
-    final byId = {for (final channel in channels) channel.id: channel};
-
-    final flat = <({ChannelId channel, StreamDigest digest})>[];
-    for (final channelDigest in request.digests) {
-      final channel = byId[channelDigest.channelId];
-      if (channel == null) continue;
-      for (final streamDigest in channelDigest.streams) {
-        if (!channel.hasStream(streamDigest.streamId)) continue;
-        final version = await _computeVersionVector(
-          channelDigest.channelId,
-          streamDigest.streamId,
-        );
-        // Dominance filter: if the requester's vector already covers ours,
-        // echoing it back is pure redundancy. Safe: the requester pulls
-        // only when the response shows us ahead, and the responder-behind
-        // direction is our own reciprocal pull.
-        if (streamDigest.version.dominates(version)) continue;
-        flat.add((
-          channel: channelDigest.channelId,
-          digest: StreamDigest(
-            streamId: streamDigest.streamId,
-            version: version,
-          ),
-        ));
-      }
+  Future<DigestResponse> handleDigestRequest(DigestRequest request) async {
+    _holdings = _holdings.learn(request.sender, request.namedChannels);
+    final held = _heldAmong(request.sender, request.namedChannels);
+    final ours = <ChannelDigest>[];
+    for (final channel in held) {
+      ours.add(await generateDigest(channel));
     }
 
-    final (digests, oversized) = _digestBudgeter.fitResponse(flat);
-    for (final o in oversized) {
+    final fitted = _digestBudgeter.fitResponse(
+      DigestAnswering.answer(request, ours),
+      request.sender,
+    );
+    for (final o in fitted.oversized) {
       _emitError(_oversizedDigestError(o));
     }
-    return DigestResponse(sender: localNode, digests: digests);
+    return DigestResponse(sender: localNode, digests: fitted.digests);
+  }
+
+  /// The channels among [named] we hold, in named order. Each we do not is
+  /// dropped here at debug: routine under partial channel overlap, never an
+  /// error.
+  List<ChannelAggregate> _heldAmong(NodeId peer, Iterable<ChannelId> named) {
+    final held = <ChannelAggregate>[];
+    for (final id in named) {
+      final channel = _channels[id];
+      if (channel == null) {
+        _log(
+          LogLevel.debug,
+          'dropping ${id.value} named by ${_shortId(peer.value)}: '
+          'not a channel of ours',
+        );
+      } else {
+        held.add(channel);
+      }
+    }
+    return held;
   }
 
   /// Handles digest response from a peer (Step 3).
@@ -1227,11 +1226,22 @@ class GossipEngine {
   /// Compares peer's version vectors with ours to identify entries we're
   /// missing, and issues a [PullRequest] only for streams where the peer is
   /// ahead on some author. The caller puts them on the wire
-  /// ([_sendDeltaRequests]); they are in flight from here.
+  /// ([_sendDeltaRequests]); they are in flight from here. Its names teach
+  /// holdings first; with [pull] false (a paused engine) nothing is pulled.
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
-  Future<List<PullRequest>> handleDigestResponse(DigestResponse response) {
-    return _computeDeltaRequests(response.sender, response.digests);
+  Future<List<PullRequest>> handleDigestResponse(
+    DigestResponse response, {
+    bool pull = true,
+  }) async {
+    _holdings = _holdings.learn(response.sender, response.namedChannels);
+    if (!pull) return const [];
+    final held = _heldAmong(response.sender, response.namedChannels);
+    final heldIds = {for (final c in held) c.id};
+    return _computeDeltaRequests(response.sender, [
+      for (final d in response.digests)
+        if (heldIds.contains(d.channelId)) d,
+    ]);
   }
 
   /// Puts the given [requests] on the wire to [recipient], each naming
@@ -1294,13 +1304,11 @@ class GossipEngine {
     for (final channelDigest in peerDigests) {
       final channel = _channels[channelDigest.channelId];
       if (channel == null) {
-        _emitError(
-          ChannelSyncError(
-            channelDigest.channelId,
-            SyncErrorType.protocolError,
-            'Received digest for unknown channel ${channelDigest.channelId}',
-            occurredAt: DateTime.now(),
-          ),
+        // Backstop only: callers drop unheld channels at debug before here.
+        _log(
+          LogLevel.trace,
+          'ignoring digest for unknown channel ${channelDigest.channelId.value} '
+          'from ${_shortId(peer.value)}',
         );
         continue;
       }
@@ -1716,5 +1724,7 @@ class GossipEngine {
     _pulls = OutstandingPullTracker.clearForPeer(_pulls, peer);
     _merger.clearReportedGapsForPeer(peer);
     _stalledRanges.clearForPeer(peer);
+    _holdings = _holdings.forget(peer);
+    _digestBudgeter.forget(peer);
   }
 }

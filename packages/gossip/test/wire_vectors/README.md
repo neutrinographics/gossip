@@ -47,6 +47,8 @@ added without updating the manifest (or vice versa) fails the suite.
   the "v1+floor" emission variant (§11 decision 3):
   `deltaresponse-floor` pins that v1-send additively carries `floor` even
   though `hasMore` stays v2-only.
+  `digestrequest-announced` pins that an announcement rides the wire as a
+  channel digest with an empty `streams` list, after the digests.
 
 - **`v1-kt/`** — §7.4, the deployed server's batched dialect
   (`[type byte][JSON]`, deltas nested `channelId -> streamId -> ...`).
@@ -75,7 +77,8 @@ added without updating the manifest (or vice versa) fails the suite.
   in the 3-key form — no `originalRequester`, per §11 decision 4).
   `deltaresponse` exercises `hasMore: true`, a non-empty `floor`, and the
   base64 payload encoding together. Round-tripped through the real codecs
-  (`WireVersion.v2`) the same way as `v1-dart`.
+  (`WireVersion.v2`) the same way as `v1-dart`. `digestrequest-announced` pins
+  the same announcement shape under the `[0xF2]` prefix.
 
 - **`edge/`** — negative and boundary-condition frames, hand-built (not
   routed through any encoder): unclaimed marker bytes across the whole

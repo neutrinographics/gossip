@@ -151,6 +151,14 @@ publish under the existing pub.dev `gossip` name must version above the old
   doubling backoff (30 s → 10 min cap), lifting automatically the moment
   the range becomes obtainable. No wire change; only the numbers inside
   `DeltaRequest.since` are shaped.
+- Digest scoping: a digest request now carries only the channels the peer
+  has shown it holds, and announces the rest by name, so a hub no longer
+  sends every peer every channel's vectors. New
+  `CoordinatorConfig.announceBudgetBytes` (default 1024; `0` never
+  announces) caps the bytes spent on announcements. An unknown channel named
+  in a response is now a debug log, not a `protocolError`. A first exchange
+  with a new peer teaches holdings, so the reciprocal digests start from the
+  next exchange. No wire change.
 
 ### Changed
 

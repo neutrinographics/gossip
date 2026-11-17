@@ -245,8 +245,9 @@ void main() {
       expect(request, isA<DigestRequest>());
       final digestRequest = request as DigestRequest;
       expect(digestRequest.sender, equals(localNode));
-      expect(digestRequest.digests, hasLength(1));
-      expect(digestRequest.digests[0].channelId, equals(channelId));
+      // The peer has shown nothing, so the channel is announced, not digested.
+      expect(digestRequest.digests, isEmpty);
+      expect(digestRequest.announced, equals([channelId]));
     });
 
     test(
@@ -317,44 +318,51 @@ void main() {
       },
     );
 
-    test('handleDigestResponse emits error for unknown channel', () async {
-      final localNode = NodeId('local');
-      final peerRegistry = PeerRegistry(localNode: localNode);
-      final entryRepo = InMemoryEntryRepository();
-      final port = InMemoryMessagePort(localNode, InMemoryMessageBus());
-      final timePort = InMemoryTimePort();
+    test(
+      'a response naming a channel we do not hold is dropped at debug, not an '
+      'error',
+      () async {
+        final localNode = NodeId('local');
+        final peerRegistry = PeerRegistry(localNode: localNode);
+        final entryRepo = InMemoryEntryRepository();
+        final port = InMemoryMessagePort(localNode, InMemoryMessageBus());
+        final timePort = InMemoryTimePort();
 
-      // Track emitted errors
-      final errors = <SyncError>[];
-      final engine = GossipEngine(
-        codec: SyncMessageCodec(wireVersion: WireVersion.v2),
-        localNode: localNode,
-        peerDirectory: MembershipPeerDirectory(peerRegistry),
-        entryRepository: entryRepo,
-        messagePort: port,
-        localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
-        timePort: timePort,
-        onError: errors.add,
-      );
+        final errors = <SyncError>[];
+        final logs = <String>[];
+        final engine = GossipEngine(
+          codec: SyncMessageCodec(wireVersion: WireVersion.v2),
+          localNode: localNode,
+          peerDirectory: MembershipPeerDirectory(peerRegistry),
+          entryRepository: entryRepo,
+          messagePort: port,
+          localNodeRepository: InMemoryLocalNodeRepository(nodeId: localNode),
+          timePort: timePort,
+          onError: errors.add,
+          onLog: (level, message, [error, stack]) =>
+              logs.add('$level: $message'),
+        );
 
-      // Create a digest response for an unknown channel
-      final unknownChannelId = ChannelId('unknown-channel');
-      final response = DigestResponse(
-        sender: NodeId('peer'),
-        digests: [ChannelDigest(channelId: unknownChannelId, streams: [])],
-      );
+        // Create a digest response for an unknown channel
+        final unknownChannelId = ChannelId('unknown-channel');
+        final response = DigestResponse(
+          sender: NodeId('peer'),
+          digests: [ChannelDigest(channelId: unknownChannelId, streams: [])],
+        );
 
-      // Handle the response
-      await engine.handleDigestResponse(response);
+        // Handle the response
+        await engine.handleDigestResponse(response);
 
-      // Verify error was emitted
-      expect(errors.length, equals(1));
-      expect(errors.first, isA<ChannelSyncError>());
-      final error = errors.first as ChannelSyncError;
-      expect(error.channel, equals(unknownChannelId));
-      expect(error.type, equals(SyncErrorType.protocolError));
-      expect(error.message, contains('Received digest for unknown channel'));
-    });
+        expect(errors, isEmpty);
+        expect(
+          logs,
+          contains(
+            'LogLevel.debug: dropping unknown-channel named by peer: '
+            'not a channel of ours',
+          ),
+        );
+      },
+    );
 
     group('effectiveGossipInterval', () {
       test('uses static interval when explicitly provided', () {

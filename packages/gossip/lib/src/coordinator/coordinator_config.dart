@@ -138,6 +138,19 @@ class CoordinatorConfig {
   /// messages.
   final int maxMessageBytes;
 
+  /// The bytes a digest request may spend naming channels the peer has not
+  /// shown it holds, so the peer can learn they exist and answer for them.
+  ///
+  /// A request digests only the channels the peer has shown; the rest it
+  /// announces by id alone. Zero never announces. The **default 1 KB** is
+  /// about fifteen channel ids. The budget is clamped to the room
+  /// [maxMessageBytes] leaves after the digests, and is not spent when the
+  /// digests fill the message. A budget below one announcement's cost
+  /// (~66 bytes for a 36-character id) never announces, silently.
+  ///
+  /// Must not be negative.
+  final int announceBudgetBytes;
+
   /// How often the library applies each stream's retention policy, pruning
   /// entries the policy no longer keeps.
   ///
@@ -189,10 +202,14 @@ class CoordinatorConfig {
     this.pingTimeout,
     this.adaptiveTimingEnabled = true,
     this.maxMessageBytes = 30 * 1024,
+    this.announceBudgetBytes = 1024,
     this.compactionInterval = const Duration(minutes: 5),
     this.hlcMaxDrift = const Duration(hours: 1),
     this.wireVersion = WireVersion.v1,
-  });
+  }) : assert(
+         announceBudgetBytes >= 0,
+         'announceBudgetBytes must not be negative',
+       );
 
   /// Default configuration with standard values.
   static const CoordinatorConfig defaults = CoordinatorConfig();

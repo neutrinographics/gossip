@@ -104,9 +104,10 @@ doing on its own if the larger question stalls.
   (approved 2026-09-30). Kotlin went first: gossip-kt PR #20 (d902a61),
   in production as Heroku v61 via opendoor-api PR #35 (2026-10-01), live-validated
   with a two-channel phone at ~100 KB/min out against ~2.2 MB/min before. The
-  Dart half is this item's remaining half; its worklist is the register's
-  digest-scoping rows ([twin divergences](kt-normalize-twin-divergences.md))
-  and the PR's hand-off list. Follow-ups it spawned:
+  Dart half is merged as gossip PR #19 (2026-11-17; 1513 tests; register rows in
+  [twin divergences](kt-normalize-twin-divergences.md) closed, parity E5).
+  Remaining: the OpenDoorApp pin bump, the gossip-kt vendoring PR for the
+  `digestrequest-announced` vector, then the production meeting read. Follow-ups it spawned:
   [keyed-hash announcements](engine-announce-channels-by-keyed-hash.md),
   [report an oversized digest once](engine-report-oversized-once.md),
   [serve a phone only the channels its user may read](server-channel-authorization.md).

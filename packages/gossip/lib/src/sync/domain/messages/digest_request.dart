@@ -1,3 +1,4 @@
+import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
@@ -5,8 +6,9 @@ import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
 /// Anti-entropy request containing sender's sync state digests.
 ///
 /// [DigestRequest] initiates the gossip anti-entropy protocol. The sender
-/// includes digests (compact summaries) of its current sync state for each
-/// channel and stream. The recipient uses these digests to:
+/// includes digests (compact summaries) of its current sync state for the
+/// channels the peer has shown it holds, and announces the rest (see
+/// [announced]) instead of digesting them. The recipient uses these digests to:
 /// 1. Identify which entries the sender is missing
 /// 2. Respond with its own digests via `DigestResponse`
 ///
@@ -28,6 +30,19 @@ class DigestRequest extends ProtocolMessage {
   /// has already received. The recipient uses this to identify missing entries.
   final List<ChannelDigest> digests;
 
-  const DigestRequest({required NodeId sender, required this.digests})
-    : super(sender);
+  /// Channels we hold and the peer has not shown it holds: named, not
+  /// digested — *if you hold this too, show me your digest.*
+  final List<ChannelId> announced;
+
+  const DigestRequest({
+    required NodeId sender,
+    required this.digests,
+    this.announced = const [],
+  }) : super(sender);
+
+  /// Every channel this request names, digested or announced.
+  Set<ChannelId> get namedChannels => {
+    for (final d in digests) d.channelId,
+    ...announced,
+  };
 }

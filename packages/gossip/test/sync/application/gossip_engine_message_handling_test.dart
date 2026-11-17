@@ -88,7 +88,8 @@ void main() {
       );
       final request = DigestRequest(sender: peerNode, digests: [peerDigest]);
 
-      final response = await engine.handleDigestRequest(request, [channel]);
+      engine.setChannels({channelId: channel});
+      final response = await engine.handleDigestRequest(request);
 
       expect(response.sender, equals(localNode));
       expect(response.digests, hasLength(1));
@@ -150,7 +151,8 @@ void main() {
           ],
         );
 
-        final response = await engine.handleDigestRequest(request, [channel]);
+        engine.setChannels({channelId: channel});
+        final response = await engine.handleDigestRequest(request);
 
         expect(response.digests, hasLength(1));
         expect(

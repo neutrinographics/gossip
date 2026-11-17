@@ -143,7 +143,7 @@ void main() {
 
       expect(digests, isNotEmpty, reason: 'gossip rounds should have fired');
       expect(
-        digests.last.digests.map((d) => d.channelId),
+        digests.last.namedChannels,
         contains(channelId),
         reason: 'channels created while paused must be gossiped after resume',
       );

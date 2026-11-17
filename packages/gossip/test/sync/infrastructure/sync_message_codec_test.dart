@@ -1114,27 +1114,105 @@ void main() {
 
         expect(codec.encodedEntrySize(entry), equals(actualEntrySize));
       });
+    });
 
-      test('encodedStreamDigestSize equals the stream digest\'s actual '
-          'size inside an encoded DigestResponse', () {
-        final digest = StreamDigest(
-          streamId: StreamId('stream-with-a-realistic-length-id'),
-          version: VersionVector({NodeId('author1'): 42, NodeId('author2'): 7}),
-        );
+    // Translated from gossip-kt's SyncWireDialectsTest.kt (the two
+    // announcement cases) at
+    // src/test/kotlin/com/neutrinographics/gossip/sync/infrastructure/.
+    group('announcements', () {
+      final ch2 = ChannelId('ch-2');
+      DigestRequest announcingRequest(List<ChannelId> announced) =>
+          DigestRequest(
+            sender: NodeId('n'),
+            digests: [
+              ChannelDigest(
+                channelId: ChannelId('ch-1'),
+                streams: [
+                  StreamDigest(
+                    streamId: StreamId('st-1'),
+                    version: VersionVector({NodeId('a'): 3}),
+                  ),
+                ],
+              ),
+            ],
+            announced: announced,
+          );
+
+      test('an announcement is rendered as a channel digest with an empty '
+          'stream list, after the digests, on both dialects', () {
+        const expectedJson =
+            '{"sender":"n","digests":[{"channelId":"ch-1","streams":'
+            '[{"streamId":"st-1","version":{"a":3}}]},'
+            '{"channelId":"ch-2","streams":[]},'
+            '{"channelId":"ch-3","streams":[]}]}';
+        final request = announcingRequest([ch2, ChannelId('ch-3')]);
+
+        final v1 = SyncMessageCodec(
+          wireVersion: WireVersion.v1,
+        ).encode(request);
+        final v2 = SyncMessageCodec(
+          wireVersion: WireVersion.v2,
+        ).encode(request);
+
+        expect(utf8.decode(v1.sublist(1)), expectedJson, reason: 'v1');
+        expect(utf8.decode(v2.sublist(2)), expectedJson, reason: 'v2');
+      });
+
+      test('an empty stream list in a request decodes as an announcement on '
+          'both dialects, and in a response as a digest with no streams', () {
+        final request = announcingRequest([ch2]);
         final response = DigestResponse(
-          sender: NodeId('sender'),
-          digests: [
-            ChannelDigest(channelId: ChannelId('ch1'), streams: [digest]),
-          ],
+          sender: NodeId('n'),
+          digests: [ChannelDigest(channelId: ch2, streams: const [])],
         );
-        final encoded = codec.encode(response);
+        for (final encoder in WireVersion.values) {
+          for (final decoder in WireVersion.values) {
+            final enc = SyncMessageCodec(wireVersion: encoder);
+            final dec = SyncMessageCodec(wireVersion: decoder);
+            final reason = 'encoded $encoder, decoded $decoder';
 
-        final channelJson =
-            (jsonOf(encoded)['digests'] as List).single as Map<String, dynamic>;
-        final streamJson = (channelJson['streams'] as List).single;
-        final actualDigestSize = utf8.encode(jsonEncode(streamJson)).length;
+            final decodedRequest =
+                dec.decode(enc.encode(request)) as DigestRequest;
+            expect(decodedRequest.sender, request.sender, reason: reason);
+            expect(
+              decodedRequest.digests.map((d) => d.channelId),
+              request.digests.map((d) => d.channelId),
+              reason: reason,
+            );
+            expect(
+              decodedRequest.digests.single.streams.single.version,
+              request.digests.single.streams.single.version,
+              reason: reason,
+            );
+            expect(decodedRequest.announced, [ch2], reason: reason);
 
-        expect(codec.encodedStreamDigestSize(digest), equals(actualDigestSize));
+            final decodedResponse =
+                dec.decode(enc.encode(response)) as DigestResponse;
+            expect(
+              decodedResponse.digests.single.channelId,
+              ch2,
+              reason: 'a response never announces: $reason',
+            );
+            expect(decodedResponse.digests.single.streams, isEmpty);
+          }
+        }
+      });
+
+      test('an announcement placed before a digested channel still decodes '
+          'as announced (position is not the rule)', () {
+        final frame = Uint8List.fromList([
+          WireTypes.digestRequest,
+          ...utf8.encode(
+            '{"sender":"n","digests":[{"channelId":"ch-2","streams":[]},'
+            '{"channelId":"ch-1","streams":'
+            '[{"streamId":"st-1","version":{"a":3}}]}]}',
+          ),
+        ]);
+
+        final decoded = codec.decode(frame) as DigestRequest;
+
+        expect(decoded.announced, equals([ch2]));
+        expect(decoded.digests.map((d) => d.channelId.value), ['ch-1']);
       });
     });
   });
