@@ -95,7 +95,7 @@ class SyncMessageCodec implements MessageCodec {
   Map<String, dynamic> _encodeDigestRequest(DigestRequest message) {
     return {
       'sender': message.sender.value,
-      'digests': _encodeChannelDigests(message.digests),
+      'digests': _encodeRequestChannels(message.digests, message.announced),
     };
   }
 
@@ -116,6 +116,20 @@ class SyncMessageCodec implements MessageCodec {
       // responder that doesn't understand it ignores the unknown key.
       if (message.requestId != null) 'requestId': message.requestId!.value,
     };
+  }
+
+  /// A request's one wire array: its digests, then its announcements as
+  /// channel digests with an empty stream list — no new key, so a peer that
+  /// predates announcements reads them as digests with nothing to compare.
+  /// Mirrors gossip-kt's `SyncWireCommon.encodeRequestChannels`.
+  List<Map<String, dynamic>> _encodeRequestChannels(
+    List<ChannelDigest> digests,
+    List<ChannelId> announced,
+  ) {
+    return [
+      ..._encodeChannelDigests(digests),
+      for (final id in announced) {'channelId': id.value, 'streams': const []},
+    ];
   }
 
   List<Map<String, dynamic>> _encodeChannelDigests(
@@ -230,9 +244,27 @@ class SyncMessageCodec implements MessageCodec {
   }
 
   DigestRequest _decodeDigestRequest(Map<String, dynamic> json) {
+    final channels = _decodeRequestChannels(json['digests'] as List);
     return DigestRequest(
       sender: NodeId(json['sender'] as String),
-      digests: _decodeChannelDigests(json['digests'] as List),
+      digests: channels.digests,
+      announced: channels.announced,
+    );
+  }
+
+  /// Splits a request's array back: an entry with an empty stream list is an
+  /// announcement, wherever it sits. "Digests first" is what the encoder
+  /// produces, not a rule the decoder enforces. Mirrors gossip-kt's
+  /// `SyncWireCommon.decodeRequestChannels`.
+  ({List<ChannelDigest> digests, List<ChannelId> announced})
+  _decodeRequestChannels(List<dynamic> jsonList) {
+    final all = _decodeChannelDigests(jsonList);
+    return (
+      digests: all.where((cd) => cd.streams.isNotEmpty).toList(),
+      announced: [
+        for (final cd in all)
+          if (cd.streams.isEmpty) cd.channelId,
+      ],
     );
   }
 
