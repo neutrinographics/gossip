@@ -205,5 +205,21 @@ void main() {
         c1,
       ]);
     });
+
+    test('a stream named twice is judged by its first entry', () {
+      final ours = cd(c1, [
+        sd(s1, vv({a: 5})),
+      ]);
+      final request = DigestRequest(
+        sender: sender,
+        digests: [
+          cd(c1, [
+            sd(s1, vv({a: 5})),
+            sd(s1, vv({a: 1})),
+          ]),
+        ],
+      );
+      expect(DigestAnswering.answer(request, [ours]), isEmpty);
+    });
   });
 }

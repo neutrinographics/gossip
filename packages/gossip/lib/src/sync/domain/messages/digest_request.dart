@@ -6,8 +6,9 @@ import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
 /// Anti-entropy request containing sender's sync state digests.
 ///
 /// [DigestRequest] initiates the gossip anti-entropy protocol. The sender
-/// includes digests (compact summaries) of its current sync state for each
-/// channel and stream. The recipient uses these digests to:
+/// includes digests (compact summaries) of its current sync state for the
+/// channels the peer has shown it holds, and announces the rest (see
+/// [announced]) instead of digesting them. The recipient uses these digests to:
 /// 1. Identify which entries the sender is missing
 /// 2. Respond with its own digests via `DigestResponse`
 ///

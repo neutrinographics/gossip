@@ -1,4 +1,5 @@
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
@@ -30,9 +31,10 @@ abstract final class DigestAnswering {
       if (ourDigest == null) continue;
       answered.add(requested.channelId);
 
-      final requestedByStream = {
-        for (final stream in requested.streams) stream.streamId: stream,
-      };
+      final requestedByStream = <StreamId, StreamDigest>{};
+      for (final stream in requested.streams) {
+        requestedByStream.putIfAbsent(stream.streamId, () => stream);
+      }
       final kept = <StreamDigest>[];
       for (final ourStream in ourDigest.streams) {
         final theirs = requestedByStream[ourStream.streamId];
