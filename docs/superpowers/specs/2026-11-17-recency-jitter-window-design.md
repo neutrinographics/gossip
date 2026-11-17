@@ -1,6 +1,6 @@
 # Recency window under jitter — design
 
-**Status:** approved by the owner 2026-11-17 07:56Z. Approach B chosen 07:38Z; shape "the
+**Status:** approved by the owner 2026-11-17 07:56Z; plan approved 08:04Z. Approach B chosen 07:38Z; shape "the
 timing policy owns the schedule" chosen 07:52Z.
 **Raised by:** the Fable review of gossip-kt PR #22, finding 1.
 **Applies to:** `gossip` (Dart) and `gossip-kt`, together. No wire change.

@@ -17,7 +17,7 @@
 - Boundary rule: `GossipTimingPolicy` is sync domain; it may import `shared/` only. `jitterFloor` lives in `shared/domain/services`.
 - Kotlin gates must stay green: `./gradlew :test --tests '*architecture*'` (seven gates; `RetiredSurfaceTest` means no retired names revive).
 - Comments say why, never how. The "deliberate: read after quietRound" comment (Dart) and its Kotlin twin come out.
-- Branches: gossip and gossip-kt both on `claude/project-thread-d0wq5r`. gossip-kt's branch is cut from `origin/claude/project-thread-juqoud` (PR #22, recency suppression) while #22 is open; its PR targets that branch and is retargeted to `main` when #22 merges.
+- Branches: gossip and gossip-kt both on `claude/project-thread-d0wq5r`, cut from each repo's `main` (gossip-kt PR #22, recency suppression, merged 2026-11-17 before this build).
 - Commit messages carry the session's attribution trailer; PR bodies start with the project's attribution lines and end with the session footer (both in the thread's instructions, not reproduced here).
 
 ## Review Focus
@@ -163,7 +163,7 @@ Rename `a round skips a peer whose exchange is fresher than the current interval
 
 - [ ] **Step 1: Edit** `CLAUDE.md` as above.
 - [ ] **Step 2: Run** `LANG=C.UTF-8 ./gradlew build` — expected: BUILD SUCCESSFUL, suite count ≥ 1488 + the new tests.
-- [ ] **Step 3: Commit** `docs: the timing policy owns the round schedule`, push `claude/project-thread-d0wq5r`, open the PR (base: `claude/project-thread-juqoud` while #22 is open, else `main`), titled "Recency window is the jitter floor of the armed interval". Body: the defect in two lines, the shape, the test evidence (Task 4's observed figures), the Dart twin PR link once Task 10 opens it.
+- [ ] **Step 3: Commit** `docs: the timing policy owns the round schedule`, push `claude/project-thread-d0wq5r`, open the PR against `main`, titled "Recency window is the jitter floor of the armed interval". Body: the defect in two lines, the shape, the test evidence (Task 4's observed figures), the Dart twin PR link once Task 10 opens it.
 
 ## Part 2 — gossip (Dart)
 
