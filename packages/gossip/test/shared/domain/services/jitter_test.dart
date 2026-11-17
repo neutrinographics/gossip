@@ -48,4 +48,57 @@ void main() {
       expect(applyJitter(base, rng, fraction: 0), equals(base));
     });
   });
+
+  group('jitterFloor', () {
+    test('is the base scaled by one minus the default fraction', () {
+      expect(
+        jitterFloor(const Duration(seconds: 1)),
+        const Duration(milliseconds: 800),
+      );
+    });
+
+    test('respects a custom fraction', () {
+      expect(
+        jitterFloor(const Duration(seconds: 1), fraction: 0.1),
+        const Duration(milliseconds: 900),
+      );
+    });
+
+    test('a zero fraction makes the floor the base', () {
+      const base = Duration(seconds: 3);
+      expect(jitterFloor(base, fraction: 0), equals(base));
+    });
+
+    test(
+      'applyJitter never answers less than jitterFloor of the same base',
+      () {
+        final rng = Random(7);
+        const base = Duration(seconds: 1);
+        final floor = jitterFloor(base);
+
+        for (var i = 0; i < 2000; i++) {
+          expect(applyJitter(base, rng), greaterThanOrEqualTo(floor));
+        }
+      },
+    );
+
+    test('a draw of zero lands exactly on the floor', () {
+      const base = Duration(seconds: 1);
+      expect(applyJitter(base, _ZeroDraw()), jitterFloor(base));
+    });
+  });
+}
+
+/// Answers the lowest possible draw, so jitter lands on its floor.
+class _ZeroDraw implements Random {
+  final _delegate = Random(7);
+
+  @override
+  double nextDouble() => 0.0;
+
+  @override
+  int nextInt(int max) => _delegate.nextInt(max);
+
+  @override
+  bool nextBool() => _delegate.nextBool();
 }
