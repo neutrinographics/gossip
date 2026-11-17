@@ -104,8 +104,7 @@ doing on its own if the larger question stalls.
   (approved 2026-09-30). Kotlin went first: gossip-kt PR #20 (d902a61),
   in production as Heroku v61 via opendoor-api PR #35 (2026-10-01), live-validated
   with a two-channel phone at ~100 KB/min out against ~2.2 MB/min before. The
-  Dart half is done on branch `claude/project-thread-bwqg0s` (2026-11-17, gossip
-  PR pending number; 1513 tests; register rows in
+  Dart half is merged as gossip PR #TBD (2026-11-17; 1513 tests; register rows in
   [twin divergences](kt-normalize-twin-divergences.md) closed, parity E5).
   Remaining: the OpenDoorApp pin bump, the gossip-kt vendoring PR for the
   `digestrequest-announced` vector, then the production meeting read. Follow-ups it spawned:

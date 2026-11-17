@@ -739,6 +739,56 @@ void main() {
       },
     );
 
+    test('a stop resets the digest rotation, so the next request announces '
+        'from the first channel again (kt GossipEngineTest)', () async {
+      final h = hub();
+      final peer = h.addPeer('peer1');
+      h.startListening();
+      h.engine.start();
+      final firstWindow = await hubRequests(h, peer, 1);
+      final secondWindow = await hubRequests(h, peer, 1);
+      expect(
+        secondWindow.single.announced.first,
+        isNot(firstWindow.single.announced.first),
+        reason: 'the rotation must have advanced before the stop',
+      );
+
+      h.engine.stop();
+      h.engine.start();
+      final afterStop = await hubRequests(h, peer, 1);
+
+      expect(
+        afterStop.single.announced.first,
+        firstWindow.single.announced.first,
+      );
+      h.engine.stop();
+      h.stopListening();
+    });
+
+    test('a paused engine still learns holdings from a response, so its '
+        'next request digests that channel (kt GossipEngineTest)', () async {
+      final h = GossipEngineTestHarness(
+        gossipInterval: const Duration(seconds: 100),
+      );
+      final peer = h.addPeer('peer1');
+      h.createChannel('channel-1', streamIds: ['s']);
+      h.startListening();
+      expect(h.engine.isRunning, isFalse);
+
+      await h.peerHasShown(peer, [channel1]);
+      h.engine.start();
+      final next = await requestsAfter(
+        h,
+        peer,
+        () => h.engine.syncWithPeer(peer.id),
+      );
+
+      expect(next.single.digests.map((d) => d.channelId), [channel1]);
+      expect(next.single.announced, isEmpty);
+      h.engine.stop();
+      h.stopListening();
+    });
+
     test('a channel created after first contact is announced on the very '
         'next request', () async {
       final h = GossipEngineTestHarness(

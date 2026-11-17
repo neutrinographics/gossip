@@ -295,12 +295,13 @@ class GossipEngine {
 
   static const Duration _metricsWindow = Duration(seconds: 10);
 
-  /// Owns byte-budgeted digest windowing: fitting a digest request/response
-  /// to [maxMessageBytes] by selecting a round-robin rotated subset of
-  /// (channel, stream) digests when the full set doesn't fit, so no
-  /// message is oversized and every stream is covered across successive
-  /// rounds. See [DigestBudgeter] for the request/response cursor split
-  /// and the conservative cost model.
+  /// Owns byte-budgeted digest windowing: when a request or response does
+  /// not fit [maxMessageBytes], each of its three lists (request digests,
+  /// response digests, announcements) is cut to a per-peer
+  /// least-recently-sent window, so no message is oversized and every item
+  /// is covered across successive rounds. Announcements get their own
+  /// budget after the digests, and sizes are measured through the codec
+  /// seam. See [DigestBudgeter].
   late final DigestBudgeter _digestBudgeter;
 
   /// What each peer has shown it holds: every channel it has named, in a
