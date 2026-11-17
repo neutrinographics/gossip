@@ -208,7 +208,7 @@ purification batch merged):
    Android, which holds the server's whole set, still 776 KB/min because its
    own unscoped request every round is the Dart half's to remove; a join
    converged 0.4 s after the server created the channel; quiet minute 30 s /
-   3 KB; zero warnings). **Dart half merged as gossip PR #TBD**
+   3 KB; zero warnings). **Dart half merged as gossip PR #19**
    (2026-11-17; 1513 tests; register rows closed,
    parity E5, canonical `digestrequest-announced` vector, the separator check
    found the old 40-byte constant conservative by 10 bytes). **Next:** the
