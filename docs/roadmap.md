@@ -208,10 +208,15 @@ purification batch merged):
    Android, which holds the server's whole set, still 776 KB/min because its
    own unscoped request every round is the Dart half's to remove; a join
    converged 0.4 s after the server created the channel; quiet minute 30 s /
-   3 KB; zero warnings). **Next:** read the first production meeting on v61 for the
-   per-phone figure at fan-out, then the Dart half with the PR's hand-off list (canonical announcement
-   vector, the cost-model separator check, per-peer announce cursor, the
-   register rows, glossary, the disclosure and server-authorization items).
+   3 KB; zero warnings). **Dart half done on branch `claude/project-thread-bwqg0s`**
+   (2026-11-17, gossip PR pending number; 1513 tests; register rows closed,
+   parity E5, canonical `digestrequest-announced` vector, the separator check
+   found the old 40-byte constant conservative by 10 bytes). **Next:** the
+   OpenDoorApp pin bump in the normal course, the gossip-kt vendoring PR for
+   the vector, then read the first production meeting for the per-phone figure
+   at fan-out. Observation, not changed here: creating a channel is not "news"
+   on either twin, so a first join on a quiet pair waits for the backed-off
+   pacer (~14 simulated rounds in the Dart scenario) — candidate follow-up.
    Measurement history (the item's brief asked for a tunnel re-measure
    before claiming a saving — done 2026-09-29 pre-bump at ~2.2 MB per phone
    per minute and 2026-10-01 post-bump at 100 KB for a two-channel phone):

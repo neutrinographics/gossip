@@ -120,9 +120,9 @@ void main() {
 
       final (messages, sub) = h.captureMessages(peer);
 
-      // A DigestRequest by design carries ALL the sender's channels;
-      // partial overlap between peers' channel sets is routine, not a
-      // protocol error, and must not emit a ChannelSyncError per
+      // A DigestRequest names ALL the sender's channels (digested or
+      // announced); partial overlap between peers' channel sets is routine,
+      // not a protocol error, and must not emit a ChannelSyncError per
       // non-shared channel on every round.
       await peer.port.send(
         h.localNode,

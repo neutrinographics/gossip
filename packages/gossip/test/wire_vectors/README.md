@@ -77,8 +77,8 @@ added without updating the manifest (or vice versa) fails the suite.
   in the 3-key form — no `originalRequester`, per §11 decision 4).
   `deltaresponse` exercises `hasMore: true`, a non-empty `floor`, and the
   base64 payload encoding together. Round-tripped through the real codecs
-  (`WireVersion.v2`) the same way as `v1-dart`. `digestrequest-announced` pins the same
-  announcement shape under the `[0xF2]` prefix.
+  (`WireVersion.v2`) the same way as `v1-dart`. `digestrequest-announced` pins
+  the same announcement shape under the `[0xF2]` prefix.
 
 - **`edge/`** — negative and boundary-condition frames, hand-built (not
   routed through any encoder): unclaimed marker bytes across the whole
