@@ -221,12 +221,21 @@ purification batch merged):
    the 2026-09-15 meeting read 710 KB out per phone per minute, ~97 %
    digests; v48 ~300 KB; [v50](audits/2026-09-21-production-meeting-v50.md)
    ~700 KB; v52 ~1 MB; v60 ~5 MB with two phones. Both twins; Kotlin went first.
-11. **Wire-efficiency phase 2** — the second: recency suppression (skip the
-   round with a peer exchanged with moments ago — removes most of those
-   per-second digests outright). Its other three pieces — dominance-filtered
-   and request-scoped digest responses, and the digest budgeter — shipped on
-   Kotlin inside digest scoping (gossip-kt PR #20, 2026-10-01). Same
-   [item](backlog/kt-port-wire-efficiency.md) as phase 1.
+11. ☑ **Wire-efficiency phase 2** — done in both twins. Recency suppression
+   (skip the round with a peer exchanged with inside the current interval)
+   was Dart's since the 2026-08-20 pacing amendment; the Kotlin port landed
+   in gossip-kt PR #22 (2026-11-17) as a pure `GossipPartnerSelector`
+   plus Dart's recording sites (initiator before the send, responder on
+   answering a digest request, nothing on merge). Its other three pieces —
+   dominance-filtered and request-scoped digest responses, and the digest
+   budgeter — shipped on Kotlin inside digest scoping (gossip-kt PR #20,
+   2026-10-01). **Next:** rides the next opendoor-api submodule bump with
+   live-device validation. Two follow-ups for both twins from the port's
+   review: jitter self-suppression (a round drawn at 0.8× the interval after
+   its own exchange skips, so a one-peer node starts a round about every 1.5
+   intervals, estimated) and a wall-clock step-back pausing rounds (stamp on
+   the monotonic reading). Same [item](backlog/kt-port-wire-efficiency.md)
+   as phase 1.
 12. **Then** the [Dart minor-findings sweep](backlog/health-minor-findings-sweep.md)
     (two correctness latents), the
     [lifecycle batch follow-ups](backlog/kt-lifecycle-batch-follow-ups.md)
@@ -349,7 +358,7 @@ register, and working conventions live in the
 [twin parity program](parity.md); this track is its worklist.
 
 - ◐ **High** — [Teach both libraries to speak versioned wire formats](backlog/kt-wire-versioning-campaign.md) · one-byte version marker, receive-both codecs, config-gated send (default legacy), shared conformance vectors — code and the receive-both deploys shipped 2026-08-31 (server + app, compaction support live end-to-end); the ordered send-side flips and translator retirement remain, gated on fleet coverage
-- ◐ **High** — [Port the wire-efficiency behaviors to the Kotlin library](backlog/kt-port-wire-efficiency.md) · PHASE 1 MERGED 2026-09-02 (gossip-kt 0dafefd, real merge, suite 999): pacing both loops, reactive push, probe suppression + 2-min cap, scheduler migration, median-SRTT parity, isRunning scheduler-delegation — IN PRODUCTION 2026-09-02 (opendoor-api d89110a), live-device validated (~50× idle-cadence cut); phase 2 remains: recency suppression, dominance-filtered + request-scoped digest responses, DigestBudgeter
+- ☑ **High** — [Port the wire-efficiency behaviors to the Kotlin library](backlog/kt-port-wire-efficiency.md) · PHASE 2 DONE 2026-11-17: recency suppression ported in gossip-kt PR #22, the rest shipped inside digest scoping (PR #20); rides the next opendoor-api bump · PHASE 1 MERGED 2026-09-02 (gossip-kt 0dafefd, real merge, suite 999): pacing both loops, reactive push, probe suppression + 2-min cap, scheduler migration, median-SRTT parity, isRunning scheduler-delegation — IN PRODUCTION 2026-09-02 (opendoor-api d89110a), live-device validated (~50× idle-cadence cut); phase 2 remains: recency suppression, dominance-filtered + request-scoped digest responses, DigestBudgeter
 - ☑ **Low** — [Mirror the bounded-context structure in the Kotlin library](backlog/kt-mirror-bounded-contexts.md) · four evaluated divergences ported back + a Kotlin edge-table boundary test that now enforces the structure — shipped 2026-08-29 in gossip-kt 26dcc13..bd50285 (feature/compaction)
 - ◐ **Medium** — [Audit the Kotlin library for the bug classes fixed in Dart](backlog/kt-audit-legacy-bug-classes.md) · audit done (13-item inventory); the storage-contract batch shipped in gossip-kt 1ffbf0d..3836bc7, the sync-path-depth batch (KT-B) shipped 2026-08-29 closing items 3/9/11, the remaining classes flow through the campaign's later batches
 - ☑ **High** — [Retire indirect health probing from both libraries](backlog/kt-retire-indirect-probing.md) · Kotlin half shipped in gossip-kt ea0d51c (PR #8, 2026-09-15) — relay handler counts and ignores, indirect phase became a grace window racing the late answer, sender guard ported; Dart half shipped 2026-09-18 merged as 9ada5fd (PR #16) ([rulings](superpowers/specs/2026-09-18-dart-relay-retirement-rulings.md) approved; ADR-004/012 amended, SWIM renamed away, grace-window race adopted); both halves done; the app pin bump is item 8's tail.
