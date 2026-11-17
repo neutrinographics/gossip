@@ -329,6 +329,7 @@ class Coordinator {
         adaptiveTimingEnabled: cfg.adaptiveTimingEnabled,
         gossipInterval: cfg.gossipInterval,
         maxMessageBytes: cfg.maxMessageBytes,
+        announceBudgetBytes: cfg.announceBudgetBytes,
       );
 
       coordinator._failureDetector = FailureDetector(

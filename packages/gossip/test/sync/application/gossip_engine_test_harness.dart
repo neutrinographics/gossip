@@ -129,6 +129,7 @@ class GossipEngineTestHarness {
     bool withHlcClock = false,
     MessagePort? messagePort,
     int? maxMessageBytes,
+    int? announceBudgetBytes,
     Random? random,
     EntriesMergedCallback? onEntriesMerged,
     // The harness defaults to v2 (not the production default) so engine
@@ -180,6 +181,8 @@ class GossipEngineTestHarness {
       gossipInterval: gossipInterval,
       adaptiveTimingEnabled: adaptiveTimingEnabled,
       maxMessageBytes: maxMessageBytes ?? GossipEngine.defaultMaxMessageBytes,
+      announceBudgetBytes:
+          announceBudgetBytes ?? GossipEngine.defaultAnnounceBudgetBytes,
       random: random,
       stalledRanges: stalledRanges,
     );
@@ -213,6 +216,7 @@ class GossipEngineTestHarness {
     LogCallback? onLog,
     bool withHlcClock = false,
     int? maxMessageBytes,
+    int? announceBudgetBytes,
     // The harness defaults to v2 (not the production default) so engine
     // tests exercise the richer v2 path — continuation (hasMore) and
     // base64 payloads — by default; CoordinatorConfig.defaults.wireVersion
@@ -232,6 +236,8 @@ class GossipEngineTestHarness {
       onLog: onLog,
       hlcClock: withHlcClock ? HlcClock(TimeSource(timePort)) : null,
       maxMessageBytes: maxMessageBytes ?? GossipEngine.defaultMaxMessageBytes,
+      announceBudgetBytes:
+          announceBudgetBytes ?? GossipEngine.defaultAnnounceBudgetBytes,
     );
   }
 
@@ -391,6 +397,24 @@ class GossipEngineTestHarness {
       hasMore: hasMore,
       floor: floor,
       inReplyTo: inReplyTo,
+    );
+    await from.port.send(localNode, codec.encode(response));
+    await flush(3);
+  }
+
+  /// Has [from] show the engine it holds [channels]: delivers a
+  /// [DigestResponse] naming them over the wire, which is how a peer's
+  /// holdings are learned. The streams are left empty, so nothing is pulled.
+  Future<void> peerHasShown(
+    GossipTestPeer from,
+    List<ChannelId> channels,
+  ) async {
+    engine.startListening(Map.of(_channels));
+    final response = DigestResponse(
+      sender: from.id,
+      digests: [
+        for (final id in channels) ChannelDigest(channelId: id, streams: []),
+      ],
     );
     await from.port.send(localNode, codec.encode(response));
     await flush(3);

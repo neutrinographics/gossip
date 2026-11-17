@@ -84,6 +84,7 @@ void main() {
         }
         h.startListening();
         h.engine.start();
+        await h.peerHasShown(peer, [channelId]);
         final (reqs, sizes, sub) = captureDigestRequests(h, peer);
 
         await h.engine.performGossipRound();
@@ -116,6 +117,7 @@ void main() {
         }
         h.startListening();
         h.engine.start();
+        await h.peerHasShown(peer, [channelId]);
         final (reqs, sizes, sub) = captureDigestRequests(h, peer);
 
         await h.engine.performGossipRound();
@@ -156,6 +158,7 @@ void main() {
       }
       h.startListening();
       h.engine.start();
+      await h.peerHasShown(peer, [channelId]);
       final (reqs, sizes, sub) = captureDigestRequests(h, peer);
 
       final covered = <String>{};
@@ -209,6 +212,7 @@ void main() {
         await seed(h, 'small', 1); // fits
         h.startListening();
         h.engine.start();
+        await h.peerHasShown(peer, [channelId]);
         final (reqs, sizes, sub) = captureDigestRequests(h, peer);
 
         // Cover a couple of rounds so rotation reaches both streams.

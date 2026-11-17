@@ -47,8 +47,13 @@ void main() {
       // Hold node2 → node1 so node2's DeltaRequest is captured in flight
       // instead of being answered mid-advance. This lets us arm a drop for
       // exactly the DeltaResponse before releasing the request.
-      network.delayLink('node2', 'node1');
       await network.startAll();
+
+      // Cold peers only announce each other's channels, so one round of
+      // node1 first teaches both sides what the other holds; only then does
+      // its request digest the channel and draw node2's reciprocal pull.
+      await network['node1'].timePort.advance(const Duration(seconds: 1));
+      network.delayLink('node2', 'node1');
 
       // Advance node1 only: its gossip round sends a DigestRequest to
       // node2, which replies with a DigestResponse and — reciprocating the

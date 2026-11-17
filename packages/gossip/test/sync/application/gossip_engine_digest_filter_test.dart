@@ -23,7 +23,7 @@ void main() {
       final h = GossipEngineTestHarness();
       final channelId = ChannelId('ch');
       final streamId = StreamId('s');
-      final channel = await h.createChannelWithStream(channelId, streamId);
+      await h.createChannelWithStream(channelId, streamId);
       // Local store: entry seq 1 by us -> our VV = {local: 1}.
       await h.appendLocalEntry(channelId, streamId, sequence: 1);
 
@@ -43,7 +43,7 @@ void main() {
         ],
       );
 
-      final response = await h.engine.handleDigestRequest(request, [channel]);
+      final response = await h.engine.handleDigestRequest(request);
 
       expect(
         response.digests,
@@ -58,7 +58,7 @@ void main() {
       final h = GossipEngineTestHarness();
       final channelId = ChannelId('ch');
       final streamId = StreamId('s');
-      final channel = await h.createChannelWithStream(channelId, streamId);
+      await h.createChannelWithStream(channelId, streamId);
       await h.appendLocalEntry(channelId, streamId, sequence: 1);
       await h.appendLocalEntry(channelId, streamId, sequence: 2);
 
@@ -78,7 +78,7 @@ void main() {
         ],
       );
 
-      final response = await h.engine.handleDigestRequest(request, [channel]);
+      final response = await h.engine.handleDigestRequest(request);
 
       expect(response.digests, hasLength(1));
       expect(response.digests.single.streams.single.version[h.localNode], 2);
@@ -143,7 +143,7 @@ void main() {
 
       // Requester only knows about seq 1 — below the floor (3).
       final request = requestFrom('peer1', VersionVector({author: 1}));
-      final response = await h.engine.handleDigestRequest(request, [channel]);
+      final response = await h.engine.handleDigestRequest(request);
 
       expect(
         response.digests,
@@ -169,7 +169,7 @@ void main() {
 
       // Requester already claims seq 5 — dominates our vector exactly.
       final request = requestFrom('peer1', VersionVector({author: 5}));
-      final response = await h.engine.handleDigestRequest(request, [channel]);
+      final response = await h.engine.handleDigestRequest(request);
 
       expect(
         response.digests,
