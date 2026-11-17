@@ -9,6 +9,7 @@ import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'dart:typed_data';
 
 import 'gossip_engine_test_harness.dart';
+import '../../support/floor_jitter_random.dart';
 import '../../support/unjittered_random.dart';
 
 /// Two-tier pacing (spec 2026-08-20): quiet rounds stretch the adaptive
@@ -400,7 +401,7 @@ void main() {
     });
 
     test('a round skips a peer whose exchange is fresher than the '
-        'current interval', () async {
+        'recency window', () async {
       final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
       final peer = h.addPeer('peer1');
       h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 500));
@@ -421,6 +422,127 @@ void main() {
       await sub.cancel();
       h.engine.stop();
     });
+
+    // Kotlin twin: gossip-kt `GossipEngineTest`, "a node's own round at the
+    // jitter floor is never suppressed on a static interval".
+    test("a node's own round at the jitter floor is never suppressed on a "
+        'static interval', () async {
+      final h = GossipEngineTestHarness(
+        gossipInterval: const Duration(seconds: 1),
+        random: FloorJitterRandom(),
+      );
+      final peer = h.addPeer('peer1');
+      final (messages, sub) = h.captureMessages(peer);
+      h.engine.start();
+
+      await h.timePort.advance(const Duration(milliseconds: 800));
+      await pumpEventQueue();
+      expect(
+        messages.whereType<DigestRequest>(),
+        hasLength(1),
+        reason: 'round 1 must send',
+      );
+
+      await h.timePort.advance(const Duration(milliseconds: 800));
+      await pumpEventQueue();
+      expect(
+        messages.whereType<DigestRequest>(),
+        hasLength(2),
+        reason:
+            "round 2, one floor-jittered wait after round 1, must not read "
+            "round 1's exchange as fresh",
+      );
+
+      await sub.cancel();
+      h.engine.stop();
+    });
+
+    // Kotlin twin: gossip-kt `GossipEngineTest`, "a node's own round at the
+    // jitter floor is never suppressed across a quiet-round growth". One
+    // peer: with two, round 2 would go to the never-exchanged one and the
+    // test could not tell a suppressed round from a sent one.
+    test("a node's own round at the jitter floor is never suppressed across "
+        'a quiet-round growth', () async {
+      final h = GossipEngineTestHarness(
+        adaptiveTimingEnabled: true,
+        random: FloorJitterRandom(),
+      );
+      final peer = h.addPeer('peer1');
+      h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 500));
+      final (messages, sub) = h.captureMessages(peer);
+      h.engine.start();
+
+      await h.timePort.advance(const Duration(milliseconds: 800));
+      await pumpEventQueue();
+      expect(
+        messages.whereType<DigestRequest>(),
+        hasLength(1),
+        reason: "round 1 (start's news) must send",
+      );
+
+      // Round 2 is quiet and grows the interval to 1.5 s, but it slept the
+      // 1 s interval's floor, and that is the window it is judged by.
+      await h.timePort.advance(const Duration(milliseconds: 800));
+      await pumpEventQueue();
+      expect(
+        messages.whereType<DigestRequest>(),
+        hasLength(2),
+        reason: "round 2 must not suppress round 1's exchange",
+      );
+
+      await h.timePort.advance(const Duration(milliseconds: 1200));
+      await pumpEventQueue();
+      expect(
+        messages.whereType<DigestRequest>(),
+        hasLength(3),
+        reason: "round 3 must not suppress round 2's exchange",
+      );
+      expect(
+        h.engine.effectiveGossipInterval,
+        const Duration(milliseconds: 2250),
+        reason: 'two quiet rounds of growth',
+      );
+
+      await sub.cancel();
+      h.engine.stop();
+    });
+
+    // Kotlin twin: gossip-kt `GossipEngineTest`, "a peer's initiative inside
+    // the window still suppresses the round".
+    test(
+      "a peer's initiative inside the window still suppresses the round",
+      () async {
+        final h = GossipEngineTestHarness(
+          gossipInterval: const Duration(seconds: 1),
+        );
+        final peer = h.addPeer('peer1');
+        // Seeded timestamps must stay positive: a negative one would collide
+        // with the never-exchanged sentinel.
+        h.timePort.advanceTimeOnly(const Duration(seconds: 10));
+        final nowMs = h.timePort.nowMs;
+        final (messages, sub) = h.captureMessages(peer);
+
+        h.peerRegistry.updatePeerAntiEntropy(peer.id, nowMs - 799);
+        await h.engine.performGossipRound();
+        await h.flush(3);
+        expect(
+          messages,
+          isEmpty,
+          reason: 'an exchange 799 ms ago is inside the 800 ms window',
+        );
+
+        h.peerRegistry.updatePeerAntiEntropy(peer.id, nowMs - 800);
+        await h.engine.performGossipRound();
+        await h.flush(3);
+        expect(
+          messages.whereType<DigestRequest>(),
+          hasLength(1),
+          reason: 'an exchange exactly one window ago is stale',
+        );
+
+        await sub.cancel();
+      },
+    );
 
     test('a stale peer is still gossiped with', () async {
       final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
