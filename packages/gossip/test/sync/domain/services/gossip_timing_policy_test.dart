@@ -6,6 +6,8 @@ import 'package:gossip/src/sync/domain/services/gossip_timing_policy.dart';
 import 'package:gossip/src/sync/domain/value_objects/sync_partner.dart';
 import 'package:test/test.dart';
 
+import '../../../support/unjittered_random.dart';
+
 /// Transplanted from gossip_engine_interval_pacing_test.dart and
 /// gossip_engine_pacing_test.dart: these pin the same formulas/semantics
 /// `GossipEngine` relies on, now against [GossipTimingPolicy] directly.
@@ -205,7 +207,8 @@ void main() {
         wait,
         allOf(greaterThanOrEqualTo(_ms(800)), lessThanOrEqualTo(_ms(1200))),
       );
-      // The unjittered draw pins the armed interval: the window is its floor.
+      // However Random(7) jitters the wait, the armed interval stays 1 s: the
+      // window is its floor.
       expect(policy.recencyWindow, equals(_ms(800)));
     });
 
@@ -249,10 +252,10 @@ void main() {
       policy.quietRound();
 
       // A draw of 0.5 is the middle of the band, so the wait is the interval.
-      expect(policy.armRound(_MidBand()), equals(_ms(3375)));
+      expect(policy.armRound(UnjitteredRandom()), equals(_ms(3375)));
 
       policy.news();
-      expect(policy.armRound(_MidBand()), equals(_ms(1000)));
+      expect(policy.armRound(UnjitteredRandom()), equals(_ms(1000)));
       expect(policy.recencyWindow, equals(_ms(800)));
     });
   });
@@ -265,19 +268,6 @@ GossipTimingPolicy _adaptivePolicy() => GossipTimingPolicy(
   peerDirectory: _FakePeerDirectory([_partner('p', _ms(500))]),
   adaptiveEnabled: true,
 );
-
-/// Draws the exact middle of the jitter band, where the wait equals the
-/// interval it was drawn from.
-class _MidBand implements Random {
-  @override
-  double nextDouble() => 0.5;
-
-  @override
-  bool nextBool() => throw UnimplementedError();
-
-  @override
-  int nextInt(int max) => throw UnimplementedError();
-}
 
 SyncPartner _partner(String id, Duration? smoothedRtt) {
   return SyncPartner(nodeId: NodeId(id), smoothedRtt: smoothedRtt);

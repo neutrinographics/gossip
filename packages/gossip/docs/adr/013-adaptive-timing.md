@@ -209,10 +209,13 @@ original wording above):
 
 ### Amendment (2026-11-17): the recency window under jitter
 
-The recency window is the jitter floor (0.8x) of the interval the pending
-wait was drawn from, held by the timing policy (`armRound` /
-`recencyWindow`), not a fixed 1.0x of the interval read after the quiet-round
-growth. A round therefore never suppresses its own previous exchange, and the
-30 s + jitter repair bound above holds. Before this, a lone initiator's gap
-averaged 1.5 intervals and reached 2.2; at the 30 s ceiling the idle growth
-made every other round skip, so the true repair bound was about 66 s.
+The recency window is the jitter floor (0.8x) of the interval the round was
+last armed from, held by the timing policy (`armRound` / `recencyWindow`), not
+a fixed 1.0x of the interval read after the quiet-round growth. A round
+therefore never suppresses its own previous exchange, and the 30 s + jitter
+repair bound above holds. Before this, a lone initiator's gap averaged 1.5
+intervals and reached 2.2. At the 30 s ceiling the pacer no longer grows; the
+skips came from jitter alone (a wait drawn shorter than one interval fell
+inside the window, and consecutive skips stacked), so the true repair bound
+was about 66 s (2.2 x 30 s). While the interval was still growing toward the
+ceiling, the growth itself made every other round skip.

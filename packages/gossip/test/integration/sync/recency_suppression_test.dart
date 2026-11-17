@@ -17,22 +17,24 @@ import '../../support/test_network.dart';
 /// (`src/test/kotlin/com/neutrinographics/gossip/integration/RecencySuppressionTest.kt`);
 /// the number this pins is the pair's, not a node's.
 ///
-/// The band: 300 steps of 100 ms are 30 s. A 600 ms step quantised every
+/// The band: 600 steps of 100 ms are 60 s. A 600 ms step quantised every
 /// wait to 1.2 s and hid the jitter, so a window of the whole interval
 /// passed. At 100 ms steps the waits land anywhere in 0.8-1.2 s, and a
 /// whole-interval window suppresses a round that came early in the jitter
 /// although the last exchange is a full wait old, so the pair skips rounds.
-/// A 200-seed simulation of the harness's arithmetic gives 23-27 requests
-/// per pair with the full-interval window and 28-30 with the jitter-floor
-/// window (mean 28.7): the floor of 28 separates the two, and the ceiling
-/// of 32 is headroom for settle ordering, still well under the two per
-/// interval an unsuppressed pair would pay. The band is tight by design:
-/// its floor of 28 sits one above the model's old maximum of 27 and at the
-/// new model minimum, because the floor is what discriminates the old
-/// behaviour. Observed here 27 with the full-interval window (at the
-/// model's old maximum, so the floor has no slack below it) and 30 with
-/// the floor window, deterministic under the harness seed (gossip-kt
-/// observed 25 and 29 under its own harness).
+/// A 200-seed simulation of the harness's arithmetic gave, per 30 s, 23-27
+/// requests per pair with the full-interval window and 28-30 with the
+/// jitter-floor window; at 30 s the floor separating them had no slack, so
+/// the horizon is 60 s. Measured over 60 s: here 52 with the full-interval
+/// window and 58 with the floor window, deterministic under the harness
+/// seed (one isolate, settled by `pumpEventQueue`); gossip-kt measured 52
+/// and 58-59. The band of 54-62 is shared by both twins: its floor sits 2
+/// above the old figure, because the floor is what discriminates the old
+/// behaviour, and its ceiling clears the highest new figure on either twin
+/// by at least 3, still well under the two per interval an unsuppressed
+/// pair would pay; gossip-kt's settle is a real-time delay, so its count
+/// can vary run to run and the shared margin is sized for that.
+///
 /// Whole-interval steps are avoided on purpose: the nodes' clocks are
 /// advanced one after another, so the second node reads a time one step
 /// behind the first's and the exchange would sit exactly on the window
@@ -101,15 +103,15 @@ void main() {
     expect(await network['node2'].entryCount(channelId, streamId), 1);
 
     final requests = tapBoth(network, 'node1', 'node2');
-    await runInterleavedRounds(network, 300);
+    await runInterleavedRounds(network, 600);
 
     final observed = requests[0];
     expect(
       observed,
-      inInclusiveRange(28, 32),
+      inInclusiveRange(54, 62),
       reason:
           'a converged pair must send about one DigestRequest per '
-          'interval (30 s at a 1 s interval), got $observed',
+          'interval (60 s at a 1 s interval), got $observed',
     );
   });
 }

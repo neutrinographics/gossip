@@ -3,6 +3,8 @@ import 'dart:math';
 import 'package:gossip/src/shared/domain/services/jitter.dart';
 import 'package:test/test.dart';
 
+import '../../../support/floor_jitter_random.dart';
+
 /// Scheduler intervals get ±fraction uniform jitter so self-scheduling
 /// timer loops don't phase-lock across nodes.
 void main() {
@@ -69,6 +71,12 @@ void main() {
       expect(jitterFloor(base, fraction: 0), equals(base));
     });
 
+    test('a negative fraction makes the floor the base, as applyJitter '
+        'does', () {
+      const base = Duration(seconds: 3);
+      expect(jitterFloor(base, fraction: -0.1), equals(base));
+    });
+
     test(
       'applyJitter never answers less than jitterFloor of the same base',
       () {
@@ -84,21 +92,7 @@ void main() {
 
     test('a draw of zero lands exactly on the floor', () {
       const base = Duration(seconds: 1);
-      expect(applyJitter(base, _ZeroDraw()), jitterFloor(base));
+      expect(applyJitter(base, FloorJitterRandom()), jitterFloor(base));
     });
   });
-}
-
-/// Answers the lowest possible draw, so jitter lands on its floor.
-class _ZeroDraw implements Random {
-  final _delegate = Random(7);
-
-  @override
-  double nextDouble() => 0.0;
-
-  @override
-  int nextInt(int max) => _delegate.nextInt(max);
-
-  @override
-  bool nextBool() => _delegate.nextBool();
 }

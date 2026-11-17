@@ -26,8 +26,9 @@ Duration applyJitter(
 
 /// The earliest a wait jittered on [base] can end — what a window compared
 /// against such a wait must not exceed. Rounded as [applyJitter] rounds, so a
-/// zero draw lands exactly here.
-Duration jitterFloor(
-  Duration base, {
-  double fraction = defaultJitterFraction,
-}) => Duration(microseconds: (base.inMicroseconds * (1 - fraction)).round());
+/// zero draw lands exactly here, and a [fraction] of zero or less is [base],
+/// as it is for [applyJitter].
+Duration jitterFloor(Duration base, {double fraction = defaultJitterFraction}) {
+  if (fraction <= 0) return base;
+  return Duration(microseconds: (base.inMicroseconds * (1 - fraction)).round());
+}
