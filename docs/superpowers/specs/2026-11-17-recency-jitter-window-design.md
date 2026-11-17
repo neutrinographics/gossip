@@ -1,6 +1,7 @@
 # Recency window under jitter — design
 
-**Status:** approach B chosen by the owner 2026-11-17 07:38Z; design awaiting approval.
+**Status:** approach B chosen by the owner 2026-11-17 07:38Z; shape "the
+timing policy owns the schedule" chosen 07:52Z; design awaiting approval.
 **Raised by:** the Fable review of gossip-kt PR #22, finding 1.
 **Applies to:** `gossip` (Dart) and `gossip-kt`, together. No wire change.
 
@@ -27,13 +28,18 @@ full interval ago. Two consequences:
    a wait drawn from the old interval, so during idle growth every other
    round skips, and each skip is itself a quiet round.
 
+Both have one root: the wait and the window are derived from the interval
+at two different moments, by the application layer, with nothing holding
+them together.
+
 ## Goals
 
 - A round never suppresses the exchange its own previous round made.
 - Suppression still spares a round to a peer that initiated since.
-- The jitter fraction is named once, where `applyJitter` lives, and the
-  window is derived from it, so a change to one cannot strand the other.
-- The order of the interval read against the pacer's growth is pinned.
+- The wait and the window that belongs to it are one decision, made in one
+  place in the domain, so "window never exceeds wait" is a property of a
+  value rather than an ordering of reads in the engine.
+- The jitter fraction is named once, where `applyJitter` lives.
 - Equivalent tests on both twins that drive rounds at the short end of the
   jitter, which today's suites cannot see (their steps land past the window).
 
@@ -54,87 +60,124 @@ read where it is read today (after the quiet-round growth). Removes the
 steady-state self-suppression. During idle growth every other round still
 skips, because 0.8 x 1.5 = 1.2 x old still covers the wait.
 
-**B. Jitter floor of the interval this round was scheduled from.** Window =
-0.8 x the interval read *before* this round's quiet-round growth, which is
-the interval the armed wait was jittered from. A wait is never shorter than
-0.8 x that interval, so the node's own previous exchange is never inside the
-window, in any phase. Dart's "deliberate: read after quietRound" comment is
-rewritten and the order is pinned. Recommended.
+**B. Jitter floor of the interval this round was scheduled from.** A wait
+is never shorter than 0.8 x the interval it was drawn from, so a window of
+exactly that never covers the node's own previous exchange, in any phase.
 
-**C. Window = the exact wait this round was armed with.** Precise, but the
-engine would have to carry the drawn delay from `nextDelay` to `tick`,
-coupling the round to the scheduler for no gain over B.
+**C. Window = the exact wait this round was armed with.** Precise, but no
+gain over B, and it couples the round to the scheduler's draw.
 
-**Owner's pick:** B, 2026-11-17, because A leaves the idle-growth skip in place and B closes both causes with the same change.
+**Owner's pick:** B, 2026-11-17, because A leaves the idle-growth skip in
+place and B closes both causes.
 
-## Design (B)
+Within B, two shapes were weighed:
+
+- **B1. The engine derives the window.** Read the interval before the
+  quiet-round growth, pass its floor as the window. Minimal, but the
+  invariant lives in the application layer, held by read order, a comment
+  and a pin. Rejected as the less cohesive shape.
+- **B2. The timing policy owns the schedule** (chosen). Arming a round is
+  one policy decision that answers the wait and remembers the interval it
+  was drawn from; the window is that interval's floor, read back from the
+  same value. The read-order subtlety disappears because the window
+  travels with the wait it belongs to.
+
+## Design (B2)
 
 ### Shared kernel, both twins
 
-Beside `applyJitter`, in `shared/domain/services/jitter.dart` /
-`Jitter.kt`:
+Beside `applyJitter` (`shared/domain/services/jitter.dart`, `Jitter.kt`):
 
-- the fraction becomes a named constant (`defaultJitterFraction = 0.2` /
-  `DEFAULT_JITTER_FRACTION`), which `applyJitter` defaults to;
-- `jitterFloor(base, {fraction})` returns `base * (1 - fraction)`: the
+- the default fraction becomes a named constant (`defaultJitterFraction`,
+  `DEFAULT_JITTER_FRACTION` = 0.2) that `applyJitter` defaults to;
+- `jitterFloor(base, fraction = default)` = `base * (1 - fraction)`: the
   earliest a jittered wait on `base` can end.
 
-Tests: `applyJitter` never returns less than `jitterFloor` of the same base
-and fraction (property over seeds); `jitterFloor` of a zero fraction is the
-base.
+Tests: over seeds, `applyJitter` never answers less than `jitterFloor` of
+the same base; a zero fraction makes `jitterFloor` the base.
+
+### The timing policy, both twins (`sync/domain/services`)
+
+The policy gains the schedule:
+
+- **Arm.** `armRound(random)` reads the effective interval as it stands,
+  remembers it as the *armed interval*, and answers `applyJitter` of it.
+  This is what `nextDelay` calls; nothing else jitters the gossip cadence.
+- **Window.** `recencyWindow` = `jitterFloor(armedInterval)`. Before any
+  wait has been armed (a round run directly, as tests and `syncWithPeer`
+  do), it is the floor of the current effective interval.
+- `effectiveInterval`, `news`, `quietRound` / `beginRound` and the RTT
+  refresh are unchanged. A quiet-round growth changes what the *next* arm
+  draws from; it does not move the armed interval.
+
+Kotlin: `GossipTiming` gains `armedInterval: Duration?`; `armRound` is a
+`Transition<GossipTiming, Duration>` (the draw is an input, as in
+`GossipPartnerSelector`); `recencyWindow(timing)` is a pure read. The
+update runs inside the cell's monitor with no port read, within the lock
+rule. Dart: the policy class gains a private `_armedInterval`, a
+`Duration armRound(Random)` and a `Duration get recencyWindow`.
 
 ### The round, both twins
 
-In `performGossipRound`, the interval the window derives from is read
-**before** `quietRound()` / `beginRound`, not after:
+- `nextDelay` becomes `timing.armRound(random)`.
+- `performGossipRound` reads `recencyWindow` (before or after the
+  quiet-round step no longer matters; it is read where the interval is read
+  today) and filters by it. Kotlin passes it to
+  `GossipPartnerSelector.select` as the window, with the parameter renamed
+  from `interval` to `window` and the KDoc saying so. Dart's
+  `_staleUncongestedCandidates` takes the window.
+- The "deliberate: read after quietRound" comment (Dart) and its Kotlin
+  twin come out; the policy's doc explains the schedule instead.
 
-```
-final scheduledFrom = effectiveGossipInterval;   // what nextDelay drew from
-quietRound-or-consume-news
-...
-final window = jitterFloor(scheduledFrom).inMilliseconds;
-candidates = stale-by-window ∧ uncongested
-```
+### The wake, a known and accepted edge
 
-Kotlin: `GossipPartnerSelector.select` keeps its signature; the engine
-passes `jitterFloor(scheduledFrom)` as the interval argument. Its KDoc says
-the argument is the window, not the cadence. Dart: `_staleUncongestedCandidates`
-takes the window. Both comments explain why the read precedes growth: a
-grown interval governs the *next* wait, and the window must match the wait
-that just ended.
-
-`nextDelay` is unchanged: it still reads the grown interval after the round.
+`wake()` re-arms through `nextDelay` and keeps the earlier of the fresh
+wait and the pending one. When the pending wait stands, the armed interval
+is now the fresh (smaller, post-news) one while the wait was drawn from a
+larger one. The window is then smaller than it could be, never larger, so
+the invariant holds; the cost is at most one redundant round after news.
+Documented on `armRound`; not pinned.
 
 ### Tests, equivalent on both twins
 
-Engine level, adaptive timing on, a `Random` seam that returns the floor
-draw (Dart: a `Random` whose `nextDouble` is 0; Kotlin: a `Random` subclass
-whose `nextBits` is 0):
+Policy, pure (`gossip_timing_policy_test`, `GossipTimingPolicyTest`):
 
-1. **Own round is never suppressed at the jitter floor.** One peer, exchange
-   recorded by a round at t0; advance exactly `jitterFloor(interval)`; the
-   next round sends. Today it skips.
-2. **Own round is never suppressed across a quiet-round growth.** Two quiet
-   rounds back to back at the floor of each interval: both send. Today the
-   second skips. This test also pins the read order (finding 7).
-3. **A peer's initiative inside the floor still suppresses.** Record an
-   exchange `jitterFloor(interval) - 1 ms` ago; the round sends nothing.
-4. Existing pins keep passing: `>=` on the edge, null never fresh, future
-   timestamp stale (Kotlin), stalest-first pick.
+1. `armRound` answers a wait inside the jitter band of the effective
+   interval and remembers that interval.
+2. `recencyWindow` never exceeds any wait `armRound` can answer (seeded
+   property over many draws).
+3. A quiet round after arming grows the effective interval but leaves
+   `recencyWindow` at the armed interval's floor until the next arm.
+4. Before any arm, `recencyWindow` is the floor of the current effective
+   interval; a static interval gives a static window.
 
-Integration, both twins: the converged-pair scenario is re-run with the
-real jitter (not a fixed 600 ms step) over 30 intervals and asserts one
-exchange per interval per pair within the band the KDoc derives; the Kotlin
-`RecencySuppressionTest` and Dart's pacing-suite scenario get the same
-band and the same derivation.
+Engine, adaptive timing on, with a floor-draw `Random` (Dart: `nextDouble`
+answers 0; Kotlin: `nextBits` answers 0) so every wait is the floor:
+
+5. **Own round is never suppressed at the floor.** One peer; a round
+   records the exchange; advance exactly the armed wait; the next round
+   sends. Today it skips.
+6. **Own round is never suppressed across a quiet-round growth.** Two quiet
+   rounds back to back, each at its floor wait: both send. Today the second
+   skips.
+7. **A peer's initiative inside the window still suppresses.** An exchange
+   recorded one millisecond inside the window; the round sends nothing.
+8. Existing pins keep passing: `>=` on the edge, null never fresh, a future
+   timestamp stale (Kotlin), stalest-first pick, the pacing suite.
+
+Integration, both twins: the converged-pair scenario runs under the real
+jitter rather than a fixed step and asserts one exchange per interval per
+pair within a band its doc derives (Kotlin `RecencySuppressionTest`; Dart's
+pacing scenario gets the same band and derivation).
 
 ### Documentation
 
 - ADR-013 amendment: the suppression window is the jitter floor of the
-  interval the round was scheduled from, so the repair bound stays
-  30 s + jitter.
-- gossip `docs/parity.md` / register: one row, closed in the same PRs.
-- gossip-kt `CLAUDE.md` pacing paragraph: one sentence on the window.
+  interval the pending wait was drawn from, held by the timing policy, so
+  the 30 s + jitter repair bound holds.
+- gossip-kt `CLAUDE.md`: the pacing paragraph gains one sentence on
+  `armRound` / `recencyWindow`; the services list is unchanged.
+- gossip register: one flow-back row, closed in the same PRs.
 
 ## Order of landing
 
@@ -143,6 +186,7 @@ its merge); Dart in the same session; opendoor-api bump only after both.
 
 ## Left to the builder
 
-- Exact test names; whether the Dart floor-draw `Random` lives in the
-  existing harness or a test support file.
-- Whether `jitterFloor` takes `Duration` or the engine converts to ms.
+- Exact test names; where the floor-draw `Random` lives on each twin.
+- Whether `armedInterval` is nullable with the fallback above or
+  initialised from the construction-time interval. Nullable is the honest
+  state ("no wait armed yet") and is the default unless it reads badly.
