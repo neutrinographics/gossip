@@ -67,6 +67,17 @@ gossip-kt PR #22): the gossip round's partner pick as a pure
 draw as inputs, where Dart keeps it in two private engine methods over an
 owned `Random`. It is a register row.
 
+The Fable review of that PR found one defect both twins share, fixed on the
+Kotlin side in the same PR: a recorded exchange time ahead of the clock's
+reading counted as fresh, with no bound, so a wall clock set back paused
+gossip with every recorded peer until the clock caught up (healed only when
+that peer initiated). Kotlin now reads a future timestamp as stale. The Dart
+twin's freshness check in `GossipEngine` needs the same one-line change and
+its pin flipped. The same review found the suppression window is the
+un-jittered interval while rounds fire at 0.8 to 1.2 times it, so a node
+suppresses its own next round about half the time; that is a separate design
+question for both twins, not part of this item.
+
 One more came out of batch F (2026-09-26): the boundary test naming the one
 file allowed to reach across a context from its infrastructure layer, and
 failing that file as stale if it stops reaching across, instead of exempting
