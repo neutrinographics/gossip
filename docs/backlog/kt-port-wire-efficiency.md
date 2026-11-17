@@ -58,6 +58,17 @@ responses, and the byte-budgeted digest rotation — shipped on Kotlin inside
 PR #20, 2026-10-01), whose rotation is by least-recently-sent item per peer
 rather than Dart's positional cursors (a flow-back, on the register).
 
+**Recency suppression ported (2026-11-17, gossip-kt PR #22).** The round now
+picks through a pure `GossipPartnerSelector` (sync domain service; time and
+the draw are inputs): peers exchanged with inside the current interval are
+skipped, the stalest wins with a random tiebreak, and a round with only fresh
+peers sends nothing. The exchange is recorded where Dart records it — by the
+initiator before the send and by the responder when it answers a digest
+request, ungated — and no longer when a delta merges. A two-node harness
+scenario reads 25 digest requests per 30 s on a 1 s interval, against 50
+with the old random pick. Phase 2 is complete; the item closes when the
+server bump ships it.
+
 ## Related
 
 - Dart implementation trail: recommendations R3/R4 of

@@ -61,6 +61,12 @@ peer itself, applied by the registry; and the periodic scheduler as a
 domain port with an infrastructure adapter. The pending-pulls split is the
 one the tracker-reshape item already owns; the other six are register rows.
 
+One more came out of the Kotlin recency-suppression port (2026-11-17,
+gossip-kt PR #22): the gossip round's partner pick as a pure
+`GossipPartnerSelector` over partner values, with the clock reading and the
+draw as inputs, where Dart keeps it in two private engine methods over an
+owned `Random`. It is a register row.
+
 One more came out of batch F (2026-09-26): the boundary test naming the one
 file allowed to reach across a context from its infrastructure layer, and
 failing that file as stale if it stops reaching across, instead of exempting
