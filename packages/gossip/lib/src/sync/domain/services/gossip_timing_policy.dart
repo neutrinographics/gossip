@@ -1,4 +1,7 @@
+import 'dart:math';
+
 import 'package:gossip/src/shared/domain/services/duration_clamp.dart';
+import 'package:gossip/src/shared/domain/services/jitter.dart';
 import 'package:gossip/src/shared/domain/services/quiescence_pacer.dart';
 import 'package:gossip/src/sync/domain/interfaces/peer_directory.dart';
 
@@ -65,6 +68,9 @@ class GossipTimingPolicy {
   /// a static interval bypasses the pacer entirely.
   final QuiescencePacer _pacer = QuiescencePacer(ceiling: _idleCeiling);
 
+  /// The interval the last [armRound] drew its wait from; null before any arm.
+  Duration? _armedInterval;
+
   /// The effective gossip interval.
   ///
   /// If a static interval was supplied at construction (or none was and
@@ -117,6 +123,31 @@ class GossipTimingPolicy {
       max: _maxGossipInterval,
     );
   }
+
+  /// Arms the next round: the wait to sleep and the interval it was drawn
+  /// from come out of one reading, so [recencyWindow] is derived from the
+  /// very wait a round will have slept, never from a later reading of a
+  /// moving interval.
+  ///
+  /// Wake edge: the adaptive base is read live from peer RTTs in
+  /// [effectiveInterval], so a wake that re-arms while the scheduler keeps
+  /// the standing wait can leave the window larger than that wait, but only
+  /// if the RTT-derived base rose since the wait was armed; that costs at
+  /// most one redundant round. Otherwise a re-arm the scheduler discards only
+  /// shrinks the window.
+  Duration armRound(Random random) {
+    final interval = effectiveInterval;
+    _armedInterval = interval;
+    return applyJitter(interval, random);
+  }
+
+  /// How recent an exchange must be for a round to skip it: the floor of the
+  /// armed interval's jitter band. A wait is never shorter, so a round never
+  /// suppresses the exchange of the round before it. Falls back to the
+  /// current interval's floor for a round nobody armed (the first one, or one
+  /// driven directly).
+  Duration get recencyWindow =>
+      jitterFloor(_armedInterval ?? effectiveInterval);
 
   /// Reports that something happened this round (local write, merge, delta
   /// traffic, a membership change): snaps [effectiveInterval] back to its
