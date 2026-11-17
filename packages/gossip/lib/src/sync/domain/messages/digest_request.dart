@@ -1,3 +1,4 @@
+import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
@@ -28,6 +29,19 @@ class DigestRequest extends ProtocolMessage {
   /// has already received. The recipient uses this to identify missing entries.
   final List<ChannelDigest> digests;
 
-  const DigestRequest({required NodeId sender, required this.digests})
-    : super(sender);
+  /// Channels we hold and the peer has not shown it holds: named, not
+  /// digested — *if you hold this too, show me your digest.*
+  final List<ChannelId> announced;
+
+  const DigestRequest({
+    required NodeId sender,
+    required this.digests,
+    this.announced = const [],
+  }) : super(sender);
+
+  /// Every channel this request names, digested or announced.
+  Set<ChannelId> get namedChannels => {
+    for (final d in digests) d.channelId,
+    ...announced,
+  };
 }

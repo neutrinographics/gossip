@@ -1,3 +1,4 @@
+import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/sync/domain/value_objects/channel_digest.dart';
 import 'package:gossip/src/shared/domain/interfaces/protocol_message.dart';
@@ -28,4 +29,8 @@ class DigestResponse extends ProtocolMessage {
 
   const DigestResponse({required NodeId sender, required this.digests})
     : super(sender);
+
+  /// The channels this response digests: a response answers, it never
+  /// announces.
+  Set<ChannelId> get namedChannels => {for (final d in digests) d.channelId};
 }
