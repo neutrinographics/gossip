@@ -6,7 +6,6 @@ import 'package:gossip/src/shared/domain/interfaces/local_node_repository.dart';
 import 'package:gossip/src/sync/domain/services/hlc_clock.dart';
 import 'package:gossip/src/sync/domain/services/gossip_timing_policy.dart';
 import 'package:gossip/src/shared/domain/services/generation_scheduler.dart';
-import 'package:gossip/src/shared/domain/services/jitter.dart';
 import 'package:gossip/src/sync/domain/aggregates/outstanding_pulls.dart';
 import 'package:gossip/src/sync/domain/entities/pull_request.dart';
 import 'package:gossip/src/sync/domain/services/outstanding_pull_tracker.dart';
@@ -59,8 +58,9 @@ import 'package:gossip/src/sync/application/reactive_pusher.dart';
 ///
 /// **Step 1: Digest Request** (see [effectiveGossipInterval] for the interval policy)
 /// - Select the least-recently-synced reachable peer, filtered to exclude
-///   congested peers and ones already gossiped with this interval, with a
-///   random tiebreak among equally-stale peers (see [_selectGossipPartner])
+///   congested peers and ones already gossiped with inside the recency
+///   window, with a random tiebreak among equally-stale peers (see
+///   [_selectGossipPartner])
 /// - Digest the channels the peer has shown it holds and announce the rest
 ///   by id, under the announce budget (see [DigestScoping])
 /// - Send [DigestRequest] containing our sync state
@@ -208,7 +208,7 @@ class GossipEngine {
   final Random _random;
 
   /// Drives the periodic gossip round loop: computes each tick's delay
-  /// (jittered [effectiveGossipInterval]), runs [performGossipRound], and
+  /// (armed by `GossipTimingPolicy.armRound`), runs [performGossipRound], and
   /// reports tick vs. scheduling failures separately (see
   /// [GenerationScheduler]'s class doc for the failure policy and the
   /// forking hazard it forecloses). Built in the constructor body — its
@@ -407,11 +407,11 @@ class GossipEngine {
     );
     _scheduler = GenerationScheduler(
       timePort: timePort,
-      // ±20% jitter decorrelates gossip loops across nodes so they don't
-      // phase-lock into correlated request/response bursts; recomputed
-      // fresh every cycle so the pacer's growth/reset each round is
-      // reflected in the next tick's delay.
-      nextDelay: () => applyJitter(effectiveGossipInterval, _random),
+      // The policy arms each round: it records the interval the wait is
+      // drawn from, so the round's recency window matches the wait it
+      // actually slept, and jitters it so loops across nodes don't
+      // phase-lock into correlated request/response bursts.
+      nextDelay: () => _timing.armRound(_random),
       tick: performGossipRound,
       onTickError: (error, stackTrace) => _emitError(
         PeerSyncError(
@@ -687,8 +687,8 @@ class GossipEngine {
   /// Implements Step 1 of the anti-entropy protocol:
   /// 1. Get reachable peers and filter out congested ones (per-peer
   ///    backpressure) and ones we already exchanged with inside the
-  ///    current interval (recency suppression, time-based — see
-  ///    [SyncPartner.lastAntiEntropyMs])
+  ///    recency window (see `GossipTimingPolicy.recencyWindow`; time-based —
+  ///    see [SyncPartner.lastAntiEntropyMs])
   /// 2. Select the least-recently-gossiped uncongested candidate (bounded
   ///    coverage; random tiebreak) and mark it gossiped
   /// 3. Digest the channels the peer has shown it holds (via
@@ -713,17 +713,9 @@ class GossipEngine {
     final reachable = peerDirectory.reachablePartners();
     if (reachable.isEmpty) return;
 
-    // Deliberate: this reads effectiveGossipInterval AFTER the quietRound()
-    // above may have just grown it this very round, so the suppression
-    // window here is already the just-grown interval, not the pre-round
-    // one. That's intentional and self-correcting — it's time-based (see
-    // [_staleUncongestedCandidates]'s recency-suppression note), so
-    // widening the window only widens how long an idle pair goes between
-    // exchanges, consistent with the pacer's own stretch, never a
-    // correctness issue.
-    final interval = effectiveGossipInterval.inMilliseconds;
+    final window = _timing.recencyWindow.inMilliseconds;
     final nowMs = timePort.nowMs;
-    final candidates = _staleUncongestedCandidates(reachable, interval, nowMs);
+    final candidates = _staleUncongestedCandidates(reachable, window, nowMs);
 
     if (candidates.isEmpty) {
       _log(
@@ -744,11 +736,11 @@ class GossipEngine {
   }
 
   /// Filters [reachable] down to peers that are both uncongested
-  /// (per-peer backpressure) and not exchanged with inside the current
-  /// [interval], as of [nowMs].
+  /// (per-peer backpressure) and not exchanged with inside the recency
+  /// [window], as of [nowMs].
   List<SyncPartner> _staleUncongestedCandidates(
     List<SyncPartner> reachable,
-    int interval,
+    int window,
     int nowMs,
   ) {
     return reachable
@@ -758,10 +750,10 @@ class GossipEngine {
                   _perPeerCongestionThreshold &&
               // Recency suppression (time-based — deliberately NOT
               // cached-VV state): skip peers we exchanged with inside
-              // the current interval. Worst case of a wrong skip is one
-              // interval of delay.
+              // the window. Worst case of a wrong skip is one round of
+              // delay.
               (p.lastAntiEntropyMs == null ||
-                  nowMs - p.lastAntiEntropyMs! >= interval),
+                  nowMs - p.lastAntiEntropyMs! >= window),
         )
         .toList();
   }

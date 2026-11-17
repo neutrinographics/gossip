@@ -1,8 +1,12 @@
+import 'dart:math';
+
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/sync/domain/interfaces/peer_directory.dart';
 import 'package:gossip/src/sync/domain/services/gossip_timing_policy.dart';
 import 'package:gossip/src/sync/domain/value_objects/sync_partner.dart';
 import 'package:test/test.dart';
+
+import '../../../support/unjittered_random.dart';
 
 /// Transplanted from gossip_engine_interval_pacing_test.dart and
 /// gossip_engine_pacing_test.dart: these pin the same formulas/semantics
@@ -191,7 +195,79 @@ void main() {
       expect(policy.effectiveInterval, equals(const Duration(seconds: 2)));
     });
   });
+
+  group('GossipTimingPolicy round arming', () {
+    test('armRound answers a wait inside the jitter band and remembers the '
+        'interval it drew from', () {
+      final policy = _adaptivePolicy();
+
+      final wait = policy.armRound(Random(7));
+
+      expect(
+        wait,
+        allOf(greaterThanOrEqualTo(_ms(800)), lessThanOrEqualTo(_ms(1200))),
+      );
+      // However Random(7) jitters the wait, the armed interval stays 1 s: the
+      // window is its floor.
+      expect(policy.recencyWindow, equals(_ms(800)));
+    });
+
+    test('recencyWindow never exceeds any wait armRound can answer', () {
+      final policy = _adaptivePolicy();
+      final random = Random(11);
+
+      for (var i = 0; i < 2000; i++) {
+        final wait = policy.armRound(random);
+        expect(policy.recencyWindow, lessThanOrEqualTo(wait));
+      }
+    });
+
+    test('quietRound grows the next interval but leaves the armed window '
+        'alone', () {
+      final policy = _adaptivePolicy();
+      policy.armRound(Random(7));
+
+      policy.quietRound();
+
+      expect(policy.effectiveInterval, equals(_ms(1500)));
+      expect(policy.recencyWindow, equals(_ms(800)));
+    });
+
+    test('before any arm the window is the floor of the current interval, '
+        'static included', () {
+      expect(_adaptivePolicy().recencyWindow, equals(_ms(800)));
+
+      final static = GossipTimingPolicy(
+        peerDirectory: _FakePeerDirectory(const []),
+        staticInterval: _ms(200),
+        adaptiveEnabled: true,
+      );
+      expect(static.recencyWindow, equals(_ms(160)));
+    });
+
+    test('a second arm replaces the armed interval', () {
+      final policy = _adaptivePolicy();
+      policy.quietRound();
+      policy.quietRound();
+      policy.quietRound();
+
+      // A draw of 0.5 is the middle of the band, so the wait is the interval.
+      expect(policy.armRound(UnjitteredRandom()), equals(_ms(3375)));
+
+      policy.news();
+      expect(policy.armRound(UnjitteredRandom()), equals(_ms(1000)));
+      expect(policy.recencyWindow, equals(_ms(800)));
+    });
+  });
 }
+
+Duration _ms(int ms) => Duration(milliseconds: ms);
+
+/// One partner at 500 ms SRTT, so the adaptive base is 1 s.
+GossipTimingPolicy _adaptivePolicy() => GossipTimingPolicy(
+  peerDirectory: _FakePeerDirectory([_partner('p', _ms(500))]),
+  adaptiveEnabled: true,
+);
 
 SyncPartner _partner(String id, Duration? smoothedRtt) {
   return SyncPartner(nodeId: NodeId(id), smoothedRtt: smoothedRtt);

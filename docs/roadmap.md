@@ -235,7 +235,7 @@ purification batch merged):
    its own exchange skips, so a one-peer node starts a round about every 1.5
    intervals, estimated) and a wall-clock step-back pausing rounds (stamp on
    the monotonic reading). Same [item](backlog/kt-port-wire-efficiency.md)
-   as phase 1.
+   as phase 1. Window fixed under jitter 2026-11-17 (both twins).
 12. **Then** the [Dart minor-findings sweep](backlog/health-minor-findings-sweep.md)
     (two correctness latents), the
     [lifecycle batch follow-ups](backlog/kt-lifecycle-batch-follow-ups.md)
