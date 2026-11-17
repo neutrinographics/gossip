@@ -42,7 +42,12 @@ class Recency {
       lastSent.entries.every((e) => other.lastSent[e.key] == e.value);
 
   @override
-  int get hashCode => Object.hash(next, lastSent.length);
+  int get hashCode => Object.hash(
+    next,
+    Object.hashAllUnordered(
+      lastSent.entries.map((e) => Object.hash(e.key, e.value)),
+    ),
+  );
 
   @override
   String toString() => 'Recency(next: $next, ${lastSent.length} items)';

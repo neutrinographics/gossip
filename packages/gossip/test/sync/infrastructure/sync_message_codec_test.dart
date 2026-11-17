@@ -1114,28 +1114,6 @@ void main() {
 
         expect(codec.encodedEntrySize(entry), equals(actualEntrySize));
       });
-
-      test('encodedStreamDigestSize equals the stream digest\'s actual '
-          'size inside an encoded DigestResponse', () {
-        final digest = StreamDigest(
-          streamId: StreamId('stream-with-a-realistic-length-id'),
-          version: VersionVector({NodeId('author1'): 42, NodeId('author2'): 7}),
-        );
-        final response = DigestResponse(
-          sender: NodeId('sender'),
-          digests: [
-            ChannelDigest(channelId: ChannelId('ch1'), streams: [digest]),
-          ],
-        );
-        final encoded = codec.encode(response);
-
-        final channelJson =
-            (jsonOf(encoded)['digests'] as List).single as Map<String, dynamic>;
-        final streamJson = (channelJson['streams'] as List).single;
-        final actualDigestSize = utf8.encode(jsonEncode(streamJson)).length;
-
-        expect(codec.encodedStreamDigestSize(digest), equals(actualDigestSize));
-      });
     });
 
     // Translated from gossip-kt's SyncWireDialectsTest.kt (the two

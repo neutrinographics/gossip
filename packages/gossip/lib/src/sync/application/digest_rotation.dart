@@ -52,7 +52,9 @@ class DigestRotation {
       byPeer.entries.every((e) => other.byPeer[e.key] == e.value);
 
   @override
-  int get hashCode => Object.hash(byPeer.length, 0);
+  int get hashCode => Object.hashAllUnordered(
+    byPeer.entries.map((e) => Object.hash(e.key, e.value)),
+  );
 
   @override
   String toString() => 'DigestRotation(${byPeer.length} peers)';

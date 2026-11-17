@@ -14,6 +14,10 @@ class Window<T> {
     this.usedBytes = 0,
   }) : selected = List.unmodifiable(selected),
        oversized = List.unmodifiable(oversized);
+
+  @override
+  String toString() =>
+      'Window(selected: $selected, oversized: $oversized, usedBytes: $usedBytes)';
 }
 
 /// The budgeter's mechanism, not a domain concept: a window selection over

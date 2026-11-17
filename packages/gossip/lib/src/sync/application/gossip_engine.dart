@@ -36,6 +36,7 @@ import 'package:gossip/src/sync/domain/messages/delta_response.dart';
 import 'package:gossip/src/sync/domain/events/sync_events.dart';
 import 'package:gossip/src/sync/application/delta_merger.dart';
 import 'package:gossip/src/sync/application/digest_budgeter.dart';
+import 'package:gossip/src/sync/domain/services/digest_scoping.dart';
 import 'package:gossip/src/sync/application/reactive_pusher.dart';
 
 /// Protocol service implementing gossip-based anti-entropy synchronization.
@@ -182,17 +183,14 @@ class GossipEngine {
   /// null-check in [_handleIncomingMessage].
   final MessageCodec _codec;
 
-  /// Byte-budget helpers ([SyncMessageCodec.encodedEntrySize],
-  /// [SyncMessageCodec.encodedStreamDigestSize]) aren't part of the shared
-  /// [MessageCodec] seam — sizing entries/digests against the transport
-  /// limit is a sync-specific concern, not something membership's codec
-  /// needs. The gossip engine is a sync-context component, so its injected
-  /// codec is always a [SyncMessageCodec] in practice (`Coordinator` and
-  /// every test harness wire exactly that); this getter makes that
-  /// assumption explicit at its call sites instead of scattering casts —
-  /// [_fitDeltaToBudget]'s `encodedEntrySize` call, and constructing
-  /// [_digestBudgeter] (which needs the concrete type, not the shared
-  /// [MessageCodec] seam, for its own digest-sizing helpers).
+  /// [SyncMessageCodec.encodedEntrySize] isn't part of the shared
+  /// [MessageCodec] seam — sizing entries against the transport limit is a
+  /// sync-specific concern, not something membership's codec needs. The
+  /// gossip engine is a sync-context component, so its injected codec is
+  /// always a [SyncMessageCodec] in practice (`Coordinator` and every test
+  /// harness wire exactly that); this getter makes that assumption explicit
+  /// at its one call site, [_fitDeltaToBudget], instead of scattering casts.
+  /// The digest budgeter measures through the shared seam and needs no cast.
   SyncMessageCodec get _syncCodec => _codec as SyncMessageCodec;
 
   /// Random number generator for peer selection.
@@ -382,14 +380,15 @@ class GossipEngine {
       staticInterval: gossipInterval,
       adaptiveEnabled: adaptiveTimingEnabled,
     );
-    // Needs the concrete SyncMessageCodec (its digest-sizing helpers aren't
-    // part of the shared MessageCodec seam) — built here, after `_codec` is
-    // assigned by the initializer list above, so `_syncCodec`'s cast is
-    // valid; same body-construction rationale as `_timing` above.
+    // Built here, after `_codec` is assigned by the initializer list above;
+    // same body-construction rationale as `_timing` above. The announce
+    // budget is the default until the engine's constructor and config carry
+    // the real value.
     _digestBudgeter = DigestBudgeter(
-      codec: _syncCodec,
+      codec: _codec,
       localNode: localNode,
       maxMessageBytes: maxMessageBytes,
+      announceBudgetBytes: 1024,
     );
     _scheduler = GenerationScheduler(
       timePort: timePort,
@@ -718,7 +717,10 @@ class GossipEngine {
     // Record that we're gossiping with this peer now, so the next rounds
     // prefer peers we haven't synced with recently (bounded coverage).
     peerDirectory.recordAntiEntropy(partner.nodeId, timePort.nowMs);
-    await _sendMessage(partner.nodeId, await _buildDigestRequest());
+    await _sendMessage(
+      partner.nodeId,
+      await _buildDigestRequest(partner.nodeId),
+    );
   }
 
   /// Filters [reachable] down to peers that are both uncongested
@@ -776,17 +778,21 @@ class GossipEngine {
   /// never carry (which would livelock sync entirely). Budgeting itself
   /// is [_digestBudgeter]'s job; this method only generates the input and
   /// renders any [OversizedDigest] diagnostics it reports.
-  Future<DigestRequest> _buildDigestRequest() async {
+  Future<DigestRequest> _buildDigestRequest(NodeId peer) async {
     final all = <ChannelDigest>[];
     for (final channel in _channels.values) {
       all.add(await generateDigest(channel));
     }
 
-    final (digests, oversized) = _digestBudgeter.fitRequest(all);
-    for (final o in oversized) {
+    // Every channel is treated as shown until digest scoping lands here.
+    final fitted = _digestBudgeter.fitRequest(
+      ScopedDigests(digests: all, announced: const []),
+      peer,
+    );
+    for (final o in fitted.oversized) {
       _emitError(_oversizedDigestError(o));
     }
-    return DigestRequest(sender: localNode, digests: digests);
+    return DigestRequest(sender: localNode, digests: fitted.digests);
   }
 
   /// Renders an [OversizedDigest] diagnostic (a stream whose digest alone
@@ -813,7 +819,7 @@ class GossipEngine {
     if (!_scheduler.isRunning) return;
     _recordNews();
     try {
-      await _sendMessage(peerId, await _buildDigestRequest());
+      await _sendMessage(peerId, await _buildDigestRequest(peerId));
     } catch (e, st) {
       _emitError(
         PeerSyncError(
@@ -1185,15 +1191,16 @@ class GossipEngine {
     // response to the request keeps it bounded — the initiator already
     // budgeted/rotated the request, and our own version vectors may be
     // larger, so the response is fitted independently by
-    // [_digestBudgeter.fitResponse], with its own rotation cursor so an
+    // [_digestBudgeter.fitResponse], with its own per-peer rotation so an
     // over-budget response covers every stream across successive exchanges
     // too, instead of truncating the same tail every time.
     final byId = {for (final channel in channels) channel.id: channel};
 
-    final flat = <({ChannelId channel, StreamDigest digest})>[];
+    final answered = <ChannelDigest>[];
     for (final channelDigest in request.digests) {
       final channel = byId[channelDigest.channelId];
       if (channel == null) continue;
+      final streams = <StreamDigest>[];
       for (final streamDigest in channelDigest.streams) {
         if (!channel.hasStream(streamDigest.streamId)) continue;
         final version = await _computeVersionVector(
@@ -1205,21 +1212,21 @@ class GossipEngine {
         // only when the response shows us ahead, and the responder-behind
         // direction is our own reciprocal pull.
         if (streamDigest.version.dominates(version)) continue;
-        flat.add((
-          channel: channelDigest.channelId,
-          digest: StreamDigest(
-            streamId: streamDigest.streamId,
-            version: version,
-          ),
-        ));
+        streams.add(
+          StreamDigest(streamId: streamDigest.streamId, version: version),
+        );
       }
+      if (streams.isEmpty) continue;
+      answered.add(
+        ChannelDigest(channelId: channelDigest.channelId, streams: streams),
+      );
     }
 
-    final (digests, oversized) = _digestBudgeter.fitResponse(flat);
-    for (final o in oversized) {
+    final fitted = _digestBudgeter.fitResponse(answered, request.sender);
+    for (final o in fitted.oversized) {
       _emitError(_oversizedDigestError(o));
     }
-    return DigestResponse(sender: localNode, digests: digests);
+    return DigestResponse(sender: localNode, digests: fitted.digests);
   }
 
   /// Handles digest response from a peer (Step 3).

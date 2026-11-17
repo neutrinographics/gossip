@@ -5,9 +5,8 @@ import 'package:gossip/src/sync/application/recency.dart';
 import 'package:gossip/src/sync/application/rotation_key.dart';
 import 'package:test/test.dart';
 
-/// Translates gossip-kt `DigestWindowTest.kt` (the window cases of
-/// `digest_budgeter_test.dart`, on the pure selection with sizes handed in);
-/// order is by recency, not by a cursor.
+/// Translates gossip-kt `DigestWindowTest.kt`: the pure selection with sizes
+/// handed in; order is by recency, not by a cursor.
 void main() {
   List<RotationKey> keys(List<String> items) => [
     for (final i in items) RotationKey(ChannelId(i), StreamId('s')),

@@ -77,5 +77,23 @@ void main() {
       expect(p.request, Recency.initial);
       expect(p.announce, Recency.initial);
     });
+
+    test('equal values hash alike, and different contents usually do not', () {
+      final one = Recency.initial.stamp([a, b]);
+      final same = Recency.initial.stamp([a, b]);
+      expect(one.hashCode, same.hashCode);
+      expect(one.hashCode, isNot(Recency.initial.stamp([b, a]).hashCode));
+
+      final rotation = DigestRotation.initial.withPeer(
+        n1,
+        PeerRotation(request: one),
+      );
+      final twin = DigestRotation.initial.withPeer(
+        n1,
+        PeerRotation(request: same),
+      );
+      expect(rotation.hashCode, twin.hashCode);
+      expect(rotation.hashCode, isNot(DigestRotation.initial.hashCode));
+    });
   });
 }
