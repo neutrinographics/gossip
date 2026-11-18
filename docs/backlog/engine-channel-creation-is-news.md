@@ -44,11 +44,12 @@ Both engines expose `notifyChannelCreated(channelId)`, shaped like
 otherwise records news. The Dart coordinator calls it from `createChannel`
 after the channel map is refreshed; the Kotlin coordinator calls it from its
 event handler when a channel is created. Creating a channel that already
-exists, removing a channel, and pausing or resuming are not news. The
+exists and removing a channel are not news, and pausing is not either;
+resuming already is, since a restart resets the pace. The
 effect that remains, and is pinned on both twins: on a deeply idle pair,
 creating a channel snaps the interval back from the idle ceiling (about 30
 seconds) to the active band (5 seconds or less), so the new channel is
-announced within the active interval instead of the idle one. The Dart pins
+announced within the active interval instead of the idle one. Both twins' pins
 also show that the first request after creation names the new channel. The
 join scenario's round cap is a loose guard, not a measure of the win.
 Design: [digest scoping leftovers](../superpowers/specs/2026-11-18-digest-scoping-leftovers-design.md).
