@@ -139,6 +139,12 @@ publish under the existing pub.dev `gossip` name must version above the old
   explicit zero entries away — `VersionVector({a: 0})` equals
   `VersionVector.empty`, and later mutation of the passed map no longer
   alters the vector.
+- Creating a channel is news: `Coordinator.createChannel` now resets the
+  gossip pace and wakes the sleeping round, as a local write does, so a
+  quiet pair announces the new channel within the active interval instead of
+  at the next backed-off round. Creating a channel that already exists,
+  removing one, and pausing are not news (resuming already is: a restart
+  resets the pace). No wire change.
 
 ### Added
 
@@ -159,6 +165,8 @@ publish under the existing pub.dev `gossip` name must version above the old
   in a response is now a debug log, not a `protocolError`. A first exchange
   with a new peer teaches holdings, so the reciprocal digests start from the
   next exchange. No wire change.
+- `GossipEngine.notifyChannelCreated(channelId)`, the engine's half of
+  channel creation being news, in the same seam as `notifyLocalWrite`.
 
 ### Changed
 
@@ -167,6 +175,13 @@ publish under the existing pub.dev `gossip` name must version above the old
   `ChannelService.getEntries` already returned. Source-compatible for the
   common `final entries = await stream.getAll()` call site; type inference
   simply tightens.
+- `GossipEngine.handleDigestResponse` no longer takes a `pull` parameter. It
+  is a test seam, not public API: the engine now decides whether a response
+  may start pulls (only while running) before it calls the seam, and a
+  stopped engine still learns the sender's holdings.
+- The digest budgeter's result types (`Window`, `OversizedDigest`,
+  `FittedRequest`, `FittedResponse`) now compare by value, as the rotation
+  values already did.
 
 ## 1.0.0
 

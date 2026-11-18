@@ -1,5 +1,6 @@
 import 'dart:typed_data';
 import 'package:gossip/src/shared/domain/events/domain_event.dart';
+import 'package:gossip/src/sync/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/sync/domain/events/sync_events.dart';
 import 'package:gossip/src/membership/domain/events/membership_events.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
@@ -42,6 +43,69 @@ void main() {
       final channelFacade = await coordinator.createChannel(channelId);
 
       expect(channelFacade.id, equals(channelId));
+    });
+
+    test('createChannel on a running coordinator tells the engine a channel '
+        'was created', () async {
+      final coordinator = await createTestCoordinator(
+        bus: InMemoryMessageBus(),
+        timePort: InMemoryTimePort(),
+      );
+      await coordinator.start();
+      final engine = coordinator.gossipEngineForTesting!;
+      for (var i = 0; i < 6; i++) {
+        await engine.performGossipRound();
+      }
+      final stretched = engine.effectiveGossipInterval;
+
+      await coordinator.createChannel(ChannelId('fresh'));
+
+      expect(engine.effectiveGossipInterval, lessThan(stretched));
+    });
+
+    test(
+      'createChannel for an existing channel does not notify again',
+      () async {
+        final coordinator = await createTestCoordinator(
+          bus: InMemoryMessageBus(),
+          timePort: InMemoryTimePort(),
+        );
+        await coordinator.start();
+        final first = await coordinator.createChannel(ChannelId('fresh'));
+        final engine = coordinator.gossipEngineForTesting!;
+        for (var i = 0; i < 6; i++) {
+          await engine.performGossipRound();
+        }
+        final stretched = engine.effectiveGossipInterval;
+
+        final again = await coordinator.createChannel(ChannelId('fresh'));
+
+        expect(again, same(first));
+        expect(engine.effectiveGossipInterval, stretched);
+      },
+    );
+
+    test('a channel already in the repository without a facade is not news '
+        '(kt: notify only on the emitted ChannelCreated)', () async {
+      final channelRepository = InMemoryChannelRepository();
+      final coordinator = await createTestCoordinator(
+        bus: InMemoryMessageBus(),
+        timePort: InMemoryTimePort(),
+        channelRepository: channelRepository,
+      );
+      await coordinator.start();
+      await channelRepository.save(
+        ChannelAggregate(id: ChannelId('ghost'), localNode: localNode),
+      );
+      final engine = coordinator.gossipEngineForTesting!;
+      for (var i = 0; i < 6; i++) {
+        await engine.performGossipRound();
+      }
+      final stretched = engine.effectiveGossipInterval;
+
+      await coordinator.createChannel(ChannelId('ghost'));
+
+      expect(engine.effectiveGossipInterval, stretched);
     });
 
     test('createChannel emits ChannelCreated event', () async {
@@ -826,6 +890,25 @@ void main() {
     });
 
     group('removeChannel', () {
+      // Regression guard: passes before the gate change; removal never was news.
+      test('removing a channel is not news (kt GossipEngineTest)', () async {
+        final coordinator = await createTestCoordinator(
+          bus: InMemoryMessageBus(),
+          timePort: InMemoryTimePort(),
+        );
+        await coordinator.start();
+        await coordinator.createChannel(ChannelId('doomed'));
+        final engine = coordinator.gossipEngineForTesting!;
+        for (var i = 0; i < 6; i++) {
+          await engine.performGossipRound();
+        }
+        final stretched = engine.effectiveGossipInterval;
+
+        await coordinator.removeChannel(ChannelId('doomed'));
+
+        expect(engine.effectiveGossipInterval, stretched);
+      });
+
       test('removes channel from coordinator', () async {
         final coordinator = await createTestCoordinator();
 

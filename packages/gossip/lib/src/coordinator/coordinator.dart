@@ -531,9 +531,14 @@ class Coordinator {
 
   /// Creates a new channel.
   ///
-  /// The channel starts with the local node as the only member.
+  /// The channel starts with the local node as the only member. An existing
+  /// channel's facade is returned unchanged and nothing is reported to the
+  /// engine.
   Future<Channel> createChannel(ChannelId channelId) async {
-    await _channelService.createChannel(channelId);
+    final existing = _channelFacades[channelId];
+    if (existing != null) return existing;
+
+    final events = await _channelService.createChannel(channelId);
 
     final facade = Channel(id: channelId, service: _channelService);
     _channelFacades[channelId] = facade;
@@ -541,6 +546,12 @@ class Coordinator {
     if (_state == SyncState.running && _gossipEngine != null) {
       final channels = await _loadChannels();
       _gossipEngine!.setChannels(channels);
+      // News is the domain fact, not the call: a channel already in the
+      // repository emits no ChannelCreated. After the refresh, so the round
+      // this wakes digests the channel.
+      if (events.whereType<ChannelCreated>().isNotEmpty) {
+        _gossipEngine!.notifyChannelCreated(channelId);
+      }
     }
 
     return facade;

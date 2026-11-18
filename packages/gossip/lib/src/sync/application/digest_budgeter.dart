@@ -1,9 +1,11 @@
+import 'package:meta/meta.dart';
 import 'package:gossip/src/shared/domain/interfaces/message_codec.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/node_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/sync/application/digest_rotation.dart';
 import 'package:gossip/src/sync/application/digest_window.dart';
+import 'package:gossip/src/sync/application/element_wise.dart';
 import 'package:gossip/src/sync/application/peer_rotation.dart';
 import 'package:gossip/src/sync/application/recency.dart';
 import 'package:gossip/src/sync/application/rotation_key.dart';
@@ -18,6 +20,7 @@ import 'package:gossip/src/sync/domain/value_objects/stream_digest.dart';
 /// Carries enough for the caller (`GossipEngine`) to render a diagnostic
 /// identifying the offending stream and its approximate encoded cost,
 /// without the budgeter depending on the engine's error type.
+@immutable
 class OversizedDigest {
   /// The channel the oversized stream belongs to.
   final ChannelId channel;
@@ -34,10 +37,21 @@ class OversizedDigest {
     required this.streamId,
     required this.cost,
   });
+
+  @override
+  bool operator ==(Object other) =>
+      other is OversizedDigest &&
+      other.channel == channel &&
+      other.streamId == streamId &&
+      other.cost == cost;
+
+  @override
+  int get hashCode => Object.hash(channel, streamId, cost);
 }
 
 /// A request fitted to one message: what goes, what was named instead of
 /// digested, and what can never go.
+@immutable
 class FittedRequest {
   final List<ChannelDigest> digests;
   final List<ChannelId> announced;
@@ -54,14 +68,41 @@ class FittedRequest {
     required this.oversized,
     required this.unannounceable,
   });
+
+  @override
+  bool operator ==(Object other) =>
+      other is FittedRequest &&
+      elementWiseEqual(other.digests, digests) &&
+      elementWiseEqual(other.announced, announced) &&
+      elementWiseEqual(other.oversized, oversized) &&
+      elementWiseEqual(other.unannounceable, unannounceable);
+
+  @override
+  int get hashCode => Object.hash(
+    Object.hashAll(digests),
+    Object.hashAll(announced),
+    Object.hashAll(oversized),
+    Object.hashAll(unannounceable),
+  );
 }
 
 /// A response carries digests only, so it has nothing to announce.
+@immutable
 class FittedResponse {
   final List<ChannelDigest> digests;
   final List<OversizedDigest> oversized;
 
   const FittedResponse({required this.digests, required this.oversized});
+
+  @override
+  bool operator ==(Object other) =>
+      other is FittedResponse &&
+      elementWiseEqual(other.digests, digests) &&
+      elementWiseEqual(other.oversized, oversized);
+
+  @override
+  int get hashCode =>
+      Object.hash(Object.hashAll(digests), Object.hashAll(oversized));
 }
 
 /// Fits digest lists to bytes and rotates what does not fit — the Kotlin

@@ -12,9 +12,12 @@ the new channel only at the next backed-off round, however recently the
 channel appeared.
 
 Observed in the Dart half of digest scoping: in
-`integration/sync/digest_scoping_test.dart`, the join scenario takes about
-14 simulated one-second rounds before the new channel is announced and
-learned. The production figure on the Kotlin side was far better (a join
+`integration/sync/digest_scoping_test.dart`, the join scenario took about
+14 simulated one-second rounds before the new channel was announced and
+learned. That figure was measured before the recency-window fix (gossip
+PR #22), which most likely closed most of the gap on its own; measured
+again in gossip PR #23, the group converges at round 2 with the change and
+round 3 without. The production figure on the Kotlin side was far better (a join
 converged 0.4 s after the server created the channel) only because that
 server had traffic keeping the pacer awake; a quiet pair waits.
 
@@ -32,6 +35,24 @@ channel (`setChannels` on the Dart engine, the equivalent on the Kotlin
 engine), call the same `recordNews()` that a local write calls, which resets
 the pace and wakes the scheduler. Both twins, with a pin: a backed-off pair
 announces a freshly created channel within the active interval.
+
+## Done
+
+Built in both twins on 2026-11-18: gossip PR #23 and gossip-kt PR #25.
+Both engines expose `notifyChannelCreated(channelId)`, shaped like
+`notifyLocalWrite`: it does nothing unless the engine is running, and
+otherwise records news. The Dart coordinator calls it from `createChannel`
+after the channel map is refreshed; the Kotlin coordinator calls it from its
+event handler when a channel is created. Creating a channel that already
+exists and removing a channel are not news, and pausing is not either;
+resuming already is, since a restart resets the pace. The
+effect that remains, and is pinned on both twins: on a deeply idle pair,
+creating a channel snaps the interval back from the idle ceiling (about 30
+seconds) to the active band (5 seconds or less), so the new channel is
+announced within the active interval instead of the idle one. Both twins' pins
+also show that the first request after creation names the new channel. The
+join scenario's round cap is a loose guard, not a measure of the win.
+Design: [digest scoping leftovers](../superpowers/specs/2026-11-18-digest-scoping-leftovers-design.md).
 
 ## Related
 

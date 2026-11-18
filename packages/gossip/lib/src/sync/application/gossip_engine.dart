@@ -587,6 +587,17 @@ class GossipEngine {
     _pusher.notifyWrite(channelId, streamId, entry);
   }
 
+  /// A channel this node just created is something new to tell peers about,
+  /// so it resets the pace and wakes a sleeping round.
+  ///
+  /// The caller refreshes the engine's channel map ([setChannels]) first, so
+  /// the woken round digests the new channel. [setChannels] itself is a
+  /// snapshot refresh and is not news. No-op when the engine is not running.
+  void notifyChannelCreated(ChannelId channelId) {
+    if (!_scheduler.isRunning) return;
+    _recordNews();
+  }
+
   /// Pushes buffered local writes ([batches], snapshotted and handed off by
   /// [_pusher]) to all reachable peers as unsolicited DeltaResponses.
   /// Oversized bursts (rare — the debounce window is short) fall back to
@@ -995,11 +1006,11 @@ class GossipEngine {
     );
     // Pulling is active sync — a paused/listen-only engine serves but does
     // not pull; its names still teach holdings.
-    final pulls = await handleDigestResponse(
-      response,
-      pull: _scheduler.isRunning,
-    );
-    await _sendDeltaRequests(sender, pulls);
+    if (!_scheduler.isRunning) {
+      _learnHoldings(response.sender, response.namedChannels);
+      return;
+    }
+    await _sendDeltaRequests(sender, await handleDigestResponse(response));
   }
 
   /// Handles an inbound [DeltaRequest] (Step 4): serves the entries the
@@ -1176,7 +1187,7 @@ class GossipEngine {
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
   Future<DigestResponse> handleDigestRequest(DigestRequest request) async {
-    _holdings = _holdings.learn(request.sender, request.namedChannels);
+    _learnHoldings(request.sender, request.namedChannels);
     final held = _heldAmong(request.sender, request.namedChannels);
     final ours = <ChannelDigest>[];
     for (final channel in held) {
@@ -1213,21 +1224,24 @@ class GossipEngine {
     return held;
   }
 
+  /// Records that [sender] holds the [named] channels.
+  void _learnHoldings(NodeId sender, Iterable<ChannelId> named) {
+    _holdings = _holdings.learn(sender, named);
+  }
+
   /// Handles digest response from a peer (Step 3).
   ///
   /// Compares peer's version vectors with ours to identify entries we're
   /// missing, and issues a [PullRequest] only for streams where the peer is
   /// ahead on some author. The caller puts them on the wire
   /// ([_sendDeltaRequests]); they are in flight from here. Its names teach
-  /// holdings first; with [pull] false (a paused engine) nothing is pulled.
+  /// holdings first. Whether the engine is running is the caller's gate.
   ///
   /// Exposed as public for testing. Called by [_handleIncomingMessage].
   Future<List<PullRequest>> handleDigestResponse(
-    DigestResponse response, {
-    bool pull = true,
-  }) async {
-    _holdings = _holdings.learn(response.sender, response.namedChannels);
-    if (!pull) return const [];
+    DigestResponse response,
+  ) async {
+    _learnHoldings(response.sender, response.namedChannels);
     final held = _heldAmong(response.sender, response.namedChannels);
     final heldIds = {for (final c in held) c.id};
     return _computeDeltaRequests(response.sender, [

@@ -45,7 +45,13 @@ void main() {
       );
       expect(shaped[otherAuthor], 3, reason: 'other authors untouched');
 
-      final noCeiling = r.shapeSince(peer, channelId, streamId, base, nowMs: 1000);
+      final noCeiling = r.shapeSince(
+        peer,
+        channelId,
+        streamId,
+        base,
+        nowMs: 1000,
+      );
       expect(noCeiling[author], 208, reason: 'advertisedMax without a digest');
     });
 
@@ -62,42 +68,51 @@ void main() {
       );
 
       final base = VersionVector({author: 5});
-      expect(r.shapeSince(otherPeer, channelId, streamId, base, nowMs: 0), base);
+      expect(
+        r.shapeSince(otherPeer, channelId, streamId, base, nowMs: 0),
+        base,
+      );
       expect(
         r.shapeSince(peer, channelId, StreamId('other'), base, nowMs: 0),
         base,
       );
     });
 
-    test(
-      'is a pure query: stale entries contribute nothing and repeated '
-      'calls return the same answer',
-      () {
-        final r = registry();
-        r.recordGap(
-          peer,
-          channelId,
-          streamId,
-          author,
-          expectedNext: 6,
-          advertisedMax: 208,
-          nowMs: 0,
-        );
+    test('is a pure query: stale entries contribute nothing and repeated '
+        'calls return the same answer', () {
+      final r = registry();
+      r.recordGap(
+        peer,
+        channelId,
+        streamId,
+        author,
+        expectedNext: 6,
+        advertisedMax: 208,
+        nowMs: 0,
+      );
 
-        // Our coverage moved past the recorded expectation (the range
-        // arrived from elsewhere): the entry is stale and must not shape,
-        // even though nothing has evicted it.
-        final advanced = VersionVector({author: 150});
-        final first = r.shapeSince(peer, channelId, streamId, advanced, nowMs: 0);
-        final second = r.shapeSince(peer, channelId, streamId, advanced, nowMs: 0);
-        expect(first, advanced);
-        expect(second, advanced);
+      // Our coverage moved past the recorded expectation (the range
+      // arrived from elsewhere): the entry is stale and must not shape,
+      // even though nothing has evicted it.
+      final advanced = VersionVector({author: 150});
+      final first = r.shapeSince(peer, channelId, streamId, advanced, nowMs: 0);
+      final second = r.shapeSince(
+        peer,
+        channelId,
+        streamId,
+        advanced,
+        nowMs: 0,
+      );
+      expect(first, advanced);
+      expect(second, advanced);
 
-        // And the non-stale view still shapes afterwards — no state changed.
-        final base = VersionVector({author: 5});
-        expect(r.shapeSince(peer, channelId, streamId, base, nowMs: 0)[author], 208);
-      },
-    );
+      // And the non-stale view still shapes afterwards — no state changed.
+      final base = VersionVector({author: 5});
+      expect(
+        r.shapeSince(peer, channelId, streamId, base, nowMs: 0)[author],
+        208,
+      );
+    });
 
     test('an open probe window unshapes the author', () {
       final r = registry();
@@ -164,7 +179,13 @@ void main() {
         t += 600000; // jump a full cap each time
       }
       expect(
-        r.shapeSince(peer, channelId, streamId, base, nowMs: t + 600000)[author],
+        r.shapeSince(
+          peer,
+          channelId,
+          streamId,
+          base,
+          nowMs: t + 600000,
+        )[author],
         5,
         reason: 'probe window must open within maxBackoff',
       );
@@ -193,50 +214,47 @@ void main() {
       );
     });
 
-    test(
-      're-recording refreshes evidence without touching the probe '
-      'schedule: expectation moves, advertisedMax is monotonic',
-      () {
-        final r = registry();
-        r.recordGap(
-          peer,
-          channelId,
-          streamId,
-          author,
-          expectedNext: 6,
-          advertisedMax: 1000,
-          nowMs: 0,
-        );
+    test('re-recording refreshes evidence without touching the probe '
+        'schedule: expectation moves, advertisedMax is monotonic', () {
+      final r = registry();
+      r.recordGap(
+        peer,
+        channelId,
+        streamId,
+        author,
+        expectedNext: 6,
+        advertisedMax: 1000,
+        nowMs: 0,
+      );
 
-        // Mid-drain chunks re-record within the window: no doubling, and a
-        // smaller chunk maximum must never lower the stored one.
-        r.recordGap(
-          peer,
-          channelId,
-          streamId,
-          author,
-          expectedNext: 8,
-          advertisedMax: 300,
-          nowMs: 1000,
-        );
+      // Mid-drain chunks re-record within the window: no doubling, and a
+      // smaller chunk maximum must never lower the stored one.
+      r.recordGap(
+        peer,
+        channelId,
+        streamId,
+        author,
+        expectedNext: 8,
+        advertisedMax: 300,
+        nowMs: 1000,
+      );
 
-        // The fresh expectation keeps the record live at the new coverage
-        // (the peer backfilled 6..7; the hole moved to 8).
-        final base = VersionVector({author: 7});
-        expect(
-          r.shapeSince(peer, channelId, streamId, base, nowMs: 2000)[author],
-          1000,
-          reason: 'expectation refreshed to 8; advertisedMax stays 1000',
-        );
-        // And the probe window still opens at the ORIGINAL 30s — chunks are
-        // not probe failures.
-        expect(
-          r.shapeSince(peer, channelId, streamId, base, nowMs: 30000)[author],
-          7,
-          reason: 'window unchanged by re-records',
-        );
-      },
-    );
+      // The fresh expectation keeps the record live at the new coverage
+      // (the peer backfilled 6..7; the hole moved to 8).
+      final base = VersionVector({author: 7});
+      expect(
+        r.shapeSince(peer, channelId, streamId, base, nowMs: 2000)[author],
+        1000,
+        reason: 'expectation refreshed to 8; advertisedMax stays 1000',
+      );
+      // And the probe window still opens at the ORIGINAL 30s — chunks are
+      // not probe failures.
+      expect(
+        r.shapeSince(peer, channelId, streamId, base, nowMs: 30000)[author],
+        7,
+        reason: 'window unchanged by re-records',
+      );
+    });
   });
 
   group('commands', () {
@@ -305,7 +323,10 @@ void main() {
       );
 
       r.clearAll();
-      expect(r.shapeSince(otherPeer, channelId, streamId, base, nowMs: 0), base);
+      expect(
+        r.shapeSince(otherPeer, channelId, streamId, base, nowMs: 0),
+        base,
+      );
     });
   });
 }

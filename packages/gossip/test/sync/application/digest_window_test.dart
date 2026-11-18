@@ -143,4 +143,20 @@ void main() {
       throwsArgumentError,
     );
   });
+
+  test('a Window is a value: equal selections, oversized lists and byte '
+      'counts are equal', () {
+    Window<String> window({
+      List<String> selected = const ['a'],
+      List<String> oversized = const ['z'],
+      int usedBytes = 10,
+    }) =>
+        Window(selected: selected, oversized: oversized, usedBytes: usedBytes);
+
+    expect(window(), window());
+    expect(window().hashCode, window().hashCode);
+    expect(window(), isNot(window(usedBytes: 11)));
+    expect(window(), isNot(window(selected: ['b'])));
+    expect(window(), isNot(window(oversized: [])));
+  });
 }

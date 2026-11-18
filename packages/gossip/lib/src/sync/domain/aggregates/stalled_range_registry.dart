@@ -31,8 +31,8 @@ class StalledRangeRegistry {
   /// Records keyed by stream identity, then author — the shape every
   /// operation reads: [shapeSince]/[markProbed]/[evictSatisfied] touch one
   /// stream's authors, never the whole registry.
-  final Map<(NodeId, ChannelId, StreamId), Map<NodeId, StalledRange>>
-  _ranges = {};
+  final Map<(NodeId, ChannelId, StreamId), Map<NodeId, StalledRange>> _ranges =
+      {};
 
   /// The shaped `since` vector for a request to [peer] being built now.
   ///

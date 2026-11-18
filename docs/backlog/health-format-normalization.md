@@ -23,6 +23,14 @@ One formatting-only commit per package (easy to skip in blame), a note in
 the root docs naming the SDK/formatter version it was normalized against,
 and the format step wired into the standard gate once it is a no-op.
 
+The formatter's output depends on the language version it resolves. Without a
+resolved `.dart_tool`, it formats at its own latest version: at the 3.14
+default, 43 files in `packages/gossip` reflow. At `--language-version=3.10`
+(the pubspec's), none do after the `style: format the three files the 3.10
+formatter flagged` commit; before it, only those three did. The sweep must
+therefore pin that flag (or resolve packages first), or it reflows 43 files
+the pubspec does not ask for.
+
 ## Related
 
 - Noise incidents recorded in the 2026-08 pacing and restructure review

@@ -1,5 +1,6 @@
 import 'package:test/test.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
+import 'package:gossip/src/sync/domain/aggregates/channel_aggregate.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/log_entry.dart';
 import 'package:gossip/src/shared/domain/value_objects/hlc.dart';
@@ -169,6 +170,62 @@ void main() {
       h.engine.stop();
     });
 
+    test('a created channel is news (kt GossipEngineTest)', () async {
+      final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
+      final peer = h.addPeer('peer1');
+      h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 500));
+      h.engine.start();
+      for (var i = 0; i < 6; i++) {
+        await h.engine.performGossipRound();
+      }
+      expect(
+        h.engine.effectiveGossipInterval,
+        greaterThan(const Duration(seconds: 1)),
+      );
+      h.engine.notifyChannelCreated(ChannelId('fresh'));
+      expect(h.engine.effectiveGossipInterval, const Duration(seconds: 1));
+      h.engine.stop();
+    });
+
+    test('a created channel on a stopped engine is not news', () async {
+      final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
+      final peer = h.addPeer('peer1');
+      h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 500));
+      h.engine.start();
+      for (var i = 0; i < 6; i++) {
+        await h.engine.performGossipRound();
+      }
+      h.engine.stop();
+      final stretched = h.engine.effectiveGossipInterval;
+      expect(stretched, greaterThan(const Duration(seconds: 1)));
+
+      h.engine.notifyChannelCreated(ChannelId('fresh'));
+
+      expect(h.engine.effectiveGossipInterval, stretched);
+    });
+
+    test('setChannels alone is not news', () async {
+      final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
+      final peer = h.addPeer('peer1');
+      h.peerRegistry.recordPeerRtt(peer.id, const Duration(milliseconds: 500));
+      h.engine.start();
+      for (var i = 0; i < 6; i++) {
+        await h.engine.performGossipRound();
+      }
+      final stretched = h.engine.effectiveGossipInterval;
+      expect(stretched, greaterThan(const Duration(seconds: 1)));
+
+      h.engine.setChannels({
+        ChannelId('extra'): ChannelAggregate(
+          id: ChannelId('extra'),
+          localNode: h.localNode,
+        ),
+      });
+
+      expect(h.engine.effectiveGossipInterval, stretched);
+      h.engine.stop();
+    });
+
     test('peer removal (clearPendingRequestsForPeer) is news', () async {
       final h = GossipEngineTestHarness(adaptiveTimingEnabled: true);
       final peer = h.addPeer('peer1');
@@ -319,6 +376,62 @@ void main() {
       await sub.cancel();
       h.engine.stop();
     });
+
+    test(
+      'a created channel wakes the round instead of waiting out the interval '
+      'armed before it (kt GossipEngineTest)',
+      () async {
+        final h = GossipEngineTestHarness(
+          adaptiveTimingEnabled: true,
+          random: UnjitteredRandom(),
+        );
+        final peer = h.addPeer('peer1');
+        h.peerRegistry.recordPeerRtt(
+          peer.id,
+          const Duration(milliseconds: 100),
+        );
+        final channelId = ChannelId('ch');
+        final streamId = StreamId('s');
+        await h.createChannelWithStream(channelId, streamId);
+
+        h.engine.start();
+        await h.timePort.advance(h.engine.effectiveGossipInterval);
+        await pumpEventQueue();
+        for (var i = 0; i < 4; i++) {
+          await h.timePort.advance(h.engine.effectiveGossipInterval);
+          await pumpEventQueue();
+        }
+        expect(
+          h.engine.effectiveGossipInterval,
+          greaterThan(const Duration(milliseconds: 200)),
+          reason:
+              'setup must actually stretch the pacer before the channel is '
+              'created',
+        );
+
+        final (messages, sub) = h.captureMessages(peer);
+
+        h.engine.notifyChannelCreated(ChannelId('fresh'));
+
+        await h.timePort.advance(const Duration(milliseconds: 199));
+        await pumpEventQueue();
+        expect(messages.whereType<DigestRequest>(), isEmpty);
+
+        await h.timePort.advance(const Duration(milliseconds: 1));
+        await pumpEventQueue();
+        expect(
+          messages.whereType<DigestRequest>(),
+          isNotEmpty,
+          reason:
+              'channel creation must wake the round: the next DigestRequest '
+              'goes out within the active interval of the creation, not the '
+              'stretched interval that was pending',
+        );
+
+        await sub.cancel();
+        h.engine.stop();
+      },
+    );
 
     test(
       'at the active cadence a minute holds the rounds it always held',

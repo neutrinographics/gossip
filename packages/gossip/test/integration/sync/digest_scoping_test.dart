@@ -17,13 +17,15 @@ void main() {
       await network.dispose();
     });
 
-    /// Runs one round at a time until [entries] are held on every node: the
-    /// pacer has backed off by the time the second side joins, so the first
-    /// exchange after the join waits out the idle interval (kt awaits too).
+    /// Runs one round at a time until [entries] are held on every node.
+    /// The default cap is a loose regression guard on the join's speed: the
+    /// join converges in two rounds, and in three without the creation being
+    /// news, so a cap of four passes either way. The pin that creating a
+    /// channel is news is the deep-idle test in idle_quiescence_test.dart.
     Future<void> awaitConverged(
       ChannelId channel, {
       required int entries,
-      int maxRounds = 40,
+      int maxRounds = 4,
     }) async {
       for (var i = 0; i < maxRounds; i++) {
         final counts = await network.entryCounts(channel, streamId);
