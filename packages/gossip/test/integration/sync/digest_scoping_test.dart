@@ -18,9 +18,10 @@ void main() {
     });
 
     /// Runs one round at a time until [entries] are held on every node.
-    /// Creating the channel is news on the node that joins, so the first
-    /// exchange after the join comes within the active interval, not the
-    /// idle one; the cap is the measured two rounds plus a margin of two.
+    /// The default cap is a loose regression guard on the join's speed: the
+    /// join converges in two rounds, and in three without the creation being
+    /// news, so a cap of four passes either way. The pin that creating a
+    /// channel is news is the deep-idle test in idle_quiescence_test.dart.
     Future<void> awaitConverged(
       ChannelId channel, {
       required int entries,

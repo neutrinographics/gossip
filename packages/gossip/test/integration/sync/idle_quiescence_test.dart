@@ -1,9 +1,9 @@
-import 'package:test/test.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 import 'package:gossip/src/sync/domain/messages/digest_request.dart';
 import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
-import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
+import 'package:test/test.dart';
 
 import '../../support/test_network.dart';
 
@@ -154,10 +154,7 @@ void main() {
     expect(
       requestsToB.first.namedChannels,
       contains(fresh),
-      reason:
-          'the first request after the creation must name the new channel: '
-          'the coordinator refreshes the engine\'s channel map before it '
-          'reports the news',
+      reason: 'the first request after the creation must name the new channel',
     );
   });
 
