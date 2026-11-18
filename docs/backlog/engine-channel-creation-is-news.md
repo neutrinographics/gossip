@@ -38,7 +38,7 @@ announces a freshly created channel within the active interval.
 
 ## Done
 
-Built on branch `claude/project-thread-22tuwp` in both twins, 2026-11-18.
+Built in both twins on 2026-11-18: gossip PR #23 and gossip-kt PR #25.
 Both engines expose `notifyChannelCreated(channelId)`, shaped like
 `notifyLocalWrite`: it does nothing unless the engine is running, and
 otherwise records news. The Dart coordinator calls it from `createChannel`
