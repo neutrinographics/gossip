@@ -1,6 +1,7 @@
 # Digest scoping leftovers — short design
 
 **Status:** approved by the owner 2026-11-18 08:18Z (design posted 04:40Z); DDD/cohesion review pass 08:40Z moved channel-creation news off `setChannels` onto `notifyChannelCreated` on both twins.
+**Built:** gossip branch `claude/project-thread-22tuwp`, gossip-kt same branch; PRs to follow.
 **Applies to:** `gossip` (Dart) and `gossip-kt`, together where behavior changes. No wire change.
 **Raised by:** the "Build Dart digest scoping" thread's final report (gossip PR #19,
 rulings 5, 6 and 8), before the OpenDoorApp and opendoor-api pin bumps.
