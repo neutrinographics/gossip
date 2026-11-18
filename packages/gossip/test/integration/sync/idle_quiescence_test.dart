@@ -1,6 +1,9 @@
 import 'package:test/test.dart';
 import 'package:gossip/src/shared/domain/value_objects/channel_id.dart';
 import 'package:gossip/src/shared/domain/value_objects/stream_id.dart';
+import 'package:gossip/src/sync/domain/messages/digest_request.dart';
+import 'package:gossip/src/sync/infrastructure/sync_message_codec.dart';
+import 'package:gossip/src/shared/domain/value_objects/wire_version.dart';
 
 import '../../support/test_network.dart';
 
@@ -105,6 +108,56 @@ void main() {
           'news must snap the pacer back to the active adaptive '
           'band (<=5s clamp), directly verifying the cadence reset '
           'rather than only inferring it from convergence',
+    );
+  });
+
+  test('deep idle stretches the gossip interval and creating a channel '
+      'snaps it back (kt IdleQuiescenceTest)', () async {
+    final network = await TestNetwork.create(['a', 'b']);
+    addTearDown(network.dispose);
+    await network.connectAll();
+    await network.setupChannel(channelId, streamId);
+    await network.startAll();
+    await network['a'].write(channelId, streamId, [1]);
+    await network.runRounds(10);
+    await network.runRounds(90); // deep idle: stretch toward the ceiling
+
+    expect(network['a'].effectiveGossipInterval!.inSeconds, greaterThan(10));
+
+    // Frames are decoded off the link, so the pin sees what the woken round
+    // actually names, not only that the interval shrank.
+    final codec = SyncMessageCodec(wireVersion: WireVersion.v1);
+    final requestsToB = <DigestRequest>[];
+    network.corruptLink('a', 'b', (bytes) {
+      final message = codec.decode(bytes);
+      if (message is DigestRequest) requestsToB.add(message);
+      return bytes;
+    });
+
+    final fresh = ChannelId('fresh');
+    await network['a'].createChannel(fresh);
+
+    expect(
+      network['a'].effectiveGossipInterval!.inSeconds,
+      lessThanOrEqualTo(5),
+      reason: 'creating a channel is news and resets the pacer',
+    );
+
+    for (var round = 0; round < 5 && requestsToB.isEmpty; round++) {
+      await network.runRounds(1);
+    }
+    expect(
+      requestsToB,
+      isNotEmpty,
+      reason: 'the woken round must come within the active interval',
+    );
+    expect(
+      requestsToB.first.namedChannels,
+      contains(fresh),
+      reason:
+          'the first request after the creation must name the new channel: '
+          'the coordinator refreshes the engine\'s channel map before it '
+          'reports the news',
     );
   });
 

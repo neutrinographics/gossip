@@ -17,13 +17,14 @@ void main() {
       await network.dispose();
     });
 
-    /// Runs one round at a time until [entries] are held on every node: the
-    /// pacer has backed off by the time the second side joins, so the first
-    /// exchange after the join waits out the idle interval (kt awaits too).
+    /// Runs one round at a time until [entries] are held on every node.
+    /// Creating the channel is news on the node that joins, so the first
+    /// exchange after the join comes within the active interval, not the
+    /// idle one; the cap is the measured two rounds plus a margin of two.
     Future<void> awaitConverged(
       ChannelId channel, {
       required int entries,
-      int maxRounds = 40,
+      int maxRounds = 4,
     }) async {
       for (var i = 0; i < maxRounds; i++) {
         final counts = await network.entryCounts(channel, streamId);
