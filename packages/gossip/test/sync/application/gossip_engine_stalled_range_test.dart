@@ -37,7 +37,10 @@ void main() {
           ChannelDigest(
             channelId: channelId,
             streams: [
-              StreamDigest(streamId: streamId, version: VersionVector(versions)),
+              StreamDigest(
+                streamId: streamId,
+                version: VersionVector(versions),
+              ),
             ],
           ),
         ],
@@ -55,7 +58,11 @@ void main() {
     peer = h.addPeer('peer1');
     otherPeer = h.addPeer('peer2');
     for (var i = 1; i <= 5; i++) {
-      await h.entryRepository.append(channelId, streamId, entryOf(authorA, i, 1000 + i));
+      await h.entryRepository.append(
+        channelId,
+        streamId,
+        entryOf(authorA, i, 1000 + i),
+      );
     }
   });
 
@@ -84,7 +91,8 @@ void main() {
     expect(
       requests.single.since[authorA],
       208,
-      reason: 'the digest ceiling equals advertisedMax here; the shaped '
+      reason:
+          'the digest ceiling equals advertisedMax here; the shaped '
           'since must silence the author',
     );
     expect(
@@ -94,38 +102,35 @@ void main() {
     );
   });
 
-  test(
-    'when the stalled surplus is the only surplus, no request is sent '
-    'and the pull flag is released',
-    () async {
-      stalled.recordGap(
-        peer.id,
-        channelId,
-        streamId,
-        authorA,
-        expectedNext: 6,
-        advertisedMax: 208,
-        nowMs: h.timePort.nowMs,
-      );
+  test('when the stalled surplus is the only surplus, no request is sent '
+      'and the pull flag is released', () async {
+    stalled.recordGap(
+      peer.id,
+      channelId,
+      streamId,
+      authorA,
+      expectedNext: 6,
+      advertisedMax: 208,
+      nowMs: h.timePort.nowMs,
+    );
 
-      final requests = await h.engine.handleDigestResponse(
-        digestOf(peer.id, {authorA: 208}),
-      );
+    final requests = await h.engine.handleDigestResponse(
+      digestOf(peer.id, {authorA: 208}),
+    );
 
-      expect(
-        requests,
-        isEmpty,
-        reason: 'shaped vector dominates the digest — nothing to ask',
-      );
-      expect(
-        h.engine.outstandingPullCount,
-        0,
-        reason:
-            'a pull that is for no author is not issued at all — nothing '
-            'to leak',
-      );
-    },
-  );
+    expect(
+      requests,
+      isEmpty,
+      reason: 'shaped vector dominates the digest — nothing to ask',
+    );
+    expect(
+      h.engine.outstandingPullCount,
+      0,
+      reason:
+          'a pull that is for no author is not issued at all — nothing '
+          'to leak',
+    );
+  });
 
   test('stop() clears suppressions', () async {
     h.engine.start();
@@ -200,7 +205,11 @@ void main() {
     h2.createChannel('ch1', streamIds: ['s1']);
     final p = h2.addPeer('peer1');
     for (var i = 1; i <= 5; i++) {
-      await h2.entryRepository.append(channelId, streamId, entryOf(authorA, i, 1000 + i));
+      await h2.entryRepository.append(
+        channelId,
+        streamId,
+        entryOf(authorA, i, 1000 + i),
+      );
     }
     stalled.recordGap(
       p.id,
@@ -220,44 +229,48 @@ void main() {
 
     final base = VersionVector({authorA: 5});
     expect(
-      stalled.shapeSince(p.id, channelId, streamId, base, nowMs: windowOpenAt)[authorA],
+      stalled.shapeSince(
+        p.id,
+        channelId,
+        streamId,
+        base,
+        nowMs: windowOpenAt,
+      )[authorA],
       5,
-      reason: 'the probe never left the node — the window must stay open, '
+      reason:
+          'the probe never left the node — the window must stay open, '
           'not be re-armed for a doubled interval',
     );
     h2.dispose();
   });
 
   group('end-to-end recording (merger seam)', () {
-    Future<void> solicit() => h.engine.handleDigestResponse(
-      digestOf(peer.id, {authorA: 208}),
-    );
+    Future<void> solicit() =>
+        h.engine.handleDigestResponse(digestOf(peer.id, {authorA: 208}));
 
-    test(
-      'after one solicited gapped response, the stalled surplus is '
-      'suppressed and dominance-quiet',
-      () async {
-        await solicit(); // arms the pull; the response below is solicited
-        await h.engine.handleDeltaResponse(
-          DeltaResponse(
-            sender: peer.id,
-            channelId: channelId,
-            streamId: streamId,
-            entries: [entryOf(authorA, 149, 2149), entryOf(authorA, 208, 2208)],
-          ),
-        );
+    test('after one solicited gapped response, the stalled surplus is '
+        'suppressed and dominance-quiet', () async {
+      await solicit(); // arms the pull; the response below is solicited
+      await h.engine.handleDeltaResponse(
+        DeltaResponse(
+          sender: peer.id,
+          channelId: channelId,
+          streamId: streamId,
+          entries: [entryOf(authorA, 149, 2149), entryOf(authorA, 208, 2208)],
+        ),
+      );
 
-        final requests = await h.engine.handleDigestResponse(
-          digestOf(peer.id, {authorA: 208}),
-        );
-        expect(
-          requests,
-          isEmpty,
-          reason: 'stalled surplus was the only surplus — suppressed and '
-              'dominance-quiet',
-        );
-      },
-    );
+      final requests = await h.engine.handleDigestResponse(
+        digestOf(peer.id, {authorA: 208}),
+      );
+      expect(
+        requests,
+        isEmpty,
+        reason:
+            'stalled surplus was the only surplus — suppressed and '
+            'dominance-quiet',
+      );
+    });
   });
 }
 
