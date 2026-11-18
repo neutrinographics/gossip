@@ -16,7 +16,7 @@ Observed in the Dart half of digest scoping: in
 14 simulated one-second rounds before the new channel was announced and
 learned. That figure was measured before the recency-window fix (gossip
 PR #22), which most likely closed most of the gap on its own; measured
-again on this branch, the group converges at round 2 with the change and
+again in gossip PR #23, the group converges at round 2 with the change and
 round 3 without. The production figure on the Kotlin side was far better (a join
 converged 0.4 s after the server created the channel) only because that
 server had traffic keeping the pacer awake; a quiet pair waits.
