@@ -379,7 +379,7 @@ void main() {
 
     test(
       'a created channel wakes the round instead of waiting out the interval '
-      'armed before it',
+      'armed before it (kt GossipEngineTest)',
       () async {
         final h = GossipEngineTestHarness(
           adaptiveTimingEnabled: true,
@@ -404,7 +404,9 @@ void main() {
         expect(
           h.engine.effectiveGossipInterval,
           greaterThan(const Duration(milliseconds: 200)),
-          reason: 'setup must actually stretch the pacer before the write',
+          reason:
+              'setup must actually stretch the pacer before the channel is '
+              'created',
         );
 
         final (messages, sub) = h.captureMessages(peer);
@@ -421,8 +423,8 @@ void main() {
           messages.whereType<DigestRequest>(),
           isNotEmpty,
           reason:
-              'the local write must wake the round: the next DigestRequest '
-              'goes out within the active interval of the write, not the '
+              'channel creation must wake the round: the next DigestRequest '
+              'goes out within the active interval of the creation, not the '
               'stretched interval that was pending',
         );
 

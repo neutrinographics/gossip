@@ -20,7 +20,7 @@ class Window<T> {
 
   @override
   bool operator ==(Object other) =>
-      other is Window<T> &&
+      other is Window &&
       other.usedBytes == usedBytes &&
       elementWiseEqual(other.selected, selected) &&
       elementWiseEqual(other.oversized, oversized);
