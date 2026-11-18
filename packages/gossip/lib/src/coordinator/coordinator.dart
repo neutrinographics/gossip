@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:meta/meta.dart';
 import 'dart:math';
 import 'package:gossip/src/shared/shared.dart';
-import 'package:gossip/src/sync/domain/events/sync_events.dart';
 import 'package:gossip/src/sync/sync.dart';
 import 'package:gossip/src/membership/membership.dart';
 import 'package:gossip/src/coordinator/adaptive_timing_status.dart';
