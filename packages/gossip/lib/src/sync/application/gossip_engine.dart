@@ -587,6 +587,17 @@ class GossipEngine {
     _pusher.notifyWrite(channelId, streamId, entry);
   }
 
+  /// A channel this node just created is something new to tell peers about,
+  /// so it resets the pace and wakes a sleeping round.
+  ///
+  /// The caller refreshes the engine's channel map ([setChannels]) first, so
+  /// the woken round digests the new channel. [setChannels] itself is a
+  /// snapshot refresh and is not news. No-op when the engine is not running.
+  void notifyChannelCreated(ChannelId channelId) {
+    if (!_scheduler.isRunning) return;
+    _recordNews();
+  }
+
   /// Pushes buffered local writes ([batches], snapshotted and handed off by
   /// [_pusher]) to all reachable peers as unsolicited DeltaResponses.
   /// Oversized bursts (rare — the debounce window is short) fall back to

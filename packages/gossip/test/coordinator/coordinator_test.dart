@@ -44,6 +44,46 @@ void main() {
       expect(channelFacade.id, equals(channelId));
     });
 
+    test('createChannel on a running coordinator tells the engine after '
+        'refreshing its channels', () async {
+      final coordinator = await createTestCoordinator(
+        bus: InMemoryMessageBus(),
+        timePort: InMemoryTimePort(),
+      );
+      await coordinator.start();
+      final engine = coordinator.gossipEngineForTesting!;
+      for (var i = 0; i < 6; i++) {
+        await engine.performGossipRound();
+      }
+      final stretched = engine.effectiveGossipInterval;
+
+      await coordinator.createChannel(ChannelId('fresh'));
+
+      expect(engine.effectiveGossipInterval, lessThan(stretched));
+    });
+
+    test(
+      'createChannel for an existing channel does not notify again',
+      () async {
+        final coordinator = await createTestCoordinator(
+          bus: InMemoryMessageBus(),
+          timePort: InMemoryTimePort(),
+        );
+        await coordinator.start();
+        final first = await coordinator.createChannel(ChannelId('fresh'));
+        final engine = coordinator.gossipEngineForTesting!;
+        for (var i = 0; i < 6; i++) {
+          await engine.performGossipRound();
+        }
+        final stretched = engine.effectiveGossipInterval;
+
+        final again = await coordinator.createChannel(ChannelId('fresh'));
+
+        expect(again, same(first));
+        expect(engine.effectiveGossipInterval, stretched);
+      },
+    );
+
     test('createChannel emits ChannelCreated event', () async {
       final coordinator = await createTestCoordinator();
 

@@ -533,6 +533,9 @@ class Coordinator {
   ///
   /// The channel starts with the local node as the only member.
   Future<Channel> createChannel(ChannelId channelId) async {
+    final existing = _channelFacades[channelId];
+    if (existing != null) return existing;
+
     await _channelService.createChannel(channelId);
 
     final facade = Channel(id: channelId, service: _channelService);
@@ -541,6 +544,8 @@ class Coordinator {
     if (_state == SyncState.running && _gossipEngine != null) {
       final channels = await _loadChannels();
       _gossipEngine!.setChannels(channels);
+      // After the refresh, so the round this wakes digests the channel.
+      _gossipEngine!.notifyChannelCreated(channelId);
     }
 
     return facade;
