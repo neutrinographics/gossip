@@ -78,6 +78,39 @@ void main() {
       expect(p.announce, Recency.initial);
     });
 
+    test('PeerRotation equals by its three lists and hashes alike', () {
+      final one = Recency.initial.stamp([a]);
+      final same = Recency.initial.stamp([a]);
+
+      expect(PeerRotation(request: one), PeerRotation(request: same));
+      expect(
+        PeerRotation(request: one).hashCode,
+        PeerRotation(request: same).hashCode,
+      );
+      expect(PeerRotation(request: one), isNot(PeerRotation(response: one)));
+      expect(PeerRotation(request: one), isNot(const PeerRotation()));
+    });
+
+    test('DigestRotation equals by peer and value, whatever the insertion '
+        'order', () {
+      final first = PeerRotation(request: Recency.initial.stamp([a]));
+      final second = PeerRotation(announce: Recency.initial.stamp([b]));
+
+      final forward = DigestRotation.initial
+          .withPeer(n1, first)
+          .withPeer(n2, second);
+      final backward = DigestRotation.initial
+          .withPeer(n2, second)
+          .withPeer(n1, first);
+      final other = DigestRotation.initial
+          .withPeer(n1, first)
+          .withPeer(n2, first);
+
+      expect(forward, backward);
+      expect(forward.hashCode, backward.hashCode);
+      expect(forward, isNot(other));
+    });
+
     test('equal values hash alike, and different contents usually do not', () {
       final one = Recency.initial.stamp([a, b]);
       final same = Recency.initial.stamp([a, b]);

@@ -1,8 +1,11 @@
+import 'package:meta/meta.dart';
+import 'package:gossip/src/sync/application/element_wise.dart';
 import 'package:gossip/src/sync/application/recency.dart';
 import 'package:gossip/src/sync/application/rotation_key.dart';
 
 /// What [DigestWindow.select] chose: [usedBytes] is what the selected items
 /// take, separators between them included.
+@immutable
 class Window<T> {
   final List<T> selected;
   final List<T> oversized;
@@ -14,6 +17,20 @@ class Window<T> {
     this.usedBytes = 0,
   }) : selected = List.unmodifiable(selected),
        oversized = List.unmodifiable(oversized);
+
+  @override
+  bool operator ==(Object other) =>
+      other is Window<T> &&
+      other.usedBytes == usedBytes &&
+      elementWiseEqual(other.selected, selected) &&
+      elementWiseEqual(other.oversized, oversized);
+
+  @override
+  int get hashCode => Object.hash(
+    Object.hashAll(selected),
+    Object.hashAll(oversized),
+    usedBytes,
+  );
 
   @override
   String toString() =>

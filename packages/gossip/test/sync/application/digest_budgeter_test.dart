@@ -611,4 +611,54 @@ void main() {
     b.reset();
     expect(pairs(b.fitRequest(scoped(digests), peerB).digests), equals(head));
   });
+
+  group('the results are values', () {
+    final huge = ChannelDigest(
+      channelId: ChannelId('channel-huge'),
+      streams: [streamDigest('stream-huge', 300)],
+    );
+    List<ChannelDigest> input() => [...channels(1, 4), huge];
+    int budget() => encodedSize(channels(1, 4)) + 5;
+
+    test('FittedRequest built twice from the same inputs is equal', () {
+      final one = budgeter(budget()).fitRequest(scoped(input()), peerA);
+      final two = budgeter(budget()).fitRequest(scoped(input()), peerA);
+
+      expect(one.oversized, isNotEmpty);
+      expect(one, two);
+      expect(one.hashCode, two.hashCode);
+      expect(
+        one,
+        isNot(budgeter(30 * 1024).fitRequest(scoped(input()), peerA)),
+      );
+    });
+
+    test('FittedResponse built twice from the same inputs is equal', () {
+      final one = budgeter(budget()).fitResponse(input(), peerA);
+      final two = budgeter(budget()).fitResponse(input(), peerA);
+
+      expect(one.oversized, isNotEmpty);
+      expect(one, two);
+      expect(one.hashCode, two.hashCode);
+      expect(one, isNot(budgeter(30 * 1024).fitResponse(input(), peerA)));
+    });
+
+    test('OversizedDigest built twice from the same inputs is equal', () {
+      final one = budgeter(budget()).fitResponse(input(), peerA).oversized;
+      final two = budgeter(budget()).fitResponse(input(), peerA).oversized;
+
+      expect(one.single, two.single);
+      expect(one.single.hashCode, two.single.hashCode);
+      expect(
+        one.single,
+        isNot(
+          OversizedDigest(
+            channel: one.single.channel,
+            streamId: one.single.streamId,
+            cost: one.single.cost + 1,
+          ),
+        ),
+      );
+    });
+  });
 }
