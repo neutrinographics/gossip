@@ -87,3 +87,7 @@ batch D, `PullPlanner.page` is the one place a delta response is assembled
 and the only producer of `hasMore`, and `PullPlanner.buildLocalDigests` the
 one place a digest list is built — the response-side and digest-side budgets
 attach there.
+
+**Re-homed (2026-11-27).** The delta page cut (Dart's `_fitDeltaToBudget`)
+was parked under this phase and never shipped; it is now its own item,
+[Page delta responses to the byte budget in the Kotlin library](kt-delta-page-budget.md).
