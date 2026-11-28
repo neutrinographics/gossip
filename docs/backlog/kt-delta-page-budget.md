@@ -1,6 +1,6 @@
 # Page delta responses to the byte budget in the Kotlin library
 
-**Track:** Kotlin port   **Depends on:** nothing
+**Track:** Kotlin port   **Depends on:** nothing   **Done:** 2026-11-28, gossip-kt PR #26
 
 ## What this is
 
